@@ -1347,6 +1347,74 @@ class TestAggregateStatusLaneActivity:
         report = aggregate_status(runtime_dir)
         assert report.lanes[0].linked_pr == 982
 
+    def test_dispatched_task_packet_appears_in_lane_tasks(
+        self, runtime_dir: Path
+    ) -> None:
+        """BD-002: dispatched task_queue packets are injected into tasks_by_lane.
+
+        When list_packets returns a dispatched packet owned by a lane, that
+        packet should surface as the lane's current task in the report.
+        """
+        from dataclasses import dataclass
+        from unittest.mock import patch
+
+        recent = datetime.now(timezone.utc).isoformat()
+
+        # Register a lane
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "author-b.json",
+            {
+                "schema_version": 2,
+                "lane_id": "author-b",
+                "lane_class": "author",
+                "worktree_path": "/tmp/wt-b",
+                "branch": "fix/some-bug",
+                "class": "persistent",
+                "session_id": "s-bd002",
+                "last_active": recent,
+            },
+        )
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-bd002.json",
+            {
+                "schema_version": 2,
+                "session_id": "s-bd002",
+                "lane_id": "author-b",
+                "started_at": recent,
+                "task": "BD-002 dispatched work",
+            },
+        )
+
+        # Create the task_queue subdirectory (even if empty — the mock
+        # controls what list_packets returns).
+        (runtime_dir / "task_queue").mkdir(exist_ok=True)
+
+        # Build a mock TaskPacket (lightweight stand-in)
+        @dataclass
+        class _MockPacket:
+            packet_id: str = "pkt-bd002"
+            title: str = "Fix batch D dispatch"
+            owner: str | None = "author-b"
+            status: str = "dispatched"
+
+        def _mock_list_packets(root, status_filter=None, owner_filter=None):
+            """Return a single dispatched packet owned by author-b."""
+            if status_filter == "dispatched":
+                return [_MockPacket()]
+            return []
+
+        with patch(
+            "bid_euchre.ops.task_queue.list_packets", side_effect=_mock_list_packets
+        ):
+            report = aggregate_status(runtime_dir)
+
+        # The lane should have the dispatched packet as its current task
+        lane = next(l for l in report.lanes if l.lane_id == "author-b")
+        assert lane.current_task_id == "pkt-bd002"
+        assert lane.current_task_title == "Fix batch D dispatch"
+
 
 # ---- New helpers and enrichment tests ----
 
