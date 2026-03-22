@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-21 by author-a (Phase 1 closeout)
+**Last updated:** 2026-03-21 by author-b (Platform-4 SP-2-01)
 
 ---
 
@@ -14,6 +14,7 @@
 | SP-1-01 | Platform-1 lane registry foundation | Phase 1 Platform-1 implementation | completed | author-b | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform1-lane-registry-foundation.md` | 2026-03-21 | 2026-03-21 |
 | SP-1-02 | Platform-2 orchestrator intake | Phase 1 Platform-2 implementation | completed | author-b | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform2-orchestrator-intake.md` | 2026-03-21 | 2026-03-21 |
 | SP-1-03 | Platform-3 communication bus v1 | Phase 1 Platform-3 implementation | completed | author-b | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform3-communication-bus.md` | 2026-03-21 | 2026-03-21 (PR #1225) |
+| SP-2-01 | Platform-4 dashboard-first layout | Phase 2 Platform-4 implementation | completed | author-b | `plans/agent_ops/2_visible_operating_model/sub/2026-03-21_platform4-dashboard-layout.md` | 2026-03-21 | 2026-03-21 |
 
 ## Status Summary
 
@@ -22,7 +23,7 @@
 | proposed | 0 |
 | in_progress | 0 |
 | blocked | 0 |
-| completed | 4 |
+| completed | 5 |
 | abandoned | 0 |
 | superseded | 1 |
 
