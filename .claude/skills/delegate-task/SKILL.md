@@ -22,8 +22,9 @@ intake-to-dispatch flow into a reusable workflow.
 1. **Create a TaskPacket** with these required fields:
    - **title:** Short imperative description (e.g., "Fix scoring edge case")
    - **description:** Full task description with acceptance criteria
-   - **owner:** Target author lane (author-a, author-b, author-c, author-d,
-     or author-scratch)
+   - **owner:** Target worker lane. Platform pool: `author-a` through
+     `author-d`. Browser-game pool: `brws-author-a` through `brws-author-d`.
+     Flex pool: `author-scratch`, `flex-a`, `flex-b`, `flex-c`.
    - **scope_declared:** File patterns that will be touched
    - **validation:** Commands the author must run (e.g., specific test files)
    - **priority:** low / normal / high
@@ -32,13 +33,14 @@ intake-to-dispatch flow into a reusable workflow.
 
 2. **Choose the target lane** using the delegation guidelines:
 
-   | Task Type | Preview Required | Suggested Lane |
-   |-----------|-----------------|----------------|
-   | Single-file bugfix | No | Any idle author |
-   | Multi-file feature | Yes | author-a or author-b |
-   | Architectural change | Yes + plan review | author-a |
-   | Exploratory analysis | No | author-scratch |
-   | Overflow / parallel work | Yes | author-c or author-d |
+   | Task Type | Preview Required | Suggested Lane | Domain |
+   |-----------|-----------------|----------------|--------|
+   | Single-file bugfix | No | Any idle author in matching pool | Infer |
+   | Multi-file feature | Yes | author-a or author-b | platform |
+   | Architectural change | Yes + plan review | author-a | platform |
+   | Exploratory analysis | No | author-scratch or flex-* | (flex) |
+   | Overflow / parallel work | Yes | author-c, author-d, or flex-* | Match source |
+   | Browser-game work | Yes | brws-author-a through brws-author-d | browser-game |
 
 3. **Check lane availability:**
    ```bash
@@ -93,7 +95,8 @@ intake-to-dispatch flow into a reusable workflow.
 
 - Do not bypass preview for non-trivial work — the user must see and approve
   the delegation before it happens
-- Do not assign to lanes that don't exist in the worktree registry
+- Do not assign to lanes that don't exist in the worktree registry (see
+  `.claude/rules/75_worktree_protection.md` for the canonical list)
 - If scope_declared is vague, tighten it before dispatching — authors should
   not have to guess their write boundary
 - The orchestrator coordinates; it does not execute implementation work itself

@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-22 by author-scratch (SP-3-04 closeout)
+**Last updated:** 2026-03-23 by author-b (register SP-3-06/07/08)
 
 ---
 
@@ -21,6 +21,9 @@
 | SP-3-03 | BD-004 v1 pane delivery adapter | Phase 3 BD-004 exit gate fix | completed | author-a | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_bd004-v1-pane-delivery.md` | 2026-03-22 | 2026-03-22 (PR #1263) |
 | SP-3-04 | Phase 3 closeout and transition entry | Phase 3 durable state reconciliation | completed | author-scratch | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_phase3-closeout-and-transition-entry.md` | 2026-03-22 | 2026-03-22 |
 | SP-3-05 | Dual-domain steward layout transition | Post-Phase-3 transition package before Platform-8 | proposed | TBD | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_dual-domain-steward-layout-transition.md` | 2026-03-22 | -- |
+| SP-3-06 | Task dispatch CLI and execution-surface hardening | Post-Phase-3 transition: CLI dispatch, execution-surface rules | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1275) |
+| SP-3-07 | Bidirectional message bus across all steward lanes | Post-Phase-3 transition: message bus wiring for 16-lane layout | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1276) |
+| SP-3-08 | Monitoring cycle with session-start auto-launch | Post-Phase-3 transition: ops monitoring cycle and auto-launch | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1277) |
 
 ## Status Summary
 
@@ -29,7 +32,7 @@
 | proposed | 1 |
 | in_progress | 0 |
 | blocked | 0 |
-| completed | 10 |
+| completed | 13 |
 | abandoned | 0 |
 | superseded | 1 |
 
