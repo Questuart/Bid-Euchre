@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-23 by author-b (register SP-3-06/07/08)
+**Last updated:** 2026-03-23 by author-scratch (register SP-4-01)
 
 ---
 
@@ -24,6 +24,7 @@
 | SP-3-06 | Task dispatch CLI and execution-surface hardening | Post-Phase-3 transition: CLI dispatch, execution-surface rules | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1275) |
 | SP-3-07 | Bidirectional message bus across all steward lanes | Post-Phase-3 transition: message bus wiring for 16-lane layout | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1276) |
 | SP-3-08 | Monitoring cycle with session-start auto-launch | Post-Phase-3 transition: ops monitoring cycle and auto-launch | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1277) |
+| SP-4-01 | Platform-8 scope lock | Phase 4, Platform-8 scope lock and sub-plan registration | completed | author-scratch | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | 2026-03-23 | 2026-03-23 |
 
 ## Status Summary
 
@@ -32,7 +33,7 @@
 | proposed | 1 |
 | in_progress | 0 |
 | blocked | 0 |
-| completed | 13 |
+| completed | 14 |
 | abandoned | 0 |
 | superseded | 1 |
 
