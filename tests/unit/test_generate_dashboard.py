@@ -20,6 +20,7 @@ scripts_dir = str(Path(__file__).resolve().parents[2] / "scripts")
 sys.path.insert(0, scripts_dir)
 from generate_dashboard import (  # noqa: E402
     _GH_PR_LIMIT,
+    WINDOW,
     _bollinger,
     _draw_bollinger_panel,
     _gather_pr_counts,
@@ -194,6 +195,38 @@ class TestGenerateDashboardWiring:
             "Panel 4 and Panel 5 should receive different data arrays "
             "(churn_pct vs file_churn_pct)"
         )
+
+        # Validity masks: verify each panel receives its own correctly-computed
+        # mask (regression: PR #1365 — panel 5 previously reused panel 4's mask)
+        panel4_valid = draw_calls[3]["valid"]
+        panel5_valid = draw_calls[4]["valid"]
+        n_dates = len(dates)
+        expected_valid = n_dates - WINDOW + 1  # warmup period = WINDOW - 1
+
+        assert panel4_valid.sum() == expected_valid, (
+            f"Panel 4 validity mask: expected {expected_valid} valid, "
+            f"got {panel4_valid.sum()}"
+        )
+        assert panel5_valid.sum() == expected_valid, (
+            f"Panel 5 validity mask: expected {expected_valid} valid, "
+            f"got {panel5_valid.sum()}"
+        )
+
+        # Warmup period (first WINDOW-1 indices) should be invalid
+        assert not panel4_valid[
+            : WINDOW - 1
+        ].any(), "Panel 4: warmup period should be all invalid"
+        assert not panel5_valid[
+            : WINDOW - 1
+        ].any(), "Panel 5: warmup period should be all invalid"
+
+        # Post-warmup indices should be valid
+        assert panel4_valid[
+            WINDOW - 1 :
+        ].all(), "Panel 4: post-warmup indices should be all valid"
+        assert panel5_valid[
+            WINDOW - 1 :
+        ].all(), "Panel 5: post-warmup indices should be all valid"
 
 
 class TestDrawBollingerPanel:
