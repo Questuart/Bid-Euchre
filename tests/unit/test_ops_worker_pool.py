@@ -2012,9 +2012,13 @@ class TestResetWorktree:
     @patch(f"{_WORKER_POOL}._resolve_worktree_path")
     @patch(f"{_WORKER_POOL}.subprocess.run")
     def test_dirty_worktree_force_atomic_collision(
-        self, mock_run: MagicMock, mock_resolve: MagicMock, tmp_path: Path
+        self, mock_run: MagicMock, mock_resolve: MagicMock
     ) -> None:
-        """Same-second resets use atomic exclusive creation to avoid TOCTOU race."""
+        """Same-second resets use atomic exclusive creation to avoid TOCTOU race.
+
+        Mocks Path.open instead of writing to /tmp so the test is independent
+        of shared filesystem state (issue #1416).
+        """
         mock_resolve.return_value = "/tmp/wt-author-a"
         dirty_status = self._make_status_dirty()
         diff_mock = self._make_diff("second diff content")
@@ -2022,32 +2026,58 @@ class TestResetWorktree:
         mock_run.side_effect = [dirty_status, diff_mock, ok, ok]
 
         from datetime import datetime, timezone
+        from io import StringIO
 
         frozen = datetime(2026, 1, 15, 12, 30, 45, tzinfo=timezone.utc)
         ts = "20260115T123045"
+        base_path = f"/tmp/author-a_{ts}.diff"
+        seq_path = f"/tmp/author-a_{ts}_1.diff"
 
-        # Pre-create the base path to simulate a same-second collision
-        base_diff = Path(f"/tmp/author-a_{ts}.diff")
-        base_diff.write_text("first diff content")
+        # Track exclusive-open attempts and captured writes without touching /tmp.
+        opened_paths: list[str] = []
+        written_content: dict[str, str] = {}
+        _orig_open = Path.open
 
-        try:
-            with patch(f"{_WORKER_POOL}.datetime") as mock_dt:
-                mock_dt.now.return_value = frozen
-                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-                result = reset_worktree("author-a", force=True)
+        def _mock_exclusive_open(  # type: ignore[no-untyped-def]
+            self_path: Path, mode: str = "r", *a: object, **kw: object
+        ) -> object:
+            if mode != "x":
+                return _orig_open(self_path, mode)
+            path_str = str(self_path)
+            opened_paths.append(path_str)
+            if path_str == base_path:
+                raise FileExistsError(path_str)
 
-            assert result.executed is True
-            assert result.error is None
+            # Return a minimal writable context manager for the suffixed path.
+            buf = StringIO()
 
-            # Should have created the _1 suffixed file
-            seq_diff = Path(f"/tmp/author-a_{ts}_1.diff")
-            assert seq_diff.exists()
-            assert seq_diff.read_text() == "second diff content"
-            # Original file should be untouched
-            assert base_diff.read_text() == "first diff content"
-        finally:
-            base_diff.unlink(missing_ok=True)
-            Path(f"/tmp/author-a_{ts}_1.diff").unlink(missing_ok=True)
+            class _FakeFile:
+                def write(self, content: str) -> int:  # noqa: N805
+                    written_content[path_str] = content
+                    return buf.write(content)
+
+                def __enter__(self) -> "_FakeFile":  # noqa: N805
+                    return self
+
+                def __exit__(self, *exc: object) -> bool:  # noqa: N805
+                    return False
+
+            return _FakeFile()
+
+        with (
+            patch(f"{_WORKER_POOL}.datetime") as mock_dt,
+            patch.object(Path, "open", _mock_exclusive_open),
+        ):
+            mock_dt.now.return_value = frozen
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = reset_worktree("author-a", force=True)
+
+        assert result.executed is True
+        assert result.error is None
+
+        # Verify collision logic: tried base path, then fell back to _1 suffix
+        assert opened_paths == [base_path, seq_path]
+        assert written_content[seq_path] == "second diff content"
 
     @patch(f"{_WORKER_POOL}._resolve_worktree_path")
     @patch(f"{_WORKER_POOL}.subprocess.run")
