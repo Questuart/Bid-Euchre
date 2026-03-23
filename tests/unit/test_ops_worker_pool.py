@@ -309,24 +309,30 @@ class TestGetLaneTaskId:
 
 
 class TestDynamicPaneLookup:
-    """Test _dynamic_pane_lookup() tmux pane title matching."""
+    """Test _dynamic_pane_lookup() pane_start_command matching."""
 
     @patch(f"{_WORKER_POOL}.subprocess.run")
     def test_finds_matching_pane(self, mock_run: MagicMock) -> None:
-        """Matches lane_id substring in pane title."""
+        """Matches --name <lane_id> in pane start command."""
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout="1 steward-author-a\n2 steward-author-b\n",
+            stdout=(
+                "1 /usr/bin/claude --name author-a --agent steward-author-a\n"
+                "2 /usr/bin/claude --name author-b --agent steward-author-b\n"
+            ),
         )
         result = _dynamic_pane_lookup("author-a", "steward", "platform")
         assert result == "1"
 
     @patch(f"{_WORKER_POOL}.subprocess.run")
     def test_no_match(self, mock_run: MagicMock) -> None:
-        """Returns None when no pane title matches."""
+        """Returns None when no pane start command matches."""
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout="1 steward-author-c\n2 steward-author-d\n",
+            stdout=(
+                "1 /usr/bin/claude --name author-c --agent steward-author-c\n"
+                "2 /usr/bin/claude --name author-d --agent steward-author-d\n"
+            ),
         )
         result = _dynamic_pane_lookup("author-a", "steward", "platform")
         assert result is None
@@ -354,11 +360,27 @@ class TestDynamicPaneLookup:
         assert result is None
 
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_pane_title_with_spinner(self, mock_run: MagicMock) -> None:
-        """Matches even when pane title has a Claude Code spinner prefix."""
+    def test_no_false_positive_on_substring(self, mock_run: MagicMock) -> None:
+        """Does not match when lane_id is a substring of another lane name."""
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout="2 ⠐ steward-flex-a\n3 ✳ steward-flex-b\n",
+            stdout=("1 /usr/bin/claude --name author-ab --agent steward-author-ab\n"),
+        )
+        # "author-a" should NOT match "--name author-ab"
+        result = _dynamic_pane_lookup("author-a", "steward", "platform")
+        assert result is None
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_matches_with_cmux_path(self, mock_run: MagicMock) -> None:
+        """Matches when claude binary is at a cmux.app path."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                "2 /Applications/cmux.app/Contents/Resources/bin/claude "
+                "--name flex-a --agent steward-flex-a\n"
+                "3 /Applications/cmux.app/Contents/Resources/bin/claude "
+                "--name flex-b --agent steward-flex-b\n"
+            ),
         )
         result = _dynamic_pane_lookup("flex-a", "steward", "scratch")
         assert result == "2"
@@ -375,7 +397,7 @@ class TestDynamicPaneLookup:
                 "-t",
                 "steward:platform",
                 "-F",
-                "#{pane_index} #{pane_title}",
+                "#{pane_index} #{pane_start_command}",
             ],
             capture_output=True,
             text=True,
