@@ -21,6 +21,7 @@ from bid_euchre.ops.worker_pool import (
     WorkerState,
     _classify_pool_status,
     _get_lane_task_id,
+    _get_pane_base_index,
     _managed_lanes,
     _minutes_since,
     _probe_tmux_pane,
@@ -305,10 +306,41 @@ class TestGetLaneTaskId:
 # ---------------------------------------------------------------------------
 
 
+class TestGetPaneBaseIndex:
+    """Test _get_pane_base_index() tmux option query."""
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_returns_parsed_value(self, mock_run: MagicMock) -> None:
+        """Returns integer from tmux show-options output."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="1\n")
+        assert _get_pane_base_index() == 1
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_returns_zero_default(self, mock_run: MagicMock) -> None:
+        """Returns 0 when tmux reports pane-base-index=0."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="0\n")
+        assert _get_pane_base_index() == 0
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_falls_back_on_error(self, mock_run: MagicMock) -> None:
+        """Falls back to 0 when tmux is unavailable."""
+        mock_run.side_effect = FileNotFoundError("tmux not found")
+        assert _get_pane_base_index() == 0
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_falls_back_on_nonzero_exit(self, mock_run: MagicMock) -> None:
+        """Falls back to 0 when tmux command fails."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        assert _get_pane_base_index() == 0
+
+
 class TestResolveTmuxTarget:
     """Test _resolve_tmux_target() registry-based target resolution."""
 
-    def test_registry_with_window_and_pane(self, tmp_path: Path) -> None:
+    @patch(f"{_WORKER_POOL}._get_pane_base_index", return_value=0)
+    def test_registry_with_window_and_pane(
+        self, _mock_base: MagicMock, tmp_path: Path
+    ) -> None:
         """When registry has tmux_window and tmux_pane, use them."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
@@ -322,7 +354,10 @@ class TestResolveTmuxTarget:
         result = _resolve_tmux_target("author-a", "steward", tmp_path)
         assert result == "steward:author-a"
 
-    def test_registry_no_pane_falls_back(self, tmp_path: Path) -> None:
+    @patch(f"{_WORKER_POOL}._get_pane_base_index", return_value=0)
+    def test_registry_no_pane_falls_back(
+        self, _mock_base: MagicMock, tmp_path: Path
+    ) -> None:
         """When registry has window but no pane, fall back."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
@@ -331,7 +366,10 @@ class TestResolveTmuxTarget:
         result = _resolve_tmux_target("author-a", "steward", tmp_path)
         assert result == "steward:author-a"
 
-    def test_registry_pane_zero_is_valid(self, tmp_path: Path) -> None:
+    @patch(f"{_WORKER_POOL}._get_pane_base_index", return_value=0)
+    def test_registry_pane_zero_is_valid(
+        self, _mock_base: MagicMock, tmp_path: Path
+    ) -> None:
         """Pane index 0 should not be treated as falsy."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
@@ -339,6 +377,30 @@ class TestResolveTmuxTarget:
         (registry_dir / "orchestrator.json").write_text(json.dumps(entry))
         result = _resolve_tmux_target("orchestrator", "steward", tmp_path)
         assert result == "steward:central-ops.0"
+
+    @patch(f"{_WORKER_POOL}._get_pane_base_index", return_value=1)
+    def test_pane_base_index_adjustment(
+        self, _mock_base: MagicMock, tmp_path: Path
+    ) -> None:
+        """Pane index is adjusted by pane-base-index (e.g. 0 -> 1)."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_window": "platform", "tmux_pane": "0"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        result = _resolve_tmux_target("author-a", "steward", tmp_path)
+        assert result == "steward:platform.1"
+
+    @patch(f"{_WORKER_POOL}._get_pane_base_index", return_value=1)
+    def test_pane_base_index_adjustment_higher_pane(
+        self, _mock_base: MagicMock, tmp_path: Path
+    ) -> None:
+        """Pane index 2 adjusted to 3 with pane-base-index=1."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_window": "central-ops", "tmux_pane": "2"}
+        (registry_dir / "review.json").write_text(json.dumps(entry))
+        result = _resolve_tmux_target("review", "steward", tmp_path)
+        assert result == "steward:central-ops.3"
 
 
 class TestProbeTmuxPane:
@@ -381,7 +443,8 @@ class TestProbeTmuxPane:
         mock_run.return_value = MagicMock(returncode=0, stdout="")
         assert _probe_tmux_pane("author-a", "steward") is False
 
-    def test_with_registry_target(self, tmp_path: Path) -> None:
+    @patch(f"{_WORKER_POOL}._get_pane_base_index", return_value=0)
+    def test_with_registry_target(self, _mock_base: MagicMock, tmp_path: Path) -> None:
         """When registry provides window.pane, probe targets that."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
@@ -1710,7 +1773,10 @@ class TestNudgePane:
         assert result.executed is False
         assert result.error == "nudge_failed"
 
-    def test_nudge_uses_registry_target(self, tmp_path: Path) -> None:
+    @patch(f"{_WORKER_POOL}._get_pane_base_index", return_value=0)
+    def test_nudge_uses_registry_target(
+        self, _mock_base: MagicMock, tmp_path: Path
+    ) -> None:
         """When registry has window.pane, nudge targets that."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()

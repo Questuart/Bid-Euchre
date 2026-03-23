@@ -147,6 +147,26 @@ class PoolAction:
 # ---------------------------------------------------------------------------
 
 
+def _get_pane_base_index() -> int:
+    """Query tmux for the global ``pane-base-index`` option.
+
+    Returns the integer value (typically 0 or 1).  Falls back to 0 when
+    tmux is unavailable (e.g. in test environments or CI).
+    """
+    try:
+        result = subprocess.run(
+            ["tmux", "show-options", "-gv", "pane-base-index"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return int(result.stdout.strip())
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError, ValueError):
+        pass
+    return 0
+
+
 def _resolve_tmux_target(
     lane_id: str,
     tmux_session: str,
@@ -156,6 +176,10 @@ def _resolve_tmux_target(
 
     Reads ``tmux_window`` and ``tmux_pane`` from the lane's worktree registry
     entry to construct a ``{session}:{window}.{pane}`` target string.
+
+    The registry stores 0-based pane positions (first pane = 0, second = 1,
+    etc.).  This function adjusts by the tmux ``pane-base-index`` option so
+    that the returned target uses the actual tmux pane index.
 
     Falls back to ``{session}:{lane_id}`` if the registry entry is missing or
     does not contain pane metadata (backwards compatibility with the legacy
@@ -180,8 +204,10 @@ def _resolve_tmux_target(
         window = data.get("tmux_window")
         pane = data.get("tmux_pane")
         if window and pane is not None:
-            return f"{tmux_session}:{window}.{pane}"
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+            base_index = _get_pane_base_index()
+            adjusted_pane = int(pane) + base_index
+            return f"{tmux_session}:{window}.{adjusted_pane}"
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
         pass
     # Fallback: legacy one-window-per-lane naming
     return f"{tmux_session}:{lane_id}"
