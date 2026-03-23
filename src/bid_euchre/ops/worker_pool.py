@@ -156,12 +156,15 @@ def _dynamic_pane_lookup(
 ) -> str | None:
     """Dynamically resolve a lane's pane index by querying tmux.
 
-    Runs ``tmux list-panes`` on the target window and matches pane titles
-    against the ``lane_id`` string.  This is robust to stale registry data
-    and works regardless of ``pane-base-index`` configuration.
+    Runs ``tmux list-panes`` on the target window and matches the
+    ``--name <lane_id>`` token in each pane's start command.  This is
+    robust to stale registry data and works regardless of
+    ``pane-base-index`` configuration.
 
-    The query is scoped to a single window, so substring matching on
-    ``lane_id`` is unambiguous (each window hosts a disjoint set of lanes).
+    Uses ``#{pane_start_command}`` rather than ``#{pane_title}`` because
+    start commands are immutable for the pane's lifetime, while pane
+    titles change dynamically (e.g. Claude Code TUI prepends spinner
+    characters like ``⠐`` or ``✳``).
 
     Args:
         lane_id: Lane identifier to look up (e.g. ``"author-a"``).
@@ -171,6 +174,7 @@ def _dynamic_pane_lookup(
     Returns:
         The pane index as a string, or ``None`` if resolution fails.
     """
+    needle = f"--name {lane_id}"
     try:
         result = subprocess.run(
             [
@@ -179,7 +183,7 @@ def _dynamic_pane_lookup(
                 "-t",
                 f"{tmux_session}:{window}",
                 "-F",
-                "#{pane_index} #{pane_title}",
+                "#{pane_index} #{pane_start_command}",
             ],
             capture_output=True,
             text=True,
@@ -189,7 +193,15 @@ def _dynamic_pane_lookup(
             return None
         for line in result.stdout.strip().splitlines():
             parts = line.split(None, 1)
-            if len(parts) >= 2 and lane_id in parts[1]:
+            if len(parts) < 2:
+                continue
+            cmd = parts[1]
+            idx = cmd.find(needle)
+            if idx < 0:
+                continue
+            # Verify needle is a complete token (not a prefix of a longer name)
+            end = idx + len(needle)
+            if end == len(cmd) or cmd[end] in (" ", "\t"):
                 return parts[0]
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
@@ -206,8 +218,9 @@ def _resolve_tmux_target(
     Resolution strategy (most to least reliable):
 
     1. **Dynamic lookup** — query ``tmux list-panes`` for the lane's window
-       and match pane titles against ``lane_id``.  This is always correct
-       regardless of ``pane-base-index`` or stale registry data.
+       and match ``--name <lane_id>`` in ``#{pane_start_command}``.  This is
+       always correct regardless of ``pane-base-index`` or stale registry
+       data, and is immune to TUI-driven pane title changes.
     2. **Registry fallback** — read ``tmux_window`` and ``tmux_pane`` from
        the lane's worktree registry entry.  Used when tmux is not available
        (e.g. in tests or before the session is started).
