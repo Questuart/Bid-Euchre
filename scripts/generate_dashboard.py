@@ -204,7 +204,7 @@ def generate_dashboard(repo: str, output: str) -> None:
         dtype=float,
     )
 
-    # ── Panel 3/4 metrics (git-log-based, commit date) ───────────────────
+    # ── Panel 4/5 metrics (git-log-based, commit date) ───────────────────
     gross_lines = np.array(
         [day_ins.get(d, 0) + day_del.get(d, 0) for d in sorted_dates], dtype=float
     )
@@ -252,6 +252,7 @@ def generate_dashboard(repo: str, output: str) -> None:
     net_valid = ~np.isnan(net_sma)
     add_valid = ~np.isnan(add_sma)
     churn_valid = ~np.isnan(lc_sma)
+    fc_valid = ~np.isnan(fc_sma)
 
     # ── Plot ─────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(
@@ -369,7 +370,7 @@ def generate_dashboard(repo: str, output: str) -> None:
         fc_upper,
         fc_lower,
         fc_pctb,
-        churn_valid,
+        fc_valid,
         latest_idx,
         band_color="#8e44ad",
         sma_color="#6c3483",
