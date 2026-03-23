@@ -1154,6 +1154,129 @@ class AntiPattern:
     evidence: dict[str, Any] = field(default_factory=dict)
 
 
+def _check_verbosity_waste(s: "UsageSummary") -> AntiPattern | None:
+    """Check for high output tokens relative to net lines changed."""
+    if s.net_lines <= 0 or s.total_tokens <= 0:
+        return None
+    tokens_per_net = s.total_tokens / s.net_lines
+    if tokens_per_net <= 500:
+        return None
+    return AntiPattern(
+        pattern_id="verbosity_waste",
+        name="Verbosity waste",
+        severity="high" if tokens_per_net > 1000 else "medium",
+        description=(
+            f"Spending {tokens_per_net:.0f} tokens per net line changed. "
+            f"Target: <500 tokens/net line."
+        ),
+        evidence={
+            "tokens_per_net_line": round(tokens_per_net, 1),
+            "total_tokens": s.total_tokens,
+            "net_lines": s.net_lines,
+        },
+    )
+
+
+def _check_retry_churn(
+    sessions: list[dict[str, Any]],
+) -> AntiPattern | None:
+    """Check for high proportion of zero-commit sessions."""
+    zero_commit_sessions = sum(1 for r in sessions if (r.get("git_commits") or 0) == 0)
+    zero_commit_pct = zero_commit_sessions / len(sessions) * 100
+    if zero_commit_pct <= 30:
+        return None
+    zero_commit_tokens = sum(
+        (r.get("input_tokens") or 0) + (r.get("output_tokens") or 0)
+        for r in sessions
+        if (r.get("git_commits") or 0) == 0
+    )
+    return AntiPattern(
+        pattern_id="retry_churn",
+        name="Retry/churn sessions",
+        severity="high" if zero_commit_pct > 50 else "medium",
+        description=(
+            f"{zero_commit_pct:.0f}% of sessions ({zero_commit_sessions}/{len(sessions)}) "
+            f"produced zero commits, consuming {zero_commit_tokens:,} tokens."
+        ),
+        evidence={
+            "zero_commit_sessions": zero_commit_sessions,
+            "total_sessions": len(sessions),
+            "zero_commit_pct": round(zero_commit_pct, 1),
+            "wasted_tokens": zero_commit_tokens,
+        },
+    )
+
+
+def _check_tool_error_tax(s: "UsageSummary") -> AntiPattern | None:
+    """Check for high tool error rate per token."""
+    if s.total_tokens <= 0:
+        return None
+    errors_per_1k = (s.total_tool_errors / s.total_tokens) * 1000
+    if errors_per_1k <= 5:
+        return None
+    return AntiPattern(
+        pattern_id="tool_error_tax",
+        name="Tool error tax",
+        severity="high" if errors_per_1k > 10 else "medium",
+        description=(
+            f"{errors_per_1k:.1f} tool errors per 1K tokens "
+            f"({s.total_tool_errors} errors across {s.total_tokens:,} tokens)."
+        ),
+        evidence={
+            "errors_per_1k_tokens": round(errors_per_1k, 2),
+            "total_tool_errors": s.total_tool_errors,
+            "total_tokens": s.total_tokens,
+        },
+    )
+
+
+def _check_read_amplification(s: "UsageSummary") -> AntiPattern | None:
+    """Check for high assistant-to-user message ratio."""
+    if s.total_user_messages <= 0:
+        return None
+    ratio = s.total_assistant_messages / s.total_user_messages
+    if ratio <= 20:
+        return None
+    return AntiPattern(
+        pattern_id="read_amplification",
+        name="Read amplification",
+        severity="medium",
+        description=(
+            f"{ratio:.1f} assistant messages per user message. "
+            f"High ratios indicate excessive tool use or verbose planning."
+        ),
+        evidence={
+            "assistant_per_user": round(ratio, 1),
+            "total_assistant_messages": s.total_assistant_messages,
+            "total_user_messages": s.total_user_messages,
+        },
+    )
+
+
+def _check_fragmentation(
+    sessions: list[dict[str, Any]],
+) -> AntiPattern | None:
+    """Check for many very short sessions suggesting handoff overhead."""
+    short_sessions = sum(1 for r in sessions if (r.get("duration_minutes") or 0) < 5)
+    short_pct = short_sessions / len(sessions) * 100
+    if short_pct <= 40:
+        return None
+    return AntiPattern(
+        pattern_id="fragmentation",
+        name="Session fragmentation",
+        severity="low",
+        description=(
+            f"{short_pct:.0f}% of sessions ({short_sessions}/{len(sessions)}) "
+            f"are under 5 minutes. Many tiny sessions suggest handoff overhead."
+        ),
+        evidence={
+            "short_sessions": short_sessions,
+            "total_sessions": len(sessions),
+            "short_pct": round(short_pct, 1),
+        },
+    )
+
+
 def detect_anti_patterns(*, output_dir: Path | None = None) -> list[AntiPattern]:
     """Flag high-waste token usage patterns.
 
@@ -1176,128 +1299,23 @@ def detect_anti_patterns(*, output_dir: Path | None = None) -> list[AntiPattern]
     """
     resolved_output = _resolve_output_dir(output_dir)
     sessions = _load_sessions(resolved_output)
-    findings: list[AntiPattern] = []
-
     if not sessions:
-        return findings
+        return []
 
     s = usage_summary(output_dir=resolved_output)
 
-    # 1. Verbosity waste: high output tokens with low net lines
-    if s.net_lines > 0 and s.total_tokens > 0:
-        tokens_per_net = s.total_tokens / s.net_lines
-        if tokens_per_net > 500:
-            findings.append(
-                AntiPattern(
-                    pattern_id="verbosity_waste",
-                    name="Verbosity waste",
-                    severity="high" if tokens_per_net > 1000 else "medium",
-                    description=(
-                        f"Spending {tokens_per_net:.0f} tokens per net line changed. "
-                        f"Target: <500 tokens/net line."
-                    ),
-                    evidence={
-                        "tokens_per_net_line": round(tokens_per_net, 1),
-                        "total_tokens": s.total_tokens,
-                        "net_lines": s.net_lines,
-                    },
-                )
-            )
+    checks: list[AntiPattern | None] = [
+        _check_verbosity_waste(s),
+        _check_retry_churn(sessions),
+        _check_tool_error_tax(s),
+        _check_read_amplification(s),
+        _check_fragmentation(sessions),
+    ]
 
-    # 2. Zero-commit sessions (retry/churn)
-    zero_commit_sessions = sum(1 for r in sessions if (r.get("git_commits") or 0) == 0)
-    zero_commit_pct = (zero_commit_sessions / len(sessions) * 100) if sessions else 0
-    zero_commit_tokens = sum(
-        (r.get("input_tokens") or 0) + (r.get("output_tokens") or 0)
-        for r in sessions
-        if (r.get("git_commits") or 0) == 0
-    )
-    if zero_commit_pct > 30:
-        findings.append(
-            AntiPattern(
-                pattern_id="retry_churn",
-                name="Retry/churn sessions",
-                severity="high" if zero_commit_pct > 50 else "medium",
-                description=(
-                    f"{zero_commit_pct:.0f}% of sessions ({zero_commit_sessions}/{len(sessions)}) "
-                    f"produced zero commits, consuming {zero_commit_tokens:,} tokens."
-                ),
-                evidence={
-                    "zero_commit_sessions": zero_commit_sessions,
-                    "total_sessions": len(sessions),
-                    "zero_commit_pct": round(zero_commit_pct, 1),
-                    "wasted_tokens": zero_commit_tokens,
-                },
-            )
-        )
+    findings = [f for f in checks if f is not None]
 
-    # 3. Tool error tax
-    if s.total_tokens > 0:
-        errors_per_1k = (s.total_tool_errors / s.total_tokens) * 1000
-        if errors_per_1k > 5:
-            findings.append(
-                AntiPattern(
-                    pattern_id="tool_error_tax",
-                    name="Tool error tax",
-                    severity="high" if errors_per_1k > 10 else "medium",
-                    description=(
-                        f"{errors_per_1k:.1f} tool errors per 1K tokens "
-                        f"({s.total_tool_errors} errors across {s.total_tokens:,} tokens)."
-                    ),
-                    evidence={
-                        "errors_per_1k_tokens": round(errors_per_1k, 2),
-                        "total_tool_errors": s.total_tool_errors,
-                        "total_tokens": s.total_tokens,
-                    },
-                )
-            )
-
-    # 4. Read amplification (high assistant/user ratio)
-    if s.total_user_messages > 0:
-        ratio = s.total_assistant_messages / s.total_user_messages
-        if ratio > 20:
-            findings.append(
-                AntiPattern(
-                    pattern_id="read_amplification",
-                    name="Read amplification",
-                    severity="medium",
-                    description=(
-                        f"{ratio:.1f} assistant messages per user message. "
-                        f"High ratios indicate excessive tool use or verbose planning."
-                    ),
-                    evidence={
-                        "assistant_per_user": round(ratio, 1),
-                        "total_assistant_messages": s.total_assistant_messages,
-                        "total_user_messages": s.total_user_messages,
-                    },
-                )
-            )
-
-    # 5. Session fragmentation (many very short sessions)
-    short_sessions = sum(1 for r in sessions if (r.get("duration_minutes") or 0) < 5)
-    short_pct = (short_sessions / len(sessions) * 100) if sessions else 0
-    if short_pct > 40:
-        findings.append(
-            AntiPattern(
-                pattern_id="fragmentation",
-                name="Session fragmentation",
-                severity="low",
-                description=(
-                    f"{short_pct:.0f}% of sessions ({short_sessions}/{len(sessions)}) "
-                    f"are under 5 minutes. Many tiny sessions suggest handoff overhead."
-                ),
-                evidence={
-                    "short_sessions": short_sessions,
-                    "total_sessions": len(sessions),
-                    "short_pct": round(short_pct, 1),
-                },
-            )
-        )
-
-    # Sort: high > medium > low
     severity_order = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda x: severity_order.get(x.severity, 99))
-
     return findings
 
 
