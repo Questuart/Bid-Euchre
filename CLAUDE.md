@@ -50,6 +50,7 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 
 ## Python
 
+- **Requires Python 3.10+**
 - Default to `uv run` for all Python commands (pytest, notebooks, scripts) — not raw `python` or `pip`.
 - Always run `ruff check` and `ruff format` before committing.
 - Watch for: unused imports after refactors, f-strings without placeholders, circular imports when modifying `__init__.py`.
@@ -93,6 +94,13 @@ make notebook-run-full  # Execute notebooks (QUICK mode, ~2-5min)
 ```
 These validate notebook execution but are **not** included in `make check`.
 
+### Review Infrastructure Testing (Not in make check)
+```bash
+make review-smoke       # SMOKE test review infra (~30s)
+make review-quick       # QUICK test review infra (~5min, needs Codex auth)
+make review-full        # FULL test review infra (~15min, needs Codex auth)
+```
+
 ### Running Experiments
 
 ```bash
@@ -132,6 +140,8 @@ uv run python -m pytest tests/unit/test_rules.py::test_specific  # Single test
 ```
 
 **Note:** All commands use `uv run` which handles the virtualenv automatically. If already in an activated venv, plain `python` works too.
+
+**Fresh worktrees:** `make check` auto-bootstraps the venv via `ensure-venv` (runs `uv sync` if `.venv` is missing). No manual setup needed after `git worktree add`.
 
 ## Architecture
 
@@ -231,6 +241,7 @@ See `docs/01_core/RULES.md` for complete rules specification.
 - `docs/01_core/EXPERIMENTS.md` — Experiment runner and output structure
 - `docs/01_core/REPRODUCIBILITY.md` — Seeding and determinism
 - `docs/02_agent/AGENTS.md` — Development workflow for AI agents (including governing plan framework, section 12)
+- `docs/02_agent/AGENT_EXECUTION_PROTOCOL.md` — Full agent execution protocol for governed initiatives
 - `docs/TESTING_STRATEGY.md` — Test layers, commands, and two-tier policy
 - `docs/STYLEGUIDE.md` — Coding conventions, placement rules, and hard constraints
 
@@ -242,133 +253,19 @@ See `docs/01_core/RULES.md` for complete rules specification.
 | Browser Game Hosting and Human Data Capture | `plans/browser_game/governing_plan.md` | ACTIVE |
 | Agentic Orchestration Platform | `plans/agent_ops/governing_plan.md` | ACTIVE |
 
-When starting work on a governed initiative, begin with the Agent Execution
-Protocol below.
+When starting work on a governed initiative, follow the Agent Execution Protocol.
 
 ## Agent Execution Protocol
 
-This section defines how autonomous agents discover, execute, and hand off
-work within governed initiatives. For the plan hierarchy itself (governing
-plans, sub-plans, registries, checkpoints), see `docs/02_agent/AGENTS.md`
-section 12.
+See `docs/02_agent/AGENT_EXECUTION_PROTOCOL.md` for the full protocol. Summary:
 
-### Discovery Order
+1. **Discovery:** Read `CLAUDE.md` → governing plan → `checkpoints.md` → `sub_plan_registry.md` → resume
+2. **Next work:** Find first `PENDING`/`IN_PROGRESS` step in checkpoints; if all `COMPLETE`, advance to next phase
+3. **Blockers:** Mark `BLOCKED` in checkpoints, log in `qa_log.md`, escalate — never silently work around
+4. **Completion:** Update checkpoints, verify `Validates` conditions, update `MEMORY.md`
+5. **Session handoff:** Update checkpoints + MEMORY.md, record partial progress, note uncommitted artifacts
 
-When an agent starts a session:
-
-1. **Read `CLAUDE.md`** — find the "Active Governing Plans" table above
-2. **Read the governing plan** — understand scope, current phase, step sequence
-3. **Read the active phase's `checkpoints.md`** — find the current step and status
-4. **Read the phase's `plan.md`** (if it exists) — for phase-specific details
-5. **Read `sub_plan_registry.md`** — check for in-progress or blocked sub-plans
-6. **Resume from the last recorded state**
-
-If no governing plan is active, fall back to `MEMORY.md` for context recovery.
-
-**`checkpoints.md` vs `state.json`:** For governed initiatives with an
-orchestrator (e.g., Arc D v2), `state.json` is the machine-readable execution
-state used by the orchestrator for automatic step selection and resume.
-`checkpoints.md` remains the human-readable progress log updated by agents at
-session boundaries. Both are maintained; `state.json` is authoritative for
-orchestrator decisions, `checkpoints.md` is authoritative for human-readable
-session handoff.
-
-### Determining the Next Runnable Unit of Work
-
-An agent determines what to do next by reading the checkpoint file:
-
-1. Find the first step with status `PENDING` or `IN_PROGRESS`.
-2. If the step is `IN_PROGRESS`, read the session log for where it left off.
-3. If the step is `BLOCKED`, check whether the blocker has been resolved.
-   If resolved, update status to `IN_PROGRESS` and proceed. If not, skip
-   to the next non-blocked step or escalate.
-4. If all steps are `COMPLETE`, the phase is done. Check the governing plan
-   for the next phase.
-
-**What blocks progression:**
-- A step's `Validates` conditions fail
-- A required sub-plan is `blocked`
-- A predecessor step is not `COMPLETE`
-- A hard dependency declared in the governing plan is unmet
-
-### Escalating Blockers
-
-When an agent encounters a blocker it cannot resolve:
-
-1. Mark the step `BLOCKED` in `checkpoints.md` with a clear description
-2. Log the issue in the phase's `qa_log.md` (if one exists) as status `open`
-3. Record the blocker in the session log entry in `checkpoints.md`
-4. Attempt to proceed with the next non-dependent step, if any
-5. If all remaining steps depend on the blocker, end the session with a
-   clear handoff note
-
-**Do not silently work around blockers.** If validation fails, do not
-hand-edit outputs. If a script produces unexpected results, do not
-improvise a replacement. Log and escalate.
-
-### Recording Completion
-
-When an agent completes a step:
-
-1. Update `checkpoints.md`: set step status to `COMPLETE`, record date and session
-2. If a sub-plan was involved, update its status in the sub-plan registry
-3. Verify the step's `Validates` conditions are met
-4. Proceed to the next step per the governing plan sequence
-
-When an agent completes a phase:
-
-1. Update all steps to `COMPLETE` in `checkpoints.md`
-2. Update the governing plan's checkpoint or progress tracking
-3. Check the governing plan for the next phase's prerequisites
-4. If the next phase has no unmet dependencies, begin it
-5. Update `MEMORY.md` with a summary
-
-### Session Handoff Requirements
-
-Before ending a session, an agent MUST:
-
-1. **Update `checkpoints.md`** with current step status
-2. **Record partial progress** if mid-step (e.g., "3/5 models trained")
-3. **Verify open issues** are logged in `qa_log.md` (if applicable)
-4. **Update `MEMORY.md`** with a one-line session summary
-5. **Note uncommitted artifacts** — either commit or record their location
-   in `checkpoints.md`
-
-The next agent reads `checkpoints.md` and resumes from the recorded state.
-No conversation history is required.
-
-**Timeout detection:** Long-running orchestrator agents write a heartbeat
-file every 60 seconds. Check with `run_rung.py --rung <rung> --check-alive`.
-If stale (>5 min), the agent has died and should be respawned -- `state.json`
-enables idempotent resume.
-
-**Agent reliability:** Spawned agents silently die when they exhaust their
-context window (~15 min or ~700KB output). Keep agent tasks small and focused
-(one concept per agent). Never combine fix + validation in one agent. See
-`.claude/rules/70_agent_reliability.md` for constraints.
-
-### When to Create a Sub-Plan
-
-Create a sub-plan when a governing plan step requires significant
-implementation work. See `docs/02_agent/AGENTS.md` section 12.3 for the
-full contract. Quick reference:
-
-- >3 files changed
-- New code (not just running existing scripts)
-- Design choices not specified in the governing plan
-
-Do NOT create a sub-plan for:
-- Running a command from the governing plan
-- Filling in a checkpoint or table
-- Minor adjustments within a single file
-
-### Plan Templates
-
-| Template | Location | Use For |
-|----------|----------|---------|
-| Governing plan | `plans/_templates/governing_plan.md` | New major initiatives |
-| Sub-plan | `plans/_templates/sub_plan.md` | Bounded implementation work |
-| Checkpoints | `plans/_templates/checkpoints.md` | Phase/rung progress tracking |
-| Sub-plan registry | `plans/_templates/sub_plan_registry.md` | Index of all sub-plans |
-| Session plan | `plans/sessions/TEMPLATE.md` | Standalone one-off work |
-# trigger CI
+**Key constraints:**
+- Spawned agents die silently at ~15 min / ~700KB — keep tasks small (see `.claude/rules/70_agent_reliability.md`)
+- `checkpoints.md` is authoritative for human handoff; `state.json` for orchestrator decisions
+- Create sub-plans for steps with >3 files changed or design choices not in the governing plan
