@@ -818,6 +818,7 @@ def retire_worker(
 def reset_worktree(
     lane_id: str,
     *,
+    force: bool = False,
     runtime_dir: Path | None = None,
 ) -> PoolAction:
     """Reset a lane's worktree to origin/main.
@@ -826,8 +827,17 @@ def reset_worktree(
     target worktree.  This ensures the worktree starts from a clean state
     before a new task begins.
 
+    Before resetting, checks for uncommitted changes.  If the worktree is
+    dirty and *force* is ``False``, the reset is aborted and a
+    ``dirty_worktree`` error is returned.  If *force* is ``True``, the diff
+    is saved to ``/tmp/<lane_id>.diff`` before proceeding with the reset so
+    that no work is silently lost.
+
     Args:
         lane_id: Lane whose worktree should be reset.
+        force: If ``True``, save any uncommitted diff and proceed with the
+            reset even when the worktree is dirty.  If ``False`` (default),
+            abort when the worktree is dirty.
         runtime_dir: Override for the runtime directory root.
 
     Returns:
@@ -845,6 +855,48 @@ def reset_worktree(
         )
 
     try:
+        # --- dirty-worktree guard -------------------------------------------
+        status_result = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=worktree_path,
+            check=True,
+            capture_output=True,
+            timeout=10,
+            text=True,
+        )
+        is_dirty = bool(status_result.stdout.strip())
+
+        if is_dirty and not force:
+            dirty_files = status_result.stdout.strip()
+            return PoolAction(
+                action="reset_worktree",
+                lane_id=lane_id,
+                reason=(
+                    f"Worktree at {worktree_path} has uncommitted changes "
+                    f"(use force=True to save diff and proceed):\n{dirty_files}"
+                ),
+                executed=False,
+                error="dirty_worktree",
+            )
+
+        if is_dirty and force:
+            diff_path = Path(f"/tmp/{lane_id}.diff")
+            diff_result = subprocess.run(
+                ["git", "diff", "HEAD"],
+                cwd=worktree_path,
+                check=True,
+                capture_output=True,
+                timeout=15,
+                text=True,
+            )
+            diff_path.write_text(diff_result.stdout)
+            logger.warning(
+                "Worktree for %s was dirty — diff saved to %s",
+                lane_id,
+                diff_path,
+            )
+
+        # --- reset -----------------------------------------------------------
         subprocess.run(
             ["git", "fetch", "origin", "main"],
             cwd=worktree_path,
@@ -859,10 +911,14 @@ def reset_worktree(
             capture_output=True,
             timeout=15,
         )
+
+        reason = f"Reset worktree at {worktree_path} to origin/main"
+        if is_dirty:
+            reason += f" (dirty diff saved to /tmp/{lane_id}.diff)"
         return PoolAction(
             action="reset_worktree",
             lane_id=lane_id,
-            reason=f"Reset worktree at {worktree_path} to origin/main",
+            reason=reason,
             executed=True,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -1119,7 +1175,7 @@ def dispatch_to_worker(
 
     # 3b. Reset worktree and clear session if requested
     if reset:
-        reset_result = reset_worktree(lane_id, runtime_dir=runtime_dir)
+        reset_result = reset_worktree(lane_id, force=True, runtime_dir=runtime_dir)
         if not reset_result.executed:
             logger.warning(
                 "Worktree reset failed for %s: %s (continuing dispatch)",

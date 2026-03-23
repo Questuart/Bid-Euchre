@@ -1739,22 +1739,47 @@ class TestNudgePane:
 class TestResetWorktree:
     """Test reset_worktree() with mocked subprocess and worktree resolution."""
 
+    @staticmethod
+    def _make_status_clean() -> MagicMock:
+        """Return a mock CompletedProcess for a clean ``git status --short``."""
+        m = MagicMock(returncode=0)
+        m.stdout = ""
+        return m
+
+    @staticmethod
+    def _make_status_dirty(files: str = " M foo.py\n?? bar.py") -> MagicMock:
+        m = MagicMock(returncode=0)
+        m.stdout = files
+        return m
+
+    @staticmethod
+    def _make_diff(content: str = "diff --git a/foo.py ...") -> MagicMock:
+        m = MagicMock(returncode=0)
+        m.stdout = content
+        return m
+
+    # -- clean worktree (original happy path) --------------------------------
+
     @patch(f"{_WORKER_POOL}._resolve_worktree_path")
     @patch(f"{_WORKER_POOL}.subprocess.run")
     def test_reset_success(self, mock_run: MagicMock, mock_resolve: MagicMock) -> None:
         mock_resolve.return_value = "/tmp/wt-author-a"
-        mock_run.return_value = MagicMock(returncode=0)
+        clean_status = self._make_status_clean()
+        ok = MagicMock(returncode=0)
+        mock_run.side_effect = [clean_status, ok, ok]  # status, fetch, reset
         result = reset_worktree("author-a")
         assert result.executed is True
         assert result.action == "reset_worktree"
         assert result.error is None
         assert "origin/main" in result.reason
-        # Should call git fetch then git reset
-        assert mock_run.call_count == 2
-        fetch_call = mock_run.call_args_list[0]
+        # Should call git status, git fetch, git reset
+        assert mock_run.call_count == 3
+        status_call = mock_run.call_args_list[0]
+        assert status_call[0][0] == ["git", "status", "--short"]
+        fetch_call = mock_run.call_args_list[1]
         assert fetch_call[0][0] == ["git", "fetch", "origin", "main"]
         assert fetch_call[1]["cwd"] == "/tmp/wt-author-a"
-        reset_call = mock_run.call_args_list[1]
+        reset_call = mock_run.call_args_list[2]
         assert reset_call[0][0] == ["git", "reset", "--hard", "origin/main"]
         assert reset_call[1]["cwd"] == "/tmp/wt-author-a"
 
@@ -1773,7 +1798,8 @@ class TestResetWorktree:
         import subprocess as sp
 
         mock_resolve.return_value = "/tmp/wt-author-a"
-        mock_run.side_effect = sp.CalledProcessError(1, "git")
+        clean_status = self._make_status_clean()
+        mock_run.side_effect = [clean_status, sp.CalledProcessError(1, "git")]
         result = reset_worktree("author-a")
         assert result.executed is False
         assert result.error == "reset_failed"
@@ -1784,10 +1810,79 @@ class TestResetWorktree:
         import subprocess as sp
 
         mock_resolve.return_value = "/tmp/wt-author-a"
-        mock_run.side_effect = sp.TimeoutExpired("git", 30)
+        clean_status = self._make_status_clean()
+        mock_run.side_effect = [clean_status, sp.TimeoutExpired("git", 30)]
         result = reset_worktree("author-a")
         assert result.executed is False
         assert result.error == "reset_failed"
+
+    # -- dirty worktree guard ------------------------------------------------
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_dirty_worktree_aborts_without_force(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
+        """Dirty worktree + force=False → error='dirty_worktree', no reset."""
+        mock_resolve.return_value = "/tmp/wt-author-a"
+        mock_run.return_value = self._make_status_dirty()
+        result = reset_worktree("author-a")
+        assert result.executed is False
+        assert result.error == "dirty_worktree"
+        assert "uncommitted changes" in result.reason
+        assert "foo.py" in result.reason
+        # Only git status was called — no fetch/reset
+        assert mock_run.call_count == 1
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_dirty_worktree_force_saves_diff(
+        self, mock_run: MagicMock, mock_resolve: MagicMock, tmp_path: Path
+    ) -> None:
+        """Dirty worktree + force=True → saves diff, then resets successfully."""
+        mock_resolve.return_value = "/tmp/wt-author-a"
+        dirty_status = self._make_status_dirty()
+        diff_mock = self._make_diff("diff content here")
+        ok = MagicMock(returncode=0)
+        mock_run.side_effect = [
+            dirty_status,
+            diff_mock,
+            ok,
+            ok,
+        ]  # status, diff, fetch, reset
+
+        diff_path = Path("/tmp/author-a.diff")
+        result = reset_worktree("author-a", force=True)
+
+        assert result.executed is True
+        assert result.error is None
+        assert "origin/main" in result.reason
+        assert "dirty diff saved" in result.reason
+        # 4 calls: status, diff, fetch, reset
+        assert mock_run.call_count == 4
+        diff_call = mock_run.call_args_list[1]
+        assert diff_call[0][0] == ["git", "diff", "HEAD"]
+        # Verify the diff was written to /tmp/<lane>.diff
+        assert diff_path.exists()
+        assert diff_path.read_text() == "diff content here"
+        # Cleanup
+        diff_path.unlink(missing_ok=True)
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_clean_worktree_with_force(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
+        """Clean worktree + force=True → proceeds normally (no diff save)."""
+        mock_resolve.return_value = "/tmp/wt-author-a"
+        clean_status = self._make_status_clean()
+        ok = MagicMock(returncode=0)
+        mock_run.side_effect = [clean_status, ok, ok]
+        result = reset_worktree("author-a", force=True)
+        assert result.executed is True
+        assert result.error is None
+        # 3 calls: status, fetch, reset (no diff save needed)
+        assert mock_run.call_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -1925,7 +2020,9 @@ class TestDispatchWithReset:
             "pkt1", "author-a", runtime_dir=runtime_dir, reset=True
         )
         assert result.executed is True
-        mock_reset.assert_called_once_with("author-a", runtime_dir=runtime_dir)
+        mock_reset.assert_called_once_with(
+            "author-a", force=True, runtime_dir=runtime_dir
+        )
         mock_clear.assert_called_once()
         mock_sleep.assert_called_once_with(2)
 
