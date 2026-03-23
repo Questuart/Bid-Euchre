@@ -1,0 +1,263 @@
+"""SQLAlchemy models and session management for hosted play.
+
+Models mirror the reference schema in ``web/schema.sql``.  V1 uses SQLite
+for local development and Postgres for deployed environments; SQLAlchemy
+abstracts the difference.
+
+The ``match_state_json`` column stores a fully serialized ``MatchState``
+for browser-refresh resume — no complex ORM mapping of nested game state.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    event,
+)
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+# ---------------------------------------------------------------------------
+# Base
+# ---------------------------------------------------------------------------
+
+
+class Base(DeclarativeBase):
+    """Declarative base for all hosted-play models."""
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+
+class Player(Base):
+    __tablename__ = "players"
+
+    id = Column(Integer, primary_key=True)
+    link_uuid = Column(String, nullable=False, unique=True)
+    nickname = Column(String, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Player id={self.id} nickname={self.nickname!r}>"
+
+
+class Match(Base):
+    __tablename__ = "matches"
+
+    id = Column(Integer, primary_key=True)
+    match_uuid = Column(String, nullable=False, unique=True)
+    player_id = Column(
+        Integer,
+        ForeignKey("players.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ai_model = Column(String, nullable=False)
+    status = Column(
+        String,
+        CheckConstraint("status IN ('active', 'complete', 'abandoned')"),
+        nullable=False,
+    )
+    seed = Column(Integer, nullable=False)
+    score_human = Column(Integer, nullable=False, default=0)
+    score_ai = Column(Integer, nullable=False, default=0)
+    hands_played = Column(Integer, nullable=False, default=0)
+    current_hand_number = Column(Integer, nullable=False, default=0)
+    match_state_json = Column(Text, nullable=False)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_matches_player_status", "player_id", "status", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Match id={self.id} uuid={self.match_uuid!r} status={self.status!r}>"
+
+
+class Hand(Base):
+    __tablename__ = "hands"
+
+    id = Column(Integer, primary_key=True)
+    match_id = Column(
+        Integer,
+        ForeignKey("matches.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    hand_number = Column(Integer, nullable=False)
+    deal_id = Column(Integer, nullable=False)
+    dealer_seat = Column(
+        Integer,
+        CheckConstraint("dealer_seat BETWEEN 0 AND 3"),
+        nullable=False,
+    )
+    status = Column(
+        String,
+        CheckConstraint("status IN ('in_progress', 'redeal', 'complete')"),
+        nullable=False,
+    )
+    winning_bid_n = Column(Integer, nullable=True)
+    winning_contract = Column(
+        String,
+        CheckConstraint(
+            "winning_contract IS NULL "
+            "OR winning_contract IN ('C', 'D', 'H', 'S', 'HIGH', 'LOW')"
+        ),
+        nullable=True,
+    )
+    bidder_seat = Column(
+        Integer,
+        CheckConstraint("bidder_seat IS NULL OR bidder_seat BETWEEN 0 AND 3"),
+        nullable=True,
+    )
+    contract_type = Column(
+        String,
+        CheckConstraint(
+            "contract_type IS NULL OR contract_type IN ('suit', 'high', 'low')"
+        ),
+        nullable=True,
+    )
+    trump_suit = Column(
+        String,
+        CheckConstraint("trump_suit IS NULL OR trump_suit IN ('C', 'D', 'H', 'S')"),
+        nullable=True,
+    )
+    tricks_team0 = Column(Integer, nullable=False, default=0)
+    tricks_team1 = Column(Integer, nullable=False, default=0)
+    points_team0 = Column(Integer, nullable=False, default=0)
+    points_team1 = Column(Integer, nullable=False, default=0)
+    hand_state_json = Column(Text, nullable=False)
+    started_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("match_id", "hand_number"),
+        Index("idx_hands_match_number", "match_id", "hand_number"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Hand id={self.id} match={self.match_id} "
+            f"hand_number={self.hand_number} status={self.status!r}>"
+        )
+
+
+class Decision(Base):
+    __tablename__ = "decisions"
+
+    id = Column(Integer, primary_key=True)
+    match_id = Column(
+        Integer,
+        ForeignKey("matches.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    hand_id = Column(
+        Integer,
+        ForeignKey("hands.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    turn_number = Column(
+        Integer,
+        CheckConstraint("turn_number >= 0"),
+        nullable=False,
+    )
+    seat = Column(
+        Integer,
+        CheckConstraint("seat BETWEEN 0 AND 3"),
+        nullable=False,
+    )
+    phase = Column(
+        String,
+        CheckConstraint("phase IN ('bid', 'play')"),
+        nullable=False,
+    )
+    actor_type = Column(
+        String,
+        CheckConstraint("actor_type IN ('human', 'ai')"),
+        nullable=False,
+    )
+    decision_source = Column(String, nullable=False)
+    legal_actions_json = Column(Text, nullable=False)
+    chosen_action_json = Column(Text, nullable=False)
+    game_state_json = Column(Text, nullable=False)
+    decision_time_ms = Column(
+        Integer,
+        CheckConstraint("decision_time_ms IS NULL OR decision_time_ms >= 0"),
+        nullable=True,
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("hand_id", "turn_number"),
+        Index("idx_decisions_match_turn", "match_id", "hand_id", "turn_number"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Decision id={self.id} hand={self.hand_id} "
+            f"turn={self.turn_number} seat={self.seat}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Engine / session helpers
+# ---------------------------------------------------------------------------
+
+
+def _enable_sqlite_fks(dbapi_conn, connection_record):  # noqa: ARG001
+    """Enable foreign key enforcement for SQLite connections."""
+    dbapi_conn.execute("PRAGMA foreign_keys = ON")
+
+
+def init_engine(database_url: str):
+    """Create a SQLAlchemy engine with appropriate settings.
+
+    For SQLite, enables foreign key enforcement via a connection event.
+    """
+    engine = create_engine(database_url, echo=False)
+    if database_url.startswith("sqlite"):
+        event.listen(engine, "connect", _enable_sqlite_fks)
+    return engine
+
+
+def create_tables(engine) -> None:
+    """Create all tables (idempotent — safe to call on every startup)."""
+    Base.metadata.create_all(engine)
+
+
+def make_session_factory(engine) -> sessionmaker[Session]:
+    """Return a configured session factory bound to *engine*."""
+    return sessionmaker(bind=engine)
