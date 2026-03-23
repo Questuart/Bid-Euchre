@@ -1223,6 +1223,33 @@ These are the short names future handoffs should use.
   - verify the steward session is launched with the needed `--channels` entries
   - verify plugin/runtime prerequisites before proving (for example Bun for
     official plugins)
+- channel-aware startup path:
+  - the tmux launcher (`steward-session.sh`) gains an optional
+    `STEWARD_CHANNELS` environment variable (e.g.,
+    `STEWARD_CHANNELS="telegram"` or `STEWARD_CHANNELS="telegram,discord"`)
+  - when `STEWARD_CHANNELS` is set, the launcher runs a preflight check
+    before creating any tmux windows:
+    1. confirm `claude --version` reports a channels-capable build
+    2. confirm each named channel plugin is resolvable (e.g., the Bun-based
+       Telegram plugin exists at the expected path)
+    3. confirm auth prerequisites are satisfied (claude.ai login, plugin
+       pairing tokens)
+    4. if any preflight check fails, log the failure and fall back to the
+       tmux-only startup path (no `--channels` flags), so the steward session
+       is never blocked by channel misconfiguration
+  - when preflight passes, each lane launch command adds `--channels`
+    entries derived from `STEWARD_CHANNELS`:
+    ```
+    $CLAUDE_BIN --name orchestrator --agent steward-orchestrator \
+      --channels telegram
+    ```
+    only the orchestrator and ops lanes receive `--channels` by default;
+    author lanes remain tmux-only unless explicitly opted in
+  - the registry metadata (`write_lane_metadata`) records which channels
+    were enabled for each lane, so the supervisor and dashboard can surface
+    channel health alongside lane status
+  - this startup path is additive — omitting `STEWARD_CHANNELS` preserves
+    the existing tmux-only behavior with no changes to the launch sequence
 - proving ladder:
   - prove the channel shape locally first with a non-production path
     (for example fakechat or a minimal webhook channel server)
