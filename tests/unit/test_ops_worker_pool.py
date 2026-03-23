@@ -1978,17 +1978,11 @@ class TestDispatchNudgeIntegration:
             with patch("bid_euchre.ops.message_bus.create_message") as mock_cm:
                 mock_cm.return_value = MagicMock(message_id="msg123")
                 with patch(
-                    "bid_euchre.ops.message_bus._update_inbox_status"
-                ) as mock_update:
-                    with patch(
-                        "bid_euchre.ops.message_bus.shared_bus_root"
-                    ) as mock_root:
-                        mock_root.return_value = Path("/tmp/bus")
-                        result = dispatch_to_worker(
-                            "pkt1", "author-a", runtime_dir=runtime_dir
-                        )
+                    "bid_euchre.ops.message_bus.mark_delivered"
+                ) as mock_delivered:
+                    result = dispatch_to_worker(
+                        "pkt1", "author-a", runtime_dir=runtime_dir
+                    )
 
         assert result.executed is True
-        mock_update.assert_called_once_with(
-            "msg123", "author-a", "delivered", Path("/tmp/bus")
-        )
+        mock_delivered.assert_called_once_with("msg123", "author-a")
