@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-23 by author-d (SP-3-05 closeout, after SP-4-01)
+**Last updated:** 2026-03-23 by author-scratch (register SP-4-02)
 
 ---
 
@@ -36,6 +36,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
 | SP-4-01 | `4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | completed | Step 0 |
+| SP-4-02 | `4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | in_progress | Pre-Platform-8 |
 
 ## Blockers
 
@@ -50,3 +51,4 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | 2026-03-23 | Phase 4 plan and checkpoints created. Official Claude Code Channels discovery (v2.1.80+) reduces Platform-8a scope from "build transport skeleton" to "configure official Telegram plugin." Permission relay and sender gating are framework-provided. Audit trail deferred to hardening (Platform-14). |
 | 2026-03-23 | SP-3-05 blocker cleared. Dual-domain layout shipped (PRs #1281–#1294), proving run passed. 4-window tiled layout canonical, 12 worker lanes active across platform/browser-game/flex pools. |
 | 2026-03-23 | Step 0 (scope lock): SP-4-01 sub-plan created and registered. Key decisions: free-form messages allowed, no remote command grammar, orchestrator is single ingress, author lanes remain tmux-only. Platform-8b audit trail tracked in issue #1324. Phase status moved from PENDING to IN_PROGRESS. |
+| 2026-03-23 | SP-4-02 registered and committed. Preflight hardening plan covers 6 steps: lifecycle proving, operational cleanup, stall recovery, scope enforcement, reset/clear validation, and auto-dispatch. Gated rollout order (Steps 1-2 first, then 3-4 parallel, then 5-6). |
