@@ -12,7 +12,7 @@
 |------|--------|------|---------------|-------|
 | Step 0: Draft governing plan and initiative scaffold | COMPLETE | 2026-03-14 | Codex | Governing plan, amendments log, registry, and phase checkpoints created. |
 | Step 1: Lock hosted-play rules contract | COMPLETE | 2026-03-15 | Codex | Authoritative rules contract now lives at `docs/01_core/HOSTED_PLAY_RULES.md`; planning draft left as a pointer only. |
-| Step 2: Add dependencies and package skeleton | IN_PROGRESS | 2026-03-15 | Codex | `hosted` extras added to `pyproject.toml`; package skeleton still pending. |
+| Step 2: Add dependencies and package skeleton | COMPLETE | 2026-03-23 | brws-author-a | `hosted` extras in `pyproject.toml`; package skeleton added (`src/bid_euchre/hosted_play/__init__.py`, `web/__init__.py`). |
 | Step 3: Create database schema | PENDING | -- | -- | Create `web/schema.sql` with players, matches, hands, decisions tables. See governing plan §5.2 and SP-2-01. |
 | Step 4: Inventory model artifacts | COMPLETE | 2026-03-15 | Codex | Verified `heuristic` is always available; hybrid and GBT artifacts exist under `data/artifacts/arc_d/r0/` and `data/artifacts/arc_d_v2/r0/`. |
 | Step 5: Promote plan to ACTIVE | COMPLETE | 2026-03-15 | Codex | Governing plan status set to `ACTIVE`; Phase 0 now tracks only execution-prep work. |
@@ -26,10 +26,14 @@
 ## Blockers
 
 - [x] ~~Authoritative hosted-play rules doc~~ → `docs/01_core/HOSTED_PLAY_RULES.md`
-- [ ] Package skeleton not yet added (`src/bid_euchre/hosted_play/__init__.py`, `web/__init__.py`)
+- [x] ~~Package skeleton~~ → `src/bid_euchre/hosted_play/__init__.py`, `web/__init__.py`
 - [ ] Initial database schema not yet locked in files
 
 ## Session Log
+
+### 2026-03-23 -- brws-author-a
+- Completed: Added package skeleton — `src/bid_euchre/hosted_play/__init__.py` and `web/__init__.py`. Step 2 → COMPLETE.
+- Next: Step 3 (database schema) remains PENDING.
 
 ### 2026-03-15 -- Codex
 - Completed: Promoted the hosted-play rules draft into the authoritative docs path, added the `hosted` dependency extra to `pyproject.toml`, and locked the initial artifact roster in the planning docs.
