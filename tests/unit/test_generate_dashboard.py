@@ -23,6 +23,7 @@ from generate_dashboard import (  # noqa: E402
     _bollinger,
     _draw_bollinger_panel,
     _gather_pr_counts,
+    generate_dashboard,
 )
 
 
@@ -117,6 +118,82 @@ class TestBollinger:
         assert not np.array_equal(valid_a, valid_b)
         assert valid_a.sum() == 3  # indices 2, 3, 4
         assert valid_b.sum() == 1  # index 4 only
+
+
+class TestGenerateDashboardWiring:
+    """Wiring tests that exercise generate_dashboard() end-to-end with mock data."""
+
+    def _make_dates(self, n: int = 12) -> list[str]:
+        return [f"2026-03-{d:02d}" for d in range(1, n + 1)]
+
+    def test_panel5_receives_file_churn_data(self, tmp_path):
+        """Panel 5 (file churn) receives file_churn_pct, not churn_pct from Panel 4.
+
+        Wiring regression test for the validity mask fix in PR #1365 / #1346.
+        The existing test_validity_mask_independence covers _bollinger independence;
+        this test verifies generate_dashboard() passes the correct data and mask
+        to each panel's _draw_bollinger_panel call.
+        """
+        dates = self._make_dates(12)
+
+        # PR data: 1 PR per day, 10 additions, 5 deletions
+        pr_counts = {d: 1 for d in dates}
+        pr_additions = {d: 10 for d in dates}
+        pr_deletions = {d: 5 for d in dates}
+
+        # Line stats: 100 insertions, 20 deletions per day
+        # → gross = 120, net = 80, churn_ratio = 1 - 80/120 ≈ 0.333, churn_pct ≈ 33.33
+        day_ins = {d: 100 for d in dates}
+        day_del = {d: 20 for d in dates}
+
+        # File churn: 10 unique files, 3 churned per day
+        # → file_churn_ratio = 3/10 = 0.30, file_churn_pct = 30.0
+        unique_files = {d: 10 for d in dates}
+        churned_files = {d: 3 for d in dates}
+
+        draw_calls: list[dict] = []
+
+        def tracking_draw(*args, **kwargs):
+            # args[2] = data array, args[7] = valid mask
+            draw_calls.append({"data": args[2].copy(), "valid": args[7].copy()})
+
+        output_path = str(tmp_path / "test_dashboard.png")
+
+        with (
+            patch(
+                "generate_dashboard._gather_pr_counts",
+                return_value=(pr_counts, pr_additions, pr_deletions),
+            ),
+            patch(
+                "generate_dashboard._gather_line_stats",
+                return_value=(day_ins, day_del),
+            ),
+            patch(
+                "generate_dashboard._gather_file_churn",
+                return_value=(unique_files, churned_files),
+            ),
+            patch(
+                "generate_dashboard._draw_bollinger_panel",
+                side_effect=tracking_draw,
+            ),
+        ):
+            generate_dashboard("/fake/repo", output_path)
+
+        assert len(draw_calls) == 5, f"Expected 5 panel draws, got {len(draw_calls)}"
+
+        # Panel 4 (line churn): churn_pct ≈ 33.33 for every date
+        panel4_data = draw_calls[3]["data"]
+        assert panel4_data[0] == pytest.approx(33.33, abs=0.1)
+
+        # Panel 5 (file churn): file_churn_pct = 30.0 for every date
+        panel5_data = draw_calls[4]["data"]
+        assert panel5_data[0] == pytest.approx(30.0, abs=0.1)
+
+        # The two panels must receive different data arrays
+        assert not np.allclose(panel4_data, panel5_data), (
+            "Panel 4 and Panel 5 should receive different data arrays "
+            "(churn_pct vs file_churn_pct)"
+        )
 
 
 class TestDrawBollingerPanel:
