@@ -404,7 +404,7 @@ def _expire_stale_on_read(
 
     Only non-terminal messages with a numeric ``ttl_seconds`` are checked.
     """
-    current_time = now or time.time()
+    current_time = now if now is not None else time.time()
     terminal = {"resolved", "expired", "dead_lettered"}
 
     for mid, rec in list(by_id.items()):
@@ -850,7 +850,7 @@ def check_expired(
     if not inbox_dir.exists():
         return []
 
-    current_time = now or time.time()
+    current_time = now if now is not None else time.time()
     expired_msgs: list[dict[str, Any]] = []
 
     for inbox_file in sorted(inbox_dir.glob("*.jsonl")):
