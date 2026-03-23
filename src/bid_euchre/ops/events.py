@@ -55,6 +55,7 @@ VALID_EVENT_TYPES = frozenset(
         "review_request",
         "review_verdict",
         "message_sent",
+        "message_delivered",
         "message_acked",
         "message_resolved",
         "message_expired",

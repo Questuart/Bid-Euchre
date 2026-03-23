@@ -637,6 +637,54 @@ def _update_inbox_status(
     return updated
 
 
+def mark_delivered(
+    message_id: str,
+    lane_id: str,
+    bus_root: Path | None = None,
+    *,
+    events_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Mark a message as delivered in a lane's inbox.
+
+    Transitions the message from ``pending`` to ``delivered``.
+    This is the public API for cross-module callers (e.g. worker_pool)
+    that need to record successful delivery without reaching into private
+    inbox internals.
+
+    Args:
+        message_id: The message to mark as delivered.
+        lane_id: The lane whose inbox contains the message.
+        bus_root: Override for bus root directory.
+        events_dir: Override for events directory (for testing).
+
+    Returns:
+        The updated record, or None if message not found.
+    """
+    root = shared_bus_root(bus_root)
+    updated = _update_inbox_status(
+        message_id,
+        lane_id,
+        "delivered",
+        root,
+    )
+
+    if updated is not None:
+        try:
+            from bid_euchre.ops.events import append_event
+
+            append_event(
+                "message_delivered",
+                "ops.message_bus",
+                lane_id,
+                {"message_id": message_id},
+                events_dir=events_dir,
+            )
+        except Exception:
+            logger.warning("Failed to emit message_delivered event for %s", message_id)
+
+    return updated
+
+
 def ack_message(
     message_id: str,
     lane_id: str,

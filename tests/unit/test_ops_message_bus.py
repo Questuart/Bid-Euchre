@@ -33,6 +33,7 @@ from bid_euchre.ops.message_bus import (
     create_message,
     import_native_inbox,
     inbox_stats,
+    mark_delivered,
     query_unresolved,
     read_inbox,
     read_messages,
@@ -499,6 +500,73 @@ class TestSendMessage:
 
         with pytest.raises(ValueError, match="Duplicate message_id"):
             send_message(msg, bus_root, events_dir=events_dir)
+
+
+# ---------------------------------------------------------------------------
+# Delivery semantics: mark_delivered
+# ---------------------------------------------------------------------------
+
+
+class TestMarkDelivered:
+    """Test mark_delivered public API."""
+
+    def test_mark_delivered_updates_inbox(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        msg = create_message("orchestrator", "author-a", "assignment", "Work")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        result = mark_delivered(
+            msg.message_id, "author-a", bus_root, events_dir=events_dir
+        )
+        assert result is not None
+        assert result["status"] == "delivered"
+
+    def test_mark_delivered_emits_event(self, bus_root: Path, events_dir: Path) -> None:
+        msg = create_message("orchestrator", "author-a", "assignment", "Work")
+        send_message(msg, bus_root, events_dir=events_dir)
+        mark_delivered(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        events_file = events_dir / "events.jsonl"
+        lines = events_file.read_text().strip().split("\n")
+        delivered_events = [
+            json.loads(line)
+            for line in lines
+            if json.loads(line)["event_type"] == "message_delivered"
+        ]
+        assert len(delivered_events) == 1
+        assert delivered_events[0]["payload"]["message_id"] == msg.message_id
+
+    def test_mark_delivered_nonexistent_returns_none(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        result = mark_delivered(
+            "nonexistent", "some-lane", bus_root, events_dir=events_dir
+        )
+        assert result is None
+
+    def test_mark_delivered_already_delivered_raises(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Delivering an already-delivered message raises (delivered -> delivered not valid)."""
+        msg = create_message("orchestrator", "author-a", "assignment", "Work")
+        send_message(msg, bus_root, events_dir=events_dir)
+        mark_delivered(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        with pytest.raises(ValueError, match="Invalid transition"):
+            mark_delivered(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+    def test_mark_delivered_then_ack(self, bus_root: Path, events_dir: Path) -> None:
+        """A delivered message can be acked (delivered -> acked is valid)."""
+        msg = create_message("orchestrator", "author-a", "assignment", "Work")
+        send_message(msg, bus_root, events_dir=events_dir)
+        mark_delivered(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        result = ack_message(
+            msg.message_id, "author-a", bus_root, events_dir=events_dir
+        )
+        assert result is not None
+        assert result["status"] == "acked"
 
 
 # ---------------------------------------------------------------------------
