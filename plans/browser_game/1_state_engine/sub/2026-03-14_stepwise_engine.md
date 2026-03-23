@@ -52,7 +52,7 @@ class HandState:
     deal_id: int
 
     # Auction state
-    auction: List[dict] = field(default_factory=list)  # [{seat, action, n, contract, trump}, ...]
+    auction: List[dict] = field(default_factory=list)  # [{seat, n, action, contract, bid_type}, ...]
     current_high_bid: int = 0
     bidder_seat: Optional[int] = None
     winning_bid: Optional[int] = None
