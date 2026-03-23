@@ -108,6 +108,9 @@ Active sub-plans are tracked in `plans/agent_ops/sub_plan_registry.md`.
 | SP-3-03 | BD-004 v1 pane delivery | completed |
 | SP-3-04 | Phase 3 closeout and transition entry | completed |
 | SP-3-05 | Dual-domain steward layout transition | proposed |
+| SP-3-06 | Task dispatch CLI and execution-surface hardening | completed |
+| SP-3-07 | Bidirectional message bus across all steward lanes | completed |
+| SP-3-08 | Monitoring cycle with session-start auto-launch | completed |
 
 ## Step Sequence
 

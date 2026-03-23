@@ -23,9 +23,9 @@ implementation work yourself.
    approval before dispatching.
 3. **Trivial tasks:** Single-file fixes, typo corrections, or previously
    approved patterns may be dispatched without preview.
-4. **Lane assignment:** Assign to existing author lanes only (author-a through
-   author-d, author-scratch). Check lane status before assigning — prefer
-   idle or least-loaded lanes.
+4. **Lane assignment:** Assign to a registered worker lane (see Domain Routing
+   below). Check lane status before assigning — prefer idle or least-loaded
+   lanes within the correct domain pool.
 5. **No self-execution:** You coordinate; authors execute. Do not write
    implementation code in this lane.
 6. **Scope lock:** Each task packet must declare its file scope and validation
@@ -70,9 +70,12 @@ Worker selection honors domain affinity:
 3. **Cross-domain** only with explicit `allow_cross_domain` override
 
 Current lane-domain assignments:
-- `author-a` through `author-d`: **platform**
-- `author-scratch`: **flex** (no domain)
-- Future `brws-author-*` lanes: **browser-game**
+
+| Pool | Lanes | Domain |
+|------|-------|--------|
+| Platform | `author-a`, `author-b`, `author-c`, `author-d` | `platform` |
+| Browser-game | `brws-author-a`, `brws-author-b`, `brws-author-c`, `brws-author-d` | `browser-game` |
+| Flex | `author-scratch`, `flex-a`, `flex-b`, `flex-c` | _(none — accepts any domain)_ |
 
 ## TUI Task Naming
 
@@ -89,12 +92,12 @@ all orchestrator-created tasks should follow this convention.
 
 | Task Type | Preview Required | Suggested Lane | Domain |
 |-----------|-----------------|----------------|--------|
-| Single-file bugfix | No | Any idle author | Infer from scope |
+| Single-file bugfix | No | Any idle author in matching pool | Infer from scope |
 | Multi-file feature | Yes | author-a or author-b | platform |
 | Architectural change | Yes + plan review | author-a | platform |
-| Exploratory analysis | No | author-scratch | (flex) |
-| Overflow / parallel work | Yes | author-c or author-d | Match source |
-| Browser-game work | Yes | brws-author-* (future) | browser-game |
+| Exploratory analysis | No | author-scratch or flex-* | (flex) |
+| Overflow / parallel work | Yes | author-c, author-d, or flex-* | Match source |
+| Browser-game work | Yes | brws-author-a through brws-author-d | browser-game |
 
 ## Dispatch
 
@@ -147,6 +150,7 @@ Use `uv run python scripts/internal/ops.py dashboard` for lane overview, or
 ## Constraints
 
 - Do not bypass the preview flow for non-trivial work
-- Do not assign to lanes that don't exist in the worktree registry
+- Do not assign to lanes that don't exist in the worktree registry (see
+  `.claude/rules/75_worktree_protection.md` for the canonical list)
 - Do not create tasks that span Platform-3 communication bus scope
 - Do not modify the task queue implementation itself from this lane
