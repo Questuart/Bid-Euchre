@@ -312,10 +312,10 @@ class TestResolveTmuxTarget:
         """When registry has tmux_window and tmux_pane, use them."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
-        entry = {"tmux_window": "platform", "tmux_pane": "0"}
+        entry = {"tmux_window": "platform", "tmux_pane": "1"}
         (registry_dir / "author-a.json").write_text(json.dumps(entry))
         result = _resolve_tmux_target("author-a", "steward", tmp_path)
-        assert result == "steward:platform.0"
+        assert result == "steward:platform.1"
 
     def test_registry_missing_falls_back(self, tmp_path: Path) -> None:
         """When registry file is missing, fall back to session:lane_id."""
@@ -332,7 +332,11 @@ class TestResolveTmuxTarget:
         assert result == "steward:author-a"
 
     def test_registry_pane_zero_is_valid(self, tmp_path: Path) -> None:
-        """Pane index 0 should not be treated as falsy."""
+        """Pane index 0 should not be treated as falsy.
+
+        Even though production uses 1-based indices (pane-base-index=1),
+        the function must handle 0 without treating it as a missing value.
+        """
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
         entry = {"tmux_window": "central-ops", "tmux_pane": "0"}
@@ -385,15 +389,15 @@ class TestProbeTmuxPane:
         """When registry provides window.pane, probe targets that."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
-        entry = {"tmux_window": "platform", "tmux_pane": "0"}
+        entry = {"tmux_window": "platform", "tmux_pane": "1"}
         (registry_dir / "author-a.json").write_text(json.dumps(entry))
         with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="12345\n")
             result = _probe_tmux_pane("author-a", "steward", runtime_dir=tmp_path)
             assert result is True
-            # Verify it targeted the correct pane
+            # Verify it targeted the correct 1-based pane
             call_args = mock_run.call_args[0][0]
-            assert "steward:platform.0" in call_args
+            assert "steward:platform.1" in call_args
 
 
 # ---------------------------------------------------------------------------
@@ -1711,18 +1715,18 @@ class TestNudgePane:
         assert result.error == "nudge_failed"
 
     def test_nudge_uses_registry_target(self, tmp_path: Path) -> None:
-        """When registry has window.pane, nudge targets that."""
+        """When registry has window.pane, nudge targets that (1-based)."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
-        entry = {"tmux_window": "platform", "tmux_pane": "0"}
+        entry = {"tmux_window": "platform", "tmux_pane": "1"}
         (registry_dir / "author-a.json").write_text(json.dumps(entry))
         with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             result = nudge_pane("author-a", "pkt789", runtime_dir=tmp_path)
             assert result.executed is True
-            assert "steward:platform.0" in result.reason
+            assert "steward:platform.1" in result.reason
             call_args = mock_run.call_args[0][0]
-            assert call_args[3] == "steward:platform.0"
+            assert call_args[3] == "steward:platform.1"
 
 
 # ---------------------------------------------------------------------------

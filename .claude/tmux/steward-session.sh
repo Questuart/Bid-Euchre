@@ -277,31 +277,33 @@ ensure_worktree "$FLEX_C" "codex/steward-flex-c"
 ensure_review_worktree
 
 # Write v2 registry metadata for each lane.
-# tmux_window = group name, tmux_pane = pane index within the window.
+# tmux_window = group name, tmux_pane = 1-based pane index within the window.
 # Pane target format: ${SESSION}:${tmux_window}.${tmux_pane}
+# Indices are 1-based to match tmux pane-base-index=1.
 
-# Central ops  (window: central-ops, panes 0-2, main-vertical layout)
-write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "central-ops" "0" "foreground" "Orchestrator"
-write_lane_metadata "ops"            "ops"          "$MAIN_DIR"       "--"                              "central-ops" "1" "foreground" "Ops"
-write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "2" "foreground" "Review"
+# Central ops  (window: central-ops, panes 1-3, main-vertical layout)
+# Note: pane indices are 1-based to match tmux pane-base-index=1.
+write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "central-ops" "1" "foreground" "Orchestrator"
+write_lane_metadata "ops"            "ops"          "$MAIN_DIR"       "--"                              "central-ops" "2" "foreground" "Ops"
+write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "3" "foreground" "Review"
 
-# Platform workers  (window: platform, panes 0-3)
-write_lane_metadata "author-a"       "author"       "$AUTHOR_A"       "codex/steward-author"            "platform" "0" "background" "Author A"
-write_lane_metadata "author-b"       "author"       "$AUTHOR_B"       "codex/steward-author-b"          "platform" "1" "background" "Author B"
-write_lane_metadata "author-c"       "author"       "$AUTHOR_C"       "codex/steward-author-c"          "platform" "2" "background" "Author C"
-write_lane_metadata "author-d"       "author"       "$AUTHOR_D"       "codex/steward-author-d"          "platform" "3" "background" "Author D"
+# Platform workers  (window: platform, panes 1-4)
+write_lane_metadata "author-a"       "author"       "$AUTHOR_A"       "codex/steward-author"            "platform" "1" "background" "Author A"
+write_lane_metadata "author-b"       "author"       "$AUTHOR_B"       "codex/steward-author-b"          "platform" "2" "background" "Author B"
+write_lane_metadata "author-c"       "author"       "$AUTHOR_C"       "codex/steward-author-c"          "platform" "3" "background" "Author C"
+write_lane_metadata "author-d"       "author"       "$AUTHOR_D"       "codex/steward-author-d"          "platform" "4" "background" "Author D"
 
-# Browser-game workers  (window: browser, panes 0-3)
-write_lane_metadata "brws-author-a"  "author"       "$BRWS_A"         "codex/steward-brws-author-a"     "browser" "0" "background" "Brws Author A"
-write_lane_metadata "brws-author-b"  "author"       "$BRWS_B"         "codex/steward-brws-author-b"     "browser" "1" "background" "Brws Author B"
-write_lane_metadata "brws-author-c"  "author"       "$BRWS_C"         "codex/steward-brws-author-c"     "browser" "2" "background" "Brws Author C"
-write_lane_metadata "brws-author-d"  "author"       "$BRWS_D"         "codex/steward-brws-author-d"     "browser" "3" "background" "Brws Author D"
+# Browser-game workers  (window: browser, panes 1-4)
+write_lane_metadata "brws-author-a"  "author"       "$BRWS_A"         "codex/steward-brws-author-a"     "browser" "1" "background" "Brws Author A"
+write_lane_metadata "brws-author-b"  "author"       "$BRWS_B"         "codex/steward-brws-author-b"     "browser" "2" "background" "Brws Author B"
+write_lane_metadata "brws-author-c"  "author"       "$BRWS_C"         "codex/steward-brws-author-c"     "browser" "3" "background" "Brws Author C"
+write_lane_metadata "brws-author-d"  "author"       "$BRWS_D"         "codex/steward-brws-author-d"     "browser" "4" "background" "Brws Author D"
 
-# Scratch / flex  (window: scratch, panes 0-3)
-write_lane_metadata "author-scratch" "scratch"      "$AUTHOR_SCRATCH"  "codex/steward-author-scratch"   "scratch" "0" "background" "Scratch"
-write_lane_metadata "flex-a"         "flex"          "$FLEX_A"          "codex/steward-flex-a"           "scratch" "1" "background" "Flex A"
-write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/steward-flex-b"           "scratch" "2" "background" "Flex B"
-write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "scratch" "3" "background" "Flex C"
+# Scratch / flex  (window: scratch, panes 1-4)
+write_lane_metadata "author-scratch" "scratch"      "$AUTHOR_SCRATCH"  "codex/steward-author-scratch"   "scratch" "1" "background" "Scratch"
+write_lane_metadata "flex-a"         "flex"          "$FLEX_A"          "codex/steward-flex-a"           "scratch" "2" "background" "Flex A"
+write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/steward-flex-b"           "scratch" "3" "background" "Flex B"
+write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "scratch" "4" "background" "Flex C"
 
 # ---------------------------------------------------------------------------
 # Window + pane creation — 4 windows (central-ops: 3 panes, others: 4 panes)

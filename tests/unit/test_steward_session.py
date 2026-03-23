@@ -415,17 +415,20 @@ class TestWindowLayout:
         ]
 
     def test_metadata_pane_indices(self) -> None:
-        """All lanes must have valid pane indices in their metadata."""
+        """All lanes must have valid 1-based pane indices in their metadata.
+
+        Pane indices are 1-based to match tmux pane-base-index=1.
+        """
         metadata_lines = self._metadata_invocation_lines()
         assert len(metadata_lines) == len(self.EXPECTED_LANES), (
             f"Expected {len(self.EXPECTED_LANES)} write_lane_metadata calls, "
             f"found {len(metadata_lines)}"
         )
         for line in metadata_lines:
-            has_pane_idx = any(f'"{i}"' in line for i in range(4))
+            has_pane_idx = any(f'"{i}"' in line for i in range(1, 5))
             assert (
                 has_pane_idx
-            ), f"Lane metadata must have a pane index (0-3): {line.strip()}"
+            ), f"Lane metadata must have a 1-based pane index (1-4): {line.strip()}"
 
     def test_metadata_window_names(self) -> None:
         """All metadata must reference one of the 4 group window names."""
