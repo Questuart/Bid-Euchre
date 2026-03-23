@@ -3444,3 +3444,354 @@ class TestInboxAck:
         out = capsys.readouterr().out
         assert "Acknowledged" in out
         assert msg_id in out
+
+
+# ---------------------------------------------------------------------------
+# review-check
+# ---------------------------------------------------------------------------
+
+
+class TestCmdReviewCheck:
+    """Tests for the review-check subcommand."""
+
+    def test_help_flag(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """review-check --help should succeed."""
+        import ops
+
+        with pytest.raises(SystemExit) as exc_info:
+            ops.main(["review-check", "--help"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "review-check" in out or "merged" in out.lower()
+
+    def test_no_prs_text(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When gh returns no merged PRs, output says so."""
+        import subprocess as sp
+
+        import ops
+
+        def mock_run(*args: object, **kwargs: object) -> sp.CompletedProcess[str]:
+            return sp.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+
+        monkeypatch.setattr(sp, "run", mock_run)
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-check",
+                "--no-notify",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "No recently merged PRs" in out
+
+    def test_no_prs_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """JSON mode with no merged PRs."""
+        import subprocess as sp
+
+        import ops
+
+        def mock_run(*args: object, **kwargs: object) -> sp.CompletedProcess[str]:
+            return sp.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+
+        monkeypatch.setattr(sp, "run", mock_run)
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "--json",
+                "review-check",
+                "--no-notify",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["prs_checked"] == 0
+        assert data["findings"] == []
+
+    def test_clean_pr_no_findings(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A normal small PR should produce no findings."""
+        import subprocess as sp
+
+        import ops
+
+        pr_list_json = json.dumps(
+            [
+                {
+                    "number": 100,
+                    "title": "fix: small change",
+                    "mergedAt": "2026-03-22T10:00:00Z",
+                    "changedFiles": 3,
+                    "additions": 20,
+                    "deletions": 5,
+                }
+            ]
+        )
+
+        call_count = {"n": 0}
+
+        def mock_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> sp.CompletedProcess[str]:
+            call_count["n"] += 1
+            if "pr" in cmd and "list" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd, returncode=0, stdout=pr_list_json, stderr=""
+                )
+            if "pr" in cmd and "diff" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="src/foo.py\nsrc/bar.py\ntests/test_foo.py\n",
+                    stderr="",
+                )
+            return sp.CompletedProcess(
+                args=cmd, returncode=1, stdout="", stderr="unknown"
+            )
+
+        monkeypatch.setattr(sp, "run", mock_run)
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "--json",
+                "review-check",
+                "--no-notify",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["prs_checked"] == 1
+        assert data["findings"] == []
+
+    def test_large_diff_warning(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A PR with >5000 lines should trigger a large_diff warning."""
+        import subprocess as sp
+
+        import ops
+
+        pr_list_json = json.dumps(
+            [
+                {
+                    "number": 200,
+                    "title": "feat: big refactor",
+                    "mergedAt": "2026-03-22T10:00:00Z",
+                    "changedFiles": 50,
+                    "additions": 4000,
+                    "deletions": 2000,
+                }
+            ]
+        )
+
+        def mock_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> sp.CompletedProcess[str]:
+            if "pr" in cmd and "list" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd, returncode=0, stdout=pr_list_json, stderr=""
+                )
+            if "pr" in cmd and "diff" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="src/big.py\n",
+                    stderr="",
+                )
+            return sp.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+
+        monkeypatch.setattr(sp, "run", mock_run)
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "--json",
+                "review-check",
+                "--no-notify",
+            ]
+        )
+        assert rc == 0  # warnings don't block
+        data = json.loads(capsys.readouterr().out)
+        assert len(data["findings"]) >= 1
+        assert any(f["check"] == "large_diff" for f in data["findings"])
+
+    def test_data_artifact_blocker(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A PR touching data/runs/ should trigger a data_artifact blocker."""
+        import subprocess as sp
+
+        import ops
+
+        pr_list_json = json.dumps(
+            [
+                {
+                    "number": 300,
+                    "title": "chore: add run data",
+                    "mergedAt": "2026-03-22T10:00:00Z",
+                    "changedFiles": 5,
+                    "additions": 100,
+                    "deletions": 0,
+                }
+            ]
+        )
+
+        def mock_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> sp.CompletedProcess[str]:
+            if "pr" in cmd and "list" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd, returncode=0, stdout=pr_list_json, stderr=""
+                )
+            if "pr" in cmd and "diff" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="data/runs/run_42/results.json\nsrc/foo.py\n",
+                    stderr="",
+                )
+            return sp.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+
+        monkeypatch.setattr(sp, "run", mock_run)
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "--json",
+                "review-check",
+                "--no-notify",
+            ]
+        )
+        assert rc == 1  # blockers return exit code 1
+        data = json.loads(capsys.readouterr().out)
+        blockers = [f for f in data["findings"] if f["severity"] == "block"]
+        assert len(blockers) >= 1
+        assert blockers[0]["check"] == "data_artifact"
+
+    def test_contract_no_tests_warning(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Contract doc changes without test updates should warn."""
+        import subprocess as sp
+
+        import ops
+
+        pr_list_json = json.dumps(
+            [
+                {
+                    "number": 400,
+                    "title": "docs: update rules",
+                    "mergedAt": "2026-03-22T10:00:00Z",
+                    "changedFiles": 2,
+                    "additions": 10,
+                    "deletions": 5,
+                }
+            ]
+        )
+
+        def mock_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> sp.CompletedProcess[str]:
+            if "pr" in cmd and "list" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd, returncode=0, stdout=pr_list_json, stderr=""
+                )
+            if "pr" in cmd and "diff" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="docs/01_core/RULES.md\nsrc/foo.py\n",
+                    stderr="",
+                )
+            return sp.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+
+        monkeypatch.setattr(sp, "run", mock_run)
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "--json",
+                "review-check",
+                "--no-notify",
+            ]
+        )
+        assert rc == 0  # warnings don't block
+        data = json.loads(capsys.readouterr().out)
+        warns = [f for f in data["findings"] if f["check"] == "contract_no_tests"]
+        assert len(warns) == 1
+
+    def test_gh_failure_returns_1(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When gh pr list fails, exit code should be 1."""
+        import subprocess as sp
+
+        import ops
+
+        def mock_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> sp.CompletedProcess[str]:
+            return sp.CompletedProcess(
+                args=cmd, returncode=1, stdout="", stderr="gh: not logged in"
+            )
+
+        monkeypatch.setattr(sp, "run", mock_run)
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-check",
+                "--no-notify",
+            ]
+        )
+        assert rc == 1

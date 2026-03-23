@@ -43,6 +43,7 @@ Usage:
     uv run python scripts/internal/ops.py message send --from LANE --to LANE --type TYPE --summary TEXT [--task-id ID] [--thread ID] [--json]
     uv run python scripts/internal/ops.py supervisor [--json] [--save] [--diff SNAPSHOT_PATH]
     uv run python scripts/internal/ops.py monitor [--skip-pr-check] [--no-notify] [--json]
+    uv run python scripts/internal/ops.py review-check [--limit N] [--no-notify] [--json]
     uv run python scripts/internal/ops.py workers [--json]
     uv run python scripts/internal/ops.py workers wake LANE_ID [--json]
     uv run python scripts/internal/ops.py workers park LANE_ID [--json]
@@ -1893,6 +1894,186 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     return 1 if has_high else 0
 
 
+def cmd_review_check(args: argparse.Namespace) -> int:
+    """Check recently merged PRs for diff stats and contract issues.
+
+    Queries ``gh pr list --state merged`` for the N most recent merges, runs
+    basic diff-stat and contract checks (large file count, data/ artifacts,
+    contract-doc changes without test changes), and writes findings to the
+    orchestrator inbox via the message bus.
+
+    Designed to run on a ``/loop 20m`` cadence from the review lane.
+    """
+    import subprocess as sp
+
+    from bid_euchre.ops.message_bus import create_message, send_message
+
+    limit = getattr(args, "limit", 5)
+    no_notify = getattr(args, "no_notify", False)
+    bus_root = args.runtime_dir / "message_bus"
+
+    # Fetch recently merged PRs via gh CLI
+    try:
+        result = sp.run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                "merged",
+                "--limit",
+                str(limit),
+                "--json",
+                "number,title,mergedAt,changedFiles,additions,deletions",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            print(f"gh pr list failed: {result.stderr.strip()}", file=sys.stderr)
+            return 1
+        prs = json.loads(result.stdout)
+    except (sp.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as exc:
+        print(f"Error fetching merged PRs: {exc}", file=sys.stderr)
+        return 1
+
+    if not prs:
+        if args.json:
+            print(json.dumps({"findings": [], "prs_checked": 0}))
+        else:
+            print("No recently merged PRs found.")
+        return 0
+
+    # Run basic checks on each PR
+    findings: list[dict[str, str]] = []
+    for pr in prs:
+        pr_num = pr["number"]
+        title = pr.get("title", "")
+        changed = pr.get("changedFiles", 0)
+        additions = pr.get("additions", 0)
+        deletions = pr.get("deletions", 0)
+
+        # Check 1: Large diff (>500 changed files or >5000 lines)
+        total_lines = additions + deletions
+        if changed > 500 or total_lines > 5000:
+            findings.append(
+                {
+                    "pr": pr_num,
+                    "check": "large_diff",
+                    "severity": "warn",
+                    "detail": (
+                        f"PR #{pr_num} ({title}): {changed} files, "
+                        f"+{additions}/-{deletions} lines"
+                    ),
+                }
+            )
+
+        # Check 2: Fetch diff stat for data/ artifact detection
+        try:
+            diff_result = sp.run(
+                [
+                    "gh",
+                    "pr",
+                    "diff",
+                    str(pr_num),
+                    "--name-only",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if diff_result.returncode == 0:
+                changed_files = diff_result.stdout.strip().splitlines()
+
+                # Check for committed data artifacts
+                data_files = [
+                    f
+                    for f in changed_files
+                    if f.startswith(("data/runs/", "data/reports/", "data/models/"))
+                ]
+                if data_files:
+                    findings.append(
+                        {
+                            "pr": pr_num,
+                            "check": "data_artifact",
+                            "severity": "block",
+                            "detail": (
+                                f"PR #{pr_num} ({title}): committed data artifacts: "
+                                f"{', '.join(data_files[:5])}"
+                            ),
+                        }
+                    )
+
+                # Check for contract doc changes without test changes
+                contract_docs = [
+                    f
+                    for f in changed_files
+                    if f.startswith("docs/01_core/")
+                    and f.endswith(("RULES.md", "DATA_CONTRACT.md", "METRICS.md"))
+                ]
+                test_files = [f for f in changed_files if f.startswith("tests/")]
+                if contract_docs and not test_files:
+                    findings.append(
+                        {
+                            "pr": pr_num,
+                            "check": "contract_no_tests",
+                            "severity": "warn",
+                            "detail": (
+                                f"PR #{pr_num} ({title}): contract docs changed "
+                                f"({', '.join(contract_docs)}) without test updates"
+                            ),
+                        }
+                    )
+        except (sp.TimeoutExpired, FileNotFoundError, OSError):
+            pass  # Best-effort — skip diff check if gh fails
+
+    # Output
+    if args.json:
+        print(
+            json.dumps(
+                {"findings": findings, "prs_checked": len(prs)},
+                indent=2,
+            )
+        )
+    else:
+        print(f"Checked {len(prs)} recently merged PR(s).")
+        if findings:
+            for f in findings:
+                severity = f["severity"].upper()
+                print(f"  [{severity}] {f['detail']}")
+        else:
+            print("  No issues found.")
+
+    # Notify orchestrator if there are findings
+    if findings and not no_notify:
+        summary_parts = []
+        blocks = sum(1 for f in findings if f["severity"] == "block")
+        warns = sum(1 for f in findings if f["severity"] == "warn")
+        if blocks:
+            summary_parts.append(f"{blocks} blocker(s)")
+        if warns:
+            summary_parts.append(f"{warns} warning(s)")
+        summary = (
+            f"review-check: {', '.join(summary_parts)} across {len(prs)} merged PRs"
+        )
+
+        msg = create_message(
+            from_lane="review",
+            to_lane="orchestrator",
+            message_type="finding",
+            summary=summary,
+            payload={"findings": findings, "prs_checked": len(prs)},
+        )
+        try:
+            send_message(msg, bus_root)
+        except Exception as exc:
+            print(f"Warning: could not send findings to orchestrator: {exc}")
+
+    has_blockers = any(f["severity"] == "block" for f in findings)
+    return 1 if has_blockers else 0
+
+
 def cmd_workers(args: argparse.Namespace) -> int:
     """Worker pool lifecycle management (Platform-7)."""
     from bid_euchre.ops.worker_pool import (
@@ -2545,6 +2726,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not send findings to the orchestrator inbox",
     )
 
+    # review-check (merged PR review scanning)
+    rc_parser = subparsers.add_parser(
+        "review-check",
+        help="Check recently merged PRs for diff stats and contract issues",
+    )
+    rc_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Number of recently merged PRs to check (default: 5)",
+    )
+    rc_parser.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="Do not send findings to the orchestrator inbox",
+    )
+
     # workers (Platform-7: worker pool lifecycle management)
     workers_parser = subparsers.add_parser(
         "workers", help="Worker pool lifecycle management (Platform-7)"
@@ -2636,6 +2834,7 @@ def main(argv: list[str] | None = None) -> int:
         "message": cmd_message,
         "supervisor": cmd_supervisor,
         "monitor": cmd_monitor,
+        "review-check": cmd_review_check,
         "workers": cmd_workers,
     }
 
