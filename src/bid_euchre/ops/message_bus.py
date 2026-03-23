@@ -35,6 +35,7 @@ import os
 import subprocess
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -89,7 +90,7 @@ VALID_MESSAGE_TRANSITIONS: dict[str, frozenset[str]] = {
 
 # Default delivery policy
 DEFAULT_MAX_RETRIES = 3
-DEFAULT_TTL_SECONDS: int | None = None  # No expiry by default
+DEFAULT_TTL_SECONDS: int = 86400  # 24-hour expiry by default
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +388,43 @@ def _read_inbox_raw(lane_id: str, bus_root: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _expire_stale_on_read(
+    by_id: dict[str, dict[str, Any]],
+    lane_id: str,
+    bus_root: Path,
+    *,
+    now: float | None = None,
+) -> None:
+    """Lazily expire messages past their TTL during a read operation.
+
+    Mutates *by_id* in-place: any message that has exceeded its
+    ``payload.ttl_seconds`` is transitioned to ``expired`` and the dict
+    value is replaced with the updated record.  This avoids the need
+    for a separate ``check_expired()`` sweep for the common 24-hour case.
+
+    Only non-terminal messages with a numeric ``ttl_seconds`` are checked.
+    """
+    current_time = now or time.time()
+    terminal = {"resolved", "expired", "dead_lettered"}
+
+    for mid, rec in list(by_id.items()):
+        if rec.get("status") in terminal:
+            continue
+        ttl = rec.get("payload", {}).get("ttl_seconds")
+        if ttl is None:
+            continue
+        created = rec.get("created_at", "")
+        try:
+            created_ts = datetime.fromisoformat(created).timestamp()
+        except (ValueError, TypeError):
+            continue
+        if current_time - created_ts > ttl:
+            updated = _update_inbox_status(mid, lane_id, "expired", bus_root)
+            if updated:
+                by_id[mid] = updated
+                logger.debug("Auto-expired message %s on read (TTL=%s)", mid, ttl)
+
+
 def read_inbox(
     lane_id: str,
     bus_root: Path | None = None,
@@ -395,11 +433,16 @@ def read_inbox(
     thread_id: str | None = None,
     message_type: str | None = None,
     limit: int = 50,
+    auto_expire: bool = True,
 ) -> list[dict[str, Any]]:
     """Read and filter a lane's inbox messages.
 
     Returns list of message dicts, most recent first, up to ``limit``.
     Each message_id appears once (latest record wins for status updates).
+
+    When *auto_expire* is ``True`` (the default), messages whose
+    ``payload.ttl_seconds`` has elapsed are automatically transitioned
+    to ``expired`` before filtering.
     """
     root = shared_bus_root(bus_root)
     raw = _read_inbox_raw(lane_id, root)
@@ -410,6 +453,10 @@ def read_inbox(
         mid = rec.get("message_id")
         if mid:
             by_id[mid] = rec
+
+    # Lazily expire stale messages before applying user filters
+    if auto_expire:
+        _expire_stale_on_read(by_id, lane_id, root)
 
     # Apply filters
     from collections import deque
@@ -627,6 +674,67 @@ def ack_message(
             logger.warning("Failed to emit message_acked event for %s", message_id)
 
     return updated
+
+
+def bulk_ack_messages(
+    lane_id: str,
+    filter_fn: Callable[[dict[str, Any]], bool],
+    bus_root: Path | None = None,
+    *,
+    events_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Acknowledge all messages in a lane's inbox that match *filter_fn*.
+
+    Only messages in ack-able states (``pending`` or ``delivered``) are
+    considered.  Messages already acked, resolved, or terminal are skipped.
+
+    Args:
+        lane_id: The lane whose inbox to scan.
+        filter_fn: Predicate receiving a message dict; return ``True`` to ack.
+        bus_root: Override for bus root directory.
+        events_dir: Override for events directory (for testing).
+
+    Returns:
+        List of acked message dicts.
+    """
+    root = shared_bus_root(bus_root)
+    raw = _read_inbox_raw(lane_id, root)
+
+    # Deduplicate: latest record per message_id wins
+    by_id: dict[str, dict[str, Any]] = {}
+    for rec in raw:
+        mid = rec.get("message_id")
+        if mid:
+            by_id[mid] = rec
+
+    ackable = {"pending", "delivered"}
+    acked: list[dict[str, Any]] = []
+    for mid, rec in by_id.items():
+        if rec.get("status") not in ackable:
+            continue
+        if not filter_fn(rec):
+            continue
+        updated = _update_inbox_status(
+            mid, lane_id, "acked", root, extra_fields={"acked_at": _now_iso()}
+        )
+        if updated is not None:
+            acked.append(updated)
+            try:
+                from bid_euchre.ops.events import append_event
+
+                append_event(
+                    "message_acked",
+                    "ops.message_bus",
+                    lane_id,
+                    {"message_id": mid, "bulk": True},
+                    events_dir=events_dir,
+                )
+            except Exception:
+                logger.warning("Failed to emit message_acked event for %s", mid)
+
+    if acked:
+        logger.info("Bulk-acked %d message(s) for %s", len(acked), lane_id)
+    return acked
 
 
 def resolve_message(

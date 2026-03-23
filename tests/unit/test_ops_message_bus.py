@@ -18,6 +18,7 @@ import pytest
 
 from bid_euchre.ops.message_bus import (
     DEFAULT_MAX_RETRIES,
+    DEFAULT_TTL_SECONDS,
     VALID_MESSAGE_PRIORITIES,
     VALID_MESSAGE_STATUSES,
     VALID_MESSAGE_TRANSITIONS,
@@ -25,6 +26,7 @@ from bid_euchre.ops.message_bus import (
     BusMessage,
     ack_message,
     append_message,
+    bulk_ack_messages,
     check_dead_letters,
     check_expired,
     create_message,
@@ -202,7 +204,7 @@ class TestBusMessageCreation:
         msg = create_message("a", "b", "assignment", "test")
         assert msg.payload["max_retries"] == DEFAULT_MAX_RETRIES
         assert msg.payload["retry_count"] == 0
-        assert msg.payload["ttl_seconds"] is None
+        assert msg.payload["ttl_seconds"] == DEFAULT_TTL_SECONDS
 
     def test_custom_delivery_policy_preserved(self) -> None:
         msg = create_message(
@@ -640,8 +642,14 @@ class TestCheckExpired:
         assert len(expired) == 0
 
     def test_no_ttl_never_expires(self, bus_root: Path, events_dir: Path) -> None:
-        """Messages without ttl_seconds never expire."""
-        msg = create_message("a", "b", "assignment", "Forever task")
+        """Messages with ttl_seconds=None never expire."""
+        msg = create_message(
+            "a",
+            "b",
+            "assignment",
+            "Forever task",
+            payload={"ttl_seconds": None},
+        )
         send_message(msg, bus_root, events_dir=events_dir)
 
         far_future = time.time() + 365 * 24 * 3600  # 1 year
@@ -924,3 +932,206 @@ class TestE2ESmoke:
         # Each lane's inbox has the right messages
         assert len(read_inbox("author-a", bus_root)) == 1
         assert len(read_inbox("orchestrator", bus_root)) == 2
+
+
+# ---------------------------------------------------------------------------
+# Bulk ack
+# ---------------------------------------------------------------------------
+
+
+class TestBulkAckMessages:
+    """Test bulk_ack_messages delivery semantics."""
+
+    def test_bulk_ack_all(self, bus_root: Path, events_dir: Path) -> None:
+        """Ack all pending messages in a lane."""
+        m1 = create_message("a", "target", "assignment", "Task 1")
+        m2 = create_message("a", "target", "progress", "Task 2")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+
+        acked = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+        assert len(acked) == 2
+        assert all(r["status"] == "acked" for r in acked)
+
+    def test_bulk_ack_with_filter(self, bus_root: Path, events_dir: Path) -> None:
+        """Only messages matching filter_fn are acked."""
+        m1 = create_message("a", "target", "assignment", "Fix scoring bug")
+        m2 = create_message("a", "target", "progress", "Test progress update")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+
+        acked = bulk_ack_messages(
+            "target",
+            lambda msg: "scoring" in msg.get("summary", "").lower(),
+            bus_root,
+            events_dir=events_dir,
+        )
+        assert len(acked) == 1
+        assert acked[0]["summary"] == "Fix scoring bug"
+
+        # The other message remains pending
+        inbox = read_inbox("target", bus_root, status="pending")
+        assert len(inbox) == 1
+        assert inbox[0]["summary"] == "Test progress update"
+
+    def test_bulk_ack_skips_non_ackable(self, bus_root: Path, events_dir: Path) -> None:
+        """Already-acked and terminal messages are not re-acked."""
+        m1 = create_message("a", "target", "assignment", "Already acked")
+        m2 = create_message("a", "target", "progress", "Still pending")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+
+        # Ack m1 individually first
+        ack_message(m1.message_id, "target", bus_root, events_dir=events_dir)
+
+        # Bulk ack should only ack m2
+        acked = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+        assert len(acked) == 1
+        assert acked[0]["message_id"] == m2.message_id
+
+    def test_bulk_ack_empty_inbox(self, bus_root: Path, events_dir: Path) -> None:
+        """Bulk ack on empty inbox returns empty list."""
+        acked = bulk_ack_messages(
+            "empty-lane", lambda _: True, bus_root, events_dir=events_dir
+        )
+        assert acked == []
+
+    def test_bulk_ack_emits_events(self, bus_root: Path, events_dir: Path) -> None:
+        """Each bulk-acked message emits an event with bulk=True."""
+        m1 = create_message("a", "target", "assignment", "Task 1")
+        m2 = create_message("a", "target", "assignment", "Task 2")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+
+        bulk_ack_messages("target", lambda _: True, bus_root, events_dir=events_dir)
+
+        events_file = events_dir / "events.jsonl"
+        lines = events_file.read_text().strip().split("\n")
+        ack_events = [
+            json.loads(line)
+            for line in lines
+            if json.loads(line)["event_type"] == "message_acked"
+        ]
+        assert len(ack_events) == 2
+        assert all(ev["payload"].get("bulk") is True for ev in ack_events)
+
+
+# ---------------------------------------------------------------------------
+# TTL auto-expire on read
+# ---------------------------------------------------------------------------
+
+
+class TestTTLAutoExpireOnRead:
+    """Test that read_inbox auto-expires stale messages."""
+
+    def test_default_ttl_is_24h(self) -> None:
+        """DEFAULT_TTL_SECONDS should be 86400 (24 hours)."""
+        assert DEFAULT_TTL_SECONDS == 86400
+
+    def test_auto_expire_on_read(self, bus_root: Path, events_dir: Path) -> None:
+        """Messages past their TTL are expired when inbox is read."""
+        msg = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Short-lived task",
+            payload={"ttl_seconds": 60},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Read immediately — message should be pending
+        inbox = read_inbox("target", bus_root)
+        assert len(inbox) == 1
+        assert inbox[0]["status"] == "pending"
+
+        # Simulate time passing — read_inbox auto-expires internally
+        # We need to manipulate the message creation time to be in the past.
+        # Since auto_expire uses the current time, we create a message
+        # with a very short TTL and old timestamp.
+        import time as _time
+
+        # Create another message with TTL=1 second
+        msg2 = create_message(
+            "a",
+            "target2",
+            "assignment",
+            "Expiring soon",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg2, bus_root, events_dir=events_dir)
+
+        # Sleep briefly to ensure TTL elapses
+        _time.sleep(1.1)
+
+        # Reading inbox should auto-expire
+        inbox2 = read_inbox("target2", bus_root)
+        assert len(inbox2) == 1
+        assert inbox2[0]["status"] == "expired"
+
+    def test_auto_expire_disabled(self, bus_root: Path, events_dir: Path) -> None:
+        """When auto_expire=False, stale messages are not expired."""
+        msg = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Should stay pending",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        import time as _time
+
+        _time.sleep(1.1)
+
+        # With auto_expire=False, message stays pending
+        inbox = read_inbox("target", bus_root, auto_expire=False)
+        assert len(inbox) == 1
+        assert inbox[0]["status"] == "pending"
+
+    def test_auto_expire_does_not_touch_terminal(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Already-resolved messages are not re-expired on read."""
+        msg = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Resolved task",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "target", bus_root, events_dir=events_dir)
+        resolve_message(msg.message_id, "target", bus_root, events_dir=events_dir)
+
+        import time as _time
+
+        _time.sleep(1.1)
+
+        inbox = read_inbox("target", bus_root, status="resolved")
+        assert len(inbox) == 1
+        assert inbox[0]["status"] == "resolved"
+
+    def test_no_ttl_never_auto_expires(self, bus_root: Path, events_dir: Path) -> None:
+        """Messages with ttl_seconds=None are never auto-expired on read."""
+        msg = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Eternal message",
+            payload={"ttl_seconds": None},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Even far in the future, no expiry
+        inbox = read_inbox("target", bus_root)
+        assert len(inbox) == 1
+        assert inbox[0]["status"] == "pending"
+
+    def test_new_messages_get_default_ttl(self) -> None:
+        """create_message injects DEFAULT_TTL_SECONDS into payload."""
+        msg = create_message("a", "b", "assignment", "Default TTL")
+        assert msg.payload["ttl_seconds"] == 86400
