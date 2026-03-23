@@ -1,0 +1,449 @@
+"""Match engine for hosted browser-game play.
+
+Drives a step-based match that pauses at human turns and auto-advances AI
+turns.  Delegates **all** rule evaluation to existing ``core/``, ``sim/``,
+``strategy/``, and ``scoring`` modules — no logic duplication.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from bid_euchre.core.rules import get_legal_indices, trick_winner
+from bid_euchre.scoring import compute_points
+from bid_euchre.sim.deals import generate_deal
+from bid_euchre.strategy.base import Strategy
+from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
+
+from .state import HandState, MatchState, TrickResult, TrickState
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+HUMAN_SEAT = 0
+MATCH_TARGET = 52
+
+# Seats in bidding order relative to dealer: (dealer+1), (dealer+2), (dealer+3), dealer
+_NUM_PLAYERS = 4
+_TRICKS_PER_HAND = 10
+
+
+def _bid_order(dealer_seat: int) -> list[int]:
+    """Return the four seats in auction order starting left of dealer."""
+    return [(dealer_seat + i + 1) % _NUM_PLAYERS for i in range(_NUM_PLAYERS)]
+
+
+# ---------------------------------------------------------------------------
+# MatchEngine
+# ---------------------------------------------------------------------------
+
+
+class MatchEngine:
+    """Step-based match engine for a human vs three AI opponents.
+
+    The human is always at ``HUMAN_SEAT`` (seat 0, team 0 with seat 2).
+    AI seats are 1, 2, 3.  The engine pauses whenever it is the human's
+    turn to act (bid or play) and auto-advances through all AI turns.
+    """
+
+    def __init__(
+        self,
+        bidding_policy: BiddingPolicy,
+        play_strategy: Strategy,
+    ) -> None:
+        self.bidding_policy = bidding_policy
+        self.play_strategy = play_strategy
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def start_match(self, seed: int, ai_model: str) -> MatchState:
+        """Create a new match, deal the first hand, and advance AI."""
+        state = MatchState(seed=seed, ai_model=ai_model)
+        state = self._deal_new_hand(state)
+        state = self._advance_ai(state)
+        return state
+
+    def submit_human_bid(self, state: MatchState, bid: BidAction) -> MatchState:
+        """Process the human's bid, then auto-advance AI."""
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "auction"
+        assert hand.current_seat == HUMAN_SEAT
+
+        state = self._process_bid(state, HUMAN_SEAT, bid)
+        state = self._advance_ai(state)
+        return state
+
+    def submit_human_card(self, state: MatchState, card_index: int) -> MatchState:
+        """Process the human's card play, then auto-advance AI."""
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "trick_play"
+        assert hand.current_seat == HUMAN_SEAT
+
+        state = self._process_card_play(state, HUMAN_SEAT, card_index)
+        state = self._advance_ai(state)
+        return state
+
+    def get_legal_bids(self, state: MatchState) -> list[BidAction]:
+        """Return legal bids for the current bidder.
+
+        Legal bids are strictly increasing: bid.n > current_high_bid, or pass.
+        """
+        hand = state.current_hand
+        assert hand is not None and hand.phase == "auction"
+
+        current_high = hand.current_high_bid
+        legal: list[BidAction] = [BidAction.pass_bid()]
+
+        # Regular bids: anything strictly above the current high bid
+        contracts = ["C", "D", "H", "S", "HIGH", "LOW"]
+        for n in range(max(1, current_high + 1), _TRICKS_PER_HAND + 1):
+            for c in contracts:
+                legal.append(BidAction.bid(n, c))
+
+        return legal
+
+    def get_legal_plays(self, state: MatchState) -> list[int]:
+        """Return legal card indices for the current seat.
+
+        Delegates to ``get_legal_indices()`` from ``core.rules``.
+        """
+        hand = state.current_hand
+        assert hand is not None and hand.phase == "trick_play"
+        assert hand.current_trick is not None
+        assert hand.contract_type is not None
+
+        seat = hand.current_seat
+        return get_legal_indices(
+            hand.hands[seat],
+            hand.current_trick.plays,
+            hand.contract_type,
+            hand.trump,
+        )
+
+    def get_visible_state(self, state: MatchState) -> dict[str, Any]:
+        """Return state visible to the human player.
+
+        Includes: own hand, current trick, completed tricks, scores, auction
+        transcript, phase.  Excludes: other players' hands.
+        """
+        hand = state.current_hand
+        result: dict[str, Any] = {
+            "status": state.status,
+            "winner": state.winner,
+            "score_human": state.score_human,
+            "score_ai": state.score_ai,
+            "hands_played": state.hands_played,
+        }
+
+        if hand is None:
+            result["phase"] = None
+            return result
+
+        result["phase"] = hand.phase
+        result["dealer_seat"] = hand.dealer_seat
+        result["current_seat"] = hand.current_seat
+        result["turn_number"] = hand.turn_number
+        result["human_hand"] = [[c.suit, c.rank] for c in hand.hands[HUMAN_SEAT]]
+        result["auction"] = list(hand.auction)
+        result["contract_type"] = hand.contract_type
+        result["trump"] = hand.trump
+        result["current_trick"] = (
+            None
+            if hand.current_trick is None
+            else {
+                "leader": hand.current_trick.leader,
+                "plays": [
+                    [seat, [card.suit, card.rank]]
+                    for seat, card in hand.current_trick.plays
+                ],
+            }
+        )
+        result["completed_tricks"] = [
+            {
+                "leader": tr.leader,
+                "plays": [[s, [c.suit, c.rank]] for s, c in tr.plays],
+                "winner": tr.winner,
+            }
+            for tr in hand.completed_tricks
+        ]
+        result["tricks_team0"] = hand.tricks_team0
+        result["tricks_team1"] = hand.tricks_team1
+        return result
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def serialize(state: MatchState) -> dict[str, Any]:
+        """Serialize *state* to a JSON-compatible dict."""
+        return state.to_dict()
+
+    @staticmethod
+    def deserialize(data: dict[str, Any]) -> MatchState:
+        """Restore a ``MatchState`` from a serialized dict."""
+        return MatchState.from_dict(data)
+
+    # ------------------------------------------------------------------
+    # Internal — AI auto-advance
+    # ------------------------------------------------------------------
+
+    def _advance_ai(self, state: MatchState) -> MatchState:
+        """Auto-play all AI turns until the human's turn or hand/match end."""
+        while True:
+            # Match finished — nothing to advance
+            if state.status == "complete":
+                return state
+
+            hand = state.current_hand
+            if hand is None:
+                return state
+
+            # If human's turn, stop and wait for input
+            if hand.current_seat == HUMAN_SEAT:
+                return state
+
+            # Hand is complete or redeal — handled by callers already
+            if hand.phase in ("complete", "redeal"):
+                return state
+
+            seat = hand.current_seat
+
+            if hand.phase == "auction":
+                obs = BiddingObservation(
+                    hand=hand.hands[seat],
+                    seat=seat,
+                    dealer_seat=hand.dealer_seat,
+                    current_high_bid=hand.current_high_bid,
+                    auction_transcript=tuple(hand.auction),
+                )
+                bid = self.bidding_policy.choose_bid(obs)
+                state = self._process_bid(state, seat, bid)
+
+            elif hand.phase == "trick_play":
+                assert hand.current_trick is not None
+                assert hand.contract_type is not None
+
+                card_idx = self.play_strategy.choose_card(
+                    hand.hands[seat],
+                    hand.current_trick.plays,
+                    hand.contract_type,
+                    hand.trump,
+                    seat,
+                )
+                state = self._process_card_play(state, seat, card_idx)
+            else:
+                # Unexpected phase — bail to avoid infinite loop
+                return state  # pragma: no cover
+
+    # ------------------------------------------------------------------
+    # Internal — deal
+    # ------------------------------------------------------------------
+
+    def _deal_new_hand(self, state: MatchState) -> MatchState:
+        """Generate a new deal and begin the auction phase."""
+        hands = generate_deal(state.seed, state.deal_id)
+        first_bidder = _bid_order(state.dealer_seat)[0]
+
+        hand = HandState(
+            phase="auction",
+            hands=hands,
+            dealer_seat=state.dealer_seat,
+            deal_id=state.deal_id,
+            current_seat=first_bidder,
+            turn_number=0,
+        )
+        state.current_hand = hand
+        return state
+
+    # ------------------------------------------------------------------
+    # Internal — bidding
+    # ------------------------------------------------------------------
+
+    def _process_bid(self, state: MatchState, seat: int, bid: BidAction) -> MatchState:
+        """Record a single bid and advance the auction."""
+        hand = state.current_hand
+        assert hand is not None and hand.phase == "auction"
+
+        # Record the auction entry
+        entry: dict[str, Any] = {"seat": seat, "n": bid.n}
+        if bid.is_pass():
+            entry["action"] = "pass"
+        else:
+            entry["action"] = "bid"
+            entry["contract"] = bid.contract
+            entry["bid_type"] = bid.bid_type
+            # Track the high bidder — a non-pass bid must strictly
+            # overcall the current best (or be the first bid).
+            if hand.bidder_seat is None or bid.n > hand.current_high_bid:
+                hand.current_high_bid = bid.n
+                hand.bidder_seat = seat
+                hand.winning_bid = bid.n
+                ct, ts = bid.to_contract_tuple()
+                hand.contract_type = ct
+                hand.trump = ts
+
+        hand.auction.append(entry)
+        hand.turn_number += 1
+
+        # Check if auction is complete (4 bids)
+        if len(hand.auction) >= _NUM_PLAYERS:
+            state = self._process_auction_end(state)
+        else:
+            # Advance to next bidder
+            order = _bid_order(hand.dealer_seat)
+            next_idx = len(hand.auction)
+            hand.current_seat = order[next_idx]
+
+        return state
+
+    def _process_auction_end(self, state: MatchState) -> MatchState:
+        """Finalize the auction: set contract or trigger redeal."""
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.bidder_seat is None:
+            # All passed — redeal
+            hand.phase = "redeal"
+            state.dealer_seat = (state.dealer_seat + 1) % _NUM_PLAYERS
+            state.deal_id += 1
+            state = self._deal_new_hand(state)
+            state = self._advance_ai(state)
+            return state
+
+        # Contract set — transition to trick play
+        hand.phase = "trick_play"
+        # Declarer leads first trick (RULES.md §5.1)
+        assert hand.bidder_seat is not None
+        leader = hand.bidder_seat
+        hand.current_trick = TrickState(leader=leader)
+        hand.current_seat = leader
+
+        return state
+
+    # ------------------------------------------------------------------
+    # Internal — card play
+    # ------------------------------------------------------------------
+
+    def _process_card_play(
+        self, state: MatchState, seat: int, card_index: int
+    ) -> MatchState:
+        """Play a card from *seat*'s hand and advance the trick."""
+        hand = state.current_hand
+        assert hand is not None and hand.phase == "trick_play"
+        assert hand.current_trick is not None
+
+        # Remove card from hand and add to trick
+        card = hand.hands[seat].pop(card_index)
+        hand.current_trick.plays.append((seat, card))
+        hand.turn_number += 1
+
+        # Check if trick is complete (4 plays)
+        if len(hand.current_trick.plays) >= _NUM_PLAYERS:
+            state = self._process_trick_end(state)
+        else:
+            # Advance to next player in clockwise order from leader
+            next_seat = (seat + 1) % _NUM_PLAYERS
+            hand.current_seat = next_seat
+
+        return state
+
+    def _process_trick_end(self, state: MatchState) -> MatchState:
+        """Determine the trick winner and either start next trick or end hand."""
+        hand = state.current_hand
+        assert hand is not None and hand.current_trick is not None
+        assert hand.contract_type is not None
+
+        # Delegate to core rules for winner determination
+        winner = trick_winner(
+            hand.current_trick.plays,
+            hand.contract_type,
+            hand.trump,
+        )
+
+        # Record completed trick
+        result = TrickResult(
+            leader=hand.current_trick.leader,
+            plays=list(hand.current_trick.plays),
+            winner=winner,
+        )
+        hand.completed_tricks.append(result)
+
+        # Update team trick counts
+        if winner in (0, 2):
+            hand.tricks_team0 += 1
+        else:
+            hand.tricks_team1 += 1
+
+        # Check if hand is complete (10 tricks)
+        if len(hand.completed_tricks) >= _TRICKS_PER_HAND:
+            state = self._process_hand_end(state)
+        else:
+            # Winner leads next trick
+            hand.current_trick = TrickState(leader=winner)
+            hand.current_seat = winner
+
+        return state
+
+    def _process_hand_end(self, state: MatchState) -> MatchState:
+        """Score the hand, update match totals, and check for match end."""
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.winning_bid is not None
+        assert hand.bidder_seat is not None
+
+        hand.phase = "complete"
+        hand.current_trick = None
+
+        # Determine bid_type from auction
+        bid_type = "regular"
+        for entry in hand.auction:
+            if entry.get("seat") == hand.bidder_seat and entry.get("action") == "bid":
+                bid_type = entry.get("bid_type", "regular")
+
+        # Delegate scoring to the canonical function
+        pts0, pts1 = compute_points(
+            winning_bid=hand.winning_bid,
+            bidder_position=hand.bidder_seat,
+            tricks_team0=hand.tricks_team0,
+            tricks_team1=hand.tricks_team1,
+            bid_type=bid_type,
+        )
+        hand.points_team0 = pts0
+        hand.points_team1 = pts1
+
+        # Update match scores
+        state.score_human += pts0
+        state.score_ai += pts1
+        state.hands_played += 1
+
+        # Check for match end (±52)
+        if state.score_human >= MATCH_TARGET:
+            state.status = "complete"
+            state.winner = "human"
+            return state
+        if state.score_ai >= MATCH_TARGET:
+            state.status = "complete"
+            state.winner = "ai"
+            return state
+        # Also check negative threshold
+        if state.score_human <= -MATCH_TARGET:
+            state.status = "complete"
+            state.winner = "ai"
+            return state
+        if state.score_ai <= -MATCH_TARGET:
+            state.status = "complete"
+            state.winner = "human"
+            return state
+
+        # Deal next hand
+        state.dealer_seat = (state.dealer_seat + 1) % _NUM_PLAYERS
+        state.deal_id += 1
+        state = self._deal_new_hand(state)
+
+        return state
