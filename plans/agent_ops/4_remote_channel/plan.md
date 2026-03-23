@@ -26,7 +26,8 @@ treats the remote channel as a thin transport into `orchestrator`.
   Platform-8 transport work begins
 - SP-4-03 (token economy observability) establishes a token-cost baseline
   before remote transport adds a new cost dimension. SP-4-02 and SP-4-03
-  are safe to run in parallel (disjoint file scopes).
+  overlap in `scripts/internal/ops.py` and dashboard surfaces — serialize
+  shared CLI/dashboard work or split further during implementation.
 
 ## Phase Constraints
 
@@ -103,6 +104,6 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 
 ## Step Sequence
 
-See `checkpoints.md` for current step progress. Phase 4 follows the standard
+See `plans/agent_ops/4_remote_channel/checkpoints.md` for current step progress. Phase 4 follows the standard
 step template from the governing plan: scope lock -> implementation ->
 verification -> handoff, repeated per slice.
