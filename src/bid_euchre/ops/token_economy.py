@@ -1,4 +1,4 @@
-"""Token economy observability — import native Claude usage data.
+"""Token economy observability — import and attribute Claude usage data.
 
 Reads from ``~/.claude/usage-data/session-meta/*.json`` and
 ``~/.claude/usage-data/facets/*.json`` and normalizes them into a
@@ -7,7 +7,9 @@ repo-owned store under ``.claude/runtime/token_economy/``.
 Public API
 ----------
 import_usage_data
-    Main entry point. Idempotent — re-running does not duplicate sessions.
+    Import native usage data. Idempotent — re-running does not duplicate sessions.
+attribute_sessions
+    Infer lane/worktree attribution for imported sessions.
 """
 
 from __future__ import annotations
@@ -15,8 +17,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -492,5 +496,378 @@ def import_usage_data(
         sessions_skipped=skipped,
         sessions_failed=failed,
         total_sessions=total,
+        output_dir=str(resolved_output),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Attribution — lane inference from project_path
+# ---------------------------------------------------------------------------
+
+#: Canonical mapping from worktree directory basenames to lane IDs.
+#: Matches the pool definitions in ``task_queue.KNOWN_AUTHOR_LANES`` and
+#: ``worktrees.PROTECTED_WORKTREE_NAMES``.
+_WORKTREE_TO_LANE: dict[str, str] = {
+    # Platform pool
+    "Bid-Euchre-steward-author": "author-a",
+    "Bid-Euchre-steward-author-b": "author-b",
+    "Bid-Euchre-steward-author-c": "author-c",
+    "Bid-Euchre-steward-author-d": "author-d",
+    "Bid-Euchre-steward-author-scratch": "author-scratch",
+    # Browser-game pool
+    "Bid-Euchre-steward-brws-author-a": "brws-author-a",
+    "Bid-Euchre-steward-brws-author-b": "brws-author-b",
+    "Bid-Euchre-steward-brws-author-c": "brws-author-c",
+    "Bid-Euchre-steward-brws-author-d": "brws-author-d",
+    # Flex pool
+    "Bid-Euchre-steward-flex-a": "flex-a",
+    "Bid-Euchre-steward-flex-b": "flex-b",
+    "Bid-Euchre-steward-flex-c": "flex-c",
+    # Control plane
+    "Bid-Euchre-steward-review": "review",
+    "Bid-Euchre-steward-ops": "ops",
+}
+
+#: Worktree class categorization by lane prefix.
+_LANE_POOL: dict[str, str] = {
+    "author-": "platform",
+    "brws-author-": "browser-game",
+    "flex-": "flex",
+    "review": "control",
+    "ops": "control",
+}
+
+
+class AttributionQuality(str, Enum):
+    """Quality of session-to-lane attribution."""
+
+    ATTRIBUTED = "attributed"
+    PARTIALLY_ATTRIBUTED = "partially_attributed"
+    UNATTRIBUTED = "unattributed"
+
+
+@dataclass
+class SessionAttribution:
+    """Attribution result for a single session."""
+
+    session_id: str
+    lane_id: str | None = None
+    worktree_class: str | None = (
+        None  # "platform" | "browser-game" | "flex" | "control"
+    )
+    worktree_name: str | None = None
+    quality: str = AttributionQuality.UNATTRIBUTED.value
+    matched_packets: list[str] = field(default_factory=list)
+    attribution_timestamp: str = ""
+
+    # Token/throughput from the session for easy rollup
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_minutes: int = 0
+    lines_added: int = 0
+    lines_removed: int = 0
+    git_commits: int = 0
+
+
+def infer_lane_from_path(project_path: str | None) -> tuple[str | None, str | None]:
+    """Infer lane ID and worktree name from a session's project_path.
+
+    Parameters
+    ----------
+    project_path
+        The ``project_path`` field from a session record (absolute filesystem path).
+
+    Returns
+    -------
+    tuple[str | None, str | None]
+        ``(lane_id, worktree_name)`` if the path matches a known steward worktree,
+        ``(None, None)`` otherwise.
+    """
+    if not project_path:
+        return None, None
+
+    # Extract directory basename from the path.
+    # Handle paths that may end with / or contain subdirectories.
+    path = Path(project_path)
+    basename = path.name
+
+    # Direct match against known worktree names
+    lane_id = _WORKTREE_TO_LANE.get(basename)
+    if lane_id is not None:
+        return lane_id, basename
+
+    # Check parent directories — sessions may run from subdirectories
+    for parent in path.parents:
+        parent_name = parent.name
+        lane_id = _WORKTREE_TO_LANE.get(parent_name)
+        if lane_id is not None:
+            return lane_id, parent_name
+
+    # Try heuristic: look for "steward-" pattern in the path
+    match = re.search(r"Bid-Euchre-steward-([a-z0-9-]+)", project_path)
+    if match:
+        suffix = match.group(1)
+        # Reconstruct the worktree name and check
+        worktree_name = f"Bid-Euchre-steward-{suffix}"
+        lane_id = _WORKTREE_TO_LANE.get(worktree_name)
+        if lane_id is not None:
+            return lane_id, worktree_name
+
+    # Check if it's the main checkout (Bid-Euchre without steward suffix)
+    if basename == "Bid-Euchre" or "/Bid-Euchre/" in project_path:
+        return "main-checkout", "Bid-Euchre"
+
+    return None, None
+
+
+def _classify_pool(lane_id: str) -> str | None:
+    """Classify a lane ID into its pool category."""
+    for prefix, pool in _LANE_POOL.items():
+        if lane_id.startswith(prefix) or lane_id == prefix:
+            return pool
+    return None
+
+
+def _load_sessions(output_dir: Path) -> list[dict[str, Any]]:
+    """Load all session records from session_usage.jsonl."""
+    usage_file = output_dir / "session_usage.jsonl"
+    records: list[dict[str, Any]] = []
+    if not usage_file.exists():
+        return records
+    for line in usage_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return records
+
+
+def _time_overlaps(
+    session_start: str | None,
+    session_duration: int | None,
+    packet_created: str,
+    packet_completed: str | None,
+) -> bool:
+    """Check if a session's time window overlaps with a packet's lifecycle.
+
+    Uses a generous overlap: session active period vs packet created→completed.
+    """
+    if not session_start or session_duration is None:
+        return False
+    try:
+        s_start = datetime.fromisoformat(session_start.replace("Z", "+00:00"))
+        from datetime import timedelta
+
+        s_end = s_start + timedelta(minutes=max(session_duration, 1))
+        p_start = datetime.fromisoformat(packet_created.replace("Z", "+00:00"))
+        if packet_completed:
+            p_end = datetime.fromisoformat(packet_completed.replace("Z", "+00:00"))
+        else:
+            # Packet still open — extend to far future
+            p_end = datetime.max.replace(tzinfo=timezone.utc)
+        return s_start < p_end and s_end > p_start
+    except (ValueError, TypeError):
+        return False
+
+
+def join_to_packets(
+    attributions: list[SessionAttribution],
+    *,
+    task_queue_root: Path | None = None,
+) -> list[SessionAttribution]:
+    """Correlate attributed sessions with task packets by lane + time overlap.
+
+    Modifies attributions in-place by populating ``matched_packets`` and
+    upgrading quality from ``partially_attributed`` to ``attributed`` when
+    a packet match is found.
+
+    Parameters
+    ----------
+    attributions
+        List of :class:`SessionAttribution` objects with ``lane_id`` set.
+    task_queue_root
+        Path to ``.claude/runtime/task_queue/``. If None, auto-resolves.
+    """
+    resolved_tq: Path
+    if task_queue_root is not None:
+        resolved_tq = task_queue_root
+    else:
+        try:
+            from _repo_utils import find_repo_root  # type: ignore[import-not-found]
+
+            resolved_tq = find_repo_root() / ".claude" / "runtime" / "task_queue"
+        except Exception:
+            logger.warning("Cannot resolve task_queue_root; skipping packet join")
+            return attributions
+
+    if not resolved_tq.is_dir():
+        return attributions
+
+    # Load all packets (including archived)
+    packets: list[dict[str, Any]] = []
+    for pkt_file in sorted(resolved_tq.glob("*.json")):
+        data = _load_json(pkt_file)
+        if data and data.get("packet_id"):
+            packets.append(data)
+
+    # Also check archive directory
+    archive_dir = resolved_tq / "archive"
+    if archive_dir.is_dir():
+        for pkt_file in sorted(archive_dir.glob("*.json")):
+            data = _load_json(pkt_file)
+            if data and data.get("packet_id"):
+                packets.append(data)
+
+    # Build lane→session index for efficient matching
+    lane_sessions: dict[str, list[SessionAttribution]] = {}
+    for attr in attributions:
+        if attr.lane_id and attr.lane_id != "main-checkout":
+            lane_sessions.setdefault(attr.lane_id, []).append(attr)
+
+    # Match packets to sessions by lane ownership + time overlap
+    for pkt in packets:
+        pkt_owner = pkt.get("owner")
+        if not pkt_owner:
+            continue
+        pkt_id = pkt.get("packet_id", "")
+        pkt_created = pkt.get("created_at", "")
+        # Check metadata for completion timestamp
+        pkt_meta = pkt.get("metadata", {})
+        pkt_completed = pkt_meta.get("completed_at")
+
+        sessions_for_lane = lane_sessions.get(pkt_owner, [])
+        for attr in sessions_for_lane:
+            # Time overlap: use attribution_timestamp (= session start_time)
+            # with generous duration fallback for sessions missing duration
+            if _time_overlaps(
+                attr.attribution_timestamp,  # fallback to attr timestamp
+                attr.duration_minutes if attr.duration_minutes else 60,
+                pkt_created,
+                pkt_completed,
+            ):
+                if pkt_id not in attr.matched_packets:
+                    attr.matched_packets.append(pkt_id)
+                    if attr.quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value:
+                        attr.quality = AttributionQuality.ATTRIBUTED.value
+
+    return attributions
+
+
+@dataclass
+class AttributionResult:
+    """Summary of an attribute_sessions() run."""
+
+    total_sessions: int
+    attributed: int
+    partially_attributed: int
+    unattributed: int
+    lanes_found: list[str]
+    output_dir: str
+
+
+def attribute_sessions(
+    *,
+    output_dir: Path | None = None,
+    task_queue_root: Path | None = None,
+) -> AttributionResult:
+    """Attribute imported sessions to lanes and correlate with work outcomes.
+
+    Reads ``session_usage.jsonl``, infers lane from ``project_path``, joins
+    with task packets by lane + time overlap, and writes attribution results
+    to ``session_attributions.jsonl``.
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to
+        ``<repo-root>/.claude/runtime/token_economy/``.
+    task_queue_root
+        Path to ``.claude/runtime/task_queue/``. If None, auto-resolves.
+
+    Returns
+    -------
+    AttributionResult
+        Summary of attribution quality and lane distribution.
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    sessions = _load_sessions(resolved_output)
+
+    if not sessions:
+        return AttributionResult(
+            total_sessions=0,
+            attributed=0,
+            partially_attributed=0,
+            unattributed=0,
+            lanes_found=[],
+            output_dir=str(resolved_output),
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+    attributions: list[SessionAttribution] = []
+    lanes_seen: set[str] = set()
+
+    for session in sessions:
+        sid = session.get("session_id", "")
+        project_path = session.get("project_path")
+        lane_id, worktree_name = infer_lane_from_path(project_path)
+
+        pool = _classify_pool(lane_id) if lane_id else None
+
+        if lane_id is not None and lane_id != "main-checkout":
+            quality = AttributionQuality.PARTIALLY_ATTRIBUTED.value
+            lanes_seen.add(lane_id)
+        elif lane_id == "main-checkout":
+            quality = AttributionQuality.PARTIALLY_ATTRIBUTED.value
+            lanes_seen.add(lane_id)
+        else:
+            quality = AttributionQuality.UNATTRIBUTED.value
+
+        attr = SessionAttribution(
+            session_id=sid,
+            lane_id=lane_id,
+            worktree_class=pool,
+            worktree_name=worktree_name,
+            quality=quality,
+            attribution_timestamp=session.get("start_time", now),
+            input_tokens=session.get("input_tokens") or 0,
+            output_tokens=session.get("output_tokens") or 0,
+            duration_minutes=session.get("duration_minutes") or 0,
+            lines_added=session.get("lines_added") or 0,
+            lines_removed=session.get("lines_removed") or 0,
+            git_commits=session.get("git_commits") or 0,
+        )
+        attributions.append(attr)
+
+    # Join to task packets (upgrades quality where match found)
+    join_to_packets(attributions, task_queue_root=task_queue_root)
+
+    # Write attributions
+    attr_file = resolved_output / "session_attributions.jsonl"
+    with attr_file.open("w", encoding="utf-8") as f:
+        for attr in attributions:
+            f.write(json.dumps(asdict(attr), default=str) + "\n")
+
+    # Count by quality
+    n_attributed = sum(
+        1 for a in attributions if a.quality == AttributionQuality.ATTRIBUTED.value
+    )
+    n_partial = sum(
+        1
+        for a in attributions
+        if a.quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value
+    )
+    n_unattributed = sum(
+        1 for a in attributions if a.quality == AttributionQuality.UNATTRIBUTED.value
+    )
+
+    return AttributionResult(
+        total_sessions=len(attributions),
+        attributed=n_attributed,
+        partially_attributed=n_partial,
+        unattributed=n_unattributed,
+        lanes_found=sorted(lanes_seen),
         output_dir=str(resolved_output),
     )

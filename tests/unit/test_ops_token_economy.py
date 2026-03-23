@@ -1,4 +1,4 @@
-"""Tests for the token economy usage data importer.
+"""Tests for the token economy usage data importer and attribution.
 
 Validates:
 - Idempotent import (re-run produces same count)
@@ -6,6 +6,9 @@ Validates:
 - Imported session count matches source count
 - Facet data is merged when available
 - Rollup aggregation is correct
+- Lane inference from project_path
+- Attribution quality enum
+- Session-to-packet correlation
 """
 
 from __future__ import annotations
@@ -16,10 +19,16 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.token_economy import (
+    AttributionQuality,
+    AttributionResult,
     ImportResult,
     SchemaValidationError,
+    SessionAttribution,
     SessionRecord,
+    attribute_sessions,
     import_usage_data,
+    infer_lane_from_path,
+    join_to_packets,
     validate_facet,
     validate_session_meta,
 )
@@ -430,3 +439,380 @@ class TestSessionRecord:
     def test_schema_version(self) -> None:
         rec = SessionRecord(session_id="test")
         assert rec.schema_version == 1
+
+
+# ---------------------------------------------------------------------------
+# Lane inference tests
+# ---------------------------------------------------------------------------
+
+
+class TestInferLaneFromPath:
+    """Test lane ID inference from session project_path."""
+
+    def test_platform_author_a(self) -> None:
+        path = "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre-steward-author"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "author-a"
+        assert wt == "Bid-Euchre-steward-author"
+
+    def test_platform_author_b(self) -> None:
+        path = "/Users/foo/Bid-Euchre-meta/Bid-Euchre-steward-author-b"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "author-b"
+        assert wt == "Bid-Euchre-steward-author-b"
+
+    def test_platform_author_scratch(self) -> None:
+        path = "/Users/foo/Bid-Euchre-meta/Bid-Euchre-steward-author-scratch"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "author-scratch"
+
+    def test_browser_game_pool(self) -> None:
+        path = "/Users/foo/meta/Bid-Euchre-steward-brws-author-a"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "brws-author-a"
+        assert wt == "Bid-Euchre-steward-brws-author-a"
+
+    def test_flex_pool(self) -> None:
+        path = "/Users/foo/meta/Bid-Euchre-steward-flex-b"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "flex-b"
+
+    def test_control_ops(self) -> None:
+        path = "/Users/foo/meta/Bid-Euchre-steward-ops"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "ops"
+
+    def test_control_review(self) -> None:
+        path = "/Users/foo/meta/Bid-Euchre-steward-review"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "review"
+
+    def test_main_checkout(self) -> None:
+        path = "/Users/foo/Projects/Bid-Euchre-meta/Bid-Euchre"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "main-checkout"
+        assert wt == "Bid-Euchre"
+
+    def test_unknown_project(self) -> None:
+        path = "/Users/foo/some-other-project"
+        lane, wt = infer_lane_from_path(path)
+        assert lane is None
+        assert wt is None
+
+    def test_none_path(self) -> None:
+        lane, wt = infer_lane_from_path(None)
+        assert lane is None
+        assert wt is None
+
+    def test_empty_path(self) -> None:
+        lane, wt = infer_lane_from_path("")
+        assert lane is None
+        assert wt is None
+
+    def test_subdirectory_of_worktree(self) -> None:
+        """Sessions may run from subdirectories of the worktree."""
+        path = "/Users/foo/meta/Bid-Euchre-steward-author/src/bid_euchre"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "author-a"
+        assert wt == "Bid-Euchre-steward-author"
+
+    def test_all_known_lanes_covered(self) -> None:
+        """Every known author lane maps from at least one worktree path."""
+        from bid_euchre.ops.token_economy import _WORKTREE_TO_LANE
+
+        expected_lanes = {
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            "author-scratch",
+            "brws-author-a",
+            "brws-author-b",
+            "brws-author-c",
+            "brws-author-d",
+            "flex-a",
+            "flex-b",
+            "flex-c",
+            "review",
+            "ops",
+        }
+        assert set(_WORKTREE_TO_LANE.values()) == expected_lanes
+
+
+# ---------------------------------------------------------------------------
+# Attribution quality tests
+# ---------------------------------------------------------------------------
+
+
+class TestAttributionQuality:
+    def test_enum_values(self) -> None:
+        assert AttributionQuality.ATTRIBUTED.value == "attributed"
+        assert AttributionQuality.PARTIALLY_ATTRIBUTED.value == "partially_attributed"
+        assert AttributionQuality.UNATTRIBUTED.value == "unattributed"
+
+    def test_string_enum(self) -> None:
+        """AttributionQuality is a str enum for JSON serialization."""
+        assert isinstance(AttributionQuality.ATTRIBUTED, str)
+
+
+# ---------------------------------------------------------------------------
+# Attribution integration tests
+# ---------------------------------------------------------------------------
+
+
+def _populate_store(output_dir: Path, sessions: list[dict]) -> None:
+    """Write session records to session_usage.jsonl for attribution tests."""
+    usage_file = output_dir / "session_usage.jsonl"
+    with usage_file.open("w", encoding="utf-8") as f:
+        for s in sessions:
+            f.write(json.dumps(s) + "\n")
+
+
+class TestAttributeSessions:
+    def test_attribute_steward_sessions(self, output_dir: Path) -> None:
+        """Sessions from steward worktrees get lane attribution."""
+        sessions = [
+            {
+                "session_id": "s1",
+                "project_path": "/Users/foo/meta/Bid-Euchre-steward-author",
+                "start_time": "2026-03-20T10:00:00Z",
+                "duration_minutes": 30,
+                "input_tokens": 100,
+                "output_tokens": 500,
+                "lines_added": 20,
+                "lines_removed": 5,
+                "git_commits": 1,
+            },
+            {
+                "session_id": "s2",
+                "project_path": "/Users/foo/meta/Bid-Euchre-steward-flex-a",
+                "start_time": "2026-03-20T11:00:00Z",
+                "duration_minutes": 15,
+                "input_tokens": 50,
+                "output_tokens": 200,
+                "lines_added": 10,
+                "lines_removed": 2,
+                "git_commits": 0,
+            },
+        ]
+        _populate_store(output_dir, sessions)
+
+        # Use an empty task queue so packet join is skipped
+        tq_dir = output_dir / "empty_tq"
+        tq_dir.mkdir()
+
+        result = attribute_sessions(output_dir=output_dir, task_queue_root=tq_dir)
+
+        assert isinstance(result, AttributionResult)
+        assert result.total_sessions == 2
+        assert result.partially_attributed == 2  # lane found, no packet match
+        assert result.unattributed == 0
+        assert "author-a" in result.lanes_found
+        assert "flex-a" in result.lanes_found
+
+        # Verify attributions file
+        attr_file = output_dir / "session_attributions.jsonl"
+        assert attr_file.exists()
+        lines = [json.loads(l) for l in attr_file.read_text().splitlines() if l.strip()]
+        assert len(lines) == 2
+        assert lines[0]["lane_id"] == "author-a"
+        assert lines[0]["worktree_class"] == "platform"
+        assert lines[1]["lane_id"] == "flex-a"
+        assert lines[1]["worktree_class"] == "flex"
+
+    def test_attribute_unrecognized_project(self, output_dir: Path) -> None:
+        """Sessions from unknown projects are marked unattributed."""
+        sessions = [
+            {
+                "session_id": "s1",
+                "project_path": "/Users/foo/other-project",
+                "start_time": "2026-03-20T10:00:00Z",
+                "duration_minutes": 10,
+                "input_tokens": 100,
+                "output_tokens": 500,
+            },
+        ]
+        _populate_store(output_dir, sessions)
+
+        tq_dir = output_dir / "empty_tq"
+        tq_dir.mkdir()
+
+        result = attribute_sessions(output_dir=output_dir, task_queue_root=tq_dir)
+
+        assert result.unattributed == 1
+        assert result.partially_attributed == 0
+
+    def test_attribute_empty_store(self, output_dir: Path) -> None:
+        """Empty session store returns zero counts."""
+        result = attribute_sessions(output_dir=output_dir)
+        assert result.total_sessions == 0
+        assert result.lanes_found == []
+
+    def test_attribute_main_checkout(self, output_dir: Path) -> None:
+        """Main checkout sessions are partially attributed."""
+        sessions = [
+            {
+                "session_id": "s1",
+                "project_path": "/Users/foo/meta/Bid-Euchre",
+                "start_time": "2026-03-20T10:00:00Z",
+                "duration_minutes": 10,
+                "input_tokens": 100,
+                "output_tokens": 500,
+            },
+        ]
+        _populate_store(output_dir, sessions)
+
+        tq_dir = output_dir / "empty_tq"
+        tq_dir.mkdir()
+
+        result = attribute_sessions(output_dir=output_dir, task_queue_root=tq_dir)
+
+        assert result.partially_attributed == 1
+        assert "main-checkout" in result.lanes_found
+
+
+# ---------------------------------------------------------------------------
+# Packet join tests
+# ---------------------------------------------------------------------------
+
+
+class TestJoinToPackets:
+    def test_join_by_lane_and_time(self, tmp_path: Path) -> None:
+        """Sessions are joined to packets by matching lane + time overlap."""
+        # Create a task queue with one packet
+        tq_dir = tmp_path / "task_queue"
+        tq_dir.mkdir()
+        pkt = {
+            "packet_id": "pkt-001",
+            "title": "Test task",
+            "description": "Test",
+            "owner": "author-a",
+            "created_by": "orchestrator",
+            "created_at": "2026-03-20T09:30:00Z",
+            "status": "completed",
+            "metadata": {"completed_at": "2026-03-20T11:00:00Z"},
+        }
+        (tq_dir / "pkt-001.json").write_text(json.dumps(pkt), encoding="utf-8")
+
+        # Create attribution with overlapping time
+        attr = SessionAttribution(
+            session_id="s1",
+            lane_id="author-a",
+            quality=AttributionQuality.PARTIALLY_ATTRIBUTED.value,
+            attribution_timestamp="2026-03-20T10:00:00Z",
+            duration_minutes=30,
+        )
+
+        result = join_to_packets([attr], task_queue_root=tq_dir)
+
+        assert len(result) == 1
+        assert "pkt-001" in result[0].matched_packets
+        assert result[0].quality == AttributionQuality.ATTRIBUTED.value
+
+    def test_no_join_wrong_lane(self, tmp_path: Path) -> None:
+        """Sessions don't join to packets on a different lane."""
+        tq_dir = tmp_path / "task_queue"
+        tq_dir.mkdir()
+        pkt = {
+            "packet_id": "pkt-001",
+            "title": "Test task",
+            "description": "Test",
+            "owner": "author-b",
+            "created_by": "orchestrator",
+            "created_at": "2026-03-20T09:30:00Z",
+            "status": "completed",
+            "metadata": {},
+        }
+        (tq_dir / "pkt-001.json").write_text(json.dumps(pkt), encoding="utf-8")
+
+        attr = SessionAttribution(
+            session_id="s1",
+            lane_id="author-a",
+            quality=AttributionQuality.PARTIALLY_ATTRIBUTED.value,
+            attribution_timestamp="2026-03-20T10:00:00Z",
+            duration_minutes=30,
+        )
+
+        result = join_to_packets([attr], task_queue_root=tq_dir)
+
+        assert result[0].matched_packets == []
+        assert result[0].quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value
+
+    def test_no_join_non_overlapping_time(self, tmp_path: Path) -> None:
+        """Sessions don't join if time windows don't overlap."""
+        tq_dir = tmp_path / "task_queue"
+        tq_dir.mkdir()
+        pkt = {
+            "packet_id": "pkt-001",
+            "title": "Test task",
+            "description": "Test",
+            "owner": "author-a",
+            "created_by": "orchestrator",
+            "created_at": "2026-03-20T09:00:00Z",
+            "status": "completed",
+            "metadata": {"completed_at": "2026-03-20T09:30:00Z"},
+        }
+        (tq_dir / "pkt-001.json").write_text(json.dumps(pkt), encoding="utf-8")
+
+        attr = SessionAttribution(
+            session_id="s1",
+            lane_id="author-a",
+            quality=AttributionQuality.PARTIALLY_ATTRIBUTED.value,
+            attribution_timestamp="2026-03-20T12:00:00Z",
+            duration_minutes=30,
+        )
+
+        result = join_to_packets([attr], task_queue_root=tq_dir)
+
+        assert result[0].matched_packets == []
+
+    def test_join_with_archived_packets(self, tmp_path: Path) -> None:
+        """Archived packets are also checked for joins."""
+        tq_dir = tmp_path / "task_queue"
+        tq_dir.mkdir()
+        archive_dir = tq_dir / "archive"
+        archive_dir.mkdir()
+
+        pkt = {
+            "packet_id": "pkt-archived",
+            "title": "Archived task",
+            "description": "Test",
+            "owner": "author-a",
+            "created_by": "orchestrator",
+            "created_at": "2026-03-20T09:30:00Z",
+            "status": "completed",
+            "metadata": {"completed_at": "2026-03-20T11:00:00Z"},
+        }
+        (archive_dir / "pkt-archived.json").write_text(
+            json.dumps(pkt), encoding="utf-8"
+        )
+
+        attr = SessionAttribution(
+            session_id="s1",
+            lane_id="author-a",
+            quality=AttributionQuality.PARTIALLY_ATTRIBUTED.value,
+            attribution_timestamp="2026-03-20T10:00:00Z",
+            duration_minutes=30,
+        )
+
+        result = join_to_packets([attr], task_queue_root=tq_dir)
+
+        assert "pkt-archived" in result[0].matched_packets
+
+    def test_empty_task_queue(self, tmp_path: Path) -> None:
+        """Empty task queue leaves attributions unchanged."""
+        tq_dir = tmp_path / "task_queue"
+        tq_dir.mkdir()
+
+        attr = SessionAttribution(
+            session_id="s1",
+            lane_id="author-a",
+            quality=AttributionQuality.PARTIALLY_ATTRIBUTED.value,
+            attribution_timestamp="2026-03-20T10:00:00Z",
+            duration_minutes=30,
+        )
+
+        result = join_to_packets([attr], task_queue_root=tq_dir)
+
+        assert result[0].matched_packets == []
+        assert result[0].quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value
