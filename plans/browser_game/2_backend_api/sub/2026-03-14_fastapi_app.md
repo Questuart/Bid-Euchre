@@ -12,7 +12,9 @@
 
 Build a FastAPI web application with SQLAlchemy persistence, model loading,
 and route handlers for the full match lifecycle. Actions are idempotent
-and state survives browser refresh.
+and state survives browser refresh. For V1, approved AI models are
+configuration-backed and preloaded at app startup rather than discovered from a
+database registry.
 
 ## Files to Create
 
@@ -20,7 +22,7 @@ and state survives browser refresh.
 |------|-------------|---------|
 | `web/__init__.py` | ~1 | Package marker |
 | `web/app.py` | ~50 | FastAPI app setup, startup/shutdown, middleware |
-| `web/config.py` | ~30 | Environment settings (DB path, model dir, etc.) |
+| `web/config.py` | ~30 | Environment settings (DB URL/path, `HYBRID_OLSA_ARTIFACT`, default model id, etc.) |
 | `web/db.py` | ~120 | SQLAlchemy models + session management |
 | `web/schema.sql` | ~60 | Raw SQL schema for reference/init |
 | `web/ai_manager.py` | ~80 | Strategy loading from model roster |
@@ -45,12 +47,14 @@ class Player(Base):
 class Match(Base):
     __tablename__ = "matches"
     id: int (PK)
+    match_uuid: str (unique)
     player_id: int (FK → players)
     ai_model: str
     status: str  # "active" | "complete" | "abandoned"
     score_human: int (default 0)
     score_ai: int (default 0)
     hands_played: int (default 0)
+    current_hand_number: int (default 0)
     seed: int
     match_state_json: str  # serialized MatchState
     created_at: str
@@ -61,40 +65,48 @@ class Hand(Base):
     id: int (PK)
     match_id: int (FK → matches)
     hand_number: int
-    # ... per governing plan schema
+    deal_id: int
+    dealer_seat: int
+    status: str  # "in_progress" | "redeal" | "complete"
+    hand_state_json: str
+    # ... outcome fields per governing plan schema
 
 class Decision(Base):
     __tablename__ = "decisions"
     id: int (PK)
+    match_id: int (FK → matches)
     hand_id: int (FK → hands)
     turn_number: int
     seat: int
     phase: str  # "bid" | "play"
-    decision_source: str  # "human" | model name
+    actor_type: str  # "human" | "ai"
+    decision_source: str  # "human" | model id
     game_state_json: str
     legal_actions_json: str
     chosen_action_json: str
     decision_time_ms: int (nullable)
-    timestamp: str
+    created_at: str
 ```
 
 **Note:** V1 uses SQLite locally and Postgres in deployed environments.
 SQLAlchemy abstracts the difference. The `match_state_json` column stores the
 full serialized `MatchState` for resume — this avoids complex ORM mapping of
-nested game state.
+nested game state. The approved model roster is config-backed in V1, so there
+is no database `model_registry` table in the initial schema.
 
 ## AI Manager (`ai_manager.py`)
 
 ```python
 class AIManager:
-    """Loads bidding policies and play strategies from model roster."""
+    """Preloads approved bidding policies and play strategies at startup."""
 
-    def __init__(self, models_dir: Optional[Path] = None):
+    def __init__(self, config: HostedPlayConfig):
         self.available_models: dict[str, ModelInfo] = {}
-        self._discover_models(models_dir)
+        self.default_model_id = "heuristic"
+        self._load_models(config)
 
-    def _discover_models(self, models_dir):
-        """Register heuristic always; register hybrid_olsa and gbt_action_value when configured artifacts exist."""
+    def _load_models(self, config):
+        """Register and preload the approved V1 roster once per app process."""
 
     def get_model_info(self, model_id: str) -> ModelInfo:
         """Return display name, description, and instantiated policy/strategy."""
@@ -114,10 +126,12 @@ class ModelInfo:
 Model discovery at startup:
 1. `heuristic` — always available (`HeuristicSuitBidder()`)
 2. `hybrid_olsa` — available if `HYBRID_OLSA_ARTIFACT` or equivalent configured path exists
-3. `gbt_action_value` — available if `GBT_ACTION_VALUE_ARTIFACT` or equivalent configured path exists
+3. `gbt_action_value` — deferred until post-MVP
 
 Model discovery is driven by environment configuration rooted at a centralized
-models directory/path config, not by hardcoded paths in routes or templates.
+path config, not by hardcoded paths in routes or templates. Routes read cached
+model instances from `app.state.ai_manager`; they do not load artifacts on
+demand.
 
 ## Route Handlers (`routes.py`)
 
@@ -142,12 +156,13 @@ Every game-action POST (`/bid`, `/play-card`):
    return current visible state without modifying anything
 4. Call `MatchEngine.submit_human_bid()` or `submit_human_card()`
    - Engine auto-advances all AI turns
-5. Log the human decision to `decisions` table
-6. Log each AI decision to `decisions` table
-7. Serialize updated `MatchState` back to `match.match_state_json`
-8. Update `match` row (score, hands_played, status)
-9. If hand completed, insert `hands` row with outcome
-10. Return HTMX partial with updated game board
+5. Ensure the current `hands` row exists for the active hand
+6. Log the human decision to `decisions` table
+7. Log each AI decision to `decisions` table
+8. Serialize updated `MatchState` back to `match.match_state_json`
+9. Update `match` row (score, hands_played, status)
+10. If the hand completed or redealt, update the current `hands` row with outcome fields
+11. Return HTMX partial with updated game board
 
 ### Idempotent Submission
 
@@ -162,8 +177,9 @@ browser refresh and double-click safe.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Initialize database (create tables if needed)
-    # 2. Load AI models via AIManager
+    # 2. Load approved V1 AI models once via AIManager
     # 3. Store AIManager in app.state
+    # 4. Routes only look up cached model ids; no per-request artifact loading
     yield
     # Cleanup
 

@@ -2,7 +2,7 @@
 
 **ID:** SP-1-01
 **Parent:** Phase 1 — State Engine
-**Status:** proposed
+**Status:** in_progress
 **Governing plan:** `plans/browser_game/governing_plan.md`
 **Created:** 2026-03-14
 

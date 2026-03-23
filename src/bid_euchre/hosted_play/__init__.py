@@ -7,3 +7,12 @@ and strategy interfaces from ``bid_euchre.core``, ``bid_euchre.strategy``,
 This package is web-framework-free.  The ``web/`` application layer imports
 from here; this package must never import from ``web/``.
 """
+
+from .state import HandState, MatchState, TrickResult, TrickState
+
+__all__ = [
+    "HandState",
+    "MatchState",
+    "TrickResult",
+    "TrickState",
+]

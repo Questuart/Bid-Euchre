@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/browser_game/governing_plan.md`
 **Phase/Rung:** `0_foundation`
-**Last updated:** 2026-03-15 by Codex
+**Last updated:** 2026-03-23 by Codex
 
 ---
 
@@ -13,23 +13,26 @@
 | Step 0: Draft governing plan and initiative scaffold | COMPLETE | 2026-03-14 | Codex | Governing plan, amendments log, registry, and phase checkpoints created. |
 | Step 1: Lock hosted-play rules contract | COMPLETE | 2026-03-15 | Codex | Authoritative rules contract now lives at `docs/01_core/HOSTED_PLAY_RULES.md`; planning draft left as a pointer only. |
 | Step 2: Add dependencies and package skeleton | COMPLETE | 2026-03-23 | brws-author-a | `hosted` extras in `pyproject.toml`; package skeleton added (`src/bid_euchre/hosted_play/__init__.py`, `web/__init__.py`). |
-| Step 3: Create database schema | PENDING | -- | -- | Create `web/schema.sql` with players, matches, hands, decisions tables. See governing plan §5.2 and SP-2-01. |
-| Step 4: Inventory model artifacts | COMPLETE | 2026-03-15 | Codex | Verified `heuristic` is always available; hybrid and GBT artifacts exist under `data/artifacts/arc_d/r0/` and `data/artifacts/arc_d_v2/r0/`. |
+| Step 3: Create database schema | COMPLETE | 2026-03-23 | Codex | Added `web/schema.sql` with `players`, `matches`, `hands`, and `decisions`. V1 stores `ai_model` on matches and does not add a database `model_registry` table. |
+| Step 4: Inventory model artifacts | COMPLETE | 2026-03-23 | Codex | Verified `heuristic` is always available and `hybrid_olsa` artifacts exist under `data/artifacts/arc_d/r0/`; `gbt_action_value` artifacts exist but are deferred from V1 by amendment BG-1. |
 | Step 5: Promote plan to ACTIVE | COMPLETE | 2026-03-15 | Codex | Governing plan status set to `ACTIVE`; Phase 0 now tracks only execution-prep work. |
 
 ## Active Sub-Plans
 
-| Sub-Plan ID | File | Status | Blocking Step |
-|-------------|------|--------|---------------|
-| SP-0-01 | `sub/2026-03-14_phase0_foundation_lock.md` | in_progress | Step 2 |
+No active sub-plans. `SP-0-01` completed on 2026-03-23.
 
 ## Blockers
 
 - [x] ~~Authoritative hosted-play rules doc~~ → `docs/01_core/HOSTED_PLAY_RULES.md`
 - [x] ~~Package skeleton~~ → `src/bid_euchre/hosted_play/__init__.py`, `web/__init__.py`
-- [ ] Initial database schema not yet locked in files
+- [x] ~~Initial database schema not yet locked in files~~ → `web/schema.sql`
 
 ## Session Log
+
+### 2026-03-23 -- Codex
+- Completed: Recorded amendment BG-1 to narrow V1 serving to `heuristic` plus `hybrid_olsa`, clarified config-backed startup preload, and added `web/schema.sql`.
+- Completed: Step 3 → COMPLETE. Phase 0 foundation lock is now closed.
+- Next: Start Phase 1 Step 0 by reading `SP-1-01` and implementing the hosted-play state dataclasses plus stepwise engine.
 
 ### 2026-03-23 -- brws-author-a
 - Completed: Added package skeleton — `src/bid_euchre/hosted_play/__init__.py` and `web/__init__.py`. Step 2 → COMPLETE.
