@@ -101,8 +101,11 @@ Each active phase maintains a checkpoint file at:
 
 Current active phase:
 
-- Phase 4 (`4_remote_channel`) and Phase 5 (`5_portability_and_learning`) are
-  both unblocked and ready for entry (both depend on Phase 3).
+- No numbered phase is currently active. The next governed action is the
+  post-Phase-3 dual-domain layout transition (SP-3-05), followed by
+  Phase 4 scope lock. Phase 4 (`4_remote_channel`) and Phase 5
+  (`5_portability_and_learning`) are both unblocked and ready for entry
+  (both depend on Phase 3, which is COMPLETE).
 
 Completed phases:
 
