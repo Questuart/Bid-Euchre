@@ -2324,6 +2324,55 @@ def cmd_review_check(args: argparse.Namespace) -> int:
     return 1 if has_blockers else 0
 
 
+def cmd_lane(args: argparse.Namespace) -> int:
+    """Lane lifecycle management (refresh, etc.)."""
+    action = getattr(args, "lane_action", None)
+
+    if action == "refresh":
+        all_idle = getattr(args, "all_idle", False)
+        force = getattr(args, "force", False)
+
+        if all_idle:
+            from bid_euchre.ops.worker_pool import (
+                format_action_text,
+                format_actions_json,
+                refresh_all_idle,
+            )
+
+            actions = refresh_all_idle(force=force, runtime_dir=args.runtime_dir)
+            if args.json:
+                print(json.dumps(format_actions_json(actions), indent=2))
+            else:
+                if actions:
+                    for a in actions:
+                        print(format_action_text(a))
+                else:
+                    print("No idle lanes to refresh.")
+            # Return 0 if at least one action executed, 1 if all failed
+            return 0 if any(a.executed for a in actions) or not actions else 1
+
+        # Single lane refresh
+        lane_id = getattr(args, "lane_id", None)
+        if not lane_id:
+            print("Error: either lane_id or --all-idle is required", file=sys.stderr)
+            return 1
+
+        from bid_euchre.ops.worker_pool import format_action_text, refresh_worker
+
+        result = refresh_worker(lane_id, force=force, runtime_dir=args.runtime_dir)
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2))
+        else:
+            print(format_action_text(result))
+        return 0 if result.executed else 1
+
+    else:
+        print("Usage: ops.py lane refresh <lane-id> | --all-idle")
+        return 1
+
+
 def cmd_workers(args: argparse.Namespace) -> int:
     """Worker pool lifecycle management (Platform-7)."""
     from bid_euchre.ops.worker_pool import (
@@ -3250,6 +3299,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not send findings to the orchestrator inbox",
     )
 
+    # lane (lane lifecycle management)
+    lane_parser = subparsers.add_parser(
+        "lane", help="Lane lifecycle management (refresh, etc.)"
+    )
+    lane_sub = lane_parser.add_subparsers(dest="lane_action")
+
+    lane_refresh_parser = lane_sub.add_parser(
+        "refresh",
+        help="Reset worktree to origin/main and clear Claude session",
+    )
+    lane_refresh_parser.add_argument(
+        "lane_id",
+        nargs="?",
+        default=None,
+        help="Lane ID to refresh (e.g. author-a)",
+    )
+    lane_refresh_parser.add_argument(
+        "--all-idle",
+        action="store_true",
+        default=False,
+        help="Refresh all lanes without active dispatched packets",
+    )
+    lane_refresh_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Save dirty worktree diff to /tmp and proceed with reset",
+    )
+
     # workers (Platform-7: worker pool lifecycle management)
     workers_parser = subparsers.add_parser(
         "workers", help="Worker pool lifecycle management (Platform-7)"
@@ -3420,6 +3498,7 @@ def main(argv: list[str] | None = None) -> int:
         "supervisor": cmd_supervisor,
         "monitor": cmd_monitor,
         "review-check": cmd_review_check,
+        "lane": cmd_lane,
         "workers": cmd_workers,
         "usage": cmd_usage,
     }
