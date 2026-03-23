@@ -3421,6 +3421,29 @@ class TestTaskComplete:
         )
         assert archive_path.exists()
 
+        # Verify task_completed event was emitted
+        events_dir = runtime_dir / "events"
+        event_files = sorted(events_dir.glob("*.jsonl"))
+        assert event_files, "Expected at least one event file"
+        events = []
+        for ef in event_files:
+            for line in ef.read_text().splitlines():
+                if line.strip():
+                    events.append(json.loads(line))
+        completed_events = [
+            e for e in events if e.get("event_type") == "task_completed"
+        ]
+        assert (
+            len(completed_events) == 1
+        ), f"Expected 1 task_completed event, got {len(completed_events)}"
+        evt = completed_events[0]
+        assert evt["payload"]["packet_id"] == packet_id
+        assert evt["payload"]["title"] == "Complete test"
+        assert evt["payload"]["summary"] == "All done"
+        assert evt["payload"]["pr_number"] == 1234
+        assert evt["payload"]["completed_by"] == "author-a"
+        assert evt["lane_id"] == "author-a"
+
     def test_task_complete_json_output(
         self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
