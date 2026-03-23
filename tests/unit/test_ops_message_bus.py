@@ -1118,12 +1118,6 @@ class TestTTLAutoExpireOnRead:
         assert len(inbox) == 1
         assert inbox[0]["status"] == "pending"
 
-        # Simulate time passing — read_inbox auto-expires internally
-        # We need to manipulate the message creation time to be in the past.
-        # Since auto_expire uses the current time, we create a message
-        # with a very short TTL and old timestamp.
-        import time as _time
-
         # Create another message with TTL=1 second
         msg2 = create_message(
             "a",
@@ -1134,11 +1128,9 @@ class TestTTLAutoExpireOnRead:
         )
         send_message(msg2, bus_root, events_dir=events_dir)
 
-        # Sleep briefly to ensure TTL elapses
-        _time.sleep(1.1)
-
-        # Reading inbox should auto-expire
-        inbox2 = read_inbox("target2", bus_root)
+        # Use deterministic now= parameter instead of sleeping
+        future_time = time.time() + 100  # well past 1s TTL
+        inbox2 = read_inbox("target2", bus_root, now=future_time)
         assert len(inbox2) == 1
         assert inbox2[0]["status"] == "expired"
 
@@ -1153,12 +1145,9 @@ class TestTTLAutoExpireOnRead:
         )
         send_message(msg, bus_root, events_dir=events_dir)
 
-        import time as _time
-
-        _time.sleep(1.1)
-
-        # With auto_expire=False, message stays pending
-        inbox = read_inbox("target", bus_root, auto_expire=False)
+        # Use deterministic now= with auto_expire=False — message stays pending
+        future_time = time.time() + 100  # well past 1s TTL
+        inbox = read_inbox("target", bus_root, auto_expire=False, now=future_time)
         assert len(inbox) == 1
         assert inbox[0]["status"] == "pending"
 
@@ -1177,11 +1166,9 @@ class TestTTLAutoExpireOnRead:
         ack_message(msg.message_id, "target", bus_root, events_dir=events_dir)
         resolve_message(msg.message_id, "target", bus_root, events_dir=events_dir)
 
-        import time as _time
-
-        _time.sleep(1.1)
-
-        inbox = read_inbox("target", bus_root, status="resolved")
+        # Use deterministic now= instead of sleeping
+        future_time = time.time() + 100  # well past 1s TTL
+        inbox = read_inbox("target", bus_root, status="resolved", now=future_time)
         assert len(inbox) == 1
         assert inbox[0]["status"] == "resolved"
 
