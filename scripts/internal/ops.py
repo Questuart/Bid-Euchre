@@ -1565,7 +1565,10 @@ def cmd_task(args: argparse.Namespace) -> int:
                     )
                     return 1
 
-        result = dispatch_to_worker(packet_id, lane_id, runtime_dir=args.runtime_dir)
+        do_reset = getattr(args, "reset", False)
+        result = dispatch_to_worker(
+            packet_id, lane_id, runtime_dir=args.runtime_dir, reset=do_reset
+        )
         if args.json:
             from dataclasses import asdict
 
@@ -1573,7 +1576,10 @@ def cmd_task(args: argparse.Namespace) -> int:
         else:
             print(format_action_text(result))
             if result.executed:
-                print(f"\nDispatched {packet_id} -> {lane_id}")
+                if do_reset:
+                    print(f"\nDispatched {packet_id} -> {lane_id} (with reset)")
+                else:
+                    print(f"\nDispatched {packet_id} -> {lane_id}")
                 print(f"  The lane should receive /start-task {packet_id}")
         return 0 if result.executed else 1
 
@@ -2325,7 +2331,10 @@ def cmd_workers(args: argparse.Namespace) -> int:
     elif action == "dispatch":
         packet_id = args.packet_id
         lane_id = args.lane_id
-        result = dispatch_to_worker(packet_id, lane_id, runtime_dir=args.runtime_dir)
+        do_reset = getattr(args, "reset", False)
+        result = dispatch_to_worker(
+            packet_id, lane_id, runtime_dir=args.runtime_dir, reset=do_reset
+        )
         if args.json:
             from dataclasses import asdict
 
@@ -2815,6 +2824,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="auto_approve",
         help="Auto-approve the packet before dispatching (for pending/previewing packets)",
     )
+    task_dispatch_parser.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Reset worktree to origin/main and clear Claude session before dispatching",
+    )
 
     task_accept_parser = task_sub.add_parser(
         "accept",
@@ -3004,6 +3019,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     workers_dispatch.add_argument("packet_id", help="Task packet ID to dispatch")
     workers_dispatch.add_argument("lane_id", help="Target lane ID")
+    workers_dispatch.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Reset worktree to origin/main and clear Claude session before dispatching",
+    )
 
     workers_maintain = workers_sub.add_parser(
         "maintain", help="Run periodic maintenance (park idle, retire parked)"

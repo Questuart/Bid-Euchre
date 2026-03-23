@@ -26,6 +26,7 @@ from bid_euchre.ops.worker_pool import (
     _probe_tmux_pane,
     _resolve_agent_name,
     _resolve_tmux_target,
+    clear_session,
     dispatch_to_worker,
     format_action_text,
     format_actions_json,
@@ -34,6 +35,7 @@ from bid_euchre.ops.worker_pool import (
     get_lane_domain,
     nudge_pane,
     park_worker,
+    reset_worktree,
     retire_worker,
     run_pool_maintenance,
     select_worker,
@@ -1727,6 +1729,315 @@ class TestNudgePane:
             assert "steward:platform.1" in result.reason
             call_args = mock_run.call_args[0][0]
             assert call_args[3] == "steward:platform.1"
+
+
+# ---------------------------------------------------------------------------
+# Reset worktree
+# ---------------------------------------------------------------------------
+
+
+class TestResetWorktree:
+    """Test reset_worktree() with mocked subprocess and worktree resolution."""
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_reset_success(self, mock_run: MagicMock, mock_resolve: MagicMock) -> None:
+        mock_resolve.return_value = "/tmp/wt-author-a"
+        mock_run.return_value = MagicMock(returncode=0)
+        result = reset_worktree("author-a")
+        assert result.executed is True
+        assert result.action == "reset_worktree"
+        assert result.error is None
+        assert "origin/main" in result.reason
+        # Should call git fetch then git reset
+        assert mock_run.call_count == 2
+        fetch_call = mock_run.call_args_list[0]
+        assert fetch_call[0][0] == ["git", "fetch", "origin", "main"]
+        assert fetch_call[1]["cwd"] == "/tmp/wt-author-a"
+        reset_call = mock_run.call_args_list[1]
+        assert reset_call[0][0] == ["git", "reset", "--hard", "origin/main"]
+        assert reset_call[1]["cwd"] == "/tmp/wt-author-a"
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    def test_reset_worktree_not_found(self, mock_resolve: MagicMock) -> None:
+        mock_resolve.return_value = None
+        result = reset_worktree("author-x")
+        assert result.executed is False
+        assert result.error == "worktree_not_found"
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_reset_fetch_fails(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
+        import subprocess as sp
+
+        mock_resolve.return_value = "/tmp/wt-author-a"
+        mock_run.side_effect = sp.CalledProcessError(1, "git")
+        result = reset_worktree("author-a")
+        assert result.executed is False
+        assert result.error == "reset_failed"
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_reset_timeout(self, mock_run: MagicMock, mock_resolve: MagicMock) -> None:
+        import subprocess as sp
+
+        mock_resolve.return_value = "/tmp/wt-author-a"
+        mock_run.side_effect = sp.TimeoutExpired("git", 30)
+        result = reset_worktree("author-a")
+        assert result.executed is False
+        assert result.error == "reset_failed"
+
+
+# ---------------------------------------------------------------------------
+# Clear session
+# ---------------------------------------------------------------------------
+
+
+class TestClearSession:
+    """Test clear_session() with mocked subprocess."""
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_clear_success(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=0)
+        result = clear_session("author-a")
+        assert result.executed is True
+        assert result.action == "clear_session"
+        assert result.error is None
+        assert "/clear" in result.reason
+        mock_run.assert_called_once_with(
+            [
+                "tmux",
+                "send-keys",
+                "-t",
+                "steward:author-a",
+                "/clear",
+                "Enter",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_clear_custom_session(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=0)
+        result = clear_session("author-b", tmux_session="custom")
+        assert result.executed is True
+        call_args = mock_run.call_args[0][0]
+        assert call_args[3] == "custom:author-b"
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_clear_subprocess_error(self, mock_run: MagicMock) -> None:
+        import subprocess as sp
+
+        mock_run.side_effect = sp.CalledProcessError(1, "tmux")
+        result = clear_session("author-a")
+        assert result.executed is False
+        assert result.error == "clear_failed"
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_clear_tmux_not_found(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = FileNotFoundError("tmux not found")
+        result = clear_session("author-a")
+        assert result.executed is False
+        assert result.error == "clear_failed"
+
+    def test_clear_uses_registry_target(self, tmp_path: Path) -> None:
+        """When registry has window.pane, clear targets that."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_window": "platform", "tmux_pane": "1"}
+        (registry_dir / "author-b.json").write_text(json.dumps(entry))
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = clear_session("author-b", runtime_dir=tmp_path)
+            assert result.executed is True
+            assert "steward:platform.1" in result.reason
+            call_args = mock_run.call_args[0][0]
+            assert call_args[3] == "steward:platform.1"
+
+
+# ---------------------------------------------------------------------------
+# Dispatch with reset
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchWithReset:
+    """Test dispatch_to_worker() with reset=True."""
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}.reset_worktree")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_with_reset_calls_reset_and_clear(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_reset: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch with reset=True should call reset_worktree and clear_session."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_reset.return_value = PoolAction(
+            action="reset_worktree",
+            lane_id="author-a",
+            reason="Reset OK",
+            executed=True,
+        )
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id="author-a",
+            reason="Clear OK",
+            executed=True,
+        )
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker(
+            "pkt1", "author-a", runtime_dir=runtime_dir, reset=True
+        )
+        assert result.executed is True
+        mock_reset.assert_called_once_with("author-a", runtime_dir=runtime_dir)
+        mock_clear.assert_called_once()
+        mock_sleep.assert_called_once_with(2)
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_without_reset_skips_reset(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch with reset=False (default) should NOT call reset_worktree."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        with (
+            patch(f"{_WORKER_POOL}.reset_worktree") as mock_reset,
+            patch(f"{_WORKER_POOL}.clear_session") as mock_clear,
+        ):
+            result = dispatch_to_worker(
+                "pkt1", "author-a", runtime_dir=runtime_dir, reset=False
+            )
+            assert result.executed is True
+            mock_reset.assert_not_called()
+            mock_clear.assert_not_called()
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}.reset_worktree")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_continues_if_reset_fails(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_reset: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch should continue even if reset_worktree fails (best-effort)."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_reset.return_value = PoolAction(
+            action="reset_worktree",
+            lane_id="author-a",
+            reason="Failed to reset",
+            executed=False,
+            error="reset_failed",
+        )
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id="author-a",
+            reason="Clear OK",
+            executed=True,
+        )
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker(
+            "pkt1", "author-a", runtime_dir=runtime_dir, reset=True
+        )
+        # Dispatch should still succeed despite reset failure
+        assert result.executed is True
+        mock_reset.assert_called_once()
+        mock_clear.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
