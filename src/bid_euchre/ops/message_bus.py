@@ -1035,12 +1035,15 @@ DEFAULT_NATIVE_INBOX_DIR = Path.home() / ".claude" / "teams" / "default" / "inbo
 def _native_content_hash(entry: dict[str, Any]) -> str:
     """Compute a stable content hash for a native inbox entry.
 
-    Uses (from, timestamp, summary) as the dedup key.  This is stable
+    Uses (from, timestamp, summary, text) as the dedup key.  This is stable
     across reruns as long as the native inbox entry hasn't changed.
     """
     import hashlib
 
-    key = f"{entry.get('from', '')}|{entry.get('timestamp', '')}|{entry.get('summary', '')}"
+    key = (
+        f"{entry.get('from', '')}|{entry.get('timestamp', '')}"
+        f"|{entry.get('summary', '')}|{entry.get('text', '')}"
+    )
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
@@ -1083,66 +1086,78 @@ def import_native_inbox(
         logger.warning("Native inbox for %s is not a JSON array", lane_id)
         return []
 
-    # Read existing inbox to find already-imported hashes
+    # Use a dedicated lock for the native import cycle to prevent concurrent
+    # imports from inserting duplicates.  This is separate from the inbox lock
+    # (which send_message acquires internally) to avoid deadlock.
     root = shared_bus_root(bus_root)
-    existing_raw = _read_inbox_raw(lane_id, root)
-    existing_hashes: set[str] = set()
-    for rec in existing_raw:
-        payload = rec.get("payload", {})
-        native_hash = payload.get("native_hash")
-        if native_hash:
-            existing_hashes.add(native_hash)
+    import_lock = root / INBOX_DIR / f".{lane_id}.native_import.lock"
+    import_lock.parent.mkdir(parents=True, exist_ok=True)
 
     imported: list[dict[str, Any]] = []
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        content_hash = _native_content_hash(entry)
-        if content_hash in existing_hashes:
-            continue
-
-        # Map native fields to BusMessage
-        from_lane = entry.get("from", "unknown")
-        summary = entry.get("summary", "")
-        text = entry.get("text", "")
-        timestamp = entry.get("timestamp", _now_iso())
-
-        msg = BusMessage(
-            message_id=uuid.uuid4().hex[:16],
-            thread_id=None,
-            task_id=None,
-            from_lane=from_lane,
-            to_lane=lane_id,
-            message_type="progress",  # best-fit generic type for native messages
-            priority="normal",
-            status="pending",
-            created_at=timestamp,
-            acked_at=None,
-            resolved_at=None,
-            requires_human=False,
-            summary=summary[:200] if summary else text[:200],
-            payload={
-                "native_hash": content_hash,
-                "native_text": text,
-                "native_read": entry.get("read", False),
-                "max_retries": DEFAULT_MAX_RETRIES,
-                "retry_count": 0,
-                "ttl_seconds": DEFAULT_TTL_SECONDS,
-            },
-            source_transport="claude_native",
-        )
-
+    with open(import_lock, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
         try:
-            send_message(msg, bus_root, events_dir=events_dir)
-            imported.append(asdict(msg))
-            existing_hashes.add(content_hash)
-        except (ValueError, OSError) as exc:
-            logger.warning(
-                "Failed to import native message for %s (hash=%s): %s",
-                lane_id,
-                content_hash,
-                exc,
-            )
+            # Read existing inbox to find already-imported hashes
+            existing_raw = _read_inbox_raw(lane_id, root)
+            existing_hashes: set[str] = set()
+            for rec in existing_raw:
+                payload = rec.get("payload", {})
+                native_hash = payload.get("native_hash")
+                if native_hash:
+                    existing_hashes.add(native_hash)
+
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                content_hash = _native_content_hash(entry)
+                if content_hash in existing_hashes:
+                    continue
+
+                # Map native fields to BusMessage
+                from_lane = entry.get("from", "unknown")
+                summary = entry.get("summary", "")
+                text = entry.get("text", "")
+                native_timestamp = entry.get("timestamp", "")
+
+                msg = BusMessage(
+                    message_id=uuid.uuid4().hex[:16],
+                    thread_id=None,
+                    task_id=None,
+                    from_lane=from_lane,
+                    to_lane=lane_id,
+                    message_type="progress",  # best-fit generic type
+                    priority="normal",
+                    status="pending",
+                    created_at=_now_iso(),  # import time, not native time
+                    acked_at=None,
+                    resolved_at=None,
+                    requires_human=False,
+                    summary=summary[:200] if summary else text[:200],
+                    payload={
+                        "native_hash": content_hash,
+                        "native_text": text,
+                        "native_read": entry.get("read", False),
+                        "native_timestamp": native_timestamp,
+                        "max_retries": DEFAULT_MAX_RETRIES,
+                        "retry_count": 0,
+                        "ttl_seconds": DEFAULT_TTL_SECONDS,
+                    },
+                    source_transport="claude_native",
+                )
+
+                try:
+                    send_message(msg, bus_root, events_dir=events_dir)
+                    imported.append(asdict(msg))
+                    existing_hashes.add(content_hash)
+                except (ValueError, OSError) as exc:
+                    logger.warning(
+                        "Failed to import native message for %s (hash=%s): %s",
+                        lane_id,
+                        content_hash,
+                        exc,
+                    )
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
     logger.info(
         "Imported %d native message(s) for %s (%d skipped as duplicates)",

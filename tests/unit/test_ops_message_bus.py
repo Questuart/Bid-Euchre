@@ -1280,6 +1280,22 @@ class TestNativeInboxBridge:
         }
         assert _native_content_hash(entry1) != _native_content_hash(entry2)
 
+    def test_content_hash_includes_text(self) -> None:
+        """Entries with same metadata but different text produce different hashes."""
+        entry1 = {
+            "from": "team-lead",
+            "timestamp": "2026-03-22T12:00:00Z",
+            "summary": "Review approved",
+            "text": "Looks good to merge.",
+        }
+        entry2 = {
+            "from": "team-lead",
+            "timestamp": "2026-03-22T12:00:00Z",
+            "summary": "Review approved",
+            "text": "Needs one more fix before merge.",
+        }
+        assert _native_content_hash(entry1) != _native_content_hash(entry2)
+
     def test_import_basic(
         self, bus_root: Path, events_dir: Path, native_dir: Path
     ) -> None:
@@ -1390,7 +1406,7 @@ class TestNativeInboxBridge:
     def test_import_preserves_native_metadata(
         self, bus_root: Path, events_dir: Path, native_dir: Path
     ) -> None:
-        """Imported messages carry native_text and native_read in payload."""
+        """Imported messages carry native_text, native_read, and native_timestamp."""
         entries = [
             {
                 "from": "reviewer",
@@ -1411,6 +1427,11 @@ class TestNativeInboxBridge:
         payload = imported[0]["payload"]
         assert payload["native_text"] == "Detailed review text here."
         assert payload["native_read"] is True
+        assert payload["native_timestamp"] == "2026-03-22T14:00:00Z"
+
+        # created_at should be import time (now), not native timestamp
+        created_at = imported[0]["created_at"]
+        assert created_at != "2026-03-22T14:00:00Z"
 
     def test_import_incremental(
         self, bus_root: Path, events_dir: Path, native_dir: Path
