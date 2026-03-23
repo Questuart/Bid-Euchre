@@ -14,7 +14,7 @@
 sub-plan registry, and update checkpoints. Docs-only — no code changes.
 **Depends on:** Phase 3 COMPLETE
 **Done when:**
-- SP-4-01 sub-plan exists at `sub/2026-03-23_platform-8-scope-lock.md`
+- SP-4-01 sub-plan exists at `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md`
 - Sub-plan registered in `plans/agent_ops/sub_plan_registry.md`
 - Checkpoints updated with Step 0 entry and session log
 
@@ -35,8 +35,8 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
-| SP-4-01 | `sub/2026-03-23_platform-8-scope-lock.md` | completed | Step 0 |
-| SP-4-02 | `sub/2026-03-23_remote-ops-preflight-hardening.md` | in_progress | Pre-Platform-8 |
+| SP-4-01 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | completed | Step 0 |
+| SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | in_progress | Pre-Platform-8 |
 
 ## Blockers
 
