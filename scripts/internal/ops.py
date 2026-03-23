@@ -1618,6 +1618,26 @@ def cmd_task(args: argparse.Namespace) -> int:
             print(f"Failed to complete packet {packet_id!r}.", file=sys.stderr)
             return 1
 
+        # Emit task_completed event (append-only, best-effort)
+        try:
+            from bid_euchre.ops.events import append_event
+
+            append_event(
+                event_type="task_completed",
+                source="ops.task_complete",
+                lane_id=completed_by or (pkt.owner or "unknown"),
+                payload={
+                    "packet_id": packet_id,
+                    "title": pkt.title,
+                    "summary": summary,
+                    "pr_number": pr_number,
+                    "completed_by": completed_by or (pkt.owner or "unknown"),
+                },
+                events_dir=args.runtime_dir / "events",
+            )
+        except Exception:
+            pass  # best-effort — don't fail completion on event emission
+
         if args.json:
             from dataclasses import asdict
 
