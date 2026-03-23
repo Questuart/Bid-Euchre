@@ -36,6 +36,7 @@ Usage:
     uv run python scripts/internal/ops.py task show PACKET_ID [--json]
     uv run python scripts/internal/ops.py task approve PACKET_ID [--json]
     uv run python scripts/internal/ops.py task dispatch PACKET_ID LANE_ID [--approve] [--json]
+    uv run python scripts/internal/ops.py task accept PACKET_ID --lane LANE [--json]
     uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--json]
     uv run python scripts/internal/ops.py inbox stats [--json]
     uv run python scripts/internal/ops.py inbox ack MSG_ID --lane LANE [--json]
@@ -1574,12 +1575,117 @@ def cmd_task(args: argparse.Namespace) -> int:
                 print(f"  The lane should receive /start-task {packet_id}")
         return 0 if result.executed else 1
 
+    elif action == "accept":
+        return _cmd_task_accept(args, task_queue_root)
+
     else:
         print(
-            "Usage: ops.py task {list|show|create|approve|dispatch}",
+            "Usage: ops.py task {list|show|create|approve|dispatch|accept}",
             file=sys.stderr,
         )
         return 1
+
+
+def _cmd_task_accept(args: argparse.Namespace, task_queue_root: Path) -> int:
+    """Accept a dispatched task: ack inbox, send ack to orchestrator, emit event.
+
+    Idempotent — safe to call multiple times for the same packet.
+    """
+    from bid_euchre.ops.events import append_event
+    from bid_euchre.ops.message_bus import (
+        ack_message,
+        create_message,
+        read_inbox,
+        send_message,
+        shared_bus_root,
+    )
+    from bid_euchre.ops.task_queue import load_packet
+
+    packet_id = args.packet_id
+    lane_id = args.lane_id
+    bus_root = shared_bus_root(args.runtime_dir / "message_bus")
+    events_dir = args.runtime_dir / "events"
+
+    # 1. Verify packet exists
+    pkt = load_packet(packet_id, task_queue_root)
+    if pkt is None:
+        print(f"Packet {packet_id!r} not found.", file=sys.stderr)
+        return 1
+
+    steps_done: list[str] = []
+
+    # 2. Ack inbox messages for this task (idempotent — skip already acked)
+    inbox_msgs = read_inbox(
+        lane_id, bus_root, message_type="assignment", auto_expire=True
+    )
+    acked_count = 0
+    for msg in inbox_msgs:
+        if msg.get("task_id") == packet_id and msg.get("status") in (
+            "pending",
+            "delivered",
+        ):
+            try:
+                ack_message(msg["message_id"], lane_id, bus_root)
+                acked_count += 1
+            except (ValueError, KeyError):
+                pass  # already acked or invalid transition
+    if acked_count > 0:
+        steps_done.append(f"acked {acked_count} inbox message(s)")
+    else:
+        steps_done.append("inbox already acked (or no assignment message)")
+
+    # 3. Send ack message to orchestrator (safe to re-run — duplicate acks are harmless)
+    try:
+        ack_msg = create_message(
+            from_lane=lane_id,
+            to_lane="orchestrator",
+            message_type="ack",
+            summary=f"Task accepted: {pkt.title}",
+            task_id=packet_id,
+        )
+        send_message(ack_msg, bus_root=bus_root)
+        steps_done.append("sent ack to orchestrator")
+    except ValueError:
+        # Duplicate message_id — already sent
+        steps_done.append("ack already sent to orchestrator")
+
+    # 4. Emit task_started event (always — events are append-only)
+    try:
+        append_event(
+            event_type="task_started",
+            source="ops.task_accept",
+            lane_id=lane_id,
+            payload={
+                "packet_id": packet_id,
+                "title": pkt.title,
+                "owner": lane_id,
+            },
+            events_dir=events_dir,
+        )
+        steps_done.append("emitted task_started event")
+    except Exception as exc:
+        steps_done.append(f"event emission failed: {exc}")
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "packet_id": packet_id,
+                    "lane": lane_id,
+                    "title": pkt.title,
+                    "steps": steps_done,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"Accepted: {packet_id}")
+        print(f"  Lane:  {lane_id}")
+        print(f"  Title: {pkt.title}")
+        for step in steps_done:
+            print(f"  ✓ {step}")
+
+    return 0
 
 
 def cmd_inbox(args: argparse.Namespace) -> int:
@@ -2619,6 +2725,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="auto_approve",
         help="Auto-approve the packet before dispatching (for pending/previewing packets)",
+    )
+
+    task_accept_parser = task_sub.add_parser(
+        "accept",
+        help="Accept a dispatched task: ack inbox, notify orchestrator, emit event",
+    )
+    task_accept_parser.add_argument("packet_id", help="The packet ID to accept")
+    task_accept_parser.add_argument(
+        "--lane", required=True, dest="lane_id", help="Lane accepting the task"
     )
 
     # inbox (Platform-3 message bus)

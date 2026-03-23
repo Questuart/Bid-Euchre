@@ -22,6 +22,7 @@ logger = logging.getLogger("ops.events")
 
 VALID_EVENT_TYPES = frozenset(
     {
+        "task_started",
         "task_completed",
         "task_failed",
         "task_blocked",

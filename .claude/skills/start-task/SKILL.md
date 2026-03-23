@@ -37,21 +37,14 @@ decomposition (use `/executing-plans` for that).
    uv run python scripts/internal/ops.py task list
    ```
 
-2. **Check and acknowledge the inbox message** (if dispatched via the bus):
+2. **Accept the task** — a single command that performs three steps in
+   sequence: acks the inbox message, sends a task-received ack to the
+   orchestrator, and emits a `task_started` event:
    ```bash
-   # Check inbox for assignment messages (replace <LANE> with your lane ID)
-   uv run python scripts/internal/ops.py inbox --lane <LANE> --type assignment
+   uv run python scripts/internal/ops.py task accept <PACKET_ID> --lane <LANE>
    ```
-   If there is an assignment message for this task, acknowledge it:
-   ```bash
-   uv run python scripts/internal/ops.py inbox ack <MSG_ID> --lane <LANE>
-   ```
-   Then send an ack message back to the orchestrator:
-   ```bash
-   uv run python scripts/internal/ops.py message send \
-     --from <LANE> --to orchestrator --type ack \
-     --summary "Task received: <title>" --task-id <PACKET_ID>
-   ```
+   This is idempotent — safe to run multiple times if the nudge fires twice
+   or you re-invoke `/start-task` manually.
 
 3. **Verify scope is clear:**
    - Are the file patterns in `scope_declared` specific enough?
