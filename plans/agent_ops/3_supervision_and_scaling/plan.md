@@ -37,7 +37,11 @@ Before treating Phase 4 as ready, verify Batch D (Platform-6 + Platform-7):
   archaeology
 - [x] In the current tmux-first steward layout, a dispatched task can land in the
   target live author session through a repo-owned delivery adapter without
-  manual pane inspection
+  manual pane inspection *(added by SP-3-03, satisfied by PR #1263)*
+
+> **Note:** Criterion 4 was added to the gate after the initial Batch D
+> assessment. It was introduced and verified by SP-3-03 (BD-004 v1 pane
+> delivery, PR #1263).
 
 ## Platform-6 Summary (Complete)
 
@@ -79,6 +83,9 @@ From governing plan:
     demand without requiring all author panes to be pre-opened
   - Dynamic worker creation and retirement obey repo-owned concurrency and
     cleanup limits
+  - A dispatched task reaches the target live author session through a
+    repo-owned delivery adapter without manual pane inspection
+    *(BD-004, delivered by SP-3-03 / PR #1263)*
 
 ## Later Delivery Upgrades
 
