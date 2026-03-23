@@ -1264,9 +1264,7 @@ class TestNativeInboxBridge:
         inbox = read_inbox("author-b", bus_root)
         assert len(inbox) == 1
 
-    def test_import_no_file(
-        self, bus_root: Path, native_dir: Path
-    ) -> None:
+    def test_import_no_file(self, bus_root: Path, native_dir: Path) -> None:
         """No native file for lane returns empty list."""
         result = import_native_inbox(
             "author-z",
@@ -1275,9 +1273,7 @@ class TestNativeInboxBridge:
         )
         assert result == []
 
-    def test_import_invalid_json(
-        self, bus_root: Path, native_dir: Path
-    ) -> None:
+    def test_import_invalid_json(self, bus_root: Path, native_dir: Path) -> None:
         """Malformed JSON file returns empty list without crashing."""
         path = native_dir / "author-c.json"
         path.write_text("not valid json {{{")
@@ -1288,9 +1284,7 @@ class TestNativeInboxBridge:
         )
         assert result == []
 
-    def test_import_not_array(
-        self, bus_root: Path, native_dir: Path
-    ) -> None:
+    def test_import_not_array(self, bus_root: Path, native_dir: Path) -> None:
         """Non-array JSON returns empty list."""
         path = native_dir / "author-d.json"
         path.write_text(json.dumps({"not": "an array"}))
