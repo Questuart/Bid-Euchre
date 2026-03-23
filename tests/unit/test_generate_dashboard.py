@@ -226,17 +226,19 @@ class TestGenerateDashboardWiring:
         ), f"Panel 5 SMA should match file churn (≈30.0), got {panel5_sma[first_valid]:.2f}"
 
         # SMA arrays must differ (same test as data, but for the Bollinger output)
-        assert not np.allclose(panel4_sma[first_valid:], panel5_sma[first_valid:]), (
-            "Panel 4 and Panel 5 should receive different SMA arrays "
-            "(lc_sma vs fc_sma)"
-        )
+        assert not np.allclose(
+            panel4_sma[first_valid:], panel5_sma[first_valid:]
+        ), "Panel 4 and Panel 5 should receive different SMA arrays (lc_sma vs fc_sma)"
 
-        # ── Valid masks: consistent with own SMA ──────────────────────────
-        # Verify each panel's valid mask matches the NaN pattern of the SMA
-        # it received (internal consistency check).
+        # ── Valid masks: internal consistency + joint discrimination ───────
+        # Both panels share the same WINDOW and date count, so their valid
+        # masks are structurally identical (same NaN warmup pattern).
+        # Internal consistency alone doesn't discriminate — we must also
+        # verify that each mask was delivered alongside the correct data.
         panel4_valid = draw_calls[3]["valid"]
         panel5_valid = draw_calls[4]["valid"]
 
+        # Internal consistency: each mask matches its own SMA NaN pattern
         assert np.array_equal(
             panel4_valid, ~np.isnan(panel4_sma)
         ), "Panel 4 valid mask should match NaN pattern of its SMA"
@@ -255,6 +257,23 @@ class TestGenerateDashboardWiring:
             f"Panel 5 validity mask: expected {expected_valid} valid, "
             f"got {panel5_valid.sum()}"
         )
+
+        # Joint discrimination: verify each valid mask was delivered with
+        # the correct data values in the same draw_call.  At first_valid,
+        # both masks are True (structurally identical), but the paired data
+        # values differ — proving the (mask, data) pair came from the right
+        # panel.  A swap bug would fail here even though the masks alone
+        # are indistinguishable.
+        assert panel4_valid[first_valid] and draw_calls[3]["data"][
+            first_valid
+        ] == pytest.approx(
+            33.33, abs=0.1
+        ), "Panel 4: valid-mask/data pair must correspond to line churn (≈33.33)"
+        assert panel5_valid[first_valid] and draw_calls[4]["data"][
+            first_valid
+        ] == pytest.approx(
+            30.0, abs=0.1
+        ), "Panel 5: valid-mask/data pair must correspond to file churn (≈30.0)"
 
 
 class TestDrawBollingerPanel:
