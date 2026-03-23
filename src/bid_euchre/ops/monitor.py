@@ -510,6 +510,35 @@ def _get_pane_activity_epoch(
     return None
 
 
+def _do_nudge(
+    lane_id: str,
+    packet_id: str,
+    tmux_session: str,
+    runtime_dir: Path | None,
+    nudge_fn: Any | None = None,
+) -> bool:
+    """Execute a re-nudge for a stalled lane.
+
+    Uses the provided ``nudge_fn`` if given (for testing), otherwise calls
+    ``nudge_pane()`` from the worker pool.
+
+    Returns True if the nudge was attempted (regardless of outcome).
+    """
+    if nudge_fn is not None:
+        nudge_fn(lane_id, packet_id)
+        return True
+
+    try:
+        from bid_euchre.ops.worker_pool import nudge_pane
+
+        nudge_pane(
+            lane_id, packet_id, tmux_session=tmux_session, runtime_dir=runtime_dir
+        )
+    except Exception as exc:
+        logger.warning("Re-nudge failed for lane %r: %s", lane_id, exc)
+    return True
+
+
 def check_stalled_lanes(
     runtime_dir: Path | None = None,
     *,
@@ -517,7 +546,9 @@ def check_stalled_lanes(
     consecutive_cycles: int = STALL_CONSECUTIVE_CYCLES,
     now: datetime | None = None,
     tmux_session: str = "steward",
+    no_recovery: bool = False,
     _activity_probe: Any | None = None,
+    _nudge_fn: Any | None = None,
 ) -> list[MonitorFinding]:
     """Detect dispatched+acked lanes that have stopped making progress.
 
@@ -526,6 +557,16 @@ def check_stalled_lanes(
     2. The dispatch is older than ``stall_minutes``.
     3. The tmux pane's activity epoch has not changed over
        ``consecutive_cycles`` consecutive monitor invocations.
+
+    When recovery is enabled (``no_recovery=False``, the default), stall
+    detection includes a 2-step recovery ladder:
+
+    - **First stall detection:** Re-nudge the lane via ``nudge_pane()``.
+    - **Second consecutive stall (same lane, same packet):** Escalate to
+      the orchestrator inbox as a HIGH finding.
+
+    Recovery is limited to one action per lane per monitor cycle and is
+    idempotent (re-nudge is safe to repeat).
 
     Cross-cycle state is persisted in a JSON state file so that each
     single-shot monitor invocation can compare against previous observations.
@@ -536,11 +577,15 @@ def check_stalled_lanes(
         consecutive_cycles: Number of unchanged cycles before flagging.
         now: Override current time for testing.
         tmux_session: tmux session name.
+        no_recovery: If True, disable recovery actions (report only).
         _activity_probe: Optional callable(lane_id) -> int|None for testing.
             If provided, used instead of tmux probe.
+        _nudge_fn: Optional callable(lane_id, packet_id) for testing.
+            If provided, used instead of ``nudge_pane()``.
 
     Returns:
-        List of WARN findings for stalled lanes.
+        List of findings for stalled lanes (WARN for detection, HIGH for
+        escalation).
     """
     findings: list[MonitorFinding] = []
 
@@ -633,32 +678,99 @@ def check_stalled_lanes(
             # Activity changed or new packet — reset
             unchanged_count = 0
 
+        # Track recovery attempts across cycles for the escalation ladder.
+        prev_recovery = prev.get("recovery_count", 0)
+        if prev_packet != pkt.packet_id or prev_epoch != activity_epoch:
+            # New packet or activity change — reset recovery counter
+            recovery_count = 0
+        else:
+            recovery_count = prev_recovery
+
         observations[lane_id] = {
             "packet_id": pkt.packet_id,
             "activity_epoch": activity_epoch,
             "unchanged_count": unchanged_count,
+            "recovery_count": recovery_count,
         }
 
         if unchanged_count >= consecutive_cycles:
-            findings.append(
-                MonitorFinding(
-                    category="stall_detection",
-                    severity=SEVERITY_WARN,
-                    summary=(
-                        f"Lane {lane_id!r} may be stalled: dispatched "
-                        f"{age_minutes:.0f}min ago, no activity change over "
-                        f"{unchanged_count} monitor cycle(s)"
-                    ),
-                    details={
-                        "lane_id": lane_id,
-                        "packet_id": pkt.packet_id,
-                        "title": pkt.title,
-                        "age_minutes": round(age_minutes),
-                        "unchanged_cycles": unchanged_count,
-                        "last_activity_epoch": activity_epoch,
-                    },
+            # ---- Recovery ladder ----
+            if not no_recovery and recovery_count == 0:
+                # Step 1: Re-nudge the lane
+                _do_nudge(
+                    lane_id,
+                    pkt.packet_id,
+                    tmux_session,
+                    runtime_dir,
+                    _nudge_fn,
                 )
-            )
+                observations[lane_id]["recovery_count"] = 1
+                findings.append(
+                    MonitorFinding(
+                        category="stall_recovery",
+                        severity=SEVERITY_WARN,
+                        summary=(
+                            f"Lane {lane_id!r} stalled — re-nudged "
+                            f"(dispatched {age_minutes:.0f}min ago, "
+                            f"{unchanged_count} unchanged cycle(s))"
+                        ),
+                        details={
+                            "lane_id": lane_id,
+                            "packet_id": pkt.packet_id,
+                            "title": pkt.title,
+                            "age_minutes": round(age_minutes),
+                            "unchanged_cycles": unchanged_count,
+                            "last_activity_epoch": activity_epoch,
+                            "recovery_action": "nudge",
+                        },
+                    )
+                )
+            elif not no_recovery and recovery_count >= 1:
+                # Step 2: Escalate to orchestrator inbox as HIGH
+                observations[lane_id]["recovery_count"] = recovery_count + 1
+                findings.append(
+                    MonitorFinding(
+                        category="stall_recovery",
+                        severity=SEVERITY_HIGH,
+                        summary=(
+                            f"Lane {lane_id!r} still stalled after re-nudge "
+                            f"— escalating (dispatched {age_minutes:.0f}min "
+                            f"ago, {unchanged_count} unchanged cycle(s), "
+                            f"recovery_count={recovery_count + 1})"
+                        ),
+                        details={
+                            "lane_id": lane_id,
+                            "packet_id": pkt.packet_id,
+                            "title": pkt.title,
+                            "age_minutes": round(age_minutes),
+                            "unchanged_cycles": unchanged_count,
+                            "last_activity_epoch": activity_epoch,
+                            "recovery_action": "escalate",
+                            "recovery_count": recovery_count + 1,
+                        },
+                    )
+                )
+            else:
+                # no_recovery mode — report only (original behavior)
+                findings.append(
+                    MonitorFinding(
+                        category="stall_detection",
+                        severity=SEVERITY_WARN,
+                        summary=(
+                            f"Lane {lane_id!r} may be stalled: dispatched "
+                            f"{age_minutes:.0f}min ago, no activity change "
+                            f"over {unchanged_count} monitor cycle(s)"
+                        ),
+                        details={
+                            "lane_id": lane_id,
+                            "packet_id": pkt.packet_id,
+                            "title": pkt.title,
+                            "age_minutes": round(age_minutes),
+                            "unchanged_cycles": unchanged_count,
+                            "last_activity_epoch": activity_epoch,
+                        },
+                    )
+                )
 
     # Clean up observations for lanes no longer dispatched
     for old_lane in list(observations.keys()):
@@ -751,6 +863,7 @@ def run_monitoring_cycle(
     stale_minutes: int = STALE_DISPATCH_MINUTES,
     notify_orchestrator: bool = True,
     skip_pr_check: bool = False,
+    no_recovery: bool = False,
 ) -> list[MonitorFinding]:
     """Run a single monitoring sweep.
 
@@ -758,7 +871,7 @@ def run_monitoring_cycle(
     1. Lane pool health snapshot
     2. Open PR status (via ``gh``)
     3. Stale dispatched packet detection
-    4. Stalled lane detection (acked but idle)
+    4. Stalled lane detection (acked but idle), with optional recovery
 
     Optionally sends a summary to the orchestrator inbox.
 
@@ -768,6 +881,7 @@ def run_monitoring_cycle(
         stale_minutes: Minutes after which a dispatched packet is flagged.
         notify_orchestrator: If True, send findings to orchestrator inbox.
         skip_pr_check: If True, skip the gh pr check (for testing).
+        no_recovery: If True, disable stall recovery actions (report only).
 
     Returns:
         List of all findings from the sweep.
@@ -787,7 +901,7 @@ def run_monitoring_cycle(
     )
 
     # 4. Stalled lane detection (acked dispatches with no progress)
-    findings.extend(check_stalled_lanes(runtime_dir, now=now))
+    findings.extend(check_stalled_lanes(runtime_dir, now=now, no_recovery=no_recovery))
 
     # 5. Auto-complete dispatched packets whose PRs were merged externally
     if not skip_pr_check:
