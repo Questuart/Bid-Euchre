@@ -28,6 +28,7 @@ from bid_euchre.ops.token_economy import (
     SessionRecord,
     ThroughputMetrics,
     UsageSummary,
+    _is_session_complete,
     attribute_sessions,
     dashboard_token_economy,
     detect_anti_patterns,
@@ -1291,3 +1292,132 @@ class TestDashboardTokenEconomy:
 
         assert len(result["anti_patterns"]) > 0
         assert result["anti_patterns"][0]["pattern_id"] == "verbosity_waste"
+
+
+# ---------------------------------------------------------------------------
+# Incomplete session exclusion tests
+# ---------------------------------------------------------------------------
+
+
+class TestIsSessionComplete:
+    def test_complete_session(self) -> None:
+        """Session with duration_minutes is complete."""
+        rec = {"session_id": "s1", "duration_minutes": 30}
+        assert _is_session_complete(rec) is True
+
+    def test_incomplete_session_none(self) -> None:
+        """Session with duration_minutes=None is incomplete."""
+        rec = {"session_id": "s1", "duration_minutes": None}
+        assert _is_session_complete(rec) is False
+
+    def test_incomplete_session_missing(self) -> None:
+        """Session without duration_minutes key is incomplete."""
+        rec = {"session_id": "s1"}
+        assert _is_session_complete(rec) is False
+
+    def test_zero_duration_is_complete(self) -> None:
+        """Session with duration_minutes=0 is still considered complete."""
+        rec = {"session_id": "s1", "duration_minutes": 0}
+        assert _is_session_complete(rec) is True
+
+
+class TestIncompleteSessionExclusion:
+    """Verify incomplete sessions are excluded from throughput ratios and
+    anti-pattern detection (issue #1412)."""
+
+    def test_throughput_excludes_incomplete(self, output_dir: Path) -> None:
+        """Throughput metrics ignore sessions without duration_minutes."""
+        complete = _make_session_record(
+            "s1",
+            input_tokens=100,
+            output_tokens=400,
+            duration_minutes=60,
+            git_commits=2,
+            lines_added=50,
+            lines_removed=10,
+        )
+        # Incomplete session: has tokens but no duration (still in progress)
+        incomplete = {
+            "session_id": "s2",
+            "input_tokens": 5000,
+            "output_tokens": 20000,
+            "lines_added": 0,
+            "lines_removed": 0,
+            "git_commits": 0,
+            "git_pushes": 0,
+            "start_time": "2026-03-21T10:00:00Z",
+            # duration_minutes intentionally omitted — incomplete session
+        }
+        _write_sessions(output_dir, [complete, incomplete])
+
+        result = throughput_summary(output_dir=output_dir)
+
+        # Should only reflect the complete session
+        assert result.total_sessions == 1
+        assert result.total_tokens == 500  # 100 + 400 from complete only
+        assert result.tokens_per_commit == pytest.approx(250.0)
+
+    def test_usage_summary_exclude_incomplete(self, output_dir: Path) -> None:
+        """usage_summary with exclude_incomplete=True filters properly."""
+        complete = _make_session_record("s1", duration_minutes=30)
+        incomplete = {
+            "session_id": "s2",
+            "input_tokens": 1000,
+            "output_tokens": 2000,
+            "start_time": "2026-03-21T10:00:00Z",
+            # no duration_minutes
+        }
+        _write_sessions(output_dir, [complete, incomplete])
+
+        # Default: includes all
+        all_result = usage_summary(output_dir=output_dir)
+        assert all_result.session_count == 2
+
+        # Excluding incomplete
+        filtered = usage_summary(output_dir=output_dir, exclude_incomplete=True)
+        assert filtered.session_count == 1
+
+    def test_anti_patterns_exclude_incomplete(self, output_dir: Path) -> None:
+        """Anti-pattern detection ignores incomplete sessions."""
+        # One complete session with zero commits (would normally be "churn")
+        complete_zero = _make_session_record("s1", git_commits=0, duration_minutes=30)
+        complete_good = _make_session_record("s2", git_commits=3, duration_minutes=45)
+        # Incomplete session with zero commits — should NOT count as churn
+        incomplete = {
+            "session_id": "s3",
+            "input_tokens": 500,
+            "output_tokens": 1000,
+            "git_commits": 0,
+            "git_pushes": 0,
+            "lines_added": 0,
+            "lines_removed": 0,
+            "start_time": "2026-03-21T10:00:00Z",
+            # no duration_minutes — still in progress
+        }
+        _write_sessions(output_dir, [complete_zero, complete_good, incomplete])
+
+        findings = detect_anti_patterns(output_dir=output_dir)
+
+        churn = [f for f in findings if f.pattern_id == "retry_churn"]
+        if churn:
+            # If churn is detected, the denominator should be 2 (complete only),
+            # not 3 (which would include the incomplete session)
+            assert churn[0].evidence["total_sessions"] == 2
+
+    def test_all_incomplete_returns_empty(self, output_dir: Path) -> None:
+        """When all sessions are incomplete, anti-patterns returns empty."""
+        incomplete = {
+            "session_id": "s1",
+            "input_tokens": 5000,
+            "output_tokens": 20000,
+            "git_commits": 0,
+            "start_time": "2026-03-21T10:00:00Z",
+        }
+        _write_sessions(output_dir, [incomplete])
+
+        findings = detect_anti_patterns(output_dir=output_dir)
+        assert findings == []
+
+        result = throughput_summary(output_dir=output_dir)
+        assert result.total_sessions == 0
+        assert result.total_tokens == 0
