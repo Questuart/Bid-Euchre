@@ -281,14 +281,26 @@ class TestFullPageLaneLayout:
     """Validate that all lanes use individual full-page windows (no dashboard)."""
 
     EXPECTED_LANES = [
+        # Central ops
         "orchestrator",
+        "ops",
+        "review",
+        "issues",
+        # Platform workers
         "author-a",
         "author-b",
         "author-c",
         "author-d",
+        # Browser-game workers
+        "brws-author-a",
+        "brws-author-b",
+        "brws-author-c",
+        "brws-author-d",
+        # Scratch / flex
         "author-scratch",
-        "ops",
-        "review",
+        "flex-a",
+        "flex-b",
+        "flex-c",
     ]
 
     def test_no_dashboard_window(self) -> None:
@@ -363,6 +375,43 @@ class TestFullPageLaneLayout:
             assert (
                 "new-window" in cmd
             ), f"Non-first windows must use tmux new-window: {cmd.strip()}"
+
+    def test_legacy_rollback_exists(self) -> None:
+        """steward-session-legacy.sh must exist for rollback."""
+        legacy = REPO_ROOT / ".claude" / "tmux" / "steward-session-legacy.sh"
+        assert legacy.exists(), "steward-session-legacy.sh must exist as rollback path"
+
+    def test_legacy_has_original_8_lanes(self) -> None:
+        """Legacy script should have the original 8-lane layout."""
+        legacy = REPO_ROOT / ".claude" / "tmux" / "steward-session-legacy.sh"
+        content = legacy.read_text()
+        # Original lanes present
+        for lane in [
+            "orchestrator",
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            "author-scratch",
+            "ops",
+            "review",
+        ]:
+            assert f"-n {lane}" in content
+        # New lanes absent
+        assert "brws-author" not in content
+        assert "flex-a" not in content
+
+    def test_browser_game_worktree_paths(self) -> None:
+        """Script must define BRWS_A through BRWS_D worktree paths."""
+        content = STEWARD_SCRIPT.read_text()
+        for var in ["BRWS_A", "BRWS_B", "BRWS_C", "BRWS_D"]:
+            assert var in content, f"Missing worktree path variable: {var}"
+
+    def test_flex_worktree_paths(self) -> None:
+        """Script must define FLEX_A through FLEX_C worktree paths."""
+        content = STEWARD_SCRIPT.read_text()
+        for var in ["FLEX_A", "FLEX_B", "FLEX_C"]:
+            assert var in content, f"Missing worktree path variable: {var}"
 
 
 class TestBoundaryValidation:
