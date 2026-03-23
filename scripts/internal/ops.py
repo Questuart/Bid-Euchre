@@ -1773,6 +1773,8 @@ def cmd_inbox(args: argparse.Namespace) -> int:
     from bid_euchre.ops.message_bus import (
         ack_message,
         bulk_ack_messages,
+        compact_all_inboxes,
+        compact_inbox,
         import_native_inbox,
         inbox_stats,
         read_inbox,
@@ -1866,6 +1868,40 @@ def cmd_inbox(args: argparse.Namespace) -> int:
                     print(f"  {lane['lane_id']:20s}  total={lane['total']}")
                     for status, count in sorted(lane.get("by_status", {}).items()):
                         print(f"    {status:16s}: {count}")
+        return 0
+
+    elif action == "purge":
+        max_age = getattr(args, "max_age", 24.0)
+        lane = getattr(args, "lane", None)
+
+        if lane:
+            results = [compact_inbox(lane, bus_root, max_age_hours=max_age)]
+        else:
+            results = compact_all_inboxes(bus_root, max_age_hours=max_age)
+
+        if args.json:
+            print(json.dumps(results, indent=2))
+        else:
+            total_removed = sum(r["removed"] for r in results)
+            total_before = sum(r["before"] for r in results)
+            total_after = sum(r["after"] for r in results)
+            if not results:
+                print("No inbox files found.")
+            else:
+                print(
+                    f"Purged {total_removed} terminal message(s) "
+                    f"older than {max_age}h across {len(results)} inbox(es)"
+                )
+                print(f"  Raw records before: {total_before}")
+                print(f"  Deduplicated after: {total_after}")
+                print()
+                for r in results:
+                    if r["removed"] > 0 or r["before"] != r["after"]:
+                        print(
+                            f"  {r['lane_id']:20s}  "
+                            f"{r['before']} -> {r['after']}  "
+                            f"(-{r['removed']} purged)"
+                        )
         return 0
 
     # Default: list messages
@@ -2888,6 +2924,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--filter-summary",
         default=None,
         help="Regex pattern to match against message summary (case-insensitive)",
+    )
+
+    inbox_purge_parser = inbox_sub.add_parser(
+        "purge",
+        help="Remove old terminal messages from per-lane inbox files",
+    )
+    inbox_purge_parser.add_argument(
+        "--lane",
+        default=None,
+        help="Lane to compact (default: all lanes)",
+    )
+    inbox_purge_parser.add_argument(
+        "--max-age",
+        type=float,
+        default=24.0,
+        help="Remove terminal messages older than N hours (default: 24)",
     )
 
     inbox_parser.add_argument(

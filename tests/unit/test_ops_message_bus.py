@@ -30,6 +30,8 @@ from bid_euchre.ops.message_bus import (
     bulk_ack_messages,
     check_dead_letters,
     check_expired,
+    compact_all_inboxes,
+    compact_inbox,
     create_message,
     import_native_inbox,
     inbox_stats,
@@ -1479,3 +1481,142 @@ class TestNativeInboxBridge:
         # Total in inbox
         inbox = read_inbox("author-a", bus_root)
         assert len(inbox) == 2
+
+
+# ---------------------------------------------------------------------------
+# Inbox compaction (purge)
+# ---------------------------------------------------------------------------
+
+
+class TestCompactInbox:
+    """Test compact_inbox and compact_all_inboxes."""
+
+    def test_empty_inbox_is_noop(self, bus_root: Path) -> None:
+        result = compact_inbox("nonexistent-lane", bus_root)
+        assert result == {
+            "lane_id": "nonexistent-lane",
+            "before": 0,
+            "after": 0,
+            "removed": 0,
+        }
+
+    def test_purges_old_acked_messages(self, bus_root: Path, events_dir: Path) -> None:
+        """Acked messages older than max_age are removed."""
+        # Send and ack a message
+        msg = create_message("orchestrator", "author-a", "assignment", "Old task")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        # Verify it's in the inbox
+        inbox = read_inbox("author-a", bus_root)
+        assert len(inbox) == 1
+        assert inbox[0]["status"] == "acked"
+
+        # Compact with now far in the future — message should be purged
+        future_time = time.time() + 100_000
+        result = compact_inbox(
+            "author-a", bus_root, max_age_hours=24.0, now=future_time
+        )
+        assert result["removed"] == 1
+        assert result["after"] == 0
+
+        # Inbox should be empty
+        inbox = read_inbox("author-a", bus_root)
+        assert len(inbox) == 0
+
+    def test_preserves_recent_acked_messages(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Acked messages newer than max_age are kept."""
+        msg = create_message("orchestrator", "author-a", "assignment", "Recent task")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        # Compact with current time — message is recent, should be kept
+        result = compact_inbox("author-a", bus_root, max_age_hours=24.0)
+        assert result["removed"] == 0
+        assert result["after"] == 1
+
+    def test_preserves_active_messages(self, bus_root: Path, events_dir: Path) -> None:
+        """Pending and delivered messages are never removed."""
+        msg = create_message("orchestrator", "author-a", "assignment", "Active task")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Even with now far in the future, pending/delivered messages stay
+        future_time = time.time() + 100_000
+        result = compact_inbox("author-a", bus_root, max_age_hours=0, now=future_time)
+        assert result["removed"] == 0
+        assert result["after"] == 1
+
+    def test_purges_resolved_messages(self, bus_root: Path, events_dir: Path) -> None:
+        """Resolved (terminal) messages older than max_age are removed."""
+        msg = create_message("orchestrator", "author-a", "assignment", "Done task")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+        resolve_message(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        future_time = time.time() + 100_000
+        result = compact_inbox(
+            "author-a", bus_root, max_age_hours=24.0, now=future_time
+        )
+        assert result["removed"] == 1
+        assert result["after"] == 0
+
+    def test_deduplicates_append_only_records(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Multiple status records for the same message_id are deduplicated."""
+        msg = create_message("orchestrator", "author-a", "assignment", "Multi-update")
+        send_message(msg, bus_root, events_dir=events_dir)
+        # Send creates 1 record, ack appends another → 2 raw records
+        ack_message(msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        # Before compaction: 2 raw records for 1 message
+        result = compact_inbox("author-a", bus_root, max_age_hours=24.0)
+        assert result["before"] == 2  # 2 raw JSONL lines
+        assert result["after"] == 1  # 1 deduplicated message kept
+        assert result["removed"] == 0  # recent acked, not removed
+
+    def test_compact_all_inboxes(self, bus_root: Path, events_dir: Path) -> None:
+        """compact_all_inboxes processes all lane inbox files."""
+        # Create messages in two different lane inboxes
+        msg1 = create_message("orchestrator", "author-a", "assignment", "Task A")
+        send_message(msg1, bus_root, events_dir=events_dir)
+        ack_message(msg1.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        msg2 = create_message("orchestrator", "author-b", "assignment", "Task B")
+        send_message(msg2, bus_root, events_dir=events_dir)
+        ack_message(msg2.message_id, "author-b", bus_root, events_dir=events_dir)
+
+        future_time = time.time() + 100_000
+        results = compact_all_inboxes(bus_root, max_age_hours=24.0, now=future_time)
+
+        assert len(results) == 2
+        lane_ids = {r["lane_id"] for r in results}
+        assert lane_ids == {"author-a", "author-b"}
+        assert sum(r["removed"] for r in results) == 2
+
+    def test_mixed_messages_selective_purge(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Only old handled messages are purged; active and recent kept."""
+        # Old acked message
+        old_msg = create_message("orchestrator", "author-a", "assignment", "Old")
+        send_message(old_msg, bus_root, events_dir=events_dir)
+        ack_message(old_msg.message_id, "author-a", bus_root, events_dir=events_dir)
+
+        # Active (pending) message
+        active_msg = create_message("orchestrator", "author-a", "assignment", "Active")
+        send_message(active_msg, bus_root, events_dir=events_dir)
+
+        # Compact with future time — only old acked gets purged
+        future_time = time.time() + 100_000
+        result = compact_inbox(
+            "author-a", bus_root, max_age_hours=24.0, now=future_time
+        )
+        assert result["removed"] == 1  # old acked
+        assert result["after"] == 1  # active pending
+
+        inbox = read_inbox("author-a", bus_root)
+        assert len(inbox) == 1
+        assert inbox[0]["summary"] == "Active"
