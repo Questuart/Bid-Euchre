@@ -37,6 +37,7 @@ from bid_euchre.ops.task_queue import (
     save_result,
     shared_task_root,
     transition_status,
+    update_packet_metadata,
 )
 
 # ---------------------------------------------------------------------------
@@ -792,3 +793,53 @@ class TestE2ESmoke:
         assert edited.title == "Correct title"
         assert edited.owner == "author-b"
         assert edited.status == "approved"
+
+
+# ---------------------------------------------------------------------------
+# update_packet_metadata
+# ---------------------------------------------------------------------------
+
+
+class TestUpdatePacketMetadata:
+    """Test metadata update without status change."""
+
+    def test_updates_metadata_fields(self, tmp_path: Path) -> None:
+        pkt = create_packet("Task", "d", owner="author-a")
+        save_packet(pkt, tmp_path)
+
+        updated = update_packet_metadata(pkt.packet_id, {"pr_number": 42}, tmp_path)
+        assert updated is not None
+        assert updated.metadata["pr_number"] == 42
+        assert updated.status == pkt.status  # Status unchanged
+
+    def test_merges_with_existing_metadata(self, tmp_path: Path) -> None:
+        pkt = create_packet(
+            "Task", "d", owner="author-a", metadata={"dispatched_at": "2026-01-01"}
+        )
+        save_packet(pkt, tmp_path)
+
+        updated = update_packet_metadata(pkt.packet_id, {"pr_number": 99}, tmp_path)
+        assert updated is not None
+        assert updated.metadata["pr_number"] == 99
+        assert updated.metadata["dispatched_at"] == "2026-01-01"
+
+    def test_overwrites_existing_key(self, tmp_path: Path) -> None:
+        pkt = create_packet("Task", "d", owner="author-a", metadata={"pr_number": 1})
+        save_packet(pkt, tmp_path)
+
+        updated = update_packet_metadata(pkt.packet_id, {"pr_number": 2}, tmp_path)
+        assert updated is not None
+        assert updated.metadata["pr_number"] == 2
+
+    def test_nonexistent_packet_returns_none(self, tmp_path: Path) -> None:
+        shared_task_root(tmp_path)
+        assert update_packet_metadata("nonexistent", {"key": "val"}, tmp_path) is None
+
+    def test_persists_to_disk(self, tmp_path: Path) -> None:
+        pkt = create_packet("Task", "d", owner="author-b")
+        save_packet(pkt, tmp_path)
+        update_packet_metadata(pkt.packet_id, {"pr_number": 55}, tmp_path)
+
+        reloaded = load_packet(pkt.packet_id, tmp_path)
+        assert reloaded is not None
+        assert reloaded.metadata["pr_number"] == 55

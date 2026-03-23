@@ -609,6 +609,38 @@ def apply_ack(
     return None
 
 
+def update_packet_metadata(
+    packet_id: str,
+    updates: dict[str, Any],
+    root: Path | None = None,
+) -> TaskPacket | None:
+    """Update metadata fields on an existing packet.
+
+    Merges *updates* into the packet's ``metadata`` dict and re-saves.
+    Does **not** change the packet status — this is a data-only mutation.
+
+    Args:
+        packet_id: The packet to update.
+        updates: Key-value pairs to merge into ``metadata``.
+        root: Override for the task queue root directory.
+
+    Returns:
+        The updated packet, or None if the packet was not found.
+    """
+    pkt = load_packet(packet_id, root)
+    if pkt is None:
+        logger.warning("Cannot update metadata: packet %s not found", packet_id)
+        return None
+
+    merged = {**pkt.metadata, **updates}
+    data = asdict(pkt)
+    data["metadata"] = merged
+    updated = TaskPacket(**data)
+    save_packet(updated, root)
+    logger.info("Updated metadata on %s: %s", packet_id, list(updates.keys()))
+    return updated
+
+
 def complete_packet(
     result: TaskResult,
     root: Path | None = None,

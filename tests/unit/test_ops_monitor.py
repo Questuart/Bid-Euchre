@@ -16,6 +16,7 @@ from bid_euchre.ops.monitor import (
     _default_stall_state_path,
     _save_stall_state,
     check_lane_health,
+    check_merged_dispatches,
     check_open_prs,
     check_stale_dispatches,
     check_stalled_lanes,
@@ -655,6 +656,153 @@ class TestCheckStalledLanes:
 
         assert len(f3) == 1
         assert f3[0].category == "stall_detection"
+
+
+# ---------------------------------------------------------------------------
+# check_merged_dispatches tests (Gap A: auto-merge bypass)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckMergedDispatches:
+    """Tests for auto-completing dispatched packets whose PRs were merged."""
+
+    def test_no_dispatched_packets(self, tmp_path: Path) -> None:
+        """No dispatched packets produces no findings."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        with patch(
+            "bid_euchre.ops.task_queue.list_packets",
+            return_value=[],
+        ):
+            findings = check_merged_dispatches(runtime_dir)
+
+        assert len(findings) == 0
+
+    def test_packet_without_pr_number_skipped(self, tmp_path: Path) -> None:
+        """Dispatched packets without metadata.pr_number are skipped."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={})
+
+        with patch(
+            "bid_euchre.ops.task_queue.list_packets",
+            return_value=[pkt],
+        ):
+            findings = check_merged_dispatches(runtime_dir)
+
+        assert len(findings) == 0
+
+    def test_merged_pr_auto_completes_packet(self, tmp_path: Path) -> None:
+        """A dispatched packet whose PR is MERGED is auto-completed."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={"pr_number": 42})
+
+        gh_result = MagicMock()
+        gh_result.returncode = 0
+        gh_result.stdout = "MERGED\n"
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch("subprocess.run", return_value=gh_result),
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+            ) as mock_transition,
+        ):
+            findings = check_merged_dispatches(runtime_dir)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_INFO
+        assert findings[0].category == "merged_dispatch"
+        assert "Auto-completed" in findings[0].summary
+        assert "42" in findings[0].summary
+        mock_transition.assert_called_once_with(
+            pkt.packet_id,
+            "completed",
+            runtime_dir / "task_queue",
+        )
+
+    def test_open_pr_not_completed(self, tmp_path: Path) -> None:
+        """A dispatched packet whose PR is still OPEN is not completed."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={"pr_number": 99})
+
+        gh_result = MagicMock()
+        gh_result.returncode = 0
+        gh_result.stdout = "OPEN\n"
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch("subprocess.run", return_value=gh_result),
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+            ) as mock_transition,
+        ):
+            findings = check_merged_dispatches(runtime_dir)
+
+        assert len(findings) == 0
+        mock_transition.assert_not_called()
+
+    def test_gh_failure_skips_gracefully(self, tmp_path: Path) -> None:
+        """GitHub CLI failure is handled gracefully (skip, don't crash)."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={"pr_number": 55})
+
+        gh_result = MagicMock()
+        gh_result.returncode = 1
+        gh_result.stdout = ""
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch("subprocess.run", return_value=gh_result),
+        ):
+            findings = check_merged_dispatches(runtime_dir)
+
+        assert len(findings) == 0
+
+    def test_transition_failure_produces_warning(self, tmp_path: Path) -> None:
+        """If transition_status fails, a WARN finding is produced."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={"pr_number": 77})
+
+        gh_result = MagicMock()
+        gh_result.returncode = 0
+        gh_result.stdout = "MERGED\n"
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch("subprocess.run", return_value=gh_result),
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+                side_effect=ValueError("Invalid transition"),
+            ),
+        ):
+            findings = check_merged_dispatches(runtime_dir)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "Failed to auto-complete" in findings[0].summary
 
 
 # ---------------------------------------------------------------------------
