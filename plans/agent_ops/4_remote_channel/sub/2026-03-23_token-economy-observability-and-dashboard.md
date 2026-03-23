@@ -148,9 +148,9 @@ The baseline report must explicitly evaluate:
 - Read from:
   - `~/.claude/usage-data/session-meta/*.json`
   - `~/.claude/usage-data/facets/*.json`
-- Normalize into:
-  - `.claude/runtime/token_economy/session_usage.jsonl`
-  - `.claude/runtime/token_economy/session_rollups.json`
+- Normalize into (created by this sub-plan):
+  - `.claude/runtime/token_economy/session_usage.jsonl` (new)
+  - `.claude/runtime/token_economy/session_rollups.json` (new)
 - Preserve source identifiers so imports are idempotent
 - Record import timestamp and source path/hash
 
@@ -246,7 +246,7 @@ Before using token-economy work to change behavior:
 - [ ] Native Claude usage data is imported into repo-owned runtime state
 - [ ] Session imports are idempotent
 - [ ] Steward worktrees can be attributed to lane identities with acceptable accuracy
-- [ ] `ops.py` exposes token-economy summary/throughput/anti-pattern views
+- [ ] `scripts/internal/ops.py` exposes token-economy summary/throughput/anti-pattern views
 - [ ] Existing dashboard surfaces include token-economy information
 - [ ] A baseline report identifies the top 3 token-waste patterns
 - [ ] At least one correlation to shipped throughput exists:

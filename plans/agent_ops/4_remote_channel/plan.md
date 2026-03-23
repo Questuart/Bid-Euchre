@@ -103,6 +103,6 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 
 ## Step Sequence
 
-See `checkpoints.md` for current step progress. Phase 4 follows the standard
+See `plans/agent_ops/4_remote_channel/checkpoints.md` for current step progress. Phase 4 follows the standard
 step template from the governing plan: scope lock -> implementation ->
 verification -> handoff, repeated per slice.
