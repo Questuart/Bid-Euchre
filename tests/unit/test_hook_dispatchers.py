@@ -142,6 +142,28 @@ class TestPostBashDispatch:
         assert raw == ""
 
 
+class TestPreBashDispatchTimeout:
+    """Timeout comment in pre-bash-dispatch.sh must match settings.json."""
+
+    def test_timeout_comment_matches_settings(self) -> None:
+        """Regression: header comment must agree with configured timeout."""
+        script = (HOOKS_DIR / "pre-bash-dispatch.sh").read_text()
+        settings = json.loads((HOOKS_DIR.parent / "settings.json").read_text())
+        # Find the configured timeout for pre-bash-dispatch.sh
+        configured_timeout = None
+        for group in settings.get("hooks", {}).get("PreToolUse", []):
+            for hook in group.get("hooks", []):
+                cmd = hook.get("command", "")
+                if "pre-bash-dispatch.sh" in cmd:
+                    configured_timeout = hook.get("timeout")
+                    break
+        assert configured_timeout is not None, "pre-bash-dispatch not found in settings"
+        assert f"# Timeout: {configured_timeout}s" in script, (
+            f"Header comment should say 'Timeout: {configured_timeout}s' "
+            f"but does not match"
+        )
+
+
 class TestPostPushCiCheckStdoutRedirect:
     """post-push-ci-check.sh must redirect background process stdout."""
 
