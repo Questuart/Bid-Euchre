@@ -14,8 +14,8 @@
 sub-plan registry, and update checkpoints. Docs-only — no code changes.
 **Depends on:** Phase 3 COMPLETE
 **Done when:**
-- SP-4-01 sub-plan exists at `4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md`
-- Sub-plan registered in `sub_plan_registry.md`
+- SP-4-01 sub-plan exists at `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md`
+- Sub-plan registered in `plans/agent_ops/sub_plan_registry.md`
 - Checkpoints updated with Step 0 entry and session log
 
 ### Step 1 — Platform-8a: Configure Telegram plugin and prove core capabilities
