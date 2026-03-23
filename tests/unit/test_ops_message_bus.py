@@ -759,6 +759,23 @@ class TestCheckExpired:
         expired2 = check_expired(bus_root, events_dir=events_dir, now=future + 100)
         assert len(expired2) == 0  # Already expired, skip
 
+    def test_zero_now_is_preserved(self, bus_root: Path, events_dir: Path) -> None:
+        """now=0.0 is a valid override and must not fall through to time.time()."""
+        msg = create_message(
+            "a",
+            "b",
+            "assignment",
+            "Epoch task",
+            payload={"ttl_seconds": 60},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # With now=0.0 (epoch), the message was created "in the future" relative
+        # to epoch, so nothing should expire.  Before the fix, now=0.0 was falsy
+        # and fell through to time.time(), incorrectly expiring the message.
+        expired = check_expired(bus_root, events_dir=events_dir, now=0.0)
+        assert len(expired) == 0
+
 
 # ---------------------------------------------------------------------------
 # Dead-letter handling
@@ -1185,6 +1202,26 @@ class TestTTLAutoExpireOnRead:
 
         # Even far in the future, no expiry
         inbox = read_inbox("target", bus_root)
+        assert len(inbox) == 1
+        assert inbox[0]["status"] == "pending"
+
+    def test_zero_now_is_preserved_on_read(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """now=0.0 is a valid override and must not fall through to time.time()."""
+        msg = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Epoch message",
+            payload={"ttl_seconds": 60},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # With now=0.0 (epoch), the message was created "in the future" relative
+        # to epoch, so auto-expire should leave it pending.  Before the fix,
+        # now=0.0 was falsy and fell through to time.time().
+        inbox = read_inbox("target", bus_root, now=0.0)
         assert len(inbox) == 1
         assert inbox[0]["status"] == "pending"
 
