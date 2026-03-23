@@ -128,12 +128,18 @@ class TestGenerateDashboardWiring:
         return [f"2026-03-{d:02d}" for d in range(1, n + 1)]
 
     def test_panel5_receives_file_churn_data(self, tmp_path):
-        """Panel 5 (file churn) receives file_churn_pct, not churn_pct from Panel 4.
+        """Panel 5 receives file_churn_pct data/SMA/valid, not Panel 4's line churn.
 
         Wiring regression test for the validity mask fix in PR #1365 / #1346.
-        The existing test_validity_mask_independence covers _bollinger independence;
-        this test verifies generate_dashboard() passes the correct data and mask
-        to each panel's _draw_bollinger_panel call.
+        The test captures data, SMA, and valid mask for each panel and verifies:
+        1. Data arrays differ (churn_pct ≈ 33.33 vs file_churn_pct = 30.0)
+        2. SMA arrays match the correct metric (not swapped)
+        3. Valid mask is consistent with SMA (derived from correct Bollinger)
+
+        Note: With same WINDOW and same date set, validity masks for panels 4
+        and 5 are structurally identical (same NaN pattern). The SMA check is
+        the discriminating assertion — it WILL fail if panel 5 accidentally
+        receives panel 4's Bollinger outputs.
         """
         dates = self._make_dates(12)
 
@@ -155,8 +161,14 @@ class TestGenerateDashboardWiring:
         draw_calls: list[dict] = []
 
         def tracking_draw(*args, **kwargs):
-            # args[2] = data array, args[7] = valid mask
-            draw_calls.append({"data": args[2].copy(), "valid": args[7].copy()})
+            # _draw_bollinger_panel(ax, x, data, sma, upper, lower, pct_b, valid, ...)
+            draw_calls.append(
+                {
+                    "data": args[2].copy(),
+                    "sma": args[3].copy(),
+                    "valid": args[7].copy(),
+                }
+            )
 
         output_path = str(tmp_path / "test_dashboard.png")
 
@@ -182,6 +194,7 @@ class TestGenerateDashboardWiring:
 
         assert len(draw_calls) == 5, f"Expected 5 panel draws, got {len(draw_calls)}"
 
+        # ── Data arrays: correct metric routed to each panel ──────────────
         # Panel 4 (line churn): churn_pct ≈ 33.33 for every date
         panel4_data = draw_calls[3]["data"]
         assert panel4_data[0] == pytest.approx(33.33, abs=0.1)
@@ -196,10 +209,41 @@ class TestGenerateDashboardWiring:
             "(churn_pct vs file_churn_pct)"
         )
 
-        # Validity masks: verify each panel receives its own correctly-computed
-        # mask (regression: PR #1365 — panel 5 previously reused panel 4's mask)
+        # ── SMA arrays: correct Bollinger wired to each panel ─────────────
+        # This is the discriminating check: SMA values reflect the metric
+        # passed to _bollinger(). If panel 5 accidentally received panel 4's
+        # lc_sma (≈33.33) instead of fc_sma (≈30.0), this assertion fails.
+        panel4_sma = draw_calls[3]["sma"]
+        panel5_sma = draw_calls[4]["sma"]
+
+        # At the first valid index (WINDOW-1), SMA = mean of first WINDOW values
+        first_valid = WINDOW - 1
+        assert (
+            panel4_sma[first_valid] == pytest.approx(33.33, abs=0.1)
+        ), f"Panel 4 SMA should match line churn (≈33.33), got {panel4_sma[first_valid]:.2f}"
+        assert (
+            panel5_sma[first_valid] == pytest.approx(30.0, abs=0.1)
+        ), f"Panel 5 SMA should match file churn (≈30.0), got {panel5_sma[first_valid]:.2f}"
+
+        # SMA arrays must differ (same test as data, but for the Bollinger output)
+        assert not np.allclose(panel4_sma[first_valid:], panel5_sma[first_valid:]), (
+            "Panel 4 and Panel 5 should receive different SMA arrays "
+            "(lc_sma vs fc_sma)"
+        )
+
+        # ── Valid masks: consistent with own SMA ──────────────────────────
+        # Verify each panel's valid mask matches the NaN pattern of the SMA
+        # it received (internal consistency check).
         panel4_valid = draw_calls[3]["valid"]
         panel5_valid = draw_calls[4]["valid"]
+
+        assert np.array_equal(
+            panel4_valid, ~np.isnan(panel4_sma)
+        ), "Panel 4 valid mask should match NaN pattern of its SMA"
+        assert np.array_equal(
+            panel5_valid, ~np.isnan(panel5_sma)
+        ), "Panel 5 valid mask should match NaN pattern of its SMA"
+
         n_dates = len(dates)
         expected_valid = n_dates - WINDOW + 1  # warmup period = WINDOW - 1
 
@@ -211,22 +255,6 @@ class TestGenerateDashboardWiring:
             f"Panel 5 validity mask: expected {expected_valid} valid, "
             f"got {panel5_valid.sum()}"
         )
-
-        # Warmup period (first WINDOW-1 indices) should be invalid
-        assert not panel4_valid[
-            : WINDOW - 1
-        ].any(), "Panel 4: warmup period should be all invalid"
-        assert not panel5_valid[
-            : WINDOW - 1
-        ].any(), "Panel 5: warmup period should be all invalid"
-
-        # Post-warmup indices should be valid
-        assert panel4_valid[
-            WINDOW - 1 :
-        ].all(), "Panel 4: post-warmup indices should be all valid"
-        assert panel5_valid[
-            WINDOW - 1 :
-        ].all(), "Panel 5: post-warmup indices should be all valid"
 
 
 class TestDrawBollingerPanel:
