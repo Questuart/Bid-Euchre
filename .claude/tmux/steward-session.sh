@@ -1,32 +1,33 @@
 #!/bin/bash
-# Canonical steward session bootstrap — dual-domain layout (SP-3-05).
+# Canonical steward session bootstrap — 4-window tiled layout.
 # Usage: steward-session.sh [session-name]
 #
-# Creates (or attaches to) a tmux session with full-page windows:
+# Creates (or attaches to) a tmux session with 4 windows, each containing
+# 4 tiled panes:
 #
-#   Central ops:
-#     1. orchestrator    -- single intake point for delegating work
-#     2. ops             -- operator monitoring lane
-#     3. review          -- independent review lane
-#     4. issues          -- issue triage lane
+#   Window 1 — central-ops (pane targeting: steward:central-ops.{0-3})
+#     .0  orchestrator    -- single intake point for delegating work
+#     .1  ops             -- operator monitoring lane
+#     .2  review          -- independent review lane
+#     .3  issues          -- issue triage lane
 #
-#   Platform workers:
-#     5. author-a        -- primary platform author lane
-#     6. author-b        -- secondary platform author lane
-#     7. author-c        -- overflow platform author lane
-#     8. author-d        -- overflow platform author lane
+#   Window 2 — platform (pane targeting: steward:platform.{0-3})
+#     .0  author-a        -- primary platform author lane
+#     .1  author-b        -- secondary platform author lane
+#     .2  author-c        -- overflow platform author lane
+#     .3  author-d        -- overflow platform author lane
 #
-#   Browser-game workers:
-#     9. brws-author-a   -- primary browser-game author lane
-#    10. brws-author-b   -- secondary browser-game author lane
-#    11. brws-author-c   -- overflow browser-game author lane
-#    12. brws-author-d   -- overflow browser-game author lane
+#   Window 3 — browser (pane targeting: steward:browser.{0-3})
+#     .0  brws-author-a   -- primary browser-game author lane
+#     .1  brws-author-b   -- secondary browser-game author lane
+#     .2  brws-author-c   -- overflow browser-game author lane
+#     .3  brws-author-d   -- overflow browser-game author lane
 #
-#   Scratch / flex:
-#    13. author-scratch  -- exploratory Claude lane
-#    14. flex-a          -- domain-agnostic overflow lane
-#    15. flex-b          -- domain-agnostic overflow lane
-#    16. flex-c          -- domain-agnostic overflow lane
+#   Window 4 — scratch (pane targeting: steward:scratch.{0-3})
+#     .0  author-scratch  -- exploratory Claude lane
+#     .1  flex-a          -- domain-agnostic overflow lane
+#     .2  flex-b          -- domain-agnostic overflow lane
+#     .3  flex-c          -- domain-agnostic overflow lane
 #
 # Rollback: use steward-session-legacy.sh to restore the pre-SP-3-05 layout.
 #
@@ -279,115 +280,97 @@ ensure_worktree "$FLEX_C" "codex/steward-flex-c"
 # Control plane
 ensure_review_worktree
 
-# Write v2 registry metadata for each lane
-# All lanes are full-page windows with foreground visibility
+# Write v2 registry metadata for each lane.
+# tmux_window = group name, tmux_pane = pane index within the window (0-3).
+# Pane target format: ${SESSION}:${tmux_window}.${tmux_pane}
 
-# Central ops
-write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "orchestrator"   "null" "foreground" "Orchestrator"
-write_lane_metadata "ops"            "ops"          "$MAIN_DIR"       "--"                              "ops"            "null" "foreground" "Ops"
-write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "review"         "null" "foreground" "Review"
-write_lane_metadata "issues"         "issues"       "$MAIN_DIR"       "--"                              "issues"         "null" "foreground" "Issues"
+# Central ops  (window: central-ops, panes 0-3)
+write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "central-ops" "0" "foreground" "Orchestrator"
+write_lane_metadata "ops"            "ops"          "$MAIN_DIR"       "--"                              "central-ops" "1" "foreground" "Ops"
+write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "2" "foreground" "Review"
+write_lane_metadata "issues"         "issues"       "$MAIN_DIR"       "--"                              "central-ops" "3" "foreground" "Issues"
 
-# Platform workers
-write_lane_metadata "author-a"       "author"       "$AUTHOR_A"       "codex/steward-author"            "author-a"       "null" "foreground" "Author A"
-write_lane_metadata "author-b"       "author"       "$AUTHOR_B"       "codex/steward-author-b"          "author-b"       "null" "foreground" "Author B"
-write_lane_metadata "author-c"       "author"       "$AUTHOR_C"       "codex/steward-author-c"          "author-c"       "null" "foreground" "Author C"
-write_lane_metadata "author-d"       "author"       "$AUTHOR_D"       "codex/steward-author-d"          "author-d"       "null" "foreground" "Author D"
+# Platform workers  (window: platform, panes 0-3)
+write_lane_metadata "author-a"       "author"       "$AUTHOR_A"       "codex/steward-author"            "platform" "0" "background" "Author A"
+write_lane_metadata "author-b"       "author"       "$AUTHOR_B"       "codex/steward-author-b"          "platform" "1" "background" "Author B"
+write_lane_metadata "author-c"       "author"       "$AUTHOR_C"       "codex/steward-author-c"          "platform" "2" "background" "Author C"
+write_lane_metadata "author-d"       "author"       "$AUTHOR_D"       "codex/steward-author-d"          "platform" "3" "background" "Author D"
 
-# Browser-game workers
-write_lane_metadata "brws-author-a"  "author"       "$BRWS_A"         "codex/steward-brws-author-a"     "brws-author-a"  "null" "foreground" "Brws Author A"
-write_lane_metadata "brws-author-b"  "author"       "$BRWS_B"         "codex/steward-brws-author-b"     "brws-author-b"  "null" "foreground" "Brws Author B"
-write_lane_metadata "brws-author-c"  "author"       "$BRWS_C"         "codex/steward-brws-author-c"     "brws-author-c"  "null" "foreground" "Brws Author C"
-write_lane_metadata "brws-author-d"  "author"       "$BRWS_D"         "codex/steward-brws-author-d"     "brws-author-d"  "null" "foreground" "Brws Author D"
+# Browser-game workers  (window: browser, panes 0-3)
+write_lane_metadata "brws-author-a"  "author"       "$BRWS_A"         "codex/steward-brws-author-a"     "browser" "0" "background" "Brws Author A"
+write_lane_metadata "brws-author-b"  "author"       "$BRWS_B"         "codex/steward-brws-author-b"     "browser" "1" "background" "Brws Author B"
+write_lane_metadata "brws-author-c"  "author"       "$BRWS_C"         "codex/steward-brws-author-c"     "browser" "2" "background" "Brws Author C"
+write_lane_metadata "brws-author-d"  "author"       "$BRWS_D"         "codex/steward-brws-author-d"     "browser" "3" "background" "Brws Author D"
 
-# Scratch / flex
-write_lane_metadata "author-scratch" "scratch"      "$AUTHOR_SCRATCH"  "codex/steward-author-scratch"   "author-scratch"  "null" "foreground" "Scratch"
-write_lane_metadata "flex-a"         "flex"          "$FLEX_A"          "codex/steward-flex-a"           "flex-a"          "null" "foreground" "Flex A"
-write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/steward-flex-b"           "flex-b"          "null" "foreground" "Flex B"
-write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "flex-c"          "null" "foreground" "Flex C"
+# Scratch / flex  (window: scratch, panes 0-3)
+write_lane_metadata "author-scratch" "scratch"      "$AUTHOR_SCRATCH"  "codex/steward-author-scratch"   "scratch" "0" "background" "Scratch"
+write_lane_metadata "flex-a"         "flex"          "$FLEX_A"          "codex/steward-flex-a"           "scratch" "1" "background" "Flex A"
+write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/steward-flex-b"           "scratch" "2" "background" "Flex B"
+write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "scratch" "3" "background" "Flex C"
 
-# --- Central ops windows ---
+# ---------------------------------------------------------------------------
+# Window + pane creation — 4 windows × 4 tiled panes
+# ---------------------------------------------------------------------------
+# Pattern per window:
+#   new-session / new-window creates the window with pane .0
+#   3 × split-window adds panes .1, .2, .3
+#   select-layout tiled evens out the quadrants
 
-# Window 1: orchestrator (first window = session creation)
-tmux new-session -d -s "$SESSION" -n orchestrator -c "$MAIN_DIR" \
+# --- Window 1: central-ops ---
+tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator
-
-# Window 2: ops
-tmux new-window -t "$SESSION" -n ops -c "$MAIN_DIR" \
+tmux split-window -t "${SESSION}:central-ops" -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name ops --agent steward-ops
-
-# Window 3: review
-tmux new-window -t "$SESSION" -n review -c "$REVIEW" \
+tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
     "$CLAUDE_BIN" --name review --agent steward-review
-
-# Window 4: issues
-tmux new-window -t "$SESSION" -n issues -c "$MAIN_DIR" \
+tmux split-window -t "${SESSION}:central-ops" -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name issues --agent issues
+tmux select-layout -t "${SESSION}:central-ops" tiled
 
-# --- Platform workers ---
-
-# Window 5: author-a
-tmux new-window -t "$SESSION" -n author-a -c "$AUTHOR_A" \
+# --- Window 2: platform ---
+tmux new-window -t "$SESSION" -n platform -c "$AUTHOR_A" \
     "$CLAUDE_BIN" --name author-a --agent steward-author-a
-
-# Window 6: author-b
-tmux new-window -t "$SESSION" -n author-b -c "$AUTHOR_B" \
+tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_B" \
     "$CLAUDE_BIN" --name author-b --agent steward-author-b
-
-# Window 7: author-c
-tmux new-window -t "$SESSION" -n author-c -c "$AUTHOR_C" \
+tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_C" \
     "$CLAUDE_BIN" --name author-c --agent steward-author-c
-
-# Window 8: author-d
-tmux new-window -t "$SESSION" -n author-d -c "$AUTHOR_D" \
+tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_D" \
     "$CLAUDE_BIN" --name author-d --agent steward-author-d
+tmux select-layout -t "${SESSION}:platform" tiled
 
-# --- Browser-game workers ---
-
-# Window 9: brws-author-a
-tmux new-window -t "$SESSION" -n brws-author-a -c "$BRWS_A" \
+# --- Window 3: browser ---
+tmux new-window -t "$SESSION" -n browser -c "$BRWS_A" \
     "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a
-
-# Window 10: brws-author-b
-tmux new-window -t "$SESSION" -n brws-author-b -c "$BRWS_B" \
+tmux split-window -t "${SESSION}:browser" -c "$BRWS_B" \
     "$CLAUDE_BIN" --name brws-author-b --agent steward-brws-author-b
-
-# Window 11: brws-author-c
-tmux new-window -t "$SESSION" -n brws-author-c -c "$BRWS_C" \
+tmux split-window -t "${SESSION}:browser" -c "$BRWS_C" \
     "$CLAUDE_BIN" --name brws-author-c --agent steward-brws-author-c
-
-# Window 12: brws-author-d
-tmux new-window -t "$SESSION" -n brws-author-d -c "$BRWS_D" \
+tmux split-window -t "${SESSION}:browser" -c "$BRWS_D" \
     "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d
+tmux select-layout -t "${SESSION}:browser" tiled
 
-# --- Scratch / flex ---
-
-# Window 13: author-scratch
-tmux new-window -t "$SESSION" -n author-scratch -c "$AUTHOR_SCRATCH" \
+# --- Window 4: scratch ---
+tmux new-window -t "$SESSION" -n scratch -c "$AUTHOR_SCRATCH" \
     "$CLAUDE_BIN" --name author-scratch --agent steward-author-scratch
-
-# Window 14: flex-a
-tmux new-window -t "$SESSION" -n flex-a -c "$FLEX_A" \
+tmux split-window -t "${SESSION}:scratch" -c "$FLEX_A" \
     "$CLAUDE_BIN" --name flex-a --agent steward-flex-a
-
-# Window 15: flex-b
-tmux new-window -t "$SESSION" -n flex-b -c "$FLEX_B" \
+tmux split-window -t "${SESSION}:scratch" -c "$FLEX_B" \
     "$CLAUDE_BIN" --name flex-b --agent steward-flex-b
-
-# Window 16: flex-c
-tmux new-window -t "$SESSION" -n flex-c -c "$FLEX_C" \
+tmux split-window -t "${SESSION}:scratch" -c "$FLEX_C" \
     "$CLAUDE_BIN" --name flex-c --agent steward-flex-c
+tmux select-layout -t "${SESSION}:scratch" tiled
 
 # Auto-launch ops monitoring loop (SP-3-08).
 # Wait briefly for the claude process to initialize, then send the /loop
 # command.  Best-effort — if it fails the ops agent can start it manually.
+# Target: central-ops window, pane 1 (ops lane).
 (
     sleep 10
-    tmux send-keys -t "${SESSION}:ops" \
+    tmux send-keys -t "${SESSION}:central-ops.1" \
         "/loop 3m uv run python scripts/internal/ops.py monitor" Enter
 ) &
 
-tmux select-window -t "${SESSION}:orchestrator"
+tmux select-window -t "${SESSION}:central-ops"
 
 update_last_active
 

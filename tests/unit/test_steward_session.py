@@ -277,8 +277,10 @@ class TestStewardSessionScript:
         ), "ensure_worktree() must call validate_worktree_path before creating"
 
 
-class TestFullPageLaneLayout:
-    """Validate that all lanes use individual full-page windows (no dashboard)."""
+class TestTiledWindowLayout:
+    """Validate the 4-window tiled layout (4 panes per window)."""
+
+    EXPECTED_WINDOWS = ["central-ops", "platform", "browser", "scratch"]
 
     EXPECTED_LANES = [
         # Central ops
@@ -303,23 +305,69 @@ class TestFullPageLaneLayout:
         "flex-c",
     ]
 
+    # Lanes per window, in pane creation order (pane 0 = first)
+    WINDOW_PANES = {
+        "central-ops": ["orchestrator", "ops", "review", "issues"],
+        "platform": ["author-a", "author-b", "author-c", "author-d"],
+        "browser": [
+            "brws-author-a",
+            "brws-author-b",
+            "brws-author-c",
+            "brws-author-d",
+        ],
+        "scratch": ["author-scratch", "flex-a", "flex-b", "flex-c"],
+    }
+
     def test_no_dashboard_window(self) -> None:
         """The script must not create a dashboard window."""
         content = STEWARD_SCRIPT.read_text()
-        # No tmux window named "dashboard" and no split-window/select-layout
-        assert "dashboard" not in content.lower(), (
-            "steward-session.sh must not reference a 'dashboard' window; "
-            "all lanes should have individual full-page windows"
-        )
+        assert (
+            "dashboard" not in content.lower()
+        ), "steward-session.sh must not reference a 'dashboard' window"
 
-    def test_all_lanes_have_individual_windows(self) -> None:
-        """Each lane must have its own tmux window (new-session or new-window)."""
+    def test_four_windows_created(self) -> None:
+        """Exactly 4 tmux windows must be created (1 new-session + 3 new-window)."""
+        content = STEWARD_SCRIPT.read_text()
+        lines = content.split("\n")
+        window_cmds = [
+            line
+            for line in lines
+            if line.strip().startswith("tmux")
+            and ("new-session" in line or "new-window" in line)
+        ]
+        assert (
+            len(window_cmds) == 4
+        ), f"Expected 4 window creation commands, found {len(window_cmds)}"
+        for window_name in self.EXPECTED_WINDOWS:
+            assert (
+                f"-n {window_name}" in content
+            ), f"Expected window named '{window_name}'"
+
+    def test_split_window_creates_panes(self) -> None:
+        """Each window must have 3 split-window commands (for panes .1, .2, .3)."""
+        content = STEWARD_SCRIPT.read_text()
+        for window_name in self.EXPECTED_WINDOWS:
+            split_count = content.count(f'split-window -t "${{SESSION}}:{window_name}"')
+            assert split_count == 3, (
+                f"Window '{window_name}' must have 3 split-window commands, "
+                f"found {split_count}"
+            )
+
+    def test_tiled_layout_applied(self) -> None:
+        """Each window must have select-layout tiled applied."""
+        content = STEWARD_SCRIPT.read_text()
+        for window_name in self.EXPECTED_WINDOWS:
+            assert (
+                f'select-layout -t "${{SESSION}}:{window_name}" tiled' in content
+            ), f"Window '{window_name}' must have select-layout tiled"
+
+    def test_all_lanes_launched(self) -> None:
+        """All 16 lanes must appear in new-session, new-window, or split-window commands."""
         content = STEWARD_SCRIPT.read_text()
         for lane in self.EXPECTED_LANES:
-            assert f"-n {lane}" in content, (
-                f"Lane '{lane}' must have its own tmux window "
-                f"(expected '-n {lane}' in new-session or new-window command)"
-            )
+            assert (
+                f"--name {lane}" in content
+            ), f"Lane '{lane}' must be launched via --name argument"
 
     @staticmethod
     def _metadata_invocation_lines() -> list[str]:
@@ -331,50 +379,69 @@ class TestFullPageLaneLayout:
             if line.strip().startswith('write_lane_metadata "')
         ]
 
-    def test_all_lanes_foreground_visibility(self) -> None:
-        """All write_lane_metadata calls must use foreground visibility."""
+    def test_metadata_pane_indices(self) -> None:
+        """All lanes must have pane indices 0-3 in their metadata."""
         metadata_lines = self._metadata_invocation_lines()
         assert len(metadata_lines) == len(self.EXPECTED_LANES), (
             f"Expected {len(self.EXPECTED_LANES)} write_lane_metadata calls, "
             f"found {len(metadata_lines)}"
         )
         for line in metadata_lines:
+            # Each line must have a pane index (0, 1, 2, or 3)
+            has_pane_idx = any(f'"{i}"' in line for i in range(4))
             assert (
-                '"foreground"' in line
-            ), f"All lanes must have foreground visibility, but found: {line.strip()}"
+                has_pane_idx
+            ), f"Lane metadata must have a pane index (0-3): {line.strip()}"
 
-    def test_no_pane_indices_in_metadata(self) -> None:
-        """No lane should use numbered pane indices (all windows are full-page)."""
+    def test_metadata_window_names(self) -> None:
+        """All metadata must reference one of the 4 group window names."""
         metadata_lines = self._metadata_invocation_lines()
         for line in metadata_lines:
-            # The tmux_pane argument (6th positional) should be "null"
-            # Numbered pane indices like "1", "2", "3", "4" indicate
-            # a dashboard pane layout, not individual windows
+            has_window = any(f'"{w}"' in line for w in self.EXPECTED_WINDOWS)
             assert (
-                '"null"' in line or "null" in line
-            ), f"Lane metadata should not use numbered pane indices: {line.strip()}"
+                has_window
+            ), f"Lane metadata must reference a window name: {line.strip()}"
 
-    def test_window_creation_order(self) -> None:
-        """Windows must be created in the expected order."""
+    def test_central_ops_foreground(self) -> None:
+        """Central ops lanes must have foreground visibility."""
+        metadata_lines = self._metadata_invocation_lines()
+        central_ops_lanes = {"orchestrator", "ops", "review", "issues"}
+        for line in metadata_lines:
+            # Check if this line is for a central ops lane
+            for lane in central_ops_lanes:
+                if f'"{lane}"' in line and line.index(f'"{lane}"') < 30:
+                    assert (
+                        '"foreground"' in line
+                    ), f"Central ops lane must be foreground: {line.strip()}"
+
+    def test_worker_lanes_background(self) -> None:
+        """Worker lanes must have background visibility."""
+        metadata_lines = self._metadata_invocation_lines()
+        worker_lanes = {
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            "brws-author-a",
+            "brws-author-b",
+            "brws-author-c",
+            "brws-author-d",
+            "author-scratch",
+            "flex-a",
+            "flex-b",
+            "flex-c",
+        }
+        for line in metadata_lines:
+            for lane in worker_lanes:
+                if f'"{lane}"' in line and line.index(f'"{lane}"') < 30:
+                    assert (
+                        '"background"' in line
+                    ), f"Worker lane must be background: {line.strip()}"
+
+    def test_ops_monitoring_targets_correct_pane(self) -> None:
+        """The ops monitoring loop must target central-ops.1 (ops pane)."""
         content = STEWARD_SCRIPT.read_text()
-        lines = content.split("\n")
-        window_lines = [
-            line for line in lines if "new-session" in line or "new-window" in line
-        ]
-        # Filter to only the tmux window creation commands (not comments)
-        window_cmds = [l for l in window_lines if l.strip().startswith("tmux")]
-        assert len(window_cmds) == len(self.EXPECTED_LANES), (
-            f"Expected {len(self.EXPECTED_LANES)} window creation commands, "
-            f"found {len(window_cmds)}"
-        )
-        # First window uses new-session, rest use new-window
-        assert (
-            "new-session" in window_cmds[0]
-        ), "First window (orchestrator) must use tmux new-session"
-        for cmd in window_cmds[1:]:
-            assert (
-                "new-window" in cmd
-            ), f"Non-first windows must use tmux new-window: {cmd.strip()}"
+        assert "central-ops.1" in content, "Ops monitoring must target central-ops.1"
 
     def test_legacy_rollback_exists(self) -> None:
         """steward-session-legacy.sh must exist for rollback."""

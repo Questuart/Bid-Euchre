@@ -146,40 +146,75 @@ class PoolAction:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_tmux_target(
+    lane_id: str,
+    tmux_session: str,
+    runtime_dir: Path | None = None,
+) -> str:
+    """Resolve a lane's tmux pane target from registry metadata.
+
+    Reads ``tmux_window`` and ``tmux_pane`` from the lane's worktree registry
+    entry to construct a ``{session}:{window}.{pane}`` target string.
+
+    Falls back to ``{session}:{lane_id}`` if the registry entry is missing or
+    does not contain pane metadata (backwards compatibility with the legacy
+    one-window-per-lane layout).
+
+    Args:
+        lane_id: Lane identifier.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A tmux target string suitable for ``send-keys -t`` or
+        ``display-message -t``.
+    """
+    import json
+
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+    registry_file = runtime_dir / "worktree_registry" / f"{lane_id}.json"
+    try:
+        data = json.loads(registry_file.read_text())
+        window = data.get("tmux_window")
+        pane = data.get("tmux_pane")
+        if window and pane is not None:
+            return f"{tmux_session}:{window}.{pane}"
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    # Fallback: legacy one-window-per-lane naming
+    return f"{tmux_session}:{lane_id}"
+
+
 def _probe_tmux_pane(
     lane_id: str,
     tmux_session: str,
+    *,
+    runtime_dir: Path | None = None,
 ) -> bool:
-    """Check if a tmux window for lane_id exists in the session.
+    """Check if a tmux pane for lane_id is alive in the session.
 
-    Uses ``tmux list-windows`` to check for a window whose name matches
-    the lane_id.
+    Resolves the lane's tmux target from registry metadata (supporting both
+    the tiled 4-window layout and the legacy one-window-per-lane layout) and
+    queries ``tmux display-message`` to verify the pane exists.
 
     Args:
         lane_id: Lane identifier to look for.
         tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
 
     Returns:
-        True if a window named *lane_id* exists in the session.
+        True if the lane's tmux pane exists and is running.
     """
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
     try:
         result = subprocess.run(
-            [
-                "tmux",
-                "list-windows",
-                "-t",
-                tmux_session,
-                "-F",
-                "#{window_name}",
-            ],
+            ["tmux", "display-message", "-t", target, "-p", "#{pane_pid}"],
             capture_output=True,
             text=True,
             timeout=5,
         )
-        if result.returncode != 0:
-            return False
-        window_names = result.stdout.strip().splitlines()
-        return lane_id in window_names
+        return result.returncode == 0 and result.stdout.strip() != ""
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return False
 
@@ -782,6 +817,7 @@ def nudge_pane(
     packet_id: str,
     *,
     tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
 ) -> PoolAction:
     """Send a short command to the lane's tmux pane to trigger task consumption.
 
@@ -789,15 +825,20 @@ def nudge_pane(
     target pane.  The command is a Claude Code slash-command that loads the
     dispatched task packet from durable state and begins execution.
 
+    The target is resolved from the lane's worktree registry metadata
+    (``tmux_window`` + ``tmux_pane``), supporting both the tiled 4-window
+    layout and the legacy one-window-per-lane layout.
+
     Args:
         lane_id: Target lane whose pane should receive the command.
         packet_id: Task packet ID to pass to the ``/start-task`` skill.
         tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
 
     Returns:
         A :class:`PoolAction` with ``action="nudge"`` describing the outcome.
     """
-    target = f"{tmux_session}:{lane_id}"
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
     cmd = f"/start-task {packet_id}"
 
     try:
