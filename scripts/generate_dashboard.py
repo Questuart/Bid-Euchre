@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """PR analytics Bollinger Band dashboard.
 
-Produces a 4-panel PNG:
+Produces a 5-panel PNG:
   1. PRs merged per day with Bollinger Bands (working days only)
-  2. Additions merged per day with Bollinger Bands (volume-weighted)
-  3. Line churn ratio with Bollinger Bands (percentage)
-  4. File churn ratio with Bollinger Bands (percentage)
+  2. Net lines per day with Bollinger Bands (additions - deletions from PRs)
+  3. Additions merged per day with Bollinger Bands (volume-weighted)
+  4. Line churn ratio with Bollinger Bands (percentage)
+  5. File churn ratio with Bollinger Bands (percentage)
 
 Usage:
     uv run python scripts/generate_dashboard.py
@@ -52,8 +53,10 @@ def _git(args: list[str], repo: str) -> str:
 _GH_PR_LIMIT = 10_000
 
 
-def _gather_pr_counts(repo: str) -> tuple[dict[str, int], dict[str, int]]:
-    """Return per-day PR merge counts and total additions from merged PRs.
+def _gather_pr_counts(
+    repo: str,
+) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+    """Return per-day PR merge counts, additions, and deletions from merged PRs.
 
     Uses ``gh pr list`` as the data source.  Requires the ``gh`` CLI to be
     installed and authenticated.
@@ -69,7 +72,7 @@ def _gather_pr_counts(repo: str) -> tuple[dict[str, int], dict[str, int]]:
             "--state",
             "merged",
             "--json",
-            "mergedAt,additions",
+            "mergedAt,additions,deletions",
             "--limit",
             str(_GH_PR_LIMIT),
         ],
@@ -89,6 +92,7 @@ def _gather_pr_counts(repo: str) -> tuple[dict[str, int], dict[str, int]]:
 
     pr_counts: dict[str, int] = defaultdict(int)
     pr_additions: dict[str, int] = defaultdict(int)
+    pr_deletions: dict[str, int] = defaultdict(int)
 
     for pr in prs:
         merged_at = pr.get("mergedAt", "")
@@ -97,8 +101,9 @@ def _gather_pr_counts(repo: str) -> tuple[dict[str, int], dict[str, int]]:
         date = merged_at[:10]  # YYYY-MM-DD
         pr_counts[date] += 1
         pr_additions[date] += pr.get("additions", 0)
+        pr_deletions[date] += pr.get("deletions", 0)
 
-    return dict(pr_counts), dict(pr_additions)
+    return dict(pr_counts), dict(pr_additions), dict(pr_deletions)
 
 
 def _gather_line_stats(repo: str) -> tuple[dict[str, int], dict[str, int]]:
@@ -144,9 +149,18 @@ def _gather_file_churn(repo: str) -> tuple[dict[str, int], dict[str, int]]:
 
 
 def _bollinger(
-    data: np.ndarray, window: int, num_std: int
+    data: np.ndarray,
+    window: int,
+    num_std: int,
+    *,
+    clamp_lower: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Compute SMA, upper band, lower band, and %B."""
+    """Compute SMA, upper band, lower band, and %B.
+
+    Args:
+        clamp_lower: If ``True`` (default), clamp the lower band at zero.
+            Set to ``False`` for metrics that can go negative (e.g. net lines).
+    """
     n = len(data)
     sma = np.full(n, np.nan)
     upper = np.full(n, np.nan)
@@ -158,7 +172,7 @@ def _bollinger(
         m, s = float(np.mean(w)), float(np.std(w, ddof=1))
         sma[i] = m
         upper[i] = m + num_std * s
-        lower[i] = max(0, m - num_std * s)
+        lower[i] = max(0, m - num_std * s) if clamp_lower else m - num_std * s
         band_width = upper[i] - lower[i]
         pct_b[i] = (data[i] - lower[i]) / band_width if band_width > 0 else 0.5
 
@@ -167,7 +181,7 @@ def _bollinger(
 
 def generate_dashboard(repo: str, output: str) -> None:
     """Generate the full dashboard PNG."""
-    pr_counts_map, pr_additions_map = _gather_pr_counts(repo)
+    pr_counts_map, pr_additions_map, pr_deletions_map = _gather_pr_counts(repo)
     day_ins, day_del = _gather_line_stats(repo)
     unique_files_map, churned_files_map = _gather_file_churn(repo)
 
@@ -180,10 +194,14 @@ def generate_dashboard(repo: str, output: str) -> None:
     )
     n = len(sorted_dates)
 
-    # ── Panel 1/2 metrics (PR-based) ─────────────────────────────────────
+    # ── Panel 1/2/3 metrics (PR-based) ───────────────────────────────────
     raw_prs = np.array([pr_counts_map.get(d, 0) for d in sorted_dates], dtype=float)
     pr_additions = np.array(
         [pr_additions_map.get(d, 0) for d in sorted_dates], dtype=float
+    )
+    pr_net_lines = np.array(
+        [pr_additions_map.get(d, 0) - pr_deletions_map.get(d, 0) for d in sorted_dates],
+        dtype=float,
     )
 
     # ── Panel 3/4 metrics (git-log-based, commit date) ───────────────────
@@ -208,6 +226,9 @@ def generate_dashboard(repo: str, output: str) -> None:
 
     # ── Bollinger Bands ──────────────────────────────────────────────────
     raw_sma, raw_upper, raw_lower, raw_pctb = _bollinger(raw_prs, WINDOW, NUM_STD)
+    net_sma, net_upper, net_lower, net_pctb = _bollinger(
+        pr_net_lines, WINDOW, NUM_STD, clamp_lower=False
+    )
     add_sma, add_upper, add_lower, add_pctb = _bollinger(pr_additions, WINDOW, NUM_STD)
 
     # Churn ratios as percentages for Bollinger computation
@@ -228,15 +249,16 @@ def generate_dashboard(repo: str, output: str) -> None:
     tick_labels = [sorted_dates[i] for i in tick_positions]
 
     valid = ~np.isnan(raw_sma)
+    net_valid = ~np.isnan(net_sma)
     add_valid = ~np.isnan(add_sma)
     churn_valid = ~np.isnan(lc_sma)
 
     # ── Plot ─────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(
-        4,
+        5,
         1,
-        figsize=(16, 20),
-        gridspec_kw={"height_ratios": [3, 3, 2.5, 2.5]},
+        figsize=(16, 25),
+        gridspec_kw={"height_ratios": [3, 3, 3, 2.5, 2.5]},
         sharex=True,
     )
     fig.suptitle(
@@ -268,10 +290,35 @@ def generate_dashboard(repo: str, output: str) -> None:
     ax1.set_ylabel("PRs merged", fontsize=11)
     ax1.set_title("PRs Merged per Day", fontsize=12, pad=4)
 
-    # ── Panel 2: Additions merged per day ────────────────────────────────
+    # ── Panel 2: Net lines per day ───────────────────────────────────────
     ax2 = axes[1]
     _draw_bollinger_panel(
         ax2,
+        x,
+        pr_net_lines,
+        net_sma,
+        net_upper,
+        net_lower,
+        net_pctb,
+        net_valid,
+        latest_idx,
+        band_color="#16a085",
+        sma_color="#1abc9c",
+        dot_color="#2c3e50",
+        allow_negative=True,
+    )
+    ax2.set_ylabel("Net lines", fontsize=11)
+    ax2.set_title(
+        "Net Lines per Day  (additions \u2212 deletions from PRs)",
+        fontsize=12,
+        pad=4,
+    )
+    ax2.axhline(y=0, color="#7f8c8d", linewidth=0.8, linestyle="-", alpha=0.5, zorder=1)
+
+    # ── Panel 3: Additions merged per day ────────────────────────────────
+    ax3 = axes[2]
+    _draw_bollinger_panel(
+        ax3,
         x,
         pr_additions,
         add_sma,
@@ -284,17 +331,17 @@ def generate_dashboard(repo: str, output: str) -> None:
         sma_color="#27ae60",
         dot_color="#1a5276",
     )
-    ax2.set_ylabel("Additions merged", fontsize=11)
-    ax2.set_title(
+    ax3.set_ylabel("Additions merged", fontsize=11)
+    ax3.set_title(
         "Additions Merged per Day  (volume-weighted PR activity)",
         fontsize=12,
         pad=4,
     )
 
-    # ── Panel 3: Line churn ratio (Bollinger) ───────────────────────────
-    ax3 = axes[2]
+    # ── Panel 4: Line churn ratio (Bollinger) ───────────────────────────
+    ax4 = axes[3]
     _draw_bollinger_panel(
-        ax3,
+        ax4,
         x,
         churn_pct,
         lc_sma,
@@ -309,13 +356,13 @@ def generate_dashboard(repo: str, output: str) -> None:
         max_y=100.0,
         fmt=".1f",
     )
-    ax3.set_ylabel("Line churn %", fontsize=11)
-    ax3.set_title("Line Churn Ratio  (1 \u2212 net/gross)", fontsize=12, pad=4)
+    ax4.set_ylabel("Line churn %", fontsize=11)
+    ax4.set_title("Line Churn Ratio  (1 \u2212 net/gross)", fontsize=12, pad=4)
 
-    # ── Panel 4: File churn ratio (Bollinger) ─────────────────────────
-    ax4 = axes[3]
+    # ── Panel 5: File churn ratio (Bollinger) ─────────────────────────
+    ax5 = axes[4]
     _draw_bollinger_panel(
-        ax4,
+        ax5,
         x,
         file_churn_pct,
         fc_sma,
@@ -330,11 +377,11 @@ def generate_dashboard(repo: str, output: str) -> None:
         max_y=100.0,
         fmt=".1f",
     )
-    ax4.set_ylabel("File churn %", fontsize=11)
-    ax4.set_title(
+    ax5.set_ylabel("File churn %", fontsize=11)
+    ax5.set_title(
         "File Churn Ratio  (multi-touch files / unique files)", fontsize=12, pad=4
     )
-    ax4.set_xlabel("Working day", fontsize=11)
+    ax5.set_xlabel("Working day", fontsize=11)
 
     # ── X-axis ticks ─────────────────────────────────────────────────────
     for ax in axes:
@@ -355,6 +402,10 @@ def generate_dashboard(repo: str, output: str) -> None:
     print(
         f"  PRs merged: {raw_prs[li]:.0f}, "
         f"SMA: {raw_sma[li]:.1f}, %B: {raw_pctb[li]:.2f}"
+    )
+    print(
+        f"  Net lines: {pr_net_lines[li]:+.0f}, "
+        f"SMA: {net_sma[li]:+.1f}, %B: {net_pctb[li]:.2f}"
     )
     print(
         f"  Additions: {pr_additions[li]:.0f}, "
@@ -386,12 +437,15 @@ def _draw_bollinger_panel(
     dot_color: str,
     max_y: float | None = None,
     fmt: str = ".0f",
+    allow_negative: bool = False,
 ) -> None:
     """Draw a single Bollinger Band panel.
 
     Args:
         max_y: Hard cap for y-axis (e.g. 100 for percentage panels).
         fmt: Format specifier for latest-day label values (e.g. ".0f", ".1f").
+        allow_negative: If ``True``, allow y-axis to extend below zero
+            (for metrics like net lines that can be negative).
     """
     light_band = band_color
     ax.fill_between(
@@ -532,7 +586,11 @@ def _draw_bollinger_panel(
     ax.legend(handles=legend_elements, loc="upper left", fontsize=8, framealpha=0.9)
     ax.grid(axis="y", alpha=0.15, zorder=0)
     y_top = max_y if max_y is not None else float(np.max(data)) * 1.15
-    ax.set_ylim(0, y_top)
+    if allow_negative:
+        y_bot = float(np.min(data)) * 1.15 if float(np.min(data)) < 0 else 0
+        ax.set_ylim(y_bot, y_top)
+    else:
+        ax.set_ylim(0, y_top)
     ax.set_xlim(-1, len(x) + 0.5)
 
 
