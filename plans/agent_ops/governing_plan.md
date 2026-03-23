@@ -113,6 +113,7 @@ Completed phases:
 - `plans/agent_ops/1_coordination_core/checkpoints.md` (Phase 1 — COMPLETE, 2026-03-21)
 - `plans/agent_ops/2_visible_operating_model/checkpoints.md` (Phase 2 — COMPLETE, 2026-03-22)
 - `plans/agent_ops/3_supervision_and_scaling/checkpoints.md` (Phase 3 — COMPLETE, 2026-03-22)
+- `plans/agent_ops/4_remote_channel/checkpoints.md` (Phase 4 — PENDING)
 
 Agents should treat checkpoints as the human-readable source of current step
 status, blockers, and session handoff state.
@@ -378,8 +379,8 @@ The platform must not rely on best-effort message passing between lanes.
   - supervisor alerts, retry/reroute recommendations
 - `review -> orchestrator`
   - plan review outcome, PR findings, validation status
-- `issues -> orchestrator`
-  - issue created/updated, threshold crossed
+- `review -> orchestrator`
+  - issue created/updated, threshold crossed, triage results
 - remote channel -> `orchestrator` / `ops`
   - bounded user replies, acknowledgements, reroute/inspect requests
 
@@ -575,6 +576,16 @@ The platform must expose its own health signals, including:
 - registry/message mismatch counts
 
 ## Remote Operator Channels
+
+> **Discovery (2026-03-23):** Claude Code v2.1.80+ ships a Channels feature
+> (research preview) with pre-built Telegram and Discord plugins. These provide
+> pairing, sender gating, reply tools, and permission relay out of the box.
+> Reference: <https://code.claude.com/docs/en/channels-reference>
+>
+> This significantly reduces Platform-8 scope: the transport skeleton, sender
+> gating, and permission relay are framework-provided. Platform-8a becomes
+> "configure official Telegram plugin and prove core capabilities" rather than
+> "build transport skeleton." See `plans/agent_ops/4_remote_channel/plan.md`.
 
 The platform should support an official Claude Code plugin path for:
 
@@ -1258,7 +1269,8 @@ These are the short names future handoffs should use.
     channel is needed immediately
 - security boundary:
   - require pairing and sender allowlists before enabling two-way use
-  - keep permission relay disabled by default in Platform-8
+  - permission relay (remote tool approval from phone) is available in the
+    official Channels framework; enable it as part of Platform-8a proving
   - treat inbound remote messages as transport only until they are recorded or
     reflected in repo-owned state
 - fallback boundary:

@@ -1,7 +1,7 @@
 # Agentic Orchestration Platform — Amendments
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-22 (SP-3-04 closeout)
+**Last updated:** 2026-03-23 (A9: Channels discovery)
 
 ---
 
@@ -204,3 +204,45 @@ re-litigating the same architectural boundary.
 lagged behind shipped reality. This amendment closes that gap and establishes
 the dual-domain layout transition as the next governed action, preventing
 future sessions from having to reconstruct intent from chat history.
+
+---
+
+## A9 — Official Claude Code Channels discovery — Platform-8a scope reduction (2026-03-23)
+
+**PR:** pending (this amendment)
+
+**What changed:**
+1. **Official Channels discovery** — Claude Code v2.1.80+ ships a Channels
+   feature (research preview) with pre-built Telegram and Discord plugins.
+   These provide pairing, sender gating, reply tools, and permission relay
+   out of the box. Reference: <https://code.claude.com/docs/en/channels-reference>
+2. **Platform-8a scope reduced** — Changed from "build transport skeleton" to
+   "configure official Telegram plugin, prove pairing + sender gating +
+   permission relay + kill switch." The framework provides the transport,
+   authentication, and permission relay machinery; the platform work is now
+   configuration and proving rather than implementation.
+3. **Permission relay added as key feature** — Remote tool approval from phone
+   was not anticipated in the original plan but is provided by the framework.
+   This enables operators to approve/deny tool calls from Telegram without
+   terminal access. The security boundary now enables permission relay during
+   Platform-8a proving (previously: "keep permission relay disabled by default").
+4. **Audit trail deferred to hardening** — Platform-8b (repo-owned structured
+   audit trail of channel messages/approvals) deferred to Platform-14
+   (hardening phase). v1 relies on session logs + Telegram chat history.
+   Noted as a known gap, not a blocking prerequisite.
+5. **Prerequisites documented** — Claude Code v2.1.80+, active claude.ai
+   login, `--channels` flag in tmux launcher, Bun runtime for official plugins.
+6. **Phase 4 plan and checkpoints created** — New directory
+   `plans/agent_ops/4_remote_channel/` with `plan.md` and `checkpoints.md`
+   reflecting the reduced scope.
+7. **Message flow correction** — "issues -> orchestrator" updated to
+   "review -> orchestrator" (issues lane removed in #1296, review owns
+   triage per #1297).
+
+**Rationale:** The original Platform-8 design assumed the transport skeleton,
+sender gating, and permission relay would need to be built from scratch or
+adapted from a minimal repo-owned fallback. The Channels research preview
+provides all of these as framework features. This reduces Platform-8 from a
+multi-PR implementation effort to a configuration-and-proving exercise, while
+preserving the same done-when criteria and the fallback-adapter escape hatch
+if the official plugin path proves unstable.
