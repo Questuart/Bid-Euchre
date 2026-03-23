@@ -54,7 +54,7 @@ they ship, rather than forming one monolithic prerequisite wall.
 Each phase follows this standard sequence:
 
 1. **Scope lock**
-   - **Commands:** read `CLAUDE.md`, this governing plan, the active phase `checkpoints.md`, and any active sub-plans.
+   - **Commands:** read `CLAUDE.md`, this governing plan, the active phase checkpoints, and any active sub-plans.
    - **Validates:** the next step is unambiguous and the phase boundary still matches the roadmap.
    - **Error recovery:** if the work needs new design choices or touches more than three files, create a sub-plan before implementation.
    - **Outputs:** updated checkpoint target and, when needed, a registered sub-plan.
@@ -1235,7 +1235,7 @@ These are the short names future handoffs should use.
   - verify plugin/runtime prerequisites before proving (for example Bun for
     official plugins)
 - channel-aware startup path:
-  - the tmux launcher (`steward-session.sh`) gains an optional
+  - the tmux launcher (`.claude/tmux/steward-session.sh`) gains an optional
     `STEWARD_CHANNELS` environment variable (e.g.,
     `STEWARD_CHANNELS="telegram"` or `STEWARD_CHANNELS="telegram,discord"`)
   - when `STEWARD_CHANNELS` is set, the launcher runs a preflight check

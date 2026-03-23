@@ -233,7 +233,7 @@ future sessions from having to reconstruct intent from chat history.
 5. **Prerequisites documented** — Claude Code v2.1.80+, active claude.ai
    login, `--channels` flag in tmux launcher, Bun runtime for official plugins.
 6. **Phase 4 plan and checkpoints created** — New directory
-   `plans/agent_ops/4_remote_channel/` with `plan.md` and `checkpoints.md`
+   `plans/agent_ops/4_remote_channel/` with plan and checkpoint files
    reflecting the reduced scope.
 7. **Message flow correction** — "issues -> orchestrator" updated to
    "review -> orchestrator" (issues lane removed in #1296, review owns
