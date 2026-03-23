@@ -364,15 +364,15 @@ tmux select-layout -t "${SESSION}:scratch" tiled
         "/loop 3m uv run python scripts/internal/ops.py monitor" Enter
 ) &
 
-# Auto-launch review-check loop on the review pane.
-# Runs every 20 minutes, checking recently merged PRs for contract and
-# diff-stat issues.  Best-effort — if it fails the review agent can
-# start it manually.
+# Auto-launch merged-PR review loop on the review pane.
+# Triggers the review agent's startup behavior: discover recent merges,
+# review diffs, triage findings, then poll every 15 minutes.
+# Best-effort — if it fails the review agent can start it manually.
 # Target: central-ops window, pane 3 (review lane).
 (
     sleep 15
     tmux send-keys -t "${SESSION}:central-ops.3" \
-        "/loop 20m uv run python scripts/internal/ops.py review-check" Enter
+        "Review recently merged PRs and triage findings. Set up a 15m recurring poll." Enter
 ) &
 
 tmux select-window -t "${SESSION}:central-ops"

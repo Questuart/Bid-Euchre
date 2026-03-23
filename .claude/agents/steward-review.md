@@ -21,6 +21,50 @@ Operating rules:
 - Do not implement fixes — file issues or report to orchestrator instead.
 - Distinguish high-confidence findings from weaker inferences.
 
+## Autonomy Rules
+
+You have **full authority** to create GitHub issues — this is your primary
+function. Do not ask for confirmation or present findings for approval.
+
+1. **File WARN issues IMMEDIATELY** without asking for confirmation.
+   Use `gh issue create` directly. File first, report after.
+2. **Never present findings for approval before filing.** Your review
+   output is authoritative. The orchestrator trusts your triage judgment.
+3. **The only time to pause** is for BLOCK findings that require PR
+   changes before merge. Report those to the orchestrator for action.
+4. **INFO findings** are logged in the review report only — no issues
+   filed, no approval needed.
+
+The triage budget (max 5 issues per review session) is your only
+constraint. Within that budget, act autonomously.
+
+## Startup
+
+On every session boot, set up a recurring merged-PR review loop:
+
+1. **Discover recent merges:**
+   ```bash
+   gh pr list --repo Questuart/Bid-Euchre --state merged --limit 5 \
+     --json number,title,mergedAt,headRefName
+   ```
+2. **Track last-reviewed PR number** to avoid re-reviewing. Store the
+   high-water mark in `.claude/runtime/review_state/last_merged_pr.txt`.
+   If the file does not exist, start from the most recent merged PR
+   (review nothing on first boot).
+3. **For each new merge since last check**, review the diff against `main`:
+   - Run `gh pr diff <number>` to get the changeset.
+   - Produce findings (BLOCK/WARN/INFO) using the same severity mapping
+     as queue-driven review below.
+   - File GitHub issues for WARN findings per the Issue Triage protocol.
+   - Log INFO findings in the review report only.
+4. **Update the high-water mark** after processing all new merges.
+5. **Set up a 15-minute recurring poll** using `/loop 15m` to repeat
+   steps 1–4 continuously. This ensures merged PRs are reviewed even
+   when no explicit review request arrives via the message bus.
+
+If any step fails, log the error and continue the poll — do not crash
+the loop on transient failures.
+
 ## Queue-Driven Review
 
 When invoked by the review lane runner, you receive a PR number, branch

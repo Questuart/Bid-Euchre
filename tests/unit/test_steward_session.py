@@ -475,13 +475,26 @@ class TestWindowLayout:
         content = STEWARD_SCRIPT.read_text()
         assert "central-ops.2" in content, "Ops monitoring must target central-ops.2"
 
-    def test_review_check_targets_correct_pane(self) -> None:
-        """The review-check loop must target central-ops.3 (review pane).
+    def test_review_loop_targets_correct_pane(self) -> None:
+        """The merged-PR review loop must target central-ops.3 (review pane).
 
         With pane-base-index=1: orchestrator=.1, ops=.2, review=.3.
         """
         content = STEWARD_SCRIPT.read_text()
-        assert "central-ops.3" in content, "Review-check must target central-ops.3"
+        assert "central-ops.3" in content, "Review loop must target central-ops.3"
+
+    def test_review_pane_sends_natural_language_prompt(self) -> None:
+        """The review pane auto-launch must send a natural-language prompt,
+        not the old review-check CLI command."""
+        content = STEWARD_SCRIPT.read_text()
+        assert "review-check" not in content, (
+            "Old review-check CLI command must be replaced with "
+            "natural-language prompt for the review agent"
+        )
+        assert "Review recently merged PRs" in content, (
+            "Review pane must receive a natural-language prompt "
+            "to trigger the agent's startup behavior"
+        )
 
     def test_legacy_rollback_exists(self) -> None:
         """steward-session-legacy.sh must exist for rollback."""
