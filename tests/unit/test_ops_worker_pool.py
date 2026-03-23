@@ -36,6 +36,8 @@ from bid_euchre.ops.worker_pool import (
     get_lane_domain,
     nudge_pane,
     park_worker,
+    refresh_all_idle,
+    refresh_worker,
     reset_worktree,
     retire_worker,
     run_pool_maintenance,
@@ -2836,3 +2838,228 @@ class TestDispatchRedispatchCycles:
             assert "dirty_file.py" in diff_path.read_text()
         finally:
             diff_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# refresh_worker()
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshWorker:
+    """Test refresh_worker() — combined reset + clear with safety guard."""
+
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}.reset_worktree")
+    @patch(f"{_WORKER_POOL}._get_lane_task_id")
+    def test_refresh_success(
+        self,
+        mock_task: MagicMock,
+        mock_reset: MagicMock,
+        mock_clear: MagicMock,
+    ) -> None:
+        """Happy path: no active task, reset and clear both succeed."""
+        mock_task.return_value = None
+        mock_reset.return_value = PoolAction(
+            action="reset_worktree",
+            lane_id="author-a",
+            reason="Reset OK",
+            executed=True,
+        )
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id="author-a",
+            reason="Cleared OK",
+            executed=True,
+        )
+        result = refresh_worker("author-a")
+        assert result.executed is True
+        assert result.action == "refresh"
+        assert result.error is None
+        assert "origin/main" in result.reason
+        assert "session cleared" in result.reason
+
+    @patch(f"{_WORKER_POOL}._get_lane_task_id")
+    def test_refresh_refused_active_task(self, mock_task: MagicMock) -> None:
+        """Refuse to refresh a lane with an active dispatched task."""
+        mock_task.return_value = "abc123"
+        result = refresh_worker("author-a")
+        assert result.executed is False
+        assert result.error == "active_task"
+        assert "abc123" in result.reason
+
+    def test_refresh_unknown_lane(self) -> None:
+        """Unknown lane ID is rejected immediately."""
+        result = refresh_worker("not-a-real-lane")
+        assert result.executed is False
+        assert result.error == "unknown_lane"
+
+    @patch(f"{_WORKER_POOL}.reset_worktree")
+    @patch(f"{_WORKER_POOL}._get_lane_task_id")
+    def test_refresh_reset_fails(
+        self,
+        mock_task: MagicMock,
+        mock_reset: MagicMock,
+    ) -> None:
+        """If worktree reset fails, refresh fails without attempting clear."""
+        mock_task.return_value = None
+        mock_reset.return_value = PoolAction(
+            action="reset_worktree",
+            lane_id="author-a",
+            reason="Worktree not found",
+            executed=False,
+            error="worktree_not_found",
+        )
+        result = refresh_worker("author-a")
+        assert result.executed is False
+        assert "reset_failed" in result.error
+
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}.reset_worktree")
+    @patch(f"{_WORKER_POOL}._get_lane_task_id")
+    def test_refresh_clear_fails_partial_success(
+        self,
+        mock_task: MagicMock,
+        mock_reset: MagicMock,
+        mock_clear: MagicMock,
+    ) -> None:
+        """Reset succeeds but clear fails → partial success (executed=True)."""
+        mock_task.return_value = None
+        mock_reset.return_value = PoolAction(
+            action="reset_worktree",
+            lane_id="author-a",
+            reason="Reset OK",
+            executed=True,
+        )
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id="author-a",
+            reason="tmux not found",
+            executed=False,
+            error="clear_failed",
+        )
+        result = refresh_worker("author-a")
+        assert result.executed is True
+        assert result.error == "clear_failed"
+        assert "reset ok" in result.reason.lower()
+
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}.reset_worktree")
+    @patch(f"{_WORKER_POOL}._get_lane_task_id")
+    def test_refresh_passes_force_to_reset(
+        self,
+        mock_task: MagicMock,
+        mock_reset: MagicMock,
+        mock_clear: MagicMock,
+    ) -> None:
+        """force=True is forwarded to reset_worktree."""
+        mock_task.return_value = None
+        mock_reset.return_value = PoolAction(
+            action="reset_worktree",
+            lane_id="author-b",
+            reason="Reset OK",
+            executed=True,
+        )
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id="author-b",
+            reason="Cleared OK",
+            executed=True,
+        )
+        refresh_worker("author-b", force=True)
+        mock_reset.assert_called_once_with("author-b", force=True, runtime_dir=None)
+
+
+# ---------------------------------------------------------------------------
+# refresh_all_idle()
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshAllIdle:
+    """Test refresh_all_idle() — batch refresh of all idle lanes."""
+
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    def test_skips_active_lanes(
+        self,
+        mock_snapshot: MagicMock,
+        mock_refresh: MagicMock,
+    ) -> None:
+        """Lanes with current_task_id are skipped."""
+        mock_snapshot.return_value = _make_pool(
+            [
+                _make_worker("author-a", pool_status="active", current_task_id="t1"),
+                _make_worker("author-b", pool_status="idle"),
+            ]
+        )
+        mock_refresh.return_value = PoolAction(
+            action="refresh",
+            lane_id="author-b",
+            reason="Refreshed",
+            executed=True,
+        )
+        actions = refresh_all_idle()
+        # Should only refresh author-b, not author-a
+        assert len(actions) == 1
+        mock_refresh.assert_called_once_with(
+            "author-b", force=False, tmux_session="steward", runtime_dir=None
+        )
+
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    def test_refreshes_all_idle_lanes(
+        self,
+        mock_snapshot: MagicMock,
+        mock_refresh: MagicMock,
+    ) -> None:
+        """All lanes without active tasks are refreshed."""
+        mock_snapshot.return_value = _make_pool(
+            [
+                _make_worker("author-a", pool_status="idle"),
+                _make_worker("author-b", pool_status="parked"),
+                _make_worker("author-c", pool_status="idle"),
+            ]
+        )
+        mock_refresh.return_value = PoolAction(
+            action="refresh",
+            lane_id="any",
+            reason="Refreshed",
+            executed=True,
+        )
+        actions = refresh_all_idle()
+        assert len(actions) == 3
+        assert mock_refresh.call_count == 3
+
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    def test_empty_pool_returns_empty_list(
+        self,
+        mock_snapshot: MagicMock,
+        mock_refresh: MagicMock,
+    ) -> None:
+        """No workers in pool → empty list, no calls to refresh_worker."""
+        mock_snapshot.return_value = _make_pool([])
+        actions = refresh_all_idle()
+        assert actions == []
+        mock_refresh.assert_not_called()
+
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    def test_passes_force_flag(
+        self,
+        mock_snapshot: MagicMock,
+        mock_refresh: MagicMock,
+    ) -> None:
+        """force=True is passed through to each refresh_worker call."""
+        mock_snapshot.return_value = _make_pool(
+            [_make_worker("flex-a", pool_status="idle")]
+        )
+        mock_refresh.return_value = PoolAction(
+            action="refresh",
+            lane_id="flex-a",
+            reason="Refreshed",
+            executed=True,
+        )
+        refresh_all_idle(force=True)
+        mock_refresh.assert_called_once_with(
+            "flex-a", force=True, tmux_session="steward", runtime_dir=None
+        )

@@ -19,6 +19,8 @@ Usage::
         retire_worker,
         reset_worktree,
         clear_session,
+        refresh_worker,
+        refresh_all_idle,
         dispatch_to_worker,
         nudge_pane,
         run_pool_maintenance,
@@ -1393,6 +1395,127 @@ def dispatch_to_worker(
         reason=f"Dispatched packet {packet_id!r} to {lane_id!r}",
         executed=True,
     )
+
+
+def refresh_worker(
+    lane_id: str,
+    *,
+    force: bool = False,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+) -> PoolAction:
+    """Refresh a lane: reset worktree to origin/main and clear Claude session.
+
+    Combines :func:`reset_worktree` and :func:`clear_session` into a single
+    operation with an active-task safety guard.  Intended for the orchestrator
+    to prepare a lane for new work after a prior task has been completed or
+    merged.
+
+    **Safety:** Refuses to refresh a lane that has a dispatched (active) task
+    packet.  This prevents accidental destruction of in-progress work.
+
+    Args:
+        lane_id: Lane to refresh (e.g. ``"author-a"``).
+        force: If ``True``, save any uncommitted diff and proceed even when
+            the worktree is dirty.  Passed through to :func:`reset_worktree`.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A :class:`PoolAction` with ``action="refresh"`` describing the outcome.
+    """
+    if lane_id not in _managed_lanes():
+        return PoolAction(
+            action="refresh",
+            lane_id=lane_id,
+            reason=f"Lane {lane_id!r} is not a managed worker lane",
+            executed=False,
+            error="unknown_lane",
+        )
+
+    # Safety: refuse if lane has active task
+    task_id = _get_lane_task_id(lane_id, runtime_dir)
+    if task_id is not None:
+        return PoolAction(
+            action="refresh",
+            lane_id=lane_id,
+            reason=(
+                f"Lane {lane_id!r} has active task {task_id!r}; "
+                f"refusing refresh (complete or cancel the task first)"
+            ),
+            executed=False,
+            error="active_task",
+        )
+
+    # Step 1: Reset worktree to origin/main
+    reset_result = reset_worktree(lane_id, force=force, runtime_dir=runtime_dir)
+    if not reset_result.executed:
+        return PoolAction(
+            action="refresh",
+            lane_id=lane_id,
+            reason=f"Worktree reset failed: {reset_result.reason}",
+            executed=False,
+            error=f"reset_failed:{reset_result.error}",
+        )
+
+    # Step 2: Clear Claude Code session
+    clear_result = clear_session(
+        lane_id, tmux_session=tmux_session, runtime_dir=runtime_dir
+    )
+    if not clear_result.executed:
+        # Reset succeeded but clear failed — report partial success
+        return PoolAction(
+            action="refresh",
+            lane_id=lane_id,
+            reason=(
+                f"Worktree reset OK but session clear failed: {clear_result.reason}"
+            ),
+            executed=True,
+            error="clear_failed",
+        )
+
+    return PoolAction(
+        action="refresh",
+        lane_id=lane_id,
+        reason=f"Refreshed {lane_id}: worktree reset to origin/main, session cleared",
+        executed=True,
+    )
+
+
+def refresh_all_idle(
+    *,
+    force: bool = False,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+) -> list[PoolAction]:
+    """Refresh all idle lanes (those without active dispatched packets).
+
+    Takes a pool snapshot, filters to lanes that are not active (no dispatched
+    task), and calls :func:`refresh_worker` on each.  Lanes with active tasks
+    are silently skipped.
+
+    Args:
+        force: Passed through to :func:`refresh_worker`.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A list of :class:`PoolAction` results, one per refreshed lane.
+    """
+    pool = take_pool_snapshot(runtime_dir, tmux_session=tmux_session)
+    actions: list[PoolAction] = []
+    for worker in pool.workers:
+        if worker.current_task_id is not None:
+            continue  # has active task, skip
+        actions.append(
+            refresh_worker(
+                worker.lane_id,
+                force=force,
+                tmux_session=tmux_session,
+                runtime_dir=runtime_dir,
+            )
+        )
+    return actions
 
 
 def run_pool_maintenance(
