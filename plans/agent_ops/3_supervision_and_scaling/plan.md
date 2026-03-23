@@ -18,7 +18,7 @@ scaling. These two slices form Batch D.
 Phase 2 (`2_visible_operating_model`) is COMPLETE:
 - Platform-4: Dashboard-first steward layout (PR #1231)
 - Platform-5: Canonical prompts and skills (PR #1234)
-- Batch C pass gate: PASSED (see `batch_c_reassessment.md`)
+- Batch C pass gate: PASSED (see `plans/agent_ops/3_supervision_and_scaling/batch_c_reassessment.md`)
 
 ## Slices
 
@@ -38,6 +38,24 @@ Before treating Phase 4 as ready, verify Batch D (Platform-6 + Platform-7):
 - [x] In the current tmux-first steward layout, a dispatched task can land in the
   target live author session through a repo-owned delivery adapter without
   manual pane inspection
+
+## Pre-Proving Hardening
+
+Operational fixes required before the dual-domain proving run. These are not
+new governed plan steps — they are post-Phase-3 hardening tasks that close
+gaps discovered during the transition to the 16-lane dual-domain layout.
+
+| ID | Fix | Lane | Status | PR / Notes |
+|----|-----|------|--------|------------|
+| E | Rewrite tmux launcher for 4-window tiled layout (central-ops, platform, browser, scratch) | author-a | in-progress | SP-3-05 PR 3 (#1279) landed base; tiled layout rewrite underway |
+| F | Copy task packet to worktree `.claude/runtime/task_queue/` on dispatch so author lanes can read it locally | author-c | in-progress | Without this, `task show` fails in worktrees that lack the runtime dir |
+| G | Message bus bulk-ack and TTL expiry enforcement on unacked messages | — | in-progress | Known debt item; prevents inbox buildup across sessions |
+| D | `review-check` CLI subcommand with 20m cron auto-launch on session boot | author-a | in-progress (blocked by E) | Depends on tmux layout being stable before wiring cron |
+
+**Entry criteria for proving run:** All four fixes merged or confirmed
+non-blocking. The proving run dispatches 3 tasks across platform /
+browser-game / flex pools — domain routing must stay in-pool, flex must
+accept overflow, and ops/review monitors must detect all dispatches.
 
 ## Platform-6 Summary (Complete)
 
@@ -114,6 +132,6 @@ Active sub-plans are tracked in `plans/agent_ops/sub_plan_registry.md`.
 
 ## Step Sequence
 
-See `checkpoints.md` for current step progress. Phase 3 follows the standard
+See `plans/agent_ops/3_supervision_and_scaling/checkpoints.md` for current step progress. Phase 3 follows the standard
 step template from the governing plan (SS4.2): scope lock -> implementation ->
 verification -> handoff, repeated per slice.
