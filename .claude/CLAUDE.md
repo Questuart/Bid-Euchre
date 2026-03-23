@@ -49,8 +49,7 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 - CRITICAL findings trigger immediate fix PRs
 - This is a safety net — pre-merge review catches most issues, post-merge catches the rest
 
-## Docs-Only CI (Resolved)
-- CI now uses `dorny/paths-filter` instead of `paths-ignore` (PR #635)
-- The `tests` job always triggers and posts a status
+## Docs-Only CI
+- CI uses `dorny/paths-filter` to gate job execution (PR #635, updated PR #1086)
+- The `tests` aggregation gate always triggers and posts a status
 - Docs/plans-only PRs skip heavy jobs via path-filter gating
-- No more deadlock — no need for `# trigger CI` workarounds
