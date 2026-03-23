@@ -42,14 +42,16 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 
 ### Shared Surface Ownership
 
-SP-4-02 and SP-4-03 both modify `scripts/internal/ops.py` and dashboard
-surfaces. Ownership is declared here to prevent merge conflicts and scope
-drift during parallel implementation.
+SP-4-02, SP-4-03, and SP-4-04 all touch overlapping files. Ownership is
+declared here to prevent merge conflicts and scope drift during parallel
+implementation.
 
-| File | Primary Owner | Secondary Owner | Serialization Rule |
-|------|---------------|-----------------|-------------------|
-| `scripts/internal/ops.py` | SP-4-02 | SP-4-03 | SP-4-02 lands CLI hardening first; SP-4-03 rebases before adding token subcommands |
-| `scripts/generate_dashboard.py` | SP-4-03 | SP-4-02 | SP-4-03 owns new dashboard panels; SP-4-02 may add data feeds but not panel layout |
+| File | Primary Owner | Secondary Owner(s) | Serialization Rule |
+|------|---------------|---------------------|-------------------|
+| `scripts/internal/ops.py` | SP-4-02 | SP-4-03, SP-4-04 | SP-4-02 lands CLI hardening first; SP-4-03 rebases before adding token subcommands; SP-4-04 adds channel status CLI last (Step 6) |
+| `scripts/generate_dashboard.py` | SP-4-03 | SP-4-02, SP-4-04 | SP-4-03 owns new dashboard panels; SP-4-02 may add data feeds but not panel layout; SP-4-04 may add channel status indicator (Step 6, optional) |
+| `src/bid_euchre/ops/monitor.py` | SP-4-02 | SP-4-04 | SP-4-02 owns stall recovery and auto-dispatch; SP-4-04 channel health check deferred to Platform-9c |
+| `.claude/tmux/steward-session.sh` | SP-4-04 | — | SP-4-04 adds `--channels telegram` flag and channel env vars; no other SP modifies the launcher |
 
 ## Blockers
 
