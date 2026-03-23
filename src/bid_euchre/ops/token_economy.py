@@ -1,4 +1,4 @@
-"""Token economy observability — import and attribute Claude usage data.
+"""Token economy observability — import, attribute, and summarize Claude usage data.
 
 Reads from ``~/.claude/usage-data/session-meta/*.json`` and
 ``~/.claude/usage-data/facets/*.json`` and normalizes them into a
@@ -10,6 +10,14 @@ import_usage_data
     Import native usage data. Idempotent — re-running does not duplicate sessions.
 attribute_sessions
     Infer lane/worktree attribution for imported sessions.
+usage_summary
+    Compute aggregate usage summary across all sessions.
+lane_summary
+    Compute per-lane breakdown of token usage and throughput.
+throughput_summary
+    Compute throughput-normalized token metrics.
+detect_anti_patterns
+    Flag high-waste usage patterns.
 """
 
 from __future__ import annotations
@@ -871,3 +879,376 @@ def attribute_sessions(
         lanes_found=sorted(lanes_seen),
         output_dir=str(resolved_output),
     )
+
+
+# ---------------------------------------------------------------------------
+# CLI summaries — aggregate metrics and anti-pattern detection
+# ---------------------------------------------------------------------------
+
+
+def _load_attributions(output_dir: Path) -> list[dict[str, Any]]:
+    """Load session attributions from session_attributions.jsonl."""
+    attr_file = output_dir / "session_attributions.jsonl"
+    records: list[dict[str, Any]] = []
+    if not attr_file.exists():
+        return records
+    for line in attr_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return records
+
+
+@dataclass
+class UsageSummary:
+    """Aggregate usage summary across all imported sessions."""
+
+    session_count: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_tokens: int = 0
+    total_duration_minutes: int = 0
+    total_lines_added: int = 0
+    total_lines_removed: int = 0
+    net_lines: int = 0
+    total_git_commits: int = 0
+    total_git_pushes: int = 0
+    total_files_modified: int = 0
+    total_user_messages: int = 0
+    total_assistant_messages: int = 0
+    total_tool_errors: int = 0
+    time_range_start: str = ""
+    time_range_end: str = ""
+    output_input_ratio: float = 0.0
+    assistant_user_ratio: float = 0.0
+    tokens_per_hour: float = 0.0
+
+
+def usage_summary(*, output_dir: Path | None = None) -> UsageSummary:
+    """Compute aggregate usage summary across all sessions.
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to repo runtime path.
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    sessions = _load_sessions(resolved_output)
+
+    if not sessions:
+        return UsageSummary()
+
+    s = UsageSummary(session_count=len(sessions))
+
+    start_times: list[str] = []
+    for rec in sessions:
+        s.total_input_tokens += rec.get("input_tokens") or 0
+        s.total_output_tokens += rec.get("output_tokens") or 0
+        s.total_duration_minutes += rec.get("duration_minutes") or 0
+        s.total_lines_added += rec.get("lines_added") or 0
+        s.total_lines_removed += rec.get("lines_removed") or 0
+        s.total_git_commits += rec.get("git_commits") or 0
+        s.total_git_pushes += rec.get("git_pushes") or 0
+        s.total_files_modified += rec.get("files_modified") or 0
+        s.total_user_messages += rec.get("user_message_count") or 0
+        s.total_assistant_messages += rec.get("assistant_message_count") or 0
+        s.total_tool_errors += rec.get("tool_errors") or 0
+        st = rec.get("start_time")
+        if st:
+            start_times.append(st)
+
+    s.total_tokens = s.total_input_tokens + s.total_output_tokens
+    s.net_lines = s.total_lines_added - s.total_lines_removed
+
+    if s.total_input_tokens > 0:
+        s.output_input_ratio = s.total_output_tokens / s.total_input_tokens
+
+    if s.total_user_messages > 0:
+        s.assistant_user_ratio = s.total_assistant_messages / s.total_user_messages
+
+    if s.total_duration_minutes > 0:
+        s.tokens_per_hour = s.total_tokens / (s.total_duration_minutes / 60)
+
+    if start_times:
+        s.time_range_start = min(start_times)
+        s.time_range_end = max(start_times)
+
+    return s
+
+
+@dataclass
+class LaneStats:
+    """Per-lane usage statistics."""
+
+    lane_id: str
+    pool: str | None = None
+    session_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    duration_minutes: int = 0
+    lines_added: int = 0
+    lines_removed: int = 0
+    net_lines: int = 0
+    git_commits: int = 0
+    tokens_per_commit: float = 0.0
+    tokens_per_net_line: float = 0.0
+
+
+def lane_summary(*, output_dir: Path | None = None) -> list[LaneStats]:
+    """Compute per-lane breakdown of token usage.
+
+    Uses attribution data from ``session_attributions.jsonl``.
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to repo runtime path.
+
+    Returns
+    -------
+    list[LaneStats]
+        One entry per lane, sorted by total_tokens descending.
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    attributions = _load_attributions(resolved_output)
+
+    if not attributions:
+        return []
+
+    # Aggregate by lane
+    by_lane: dict[str, LaneStats] = {}
+    for attr in attributions:
+        lid = attr.get("lane_id") or "unattributed"
+        if lid not in by_lane:
+            by_lane[lid] = LaneStats(lane_id=lid, pool=attr.get("worktree_class"))
+        ls = by_lane[lid]
+        ls.session_count += 1
+        ls.input_tokens += attr.get("input_tokens") or 0
+        ls.output_tokens += attr.get("output_tokens") or 0
+        ls.duration_minutes += attr.get("duration_minutes") or 0
+        ls.lines_added += attr.get("lines_added") or 0
+        ls.lines_removed += attr.get("lines_removed") or 0
+        ls.git_commits += attr.get("git_commits") or 0
+
+    # Compute derived metrics
+    for ls in by_lane.values():
+        ls.total_tokens = ls.input_tokens + ls.output_tokens
+        ls.net_lines = ls.lines_added - ls.lines_removed
+        if ls.git_commits > 0:
+            ls.tokens_per_commit = ls.total_tokens / ls.git_commits
+        if ls.net_lines > 0:
+            ls.tokens_per_net_line = ls.total_tokens / ls.net_lines
+
+    return sorted(by_lane.values(), key=lambda x: x.total_tokens, reverse=True)
+
+
+@dataclass
+class ThroughputMetrics:
+    """Throughput-normalized token metrics."""
+
+    tokens_per_commit: float = 0.0
+    tokens_per_net_line: float = 0.0
+    tokens_per_hour: float = 0.0
+    output_input_ratio: float = 0.0
+    tool_errors_per_1k_tokens: float = 0.0
+    assistant_per_user_message: float = 0.0
+    total_sessions: int = 0
+    total_tokens: int = 0
+    total_commits: int = 0
+    total_net_lines: int = 0
+    total_tool_errors: int = 0
+
+
+def throughput_summary(*, output_dir: Path | None = None) -> ThroughputMetrics:
+    """Compute throughput-normalized token metrics.
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to repo runtime path.
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    s = usage_summary(output_dir=resolved_output)
+
+    m = ThroughputMetrics(
+        total_sessions=s.session_count,
+        total_tokens=s.total_tokens,
+        total_commits=s.total_git_commits,
+        total_net_lines=s.net_lines,
+        total_tool_errors=s.total_tool_errors,
+        output_input_ratio=s.output_input_ratio,
+        assistant_per_user_message=s.assistant_user_ratio,
+        tokens_per_hour=s.tokens_per_hour,
+    )
+
+    if s.total_git_commits > 0:
+        m.tokens_per_commit = s.total_tokens / s.total_git_commits
+    if s.net_lines > 0:
+        m.tokens_per_net_line = s.total_tokens / s.net_lines
+    if s.total_tokens > 0:
+        m.tool_errors_per_1k_tokens = (s.total_tool_errors / s.total_tokens) * 1000
+
+    return m
+
+
+@dataclass
+class AntiPattern:
+    """A detected high-waste usage pattern."""
+
+    pattern_id: str
+    name: str
+    severity: str  # "high" | "medium" | "low"
+    description: str
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+
+def detect_anti_patterns(*, output_dir: Path | None = None) -> list[AntiPattern]:
+    """Flag high-waste token usage patterns.
+
+    Checks for:
+    - verbosity_waste: high output tokens with low shipped change
+    - retry_churn: sessions with zero commits (wasted sessions)
+    - tool_error_tax: high tool error rate
+    - read_amplification: high assistant/user message ratio
+    - fragmentation: many short sessions
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to repo runtime path.
+
+    Returns
+    -------
+    list[AntiPattern]
+        Detected anti-patterns, sorted by severity (high first).
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    sessions = _load_sessions(resolved_output)
+    findings: list[AntiPattern] = []
+
+    if not sessions:
+        return findings
+
+    s = usage_summary(output_dir=resolved_output)
+
+    # 1. Verbosity waste: high output tokens with low net lines
+    if s.net_lines > 0 and s.total_tokens > 0:
+        tokens_per_net = s.total_tokens / s.net_lines
+        if tokens_per_net > 500:
+            findings.append(
+                AntiPattern(
+                    pattern_id="verbosity_waste",
+                    name="Verbosity waste",
+                    severity="high" if tokens_per_net > 1000 else "medium",
+                    description=(
+                        f"Spending {tokens_per_net:.0f} tokens per net line changed. "
+                        f"Target: <500 tokens/net line."
+                    ),
+                    evidence={
+                        "tokens_per_net_line": round(tokens_per_net, 1),
+                        "total_tokens": s.total_tokens,
+                        "net_lines": s.net_lines,
+                    },
+                )
+            )
+
+    # 2. Zero-commit sessions (retry/churn)
+    zero_commit_sessions = sum(1 for r in sessions if (r.get("git_commits") or 0) == 0)
+    zero_commit_pct = (zero_commit_sessions / len(sessions) * 100) if sessions else 0
+    zero_commit_tokens = sum(
+        (r.get("input_tokens") or 0) + (r.get("output_tokens") or 0)
+        for r in sessions
+        if (r.get("git_commits") or 0) == 0
+    )
+    if zero_commit_pct > 30:
+        findings.append(
+            AntiPattern(
+                pattern_id="retry_churn",
+                name="Retry/churn sessions",
+                severity="high" if zero_commit_pct > 50 else "medium",
+                description=(
+                    f"{zero_commit_pct:.0f}% of sessions ({zero_commit_sessions}/{len(sessions)}) "
+                    f"produced zero commits, consuming {zero_commit_tokens:,} tokens."
+                ),
+                evidence={
+                    "zero_commit_sessions": zero_commit_sessions,
+                    "total_sessions": len(sessions),
+                    "zero_commit_pct": round(zero_commit_pct, 1),
+                    "wasted_tokens": zero_commit_tokens,
+                },
+            )
+        )
+
+    # 3. Tool error tax
+    if s.total_tokens > 0:
+        errors_per_1k = (s.total_tool_errors / s.total_tokens) * 1000
+        if errors_per_1k > 5:
+            findings.append(
+                AntiPattern(
+                    pattern_id="tool_error_tax",
+                    name="Tool error tax",
+                    severity="high" if errors_per_1k > 10 else "medium",
+                    description=(
+                        f"{errors_per_1k:.1f} tool errors per 1K tokens "
+                        f"({s.total_tool_errors} errors across {s.total_tokens:,} tokens)."
+                    ),
+                    evidence={
+                        "errors_per_1k_tokens": round(errors_per_1k, 2),
+                        "total_tool_errors": s.total_tool_errors,
+                        "total_tokens": s.total_tokens,
+                    },
+                )
+            )
+
+    # 4. Read amplification (high assistant/user ratio)
+    if s.total_user_messages > 0:
+        ratio = s.total_assistant_messages / s.total_user_messages
+        if ratio > 20:
+            findings.append(
+                AntiPattern(
+                    pattern_id="read_amplification",
+                    name="Read amplification",
+                    severity="medium",
+                    description=(
+                        f"{ratio:.1f} assistant messages per user message. "
+                        f"High ratios indicate excessive tool use or verbose planning."
+                    ),
+                    evidence={
+                        "assistant_per_user": round(ratio, 1),
+                        "total_assistant_messages": s.total_assistant_messages,
+                        "total_user_messages": s.total_user_messages,
+                    },
+                )
+            )
+
+    # 5. Session fragmentation (many very short sessions)
+    short_sessions = sum(1 for r in sessions if (r.get("duration_minutes") or 0) < 5)
+    short_pct = (short_sessions / len(sessions) * 100) if sessions else 0
+    if short_pct > 40:
+        findings.append(
+            AntiPattern(
+                pattern_id="fragmentation",
+                name="Session fragmentation",
+                severity="low",
+                description=(
+                    f"{short_pct:.0f}% of sessions ({short_sessions}/{len(sessions)}) "
+                    f"are under 5 minutes. Many tiny sessions suggest handoff overhead."
+                ),
+                evidence={
+                    "short_sessions": short_sessions,
+                    "total_sessions": len(sessions),
+                    "short_pct": round(short_pct, 1),
+                },
+            )
+        )
+
+    # Sort: high > medium > low
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    findings.sort(key=lambda x: severity_order.get(x.severity, 99))
+
+    return findings

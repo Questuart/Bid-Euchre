@@ -53,6 +53,10 @@ Usage:
     uv run python scripts/internal/ops.py workers maintain [--dry-run] [--json]
     uv run python scripts/internal/ops.py usage import [--usage-dir DIR] [--output-dir DIR] [--json]
     uv run python scripts/internal/ops.py usage attribute [--output-dir DIR] [--json]
+    uv run python scripts/internal/ops.py usage summary [--output-dir DIR] [--json]
+    uv run python scripts/internal/ops.py usage lanes [--output-dir DIR] [--json]
+    uv run python scripts/internal/ops.py usage throughput [--output-dir DIR] [--json]
+    uv run python scripts/internal/ops.py usage anti-patterns [--output-dir DIR] [--json]
 """
 
 from __future__ import annotations
@@ -2455,9 +2459,137 @@ def cmd_usage(args: argparse.Namespace) -> int:
             print(f"  Output dir:              {result.output_dir}")
         return 0
 
+    elif action == "summary":
+        from bid_euchre.ops.token_economy import usage_summary
+
+        result = usage_summary(
+            output_dir=getattr(args, "output_dir", None),
+        )
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2, default=str))
+        else:
+            print("Token Economy Summary")
+            print("=" * 50)
+            print(f"  Sessions:            {result.session_count}")
+            print(f"  Time range:          {result.time_range_start or 'N/A'}")
+            print(f"                    to {result.time_range_end or 'N/A'}")
+            print(f"  Total duration:      {result.total_duration_minutes} min")
+            print()
+            print("  Tokens:")
+            print(f"    Input:             {result.total_input_tokens:,}")
+            print(f"    Output:            {result.total_output_tokens:,}")
+            print(f"    Total:             {result.total_tokens:,}")
+            print(f"    Output/Input:      {result.output_input_ratio:.1f}x")
+            print(f"    Tokens/hour:       {result.tokens_per_hour:,.0f}")
+            print()
+            print("  Throughput:")
+            print(f"    Lines added:       {result.total_lines_added:,}")
+            print(f"    Lines removed:     {result.total_lines_removed:,}")
+            print(f"    Net lines:         {result.net_lines:,}")
+            print(f"    Git commits:       {result.total_git_commits}")
+            print(f"    Git pushes:        {result.total_git_pushes}")
+            print(f"    Files modified:    {result.total_files_modified}")
+            print()
+            print("  Interaction:")
+            print(f"    User messages:     {result.total_user_messages}")
+            print(f"    Assistant msgs:    {result.total_assistant_messages}")
+            print(f"    Assist/User:       {result.assistant_user_ratio:.1f}x")
+            print(f"    Tool errors:       {result.total_tool_errors}")
+        return 0
+
+    elif action == "lanes":
+        from bid_euchre.ops.token_economy import lane_summary
+
+        lanes = lane_summary(
+            output_dir=getattr(args, "output_dir", None),
+        )
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps([asdict(ls) for ls in lanes], indent=2, default=str))
+        else:
+            if not lanes:
+                print("No attribution data. Run: ops.py usage attribute")
+            else:
+                print("Per-Lane Token Usage")
+                print("=" * 90)
+                print(
+                    f"  {'Lane':<20s} {'Pool':<12s} {'Sessions':>8s} "
+                    f"{'Tokens':>12s} {'Commits':>8s} {'Net Δ':>8s} "
+                    f"{'Tok/Commit':>11s}"
+                )
+                print("-" * 90)
+                for ls in lanes:
+                    pool = ls.pool or "—"
+                    tpc = (
+                        f"{ls.tokens_per_commit:,.0f}" if ls.tokens_per_commit else "—"
+                    )
+                    print(
+                        f"  {ls.lane_id:<20s} {pool:<12s} {ls.session_count:>8d} "
+                        f"{ls.total_tokens:>12,d} {ls.git_commits:>8d} "
+                        f"{ls.net_lines:>+8d} {tpc:>11s}"
+                    )
+        return 0
+
+    elif action == "throughput":
+        from bid_euchre.ops.token_economy import throughput_summary
+
+        result = throughput_summary(
+            output_dir=getattr(args, "output_dir", None),
+        )
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2, default=str))
+        else:
+            print("Throughput Metrics")
+            print("=" * 50)
+            print(f"  Sessions:                {result.total_sessions}")
+            print(f"  Total tokens:            {result.total_tokens:,}")
+            print()
+            print(f"  Tokens/commit:           {result.tokens_per_commit:,.0f}")
+            print(f"  Tokens/net line:         {result.tokens_per_net_line:,.0f}")
+            print(f"  Tokens/hour:             {result.tokens_per_hour:,.0f}")
+            print(f"  Output/Input ratio:      {result.output_input_ratio:.1f}x")
+            print(
+                f"  Assist/User msgs:        {result.assistant_per_user_message:.1f}x"
+            )
+            print(f"  Tool errors/1K tokens:   {result.tool_errors_per_1k_tokens:.2f}")
+        return 0
+
+    elif action == "anti-patterns":
+        from bid_euchre.ops.token_economy import detect_anti_patterns
+
+        findings = detect_anti_patterns(
+            output_dir=getattr(args, "output_dir", None),
+        )
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps([asdict(f) for f in findings], indent=2, default=str))
+        else:
+            if not findings:
+                print("No anti-patterns detected. ✓")
+            else:
+                print(f"Anti-Patterns Detected: {len(findings)}")
+                print("=" * 70)
+                for f in findings:
+                    sev_icon = {"high": "🔴", "medium": "🟡", "low": "🔵"}.get(
+                        f.severity, "⚪"
+                    )
+                    print(f"\n  {sev_icon} [{f.severity.upper()}] {f.name}")
+                    print(f"    {f.description}")
+        return 0
+
     else:
         print(
-            "Usage: ops.py usage {import|attribute}",
+            "Usage: ops.py usage {import|attribute|summary|lanes|throughput|anti-patterns}",
             file=sys.stderr,
         )
         return 1
@@ -3185,6 +3317,46 @@ def build_parser() -> argparse.ArgumentParser:
         "attribute", help="Attribute sessions to lanes and work outcomes"
     )
     usage_attr_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_summary_parser = usage_sub.add_parser(
+        "summary", help="Overview of total tokens, sessions, time range"
+    )
+    usage_summary_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_lanes_parser = usage_sub.add_parser(
+        "lanes", help="Per-lane breakdown of token usage"
+    )
+    usage_lanes_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_throughput_parser = usage_sub.add_parser(
+        "throughput", help="Throughput-normalized token metrics"
+    )
+    usage_throughput_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_ap_parser = usage_sub.add_parser(
+        "anti-patterns", help="Detect high-waste usage patterns"
+    )
+    usage_ap_parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
