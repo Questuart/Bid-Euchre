@@ -2,7 +2,7 @@
 
 **ID:** SP-1-01
 **Parent:** Phase 1 — State Engine
-**Status:** in_progress
+**Status:** complete
 **Governing plan:** `plans/browser_game/governing_plan.md`
 **Created:** 2026-03-14
 
@@ -241,4 +241,18 @@ uv run python -m pytest tests/unit/hosted_play/test_engine.py -v
 
 ## Outcome
 
-_To be filled after implementation._
+**Completed 2026-03-23.** All deliverables shipped across three merged PRs:
+
+| PR | Title | Key Deliverables |
+|----|-------|-----------------|
+| #1380 | browser-game: lock v1 serving contract and add hosted-play state foundations | `state.py` with dataclasses + JSON serialization helpers, `schema.sql`, serving contract |
+| #1392 | browser-game: implement Phase 1 MatchEngine core (engine.py) | `engine.py` (450 lines) — full step-based engine, `test_engine.py` (683 lines) — all 11 required tests + bonus |
+| #1402 | test: add comprehensive hosted-play state serialization coverage | Additional serialization test coverage for state dataclasses |
+
+**Files created:**
+- `src/bid_euchre/hosted_play/state.py` — State dataclasses (TrickState, TrickResult, HandState, MatchState)
+- `src/bid_euchre/hosted_play/engine.py` — MatchEngine with full step-based state machine
+- `tests/unit/hosted_play/test_engine.py` — 11 required tests + TestBidOrder, TestMatchDeterminism
+- `tests/unit/hosted_play/test_state.py` — State serialization round-trip tests
+
+**All delegation points honored:** `generate_deal`, `get_legal_indices`, `trick_winner`, `compute_points`, `BiddingPolicy.choose_bid`, `Strategy.choose_card` — no logic duplication.
