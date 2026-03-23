@@ -58,6 +58,25 @@ class TestBollinger:
         # band_width is 0 when std=0, so pct_b should be 0.5
         assert pct_b[2] == pytest.approx(0.5)
 
+    def test_clamp_lower_default(self):
+        """Lower band is clamped at 0 by default."""
+        # Data where mean - 2*std would be negative
+        data = np.array([1.0, 0.0, 1.0, 0.0, 1.0], dtype=float)
+        sma, upper, lower, pct_b = _bollinger(data, window=3, num_std=2)
+        for i in range(2, 5):
+            assert lower[i] >= 0, f"lower[{i}] = {lower[i]} should be >= 0"
+
+    def test_clamp_lower_false(self):
+        """Lower band can go negative when clamp_lower=False."""
+        # Data with high variance where lower band should go negative
+        data = np.array([100.0, -100.0, 100.0, -100.0, 100.0], dtype=float)
+        sma, upper, lower, pct_b = _bollinger(
+            data, window=3, num_std=2, clamp_lower=False
+        )
+        # At least one lower value should be negative given the high variance
+        has_negative = any(lower[i] < 0 for i in range(2, 5) if not np.isnan(lower[i]))
+        assert has_negative, "Expected negative lower band with clamp_lower=False"
+
 
 class TestDrawBollingerPanel:
     """Tests for the panel rendering, especially the n_valid==0 edge case."""
@@ -115,6 +134,34 @@ class TestDrawBollingerPanel:
         )
         plt.close(fig)
 
+    def test_allow_negative_rendering(self):
+        """Panel with allow_negative=True renders with y-axis below zero."""
+        fig, ax = plt.subplots()
+        data = np.array([50.0, -30.0, 20.0, -10.0, 40.0], dtype=float)
+        sma, upper, lower, pct_b = _bollinger(
+            data, window=3, num_std=2, clamp_lower=False
+        )
+        valid = ~np.isnan(sma)
+
+        _draw_bollinger_panel(
+            ax,
+            np.arange(5),
+            data,
+            sma,
+            upper,
+            lower,
+            pct_b,
+            valid,
+            latest_idx=4,
+            band_color="#16a085",
+            sma_color="#1abc9c",
+            dot_color="#2c3e50",
+            allow_negative=True,
+        )
+        y_low, y_high = ax.get_ylim()
+        assert y_low < 0, f"y-axis lower limit should be < 0, got {y_low}"
+        plt.close(fig)
+
 
 class TestGatherPrCounts:
     """Tests for _gather_pr_counts with mocked gh CLI."""
@@ -125,42 +172,45 @@ class TestGatherPrCounts:
     def test_basic_counts(self):
         """PRs are grouped by mergedAt date correctly."""
         prs = [
-            {"mergedAt": "2026-03-20T10:00:00Z", "additions": 50},
-            {"mergedAt": "2026-03-20T14:00:00Z", "additions": 30},
-            {"mergedAt": "2026-03-21T09:00:00Z", "additions": 100},
+            {"mergedAt": "2026-03-20T10:00:00Z", "additions": 50, "deletions": 10},
+            {"mergedAt": "2026-03-20T14:00:00Z", "additions": 30, "deletions": 5},
+            {"mergedAt": "2026-03-21T09:00:00Z", "additions": 100, "deletions": 20},
         ]
         fake_result = type(
             "Result", (), {"stdout": self._mock_gh_output(prs), "returncode": 0}
         )()
         with patch("generate_dashboard.subprocess.run", return_value=fake_result):
-            counts, additions = _gather_pr_counts("/fake/repo")
+            counts, additions, deletions = _gather_pr_counts("/fake/repo")
 
         assert counts == {"2026-03-20": 2, "2026-03-21": 1}
         assert additions == {"2026-03-20": 80, "2026-03-21": 100}
+        assert deletions == {"2026-03-20": 15, "2026-03-21": 20}
 
     def test_empty_pr_list(self):
         """Empty PR list returns empty dicts."""
         fake_result = type("Result", (), {"stdout": "[]", "returncode": 0})()
         with patch("generate_dashboard.subprocess.run", return_value=fake_result):
-            counts, additions = _gather_pr_counts("/fake/repo")
+            counts, additions, deletions = _gather_pr_counts("/fake/repo")
 
         assert counts == {}
         assert additions == {}
+        assert deletions == {}
 
     def test_missing_merged_at_skipped(self):
         """PRs with empty mergedAt are silently skipped."""
         prs = [
-            {"mergedAt": "", "additions": 50},
-            {"mergedAt": "2026-03-20T10:00:00Z", "additions": 30},
+            {"mergedAt": "", "additions": 50, "deletions": 10},
+            {"mergedAt": "2026-03-20T10:00:00Z", "additions": 30, "deletions": 5},
         ]
         fake_result = type(
             "Result", (), {"stdout": self._mock_gh_output(prs), "returncode": 0}
         )()
         with patch("generate_dashboard.subprocess.run", return_value=fake_result):
-            counts, additions = _gather_pr_counts("/fake/repo")
+            counts, additions, deletions = _gather_pr_counts("/fake/repo")
 
         assert counts == {"2026-03-20": 1}
         assert additions == {"2026-03-20": 30}
+        assert deletions == {"2026-03-20": 5}
 
     def test_warns_when_hitting_limit(self, caplog):
         """Emits a warning when PR count equals _GH_PR_LIMIT."""
