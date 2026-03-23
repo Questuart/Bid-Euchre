@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -18,6 +19,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 scripts_dir = str(Path(__file__).resolve().parents[2] / "scripts")
 sys.path.insert(0, scripts_dir)
 from generate_dashboard import (  # noqa: E402
+    _GH_PR_LIMIT,
     _bollinger,
     _draw_bollinger_panel,
     _gather_pr_counts,
@@ -159,3 +161,36 @@ class TestGatherPrCounts:
 
         assert counts == {"2026-03-20": 1}
         assert additions == {"2026-03-20": 30}
+
+    def test_warns_when_hitting_limit(self, caplog):
+        """Emits a warning when PR count equals _GH_PR_LIMIT."""
+        prs = [
+            {"mergedAt": f"2026-03-{(i % 28) + 1:02d}T10:00:00Z", "additions": 1}
+            for i in range(_GH_PR_LIMIT)
+        ]
+        fake_result = type(
+            "Result", (), {"stdout": self._mock_gh_output(prs), "returncode": 0}
+        )()
+        with (
+            patch("generate_dashboard.subprocess.run", return_value=fake_result),
+            caplog.at_level(logging.WARNING),
+        ):
+            _gather_pr_counts("/fake/repo")
+
+        assert any("truncated" in r.message for r in caplog.records)
+
+    def test_no_warning_below_limit(self, caplog):
+        """No warning when PR count is below _GH_PR_LIMIT."""
+        prs = [
+            {"mergedAt": "2026-03-20T10:00:00Z", "additions": 50},
+        ]
+        fake_result = type(
+            "Result", (), {"stdout": self._mock_gh_output(prs), "returncode": 0}
+        )()
+        with (
+            patch("generate_dashboard.subprocess.run", return_value=fake_result),
+            caplog.at_level(logging.WARNING),
+        ):
+            _gather_pr_counts("/fake/repo")
+
+        assert not any("truncated" in r.message for r in caplog.records)
