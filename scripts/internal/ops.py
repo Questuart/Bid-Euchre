@@ -1603,7 +1603,7 @@ def _cmd_task_accept(args: argparse.Namespace, task_queue_root: Path) -> int:
 
     packet_id = args.packet_id
     lane_id = args.lane_id
-    bus_root = shared_bus_root(args.runtime_dir / "message_bus")
+    bus_root = shared_bus_root()
     events_dir = args.runtime_dir / "events"
 
     # 1. Verify packet exists
@@ -1696,9 +1696,10 @@ def cmd_inbox(args: argparse.Namespace) -> int:
         import_native_inbox,
         inbox_stats,
         read_inbox,
+        shared_bus_root,
     )
 
-    bus_root = args.runtime_dir / "message_bus"
+    bus_root = shared_bus_root()
 
     # If --include-native is set, import native inbox first
     include_native = getattr(args, "include_native", False)
@@ -1844,9 +1845,9 @@ def cmd_inbox(args: argparse.Namespace) -> int:
 
 def cmd_message(args: argparse.Namespace) -> int:
     """Show or send messages via the audit trail (Platform-3)."""
-    from bid_euchre.ops.message_bus import read_messages
+    from bid_euchre.ops.message_bus import read_messages, shared_bus_root
 
-    bus_root = args.runtime_dir / "message_bus"
+    bus_root = shared_bus_root()
 
     action = getattr(args, "message_action", None)
 
@@ -2022,11 +2023,15 @@ def cmd_review_check(args: argparse.Namespace) -> int:
     """
     import subprocess as sp
 
-    from bid_euchre.ops.message_bus import create_message, send_message
+    from bid_euchre.ops.message_bus import (
+        create_message,
+        send_message,
+        shared_bus_root,
+    )
 
     limit = getattr(args, "limit", 5)
     no_notify = getattr(args, "no_notify", False)
-    bus_root = args.runtime_dir / "message_bus"
+    bus_root = shared_bus_root()
 
     # Fetch recently merged PRs via gh CLI
     try:
