@@ -5,27 +5,27 @@
 # Creates (or attaches to) a tmux session with 4 windows:
 #
 #   Window 1 — central-ops (3 panes, main-vertical layout)
-#     .0  orchestrator    -- single intake point (large left, ~66%)
-#     .1  ops             -- operator monitoring lane (top right)
-#     .2  review          -- independent review lane (bottom right)
+#     .1  orchestrator    -- single intake point (large left, ~66%)
+#     .2  ops             -- operator monitoring lane (top right)
+#     .3  review          -- independent review lane (bottom right)
 #
 #   Window 2 — platform (4 panes, tiled)
-#     .0  author-a        -- primary platform author lane
-#     .1  author-b        -- secondary platform author lane
-#     .2  author-c        -- overflow platform author lane
-#     .3  author-d        -- overflow platform author lane
+#     .1  author-a        -- primary platform author lane
+#     .2  author-b        -- secondary platform author lane
+#     .3  author-c        -- overflow platform author lane
+#     .4  author-d        -- overflow platform author lane
 #
 #   Window 3 — browser (4 panes, tiled)
-#     .0  brws-author-a   -- primary browser-game author lane
-#     .1  brws-author-b   -- secondary browser-game author lane
-#     .2  brws-author-c   -- overflow browser-game author lane
-#     .3  brws-author-d   -- overflow browser-game author lane
+#     .1  brws-author-a   -- primary browser-game author lane
+#     .2  brws-author-b   -- secondary browser-game author lane
+#     .3  brws-author-c   -- overflow browser-game author lane
+#     .4  brws-author-d   -- overflow browser-game author lane
 #
 #   Window 4 — scratch (4 panes, tiled)
-#     .0  author-scratch  -- exploratory Claude lane
-#     .1  flex-a          -- domain-agnostic overflow lane
-#     .2  flex-b          -- domain-agnostic overflow lane
-#     .3  flex-c          -- domain-agnostic overflow lane
+#     .1  author-scratch  -- exploratory Claude lane
+#     .2  flex-a          -- domain-agnostic overflow lane
+#     .3  flex-b          -- domain-agnostic overflow lane
+#     .4  flex-c          -- domain-agnostic overflow lane
 #
 # Writes v2 worktree registry metadata for each launched lane.
 # See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full model.

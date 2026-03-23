@@ -307,7 +307,7 @@ class TestWindowLayout:
         "flex-c",
     ]
 
-    # Lanes per window, in pane creation order (pane 0 = first)
+    # Lanes per window, in pane creation order (pane 1 = first, 1-based)
     WINDOW_PANES = {
         "central-ops": ["orchestrator", "ops", "review"],
         "platform": ["author-a", "author-b", "author-c", "author-d"],
