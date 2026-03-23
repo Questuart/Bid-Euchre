@@ -67,10 +67,14 @@ if [[ "$COMMAND" == *"git push"* ]] && [[ "$EXIT_CODE" == "0" ]] \
     # Auto-merge authority has been moved to the merge guard
     # (pre-merge-review-guard.sh). The poller now only monitors CI status
     # and writes status files; it does not attempt to merge.
+    #
+    # Redirect stdout/stderr to /dev/null so the background process does
+    # not hold the parent's stdout pipe open (needed for dispatcher
+    # consolidation — see post-bash-dispatch.sh, issue #1255).
     (
         cd "$REPO_ROOT"
         bash "$POLLER" --pr "$PR_NUM" --repo-root "$REPO_ROOT"
-    ) &
+    ) > /dev/null 2>&1 &
 
     cat <<EOF
 {
