@@ -1068,14 +1068,10 @@ def dispatch_to_worker(
     # 7. Record delivery outcome
     if message_id is not None:
         try:
-            from bid_euchre.ops.message_bus import (
-                _update_inbox_status,
-                shared_bus_root,
-            )
+            from bid_euchre.ops.message_bus import mark_delivered
 
             if nudge_result.executed:
-                bus_root = shared_bus_root()
-                _update_inbox_status(message_id, lane_id, "delivered", bus_root)
+                mark_delivered(message_id, lane_id)
         except Exception as exc:
             logger.warning(
                 "Failed to update delivery status for message %s: %s",
