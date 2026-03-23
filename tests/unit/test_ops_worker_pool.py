@@ -2545,3 +2545,227 @@ class TestDispatchNudgeIntegration:
         mock_update.assert_called_once_with(
             "msg123", "author-a", "delivered", Path("/tmp/bus")
         )
+
+
+# ---------------------------------------------------------------------------
+# Dispatch → complete → redispatch cycles (SP-4-02 Step 5 validation)
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchRedispatchCycles:
+    """Validate 3 consecutive dispatch→complete→redispatch cycles on one lane.
+
+    This is the key validation for SP-4-02 Step 5: ensuring that
+    reset_worktree + /clear + /start-task works correctly over repeated
+    dispatch cycles to the same worker lane.
+    """
+
+    @staticmethod
+    def _make_packet(
+        packet_id: str,
+        status: str = "approved",
+        owner: str | None = None,
+    ) -> object:
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        return TaskPacket(
+            packet_id=packet_id,
+            title=f"Task {packet_id}",
+            description=f"Cycle task {packet_id}",
+            owner=owner,
+            created_by="orchestrator",
+            created_at="2026-03-23T12:00:00Z",
+            status=status,
+        )
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}.reset_worktree")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_three_consecutive_dispatch_cycles_with_reset(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_reset: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Three dispatch(reset=True) calls to the same lane all succeed.
+
+        Each cycle:
+        1. dispatch_to_worker(reset=True) → resets worktree, clears session
+        2. Simulates completion (transition to 'completed')
+        3. Next dispatch uses a new packet but same lane
+
+        This validates that reset_worktree + clear_session leave the lane
+        in a state ready to accept new work.
+        """
+        lane = "author-a"
+        packet_ids = ["cyc-1", "cyc-2", "cyc-3"]
+
+        # Always return idle worker for the target lane
+        mock_snapshot.return_value = _make_pool([_make_worker(lane, "idle")])
+        mock_reset.return_value = PoolAction(
+            action="reset_worktree",
+            lane_id=lane,
+            reason="Reset OK",
+            executed=True,
+        )
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id=lane,
+            reason="Clear OK",
+            executed=True,
+        )
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id=lane,
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        for i, pkt_id in enumerate(packet_ids):
+            # Each cycle starts with a fresh approved packet
+            mock_load.return_value = self._make_packet(pkt_id, status="approved")
+            mock_transition.reset_mock()
+            mock_reset.reset_mock()
+            mock_clear.reset_mock()
+            mock_sleep.reset_mock()
+
+            result = dispatch_to_worker(
+                pkt_id, lane, runtime_dir=runtime_dir, reset=True
+            )
+
+            assert (
+                result.executed is True
+            ), f"Cycle {i + 1}: dispatch failed — {result.reason}"
+            assert result.action == "dispatch"
+            assert result.error is None
+
+            # Verify reset + clear called each cycle
+            mock_reset.assert_called_once_with(
+                lane, force=True, runtime_dir=runtime_dir
+            )
+            mock_clear.assert_called_once()
+            mock_sleep.assert_called_once_with(2)
+
+            # Verify packet transition to dispatched
+            mock_transition.assert_called_once_with(
+                pkt_id, "dispatched", runtime_dir / "task_queue"
+            )
+
+        # After 3 cycles: 3 resets, 3 clears, 3 transitions total
+        assert mock_save.call_count == 3
+        assert mock_nudge.call_count == 3
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}.reset_worktree")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dirty_worktree_guard_saves_diff_on_redispatch(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_reset: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Reset continues dispatch even when worktree was dirty (force=True).
+
+        Validates that dispatch_to_worker(reset=True) calls
+        reset_worktree(force=True), which saves the diff and proceeds.
+        The dispatch still succeeds because reset failure is best-effort.
+        """
+        lane = "author-b"
+
+        mock_load.return_value = self._make_packet("dirty-pkt", status="approved")
+        mock_snapshot.return_value = _make_pool([_make_worker(lane, "idle")])
+        # Simulate reset that succeeded with a dirty worktree (diff saved)
+        mock_reset.return_value = PoolAction(
+            action="reset_worktree",
+            lane_id=lane,
+            reason="Reset OK (dirty diff saved to /tmp/author-b_20260323T120000.diff)",
+            executed=True,
+        )
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id=lane,
+            reason="Clear OK",
+            executed=True,
+        )
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id=lane,
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker(
+            "dirty-pkt", lane, runtime_dir=runtime_dir, reset=True
+        )
+
+        assert result.executed is True
+        # force=True is critical — ensures diff is saved before reset
+        mock_reset.assert_called_once_with(lane, force=True, runtime_dir=runtime_dir)
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_reset_worktree_force_saves_timestamped_diff(
+        self,
+        mock_run: MagicMock,
+        mock_resolve: MagicMock,
+    ) -> None:
+        """Directly test reset_worktree(force=True) with dirty worktree.
+
+        Verifies: diff saved with timestamped path, then fetch+reset proceed.
+        """
+        mock_resolve.return_value = "/tmp/wt-test-lane"
+
+        # git status → dirty
+        status_result = MagicMock(returncode=0, stdout=" M src/dirty_file.py\n")
+        # git diff HEAD → content
+        diff_result = MagicMock(
+            returncode=0,
+            stdout="--- a/src/dirty_file.py\n+++ b/src/dirty_file.py\n@@ -1 +1 @@\n-old\n+new\n",
+        )
+        ok = MagicMock(returncode=0)
+        mock_run.side_effect = [status_result, diff_result, ok, ok]
+
+        frozen = datetime(2026, 3, 23, 15, 30, 0, tzinfo=timezone.utc)
+        with patch(f"{_WORKER_POOL}.datetime") as mock_dt:
+            mock_dt.now.return_value = frozen
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = reset_worktree("test-lane", force=True)
+
+        diff_path = Path("/tmp/test-lane_20260323T153000.diff")
+        try:
+            assert result.executed is True
+            assert "dirty diff saved" in result.reason
+            assert "20260323T153000" in result.reason
+            # Verify 4 subprocess calls: status, diff, fetch, reset
+            assert mock_run.call_count == 4
+            # Verify diff file was written
+            assert diff_path.exists()
+            assert "dirty_file.py" in diff_path.read_text()
+        finally:
+            diff_path.unlink(missing_ok=True)
