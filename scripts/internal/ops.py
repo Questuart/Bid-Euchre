@@ -38,7 +38,9 @@ Usage:
     uv run python scripts/internal/ops.py task dispatch PACKET_ID LANE_ID [--approve] [--json]
     uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--json]
     uv run python scripts/internal/ops.py inbox stats [--json]
+    uv run python scripts/internal/ops.py inbox ack MSG_ID --lane LANE [--json]
     uv run python scripts/internal/ops.py message show MSG_ID [--json]
+    uv run python scripts/internal/ops.py message send --from LANE --to LANE --type TYPE --summary TEXT [--task-id ID] [--thread ID] [--json]
     uv run python scripts/internal/ops.py supervisor [--json] [--save] [--diff SNAPSHOT_PATH]
     uv run python scripts/internal/ops.py workers [--json]
     uv run python scripts/internal/ops.py workers wake LANE_ID [--json]
@@ -1579,14 +1581,37 @@ def cmd_task(args: argparse.Namespace) -> int:
 
 
 def cmd_inbox(args: argparse.Namespace) -> int:
-    """Communication bus inbox inspection (Platform-3)."""
-    from bid_euchre.ops.message_bus import inbox_stats, read_inbox
+    """Communication bus inbox inspection and acknowledgment (Platform-3)."""
+    from bid_euchre.ops.message_bus import ack_message, inbox_stats, read_inbox
 
     bus_root = args.runtime_dir / "message_bus"
 
     action = getattr(args, "inbox_action", None)
 
-    if action == "stats":
+    if action == "ack":
+        msg_id = getattr(args, "message_id", None)
+        lane = getattr(args, "lane", None)
+        if not msg_id or not lane:
+            print(
+                "Usage: ops.py inbox ack MSG_ID --lane LANE",
+                file=sys.stderr,
+            )
+            return 1
+        result = ack_message(msg_id, lane, bus_root)
+        if result is None:
+            print(
+                f"Message {msg_id!r} not found in {lane!r} inbox.",
+                file=sys.stderr,
+            )
+            return 1
+        if args.json:
+            print(json.dumps(result, indent=2, default=str))
+        else:
+            print(f"Acknowledged: {msg_id} in {lane} inbox")
+            print(f"  Status: {result.get('status', '?')}")
+        return 0
+
+    elif action == "stats":
         stats = inbox_stats(bus_root)
         if args.json:
             print(json.dumps(stats, indent=2))
@@ -1659,14 +1684,46 @@ def cmd_inbox(args: argparse.Namespace) -> int:
 
 
 def cmd_message(args: argparse.Namespace) -> int:
-    """Show details of a single message from the audit trail (Platform-3)."""
+    """Show or send messages via the audit trail (Platform-3)."""
     from bid_euchre.ops.message_bus import read_messages
 
     bus_root = args.runtime_dir / "message_bus"
 
     action = getattr(args, "message_action", None)
+
+    if action == "send":
+        from bid_euchre.ops.message_bus import create_message, send_message
+
+        msg = create_message(
+            from_lane=args.from_lane,
+            to_lane=args.to_lane,
+            message_type=args.msg_type,
+            summary=args.summary,
+            task_id=getattr(args, "task_id", None),
+            thread_id=getattr(args, "thread_id", None),
+        )
+        try:
+            msg_id = send_message(msg, bus_root)
+        except ValueError as exc:
+            print(f"Send failed: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(msg), indent=2, default=str))
+        else:
+            print(f"Sent message: {msg_id}")
+            print(f"  From:    {args.from_lane}")
+            print(f"  To:      {args.to_lane}")
+            print(f"  Type:    {args.msg_type}")
+            print(f"  Summary: {args.summary}")
+        return 0
+
     if action != "show":
-        print("Usage: ops.py message show MSG_ID", file=sys.stderr)
+        print(
+            "Usage: ops.py message {show|send} ...",
+            file=sys.stderr,
+        )
         return 1
 
     msg_id = args.message_id
@@ -2319,6 +2376,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     inbox_sub.add_parser("stats", help="Per-lane inbox statistics")
 
+    inbox_ack_parser = inbox_sub.add_parser("ack", help="Acknowledge an inbox message")
+    inbox_ack_parser.add_argument("message_id", help="The message ID to acknowledge")
+    inbox_ack_parser.add_argument(
+        "--lane", required=True, help="Lane whose inbox contains the message"
+    )
+
     inbox_parser.add_argument(
         "--lane", default=None, help="Show inbox for a specific lane"
     )
@@ -2334,6 +2397,39 @@ def build_parser() -> argparse.ArgumentParser:
 
     message_show_parser = message_sub.add_parser("show", help="Show a message by ID")
     message_show_parser.add_argument("message_id", help="The message ID to show")
+
+    message_send_parser = message_sub.add_parser(
+        "send", help="Send a message to another lane's inbox"
+    )
+    message_send_parser.add_argument(
+        "--from", required=True, dest="from_lane", help="Sender lane ID"
+    )
+    message_send_parser.add_argument(
+        "--to", required=True, dest="to_lane", help="Recipient lane ID"
+    )
+    message_send_parser.add_argument(
+        "--type",
+        required=True,
+        dest="msg_type",
+        choices=[
+            "ack",
+            "progress",
+            "blocker",
+            "completion",
+            "escalation",
+            "recovery",
+        ],
+        help="Message type",
+    )
+    message_send_parser.add_argument(
+        "--summary", required=True, help="One-line message summary"
+    )
+    message_send_parser.add_argument(
+        "--task-id", default=None, dest="task_id", help="Associated task packet ID"
+    )
+    message_send_parser.add_argument(
+        "--thread", default=None, dest="thread_id", help="Thread ID for conversation"
+    )
 
     # supervisor (Platform-6: supervisor routines and delta summaries)
     supervisor_parser = subparsers.add_parser(

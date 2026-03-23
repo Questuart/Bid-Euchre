@@ -50,14 +50,42 @@ clarification before starting.
 4. **PR** — open with worktree proof, repro command, and validation evidence
 5. **Handoff** — update checkpoints / MEMORY.md as appropriate
 
-## Progress Reporting
+## Message Bus
 
-Report progress to the orchestrator via bus messages
-(`src/bid_euchre/ops/message_bus.py` `send_message()`):
-- **ack** — task received and understood
-- **progress** — meaningful milestone reached (e.g., implementation done, tests passing)
-- **blocker** — cannot proceed without input or external resolution
-- **completion** — task done, PR opened or handoff recorded
+Use the message bus CLI to communicate with the orchestrator and other lanes.
+
+**Check inbox** (on startup or when nudged):
+```bash
+uv run python scripts/internal/ops.py inbox --lane author-d
+```
+
+**Acknowledge a message** (after reading an assignment):
+```bash
+uv run python scripts/internal/ops.py inbox ack <MSG_ID> --lane author-d
+```
+
+**Send progress updates** to the orchestrator:
+```bash
+# Task received
+uv run python scripts/internal/ops.py message send \
+  --from author-d --to orchestrator --type ack \
+  --summary "Task received: <title>" --task-id <PACKET_ID>
+
+# Milestone reached
+uv run python scripts/internal/ops.py message send \
+  --from author-d --to orchestrator --type progress \
+  --summary "Implementation complete, tests passing" --task-id <PACKET_ID>
+
+# Blocked
+uv run python scripts/internal/ops.py message send \
+  --from author-d --to orchestrator --type blocker \
+  --summary "Blocked: <reason>" --task-id <PACKET_ID>
+
+# Task done
+uv run python scripts/internal/ops.py message send \
+  --from author-d --to orchestrator --type completion \
+  --summary "Done: PR #<N> opened" --task-id <PACKET_ID>
+```
 
 ## Dashboard Relationship
 

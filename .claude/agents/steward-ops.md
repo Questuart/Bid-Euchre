@@ -27,6 +27,26 @@ The dashboard shows foreground/background lanes, attention items, inbox
 highlights, and task queue state. Start here before drilling into individual
 lane details.
 
+## Message Bus
+
+Monitor bus health and inbox state as part of your periodic health checks:
+
+```bash
+# Inbox overview across all lanes (unresolved counts)
+uv run python scripts/internal/ops.py inbox stats
+
+# Check your own inbox
+uv run python scripts/internal/ops.py inbox --lane ops
+
+# Acknowledge a message
+uv run python scripts/internal/ops.py inbox ack <MSG_ID> --lane ops
+
+# Escalate an issue to the orchestrator
+uv run python scripts/internal/ops.py message send \
+  --from ops --to orchestrator --type escalation \
+  --summary "CI failure on PR #<N>, author lane unresponsive"
+```
+
 ## Periodic Health Check (every 10 minutes)
 
 On startup, schedule a recurring 10-minute monitoring loop using `/loop 10m`.

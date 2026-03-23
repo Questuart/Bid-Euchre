@@ -37,9 +37,21 @@ decomposition (use `/executing-plans` for that).
    uv run python scripts/internal/ops.py task list
    ```
 
-2. **Acknowledge the inbox message** (if dispatched via the bus):
-   Check your inbox for an assignment message and acknowledge it so the
-   orchestrator knows you received the task.
+2. **Check and acknowledge the inbox message** (if dispatched via the bus):
+   ```bash
+   # Check inbox for assignment messages (replace <LANE> with your lane ID)
+   uv run python scripts/internal/ops.py inbox --lane <LANE> --type assignment
+   ```
+   If there is an assignment message for this task, acknowledge it:
+   ```bash
+   uv run python scripts/internal/ops.py inbox ack <MSG_ID> --lane <LANE>
+   ```
+   Then send an ack message back to the orchestrator:
+   ```bash
+   uv run python scripts/internal/ops.py message send \
+     --from <LANE> --to orchestrator --type ack \
+     --summary "Task received: <title>" --task-id <PACKET_ID>
+   ```
 
 3. **Verify scope is clear:**
    - Are the file patterns in `scope_declared` specific enough?
