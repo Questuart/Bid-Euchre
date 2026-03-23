@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import matplotlib
 import numpy as np
@@ -15,7 +17,11 @@ import matplotlib.pyplot as plt  # noqa: E402
 # Add scripts to path so we can import
 scripts_dir = str(Path(__file__).resolve().parents[2] / "scripts")
 sys.path.insert(0, scripts_dir)
-from generate_dashboard import _bollinger, _draw_bollinger_panel  # noqa: E402
+from generate_dashboard import (  # noqa: E402
+    _bollinger,
+    _draw_bollinger_panel,
+    _gather_pr_counts,
+)
 
 
 class TestBollinger:
@@ -106,3 +112,50 @@ class TestDrawBollingerPanel:
             dot_color="#2c3e50",
         )
         plt.close(fig)
+
+
+class TestGatherPrCounts:
+    """Tests for _gather_pr_counts with mocked gh CLI."""
+
+    def _mock_gh_output(self, prs: list[dict]) -> str:
+        return json.dumps(prs)
+
+    def test_basic_counts(self):
+        """PRs are grouped by mergedAt date correctly."""
+        prs = [
+            {"mergedAt": "2026-03-20T10:00:00Z", "additions": 50},
+            {"mergedAt": "2026-03-20T14:00:00Z", "additions": 30},
+            {"mergedAt": "2026-03-21T09:00:00Z", "additions": 100},
+        ]
+        fake_result = type(
+            "Result", (), {"stdout": self._mock_gh_output(prs), "returncode": 0}
+        )()
+        with patch("generate_dashboard.subprocess.run", return_value=fake_result):
+            counts, additions = _gather_pr_counts("/fake/repo")
+
+        assert counts == {"2026-03-20": 2, "2026-03-21": 1}
+        assert additions == {"2026-03-20": 80, "2026-03-21": 100}
+
+    def test_empty_pr_list(self):
+        """Empty PR list returns empty dicts."""
+        fake_result = type("Result", (), {"stdout": "[]", "returncode": 0})()
+        with patch("generate_dashboard.subprocess.run", return_value=fake_result):
+            counts, additions = _gather_pr_counts("/fake/repo")
+
+        assert counts == {}
+        assert additions == {}
+
+    def test_missing_merged_at_skipped(self):
+        """PRs with empty mergedAt are silently skipped."""
+        prs = [
+            {"mergedAt": "", "additions": 50},
+            {"mergedAt": "2026-03-20T10:00:00Z", "additions": 30},
+        ]
+        fake_result = type(
+            "Result", (), {"stdout": self._mock_gh_output(prs), "returncode": 0}
+        )()
+        with patch("generate_dashboard.subprocess.run", return_value=fake_result):
+            counts, additions = _gather_pr_counts("/fake/repo")
+
+        assert counts == {"2026-03-20": 1}
+        assert additions == {"2026-03-20": 30}

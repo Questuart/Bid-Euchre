@@ -15,7 +15,6 @@ concurrency:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   update-dashboard:
@@ -46,13 +45,11 @@ jobs:
         run: |
           git diff --quiet -- assets/dashboard/ && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Create dashboard update PR
+      - name: Commit and push dashboard
         if: steps.changes.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
-        with:
-          commit-message: "chore: update commit analytics dashboard"
-          title: "chore: update commit analytics dashboard"
-          body: "Automated dashboard regeneration from CI."
-          branch: chore/dashboard-auto-update
-          delete-branch: true
-          add-paths: "assets/dashboard/*.png"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/dashboard/
+          git commit -m "chore: update PR analytics dashboard [skip ci]"
+          git push
