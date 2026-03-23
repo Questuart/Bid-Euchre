@@ -20,6 +20,7 @@ from bid_euchre.ops.worker_pool import (
     PoolSnapshot,
     WorkerState,
     _classify_pool_status,
+    _dynamic_pane_lookup,
     _get_lane_task_id,
     _managed_lanes,
     _minutes_since,
@@ -307,11 +308,103 @@ class TestGetLaneTaskId:
 # ---------------------------------------------------------------------------
 
 
-class TestResolveTmuxTarget:
-    """Test _resolve_tmux_target() registry-based target resolution."""
+class TestDynamicPaneLookup:
+    """Test _dynamic_pane_lookup() tmux pane title matching."""
 
-    def test_registry_with_window_and_pane(self, tmp_path: Path) -> None:
-        """When registry has tmux_window and tmux_pane, use them."""
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_finds_matching_pane(self, mock_run: MagicMock) -> None:
+        """Matches lane_id substring in pane title."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="1 steward-author-a\n2 steward-author-b\n",
+        )
+        result = _dynamic_pane_lookup("author-a", "steward", "platform")
+        assert result == "1"
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_no_match(self, mock_run: MagicMock) -> None:
+        """Returns None when no pane title matches."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="1 steward-author-c\n2 steward-author-d\n",
+        )
+        result = _dynamic_pane_lookup("author-a", "steward", "platform")
+        assert result is None
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_tmux_not_running(self, mock_run: MagicMock) -> None:
+        """Returns None when tmux is not available."""
+        mock_run.side_effect = FileNotFoundError("tmux not found")
+        result = _dynamic_pane_lookup("author-a", "steward", "platform")
+        assert result is None
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_tmux_command_fails(self, mock_run: MagicMock) -> None:
+        """Returns None when tmux list-panes returns non-zero."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        result = _dynamic_pane_lookup("author-a", "steward", "platform")
+        assert result is None
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_tmux_timeout(self, mock_run: MagicMock) -> None:
+        import subprocess as sp
+
+        mock_run.side_effect = sp.TimeoutExpired("tmux", 5)
+        result = _dynamic_pane_lookup("author-a", "steward", "platform")
+        assert result is None
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_pane_title_with_spinner(self, mock_run: MagicMock) -> None:
+        """Matches even when pane title has a Claude Code spinner prefix."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="2 ⠐ steward-flex-a\n3 ✳ steward-flex-b\n",
+        )
+        result = _dynamic_pane_lookup("flex-a", "steward", "scratch")
+        assert result == "2"
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_constructs_correct_tmux_command(self, mock_run: MagicMock) -> None:
+        """Verifies the correct tmux command is constructed."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        _dynamic_pane_lookup("author-a", "steward", "platform")
+        mock_run.assert_called_once_with(
+            [
+                "tmux",
+                "list-panes",
+                "-t",
+                "steward:platform",
+                "-F",
+                "#{pane_index} #{pane_title}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+
+class TestResolveTmuxTarget:
+    """Test _resolve_tmux_target() with dynamic + registry resolution."""
+
+    @patch(f"{_WORKER_POOL}._dynamic_pane_lookup", return_value="2")
+    def test_dynamic_resolution_preferred(
+        self, mock_lookup: MagicMock, tmp_path: Path
+    ) -> None:
+        """Dynamic lookup is preferred over stale registry pane index."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        # Registry has stale 0-based index; dynamic returns correct 2
+        entry = {"tmux_window": "platform", "tmux_pane": "0"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        result = _resolve_tmux_target("author-a", "steward", tmp_path)
+        assert result == "steward:platform.2"
+        mock_lookup.assert_called_once_with("author-a", "steward", "platform")
+
+    @patch(f"{_WORKER_POOL}._dynamic_pane_lookup", return_value=None)
+    def test_registry_fallback_when_dynamic_fails(
+        self, mock_lookup: MagicMock, tmp_path: Path
+    ) -> None:
+        """Falls back to registry pane index when dynamic lookup fails."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
         entry = {"tmux_window": "platform", "tmux_pane": "1"}
@@ -324,8 +417,11 @@ class TestResolveTmuxTarget:
         result = _resolve_tmux_target("author-a", "steward", tmp_path)
         assert result == "steward:author-a"
 
-    def test_registry_no_pane_falls_back(self, tmp_path: Path) -> None:
-        """When registry has window but no pane, fall back."""
+    @patch(f"{_WORKER_POOL}._dynamic_pane_lookup", return_value=None)
+    def test_registry_no_pane_falls_back(
+        self, mock_lookup: MagicMock, tmp_path: Path
+    ) -> None:
+        """When registry has window but no pane and dynamic fails, fall back."""
         registry_dir = tmp_path / "worktree_registry"
         registry_dir.mkdir()
         entry = {"tmux_window": "platform"}
@@ -333,7 +429,10 @@ class TestResolveTmuxTarget:
         result = _resolve_tmux_target("author-a", "steward", tmp_path)
         assert result == "steward:author-a"
 
-    def test_registry_pane_zero_is_valid(self, tmp_path: Path) -> None:
+    @patch(f"{_WORKER_POOL}._dynamic_pane_lookup", return_value=None)
+    def test_registry_pane_zero_is_valid(
+        self, mock_lookup: MagicMock, tmp_path: Path
+    ) -> None:
         """Pane index 0 should not be treated as falsy.
 
         Even though production uses 1-based indices (pane-base-index=1),
@@ -345,6 +444,19 @@ class TestResolveTmuxTarget:
         (registry_dir / "orchestrator.json").write_text(json.dumps(entry))
         result = _resolve_tmux_target("orchestrator", "steward", tmp_path)
         assert result == "steward:central-ops.0"
+
+    @patch(f"{_WORKER_POOL}._dynamic_pane_lookup", return_value=None)
+    def test_no_window_skips_dynamic_lookup(
+        self, mock_lookup: MagicMock, tmp_path: Path
+    ) -> None:
+        """When registry has no window, dynamic lookup is not attempted."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_pane": "1"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        result = _resolve_tmux_target("author-a", "steward", tmp_path)
+        assert result == "steward:author-a"
+        mock_lookup.assert_not_called()
 
 
 class TestProbeTmuxPane:
