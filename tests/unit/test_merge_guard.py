@@ -495,6 +495,44 @@ exec python3 "$@"
             f"stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
 
+    def test_skips_guard_for_tmux_send_keys(self) -> None:
+        """Guard must NOT trigger when 'gh pr merge' is an argument to tmux.
+
+        Regression test for #1291: tmux send-keys passing merge text as
+        message content was falsely triggering the merge guard.
+        """
+        # tmux send-keys with merge text should exit 0 (skip, not guard)
+        exit_code = self._run_guard(
+            'tmux send-keys -t pane "gh pr merge 123 --squash" Enter'
+        )
+        assert exit_code == 0, "Guard should skip tmux send-keys commands"
+
+    def test_skips_guard_for_echo_with_merge_text(self) -> None:
+        """Guard must NOT trigger when 'gh pr merge' is inside an echo."""
+        exit_code = self._run_guard('echo "gh pr merge is blocked"')
+        assert exit_code == 0, "Guard should skip echo commands"
+
+    def test_guards_direct_merge_invocation(self, tmp_path: Path) -> None:
+        """Guard SHOULD trigger on a direct gh pr merge command."""
+        queue_dir = tmp_path / "empty_queue"
+        queue_dir.mkdir()
+        # Direct merge with no verdict → should block (exit 2)
+        exit_code = self._run_guard(
+            "gh pr merge 42 --squash",
+            env_override={"BID_EUCHRE_REVIEW_QUEUE_DIR": str(queue_dir)},
+        )
+        assert exit_code == 2, "Guard should block direct merge without verdict"
+
+    def test_guards_merge_with_leading_whitespace(self, tmp_path: Path) -> None:
+        """Guard SHOULD trigger even with leading whitespace."""
+        queue_dir = tmp_path / "empty_queue"
+        queue_dir.mkdir()
+        exit_code = self._run_guard(
+            "  gh pr merge 42 --squash",
+            env_override={"BID_EUCHRE_REVIEW_QUEUE_DIR": str(queue_dir)},
+        )
+        assert exit_code == 2, "Guard should block merge with leading whitespace"
+
     def test_rejects_merge_when_all_ci_checks_skipped(self, tmp_path: Path) -> None:
         """Guard should reject merge when ALL CI checks are SKIPPED.
 

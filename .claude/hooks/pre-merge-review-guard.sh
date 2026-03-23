@@ -25,8 +25,18 @@ if [ -z "$COMMAND" ]; then
   exit 0
 fi
 
-# Only guard gh pr merge commands
-if [[ "$COMMAND" != *"gh pr merge"* ]]; then
+# Only guard when `gh pr merge` is the actual command being executed.
+# Skip when the substring appears inside quotes as an argument to another
+# tool (e.g., tmux send-keys "gh pr merge ..." Enter — issue #1291).
+#
+# We check that the command, after stripping leading whitespace, starts
+# with "gh pr merge".  This is intentionally strict: chained commands
+# like "git fetch && gh pr merge 123" will NOT trigger the guard.
+# That is acceptable because (a) such chaining is rare in practice and
+# (b) false negatives are far less harmful than false positives that
+# block legitimate non-merge commands.
+TRIMMED="${COMMAND#"${COMMAND%%[![:space:]]*}"}"
+if [[ "$TRIMMED" != "gh pr merge"* ]]; then
   echo '{"suppressOutput": true}'
   exit 0
 fi
