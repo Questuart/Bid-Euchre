@@ -904,6 +904,64 @@ def _load_recent_events(
     return events
 
 
+def detect_untracked_agent_worktrees(
+    report: StatusReport,
+) -> list[str]:
+    """Detect git worktrees that are not registered steward lanes.
+
+    Compares ``git worktree list`` output against the known lane IDs in the
+    status report.  Worktrees whose path contains ``agent-`` or ``work-`` (but
+    not ``steward``) that have no matching registry entry are flagged as
+    potential hidden execution surfaces.
+
+    Args:
+        report: A populated StatusReport (must have ``lanes`` filled).
+
+    Returns:
+        List of worktree paths that look like unregistered agent worktrees.
+    """
+    try:
+        from bid_euchre.ops.worktrees import list_worktrees_git
+    except ImportError:
+        return []
+
+    try:
+        git_worktrees = list_worktrees_git()
+    except Exception:
+        logger.debug("Could not list git worktrees for violation check")
+        return []
+
+    # Build the set of known worktree paths from the status report
+    known_paths: set[str] = set()
+    for lane in report.lanes:
+        if lane.worktree_path:
+            # Normalize to resolve symlinks / trailing slashes
+            known_paths.add(str(Path(lane.worktree_path).resolve()))
+
+    untracked: list[str] = []
+    for wt in git_worktrees:
+        if not wt.path:
+            continue
+        resolved = str(Path(wt.path).resolve())
+
+        # Skip the main repo checkout (bare or non-bare)
+        if wt.bare:
+            continue
+
+        # Skip known registered worktrees
+        if resolved in known_paths:
+            continue
+
+        # Flag worktrees that look like agent-spawned or transient
+        # implementation surfaces (agent-*, work-*, worktree-*)
+        name = Path(wt.path).name
+        suspicious_prefixes = ("agent-", "work-", "worktree-")
+        if any(name.startswith(pfx) for pfx in suspicious_prefixes):
+            untracked.append(wt.path)
+
+    return untracked
+
+
 def aggregate_status(
     runtime_dir: Path | None = None,
     *,
@@ -1018,6 +1076,14 @@ def aggregate_status(
             report.task_queue_summary = queue_summary(task_queue_root)
     except Exception as exc:
         logger.debug("Task queue enrichment skipped: %s", exc)
+
+    # SP-3-06: detect untracked agent worktrees (execution-surface violations)
+    untracked = detect_untracked_agent_worktrees(report)
+    for wt_path in untracked:
+        report.warnings.append(
+            f"Untracked execution surface: {wt_path} "
+            "(possible hidden agent worktree — policy violation)"
+        )
 
     return report
 

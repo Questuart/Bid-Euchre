@@ -18,6 +18,13 @@ Do NOT create tasks for: single-step work, pure Q&A, trivial edits.
 - **`subject`:** Imperative form, specific outcome ("Wire bid_type to logger", not "Work on logging")
 - **`activeForm`:** Present continuous matching subject ("Wiring bid_type to logger")
 - **`description`:** Include acceptance criteria and file paths when known
+- **Lane suffix (soft gate):** Every task subject should end with `[lane-id]`
+  (e.g., `[author-a]`) or `[unassigned]` when no lane is assigned yet.
+  This makes lane ownership visible at a glance in `TaskList` output.
+  Examples:
+  - `"Fix scoring edge case [author-a]"`
+  - `"Run Tier 2 validation [unassigned]"`
+  - `"R2.3: Generate behavior tables [author-b]"`
 
 ## Dependencies and Parallelism
 

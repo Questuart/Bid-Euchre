@@ -58,7 +58,7 @@ intake-to-dispatch flow into a reusable workflow.
 
 ### Phase 3 — Dispatch
 
-6. **Dispatch the task packet** to the target author lane:
+6. **Create the task packet** (if not already created during preview):
    ```bash
    uv run python scripts/internal/ops.py task create \
      --title "<title>" \
@@ -66,12 +66,26 @@ intake-to-dispatch flow into a reusable workflow.
      --owner "<lane>" \
      --priority "<priority>" \
      --domain "<platform|browser-game>" \
-     --scope "<file-pattern>" \
-     --scope "<another-pattern>"
+     --scope "<file pattern>" \
+     --validation "<test command>"
    ```
 
-7. **Verify dispatch:**
+7. **Dispatch to the author lane** using the blessed task dispatch path:
    ```bash
+   uv run python scripts/internal/ops.py task dispatch <packet_id> <lane> --approve
+   ```
+
+   This single command:
+   - Approves the packet (transitions pending/previewing -> approved)
+   - Calls `dispatch_to_worker()` to wake the lane and assign the task
+   - Writes an inbox message for the author lane
+   - Nudges the lane's tmux pane with `/start-task <packet_id>`
+
+   For packets already in `approved` status, omit `--approve`.
+
+8. **Verify dispatch:**
+   ```bash
+   uv run python scripts/internal/ops.py task show <packet_id>
    uv run python scripts/internal/ops.py task list
    ```
 
@@ -85,6 +99,8 @@ intake-to-dispatch flow into a reusable workflow.
 - The orchestrator coordinates; it does not execute implementation work itself
 - Check the dashboard for lane state — do not format your own competing
   worker-pool summary
+- Always use `task dispatch` for the final dispatch step — do not use
+  `workers dispatch` (low-level) or `Agent` (hidden subprocess delegation)
 
 ## References
 
