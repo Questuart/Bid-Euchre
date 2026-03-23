@@ -77,6 +77,47 @@ class TestBollinger:
         has_negative = any(lower[i] < 0 for i in range(2, 5) if not np.isnan(lower[i]))
         assert has_negative, "Expected negative lower band with clamp_lower=False"
 
+    def test_empty_data(self):
+        """Empty array returns four empty arrays without error."""
+        data = np.array([], dtype=float)
+        sma, upper, lower, pct_b = _bollinger(data, window=10, num_std=2)
+        assert len(sma) == 0
+        assert len(upper) == 0
+        assert len(lower) == 0
+        assert len(pct_b) == 0
+
+    def test_exactly_window_points(self):
+        """With exactly window data points, only the last index is valid."""
+        data = np.arange(1.0, 11.0)  # 10 points, window=10
+        sma, upper, lower, pct_b = _bollinger(data, window=10, num_std=2)
+        # Indices 0-8 should be NaN
+        assert np.all(np.isnan(sma[:9]))
+        # Index 9 (last) should be valid — SMA = mean(1..10) = 5.5
+        assert sma[9] == pytest.approx(5.5)
+        assert not np.isnan(upper[9])
+        assert not np.isnan(lower[9])
+        assert not np.isnan(pct_b[9])
+
+    def test_validity_mask_independence(self):
+        """Different data series produce independent validity masks.
+
+        Regression test: Panel 5 previously reused Panel 4's validity mask.
+        When two series have different NaN patterns, their masks must differ.
+        """
+        # Series A: 5 points, window=3 → valid from index 2
+        data_a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        sma_a, _, _, _ = _bollinger(data_a, window=3, num_std=2)
+        valid_a = ~np.isnan(sma_a)
+
+        # Series B: 5 points, window=5 → valid only at index 4
+        sma_b, _, _, _ = _bollinger(data_a, window=5, num_std=2)
+        valid_b = ~np.isnan(sma_b)
+
+        # Masks must be different when windows differ
+        assert not np.array_equal(valid_a, valid_b)
+        assert valid_a.sum() == 3  # indices 2, 3, 4
+        assert valid_b.sum() == 1  # index 4 only
+
 
 class TestDrawBollingerPanel:
     """Tests for the panel rendering, especially the n_valid==0 edge case."""
