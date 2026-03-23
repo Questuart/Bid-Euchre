@@ -5,7 +5,8 @@
 # "Async hook completed" TUI messages (issue #1255). Dispatches to:
 #   1. pre-worktree-cleanup.sh — blocks dangerous rm/worktree commands
 #   2. pre-merge-review-guard.sh — blocks merge without review verdict
-#   3. rule-loader.sh — progressive rule disclosure (context injection)
+#   3. scope-drift-guard.sh — warns/blocks commit when staged files exceed task scope
+#   4. rule-loader.sh — progressive rule disclosure (context injection)
 #
 # Guards run first: if either blocks (exit 2), we propagate immediately.
 # Rule-loader runs last since context injection is only useful if the
@@ -43,7 +44,26 @@ if [ -x "$HOOKS_DIR/pre-merge-review-guard.sh" ]; then
     fi
 fi
 
-# --- 3. Rule loader (never blocks, may return additionalContext) ---
+# --- 3. Scope drift guard (may block with exit 2 or warn) ---
+if [ -x "$HOOKS_DIR/scope-drift-guard.sh" ]; then
+    SDG_OUTPUT=""
+    SDG_EXIT=0
+    SDG_OUTPUT=$(echo "$INPUT" | "$HOOKS_DIR/scope-drift-guard.sh" 2>/dev/null) || SDG_EXIT=$?
+    if [ "$SDG_EXIT" -ne 0 ]; then
+        echo "$SDG_OUTPUT"
+        exit "$SDG_EXIT"
+    fi
+    # Check if scope guard returned additionalContext (warning)
+    if [ -n "$SDG_OUTPUT" ]; then
+        SDG_AC=$(echo "$SDG_OUTPUT" | jq -r '.additionalContext // empty' 2>/dev/null || true)
+        if [ -n "$SDG_AC" ]; then
+            echo "$SDG_OUTPUT"
+            exit 0
+        fi
+    fi
+fi
+
+# --- 4. Rule loader (never blocks, may return additionalContext) ---
 if [ -x "$HOOKS_DIR/rule-loader.sh" ]; then
     RULE_OUTPUT=""
     RULE_OUTPUT=$(echo "$INPUT" | "$HOOKS_DIR/rule-loader.sh" 2>/dev/null) || true
