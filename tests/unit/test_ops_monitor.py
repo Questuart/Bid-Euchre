@@ -9,12 +9,14 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from bid_euchre.ops.monitor import (
+    MAX_AUTO_DISPATCH_PER_CYCLE,
     SEVERITY_HIGH,
     SEVERITY_INFO,
     SEVERITY_WARN,
     MonitorFinding,
     _default_stall_state_path,
     _save_stall_state,
+    check_auto_dispatch,
     check_lane_health,
     check_merged_dispatches,
     check_open_prs,
@@ -1260,6 +1262,433 @@ class TestRunMonitoringCycle:
             )
 
         mock_notify.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# check_auto_dispatch tests (SP-4-02 Step 6)
+# ---------------------------------------------------------------------------
+
+
+def _make_approved_pkt(
+    packet_id: str = "apkt001",
+    title: str = "Approved task",
+    domain: str | None = "platform",
+) -> MagicMock:
+    """Helper to create a mock approved packet."""
+    pkt = MagicMock()
+    pkt.packet_id = packet_id
+    pkt.title = title
+    pkt.domain = domain
+    pkt.status = "approved"
+    return pkt
+
+
+def _make_pool_snapshot(
+    workers: list[Any] | None = None,
+    active: int = 0,
+    idle: int = 0,
+    parked: int = 0,
+    retired: int = 0,
+    capacity: int = 5,
+) -> MagicMock:
+    """Helper to create a mock PoolSnapshot."""
+    pool = MagicMock()
+    pool.workers = workers or []
+    pool.active_count = active
+    pool.idle_count = idle
+    pool.parked_count = parked
+    pool.retired_count = retired
+    pool.available_capacity = capacity
+    return pool
+
+
+def _make_worker(
+    lane_id: str = "author-a",
+    pool_status: str = "idle",
+    health: str = "healthy",
+    current_task_id: str | None = None,
+    domain: str | None = "platform",
+) -> MagicMock:
+    """Helper to create a mock WorkerState."""
+    w = MagicMock()
+    w.lane_id = lane_id
+    w.pool_status = pool_status
+    w.health = health
+    w.current_task_id = current_task_id
+    w.domain = domain
+    return w
+
+
+class TestCheckAutoDispatch:
+    """Tests for auto-dispatch of approved packets to idle lanes."""
+
+    def test_no_approved_packets(self, tmp_path: Path) -> None:
+        """No approved packets → no dispatches."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pool = _make_pool_snapshot(capacity=5)
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[],
+            ),
+        ):
+            findings = check_auto_dispatch(runtime_dir)
+
+        assert len(findings) == 0
+
+    def test_dispatches_approved_to_idle_lane(self, tmp_path: Path) -> None:
+        """Approved packet dispatched to idle lane via _dispatch_fn."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        worker = _make_worker(lane_id="author-a", pool_status="idle")
+        pool = _make_pool_snapshot(workers=[worker], idle=1, capacity=5)
+        pkt = _make_approved_pkt(packet_id="apkt001", domain="platform")
+
+        dispatches: list[tuple[str, str]] = []
+
+        def mock_dispatch(packet_id: str, lane_id: str) -> None:
+            dispatches.append((packet_id, lane_id))
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.worker_pool.select_worker",
+                return_value="author-a",
+            ),
+        ):
+            findings = check_auto_dispatch(runtime_dir, _dispatch_fn=mock_dispatch)
+
+        assert len(findings) == 1
+        assert findings[0].category == "auto_dispatch"
+        assert findings[0].severity == SEVERITY_INFO
+        assert "apkt001" in findings[0].summary
+        assert "author-a" in findings[0].summary
+        assert len(dispatches) == 1
+        assert dispatches[0] == ("apkt001", "author-a")
+
+    def test_rate_limit_enforced(self, tmp_path: Path) -> None:
+        """At most max_dispatches per cycle."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        worker_a = _make_worker(lane_id="author-a", pool_status="idle")
+        worker_b = _make_worker(lane_id="author-b", pool_status="idle")
+        worker_c = _make_worker(lane_id="author-c", pool_status="idle")
+        pool = _make_pool_snapshot(
+            workers=[worker_a, worker_b, worker_c],
+            idle=3,
+            capacity=5,
+        )
+
+        pkts = [
+            _make_approved_pkt(packet_id=f"apkt{i:03d}", title=f"Task {i}")
+            for i in range(4)
+        ]
+
+        dispatches: list[tuple[str, str]] = []
+        select_calls = iter(["author-a", "author-b", "author-c", "author-d"])
+
+        def mock_dispatch(packet_id: str, lane_id: str) -> None:
+            dispatches.append((packet_id, lane_id))
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=pkts,
+            ),
+            patch(
+                "bid_euchre.ops.worker_pool.select_worker",
+                side_effect=lambda *a, **kw: next(select_calls),
+            ),
+        ):
+            findings = check_auto_dispatch(
+                runtime_dir,
+                max_dispatches=2,
+                _dispatch_fn=mock_dispatch,
+            )
+
+        info_findings = [f for f in findings if f.severity == SEVERITY_INFO]
+        assert len(info_findings) == 2
+        assert len(dispatches) == 2
+
+    def test_skips_lane_with_high_finding(self, tmp_path: Path) -> None:
+        """Lanes with HIGH findings in current cycle are skipped."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        worker = _make_worker(lane_id="author-a", pool_status="idle")
+        pool = _make_pool_snapshot(workers=[worker], idle=1, capacity=5)
+        pkt = _make_approved_pkt()
+
+        # Simulate a HIGH finding for author-a from earlier checks
+        current_findings = [
+            MonitorFinding(
+                category="lane_health",
+                severity=SEVERITY_HIGH,
+                summary="Lane author-a has dead tmux",
+                details={"lane_id": "author-a"},
+            ),
+        ]
+
+        dispatches: list[tuple[str, str]] = []
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.worker_pool.select_worker",
+                return_value="author-a",
+            ),
+        ):
+            findings = check_auto_dispatch(
+                runtime_dir,
+                current_findings=current_findings,
+                _dispatch_fn=lambda pid, lid: dispatches.append((pid, lid)),
+            )
+
+        assert len(dispatches) == 0
+        assert len(findings) == 0
+
+    def test_no_capacity_skips(self, tmp_path: Path) -> None:
+        """No available capacity → no dispatches."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pool = _make_pool_snapshot(capacity=0)
+        pkt = _make_approved_pkt()
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+        ):
+            findings = check_auto_dispatch(runtime_dir)
+
+        assert len(findings) == 0
+
+    def test_no_matching_lane_skips(self, tmp_path: Path) -> None:
+        """No matching lane for a packet → skip that packet."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pool = _make_pool_snapshot(capacity=5)
+        pkt = _make_approved_pkt()
+
+        dispatches: list[tuple[str, str]] = []
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.worker_pool.select_worker",
+                return_value=None,
+            ),
+        ):
+            findings = check_auto_dispatch(
+                runtime_dir,
+                _dispatch_fn=lambda pid, lid: dispatches.append((pid, lid)),
+            )
+
+        assert len(dispatches) == 0
+        assert len(findings) == 0
+
+    def test_dispatch_exception_produces_warn(self, tmp_path: Path) -> None:
+        """Exception during dispatch produces WARN finding."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        worker = _make_worker(lane_id="author-a", pool_status="idle")
+        pool = _make_pool_snapshot(workers=[worker], idle=1, capacity=5)
+        pkt = _make_approved_pkt()
+
+        def bad_dispatch(packet_id: str, lane_id: str) -> None:
+            raise RuntimeError("tmux not found")
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.worker_pool.select_worker",
+                return_value="author-a",
+            ),
+        ):
+            findings = check_auto_dispatch(runtime_dir, _dispatch_fn=bad_dispatch)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert findings[0].category == "auto_dispatch"
+        assert "tmux not found" in findings[0].summary
+
+    def test_max_dispatches_zero_noop(self, tmp_path: Path) -> None:
+        """max_dispatches=0 is a kill switch — no dispatches."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        findings = check_auto_dispatch(runtime_dir, max_dispatches=0)
+        assert len(findings) == 0
+
+    def test_snapshot_failure_graceful(self, tmp_path: Path) -> None:
+        """Pool snapshot failure produces WARN, doesn't crash."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        with patch(
+            "bid_euchre.ops.worker_pool.take_pool_snapshot",
+            side_effect=RuntimeError("no registry"),
+        ):
+            findings = check_auto_dispatch(runtime_dir)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "auto-dispatch" in findings[0].summary.lower()
+
+    def test_default_rate_limit_is_two(self) -> None:
+        """Default MAX_AUTO_DISPATCH_PER_CYCLE is 2."""
+        assert MAX_AUTO_DISPATCH_PER_CYCLE == 2
+
+    def test_domain_passed_to_select_worker(self, tmp_path: Path) -> None:
+        """Packet domain is passed through to select_worker."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        worker = _make_worker(lane_id="brws-author-a", domain="browser-game")
+        pool = _make_pool_snapshot(workers=[worker], idle=1, capacity=5)
+        pkt = _make_approved_pkt(domain="browser-game")
+
+        dispatches: list[tuple[str, str]] = []
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.worker_pool.select_worker",
+                return_value="brws-author-a",
+            ) as mock_select,
+        ):
+            findings = check_auto_dispatch(
+                runtime_dir,
+                _dispatch_fn=lambda pid, lid: dispatches.append((pid, lid)),
+            )
+
+        mock_select.assert_called_once_with(pool, domain="browser-game")
+        assert len(dispatches) == 1
+        assert findings[0].details["domain"] == "browser-game"
+
+
+class TestRunMonitoringCycleAutoDispatch:
+    """Tests for auto-dispatch integration in run_monitoring_cycle."""
+
+    def test_no_auto_dispatch_flag_disables(self, tmp_path: Path) -> None:
+        """no_auto_dispatch=True prevents auto-dispatch step."""
+        pool_mock = MagicMock()
+        pool_mock.workers = []
+        pool_mock.active_count = 0
+        pool_mock.idle_count = 0
+        pool_mock.parked_count = 0
+        pool_mock.retired_count = 0
+        pool_mock.available_capacity = 5
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool_mock,
+            ),
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[]),
+            patch(
+                "bid_euchre.ops.monitor.check_auto_dispatch",
+            ) as mock_auto,
+            patch(
+                "bid_euchre.ops.monitor._send_findings_to_orchestrator",
+                return_value=None,
+            ),
+        ):
+            run_monitoring_cycle(
+                tmp_path,
+                skip_pr_check=True,
+                no_auto_dispatch=True,
+            )
+
+        mock_auto.assert_not_called()
+
+    def test_auto_dispatch_enabled_by_default(self, tmp_path: Path) -> None:
+        """Auto-dispatch runs by default when not disabled."""
+        pool_mock = MagicMock()
+        pool_mock.workers = []
+        pool_mock.active_count = 0
+        pool_mock.idle_count = 0
+        pool_mock.parked_count = 0
+        pool_mock.retired_count = 0
+        pool_mock.available_capacity = 5
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool_mock,
+            ),
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[]),
+            patch(
+                "bid_euchre.ops.monitor.check_auto_dispatch",
+                return_value=[],
+            ) as mock_auto,
+            patch(
+                "bid_euchre.ops.monitor._send_findings_to_orchestrator",
+                return_value=None,
+            ),
+        ):
+            run_monitoring_cycle(
+                tmp_path,
+                skip_pr_check=True,
+            )
+
+        mock_auto.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
