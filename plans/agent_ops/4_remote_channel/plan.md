@@ -60,6 +60,22 @@ in the steward environment.
 - Kill switch terminates channel cleanly without affecting the session
 - Lane registry records channel health status
 
+### Fallback Adapter Path
+
+If the official Telegram plugin is unavailable, unstable, or lacks the required
+bounded-command surface, a documented repo-owned channel adapter still satisfies
+Platform-8. This matches the governing plan's fallback boundary (see
+`plans/agent_ops/governing_plan.md` § Platform-8 fallback boundary).
+
+Options for fallback:
+- **fakechat** — local test adapter for proving without external dependencies
+- **Minimal webhook channel server** — repo-owned HTTP endpoint that bridges
+  to the Telegram Bot API directly
+
+The fallback adapter must implement the same command and audit contract as the
+official plugin path. Operator-side SSH/Termius access is a debugging and
+recovery path only; it does not satisfy the remote-channel slice by itself.
+
 ## Platform-8b — Audit Trail (Deferred to Hardening)
 
 > **Known gap:** v1 relies on session logs + Telegram chat history for audit

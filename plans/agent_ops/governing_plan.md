@@ -113,6 +113,9 @@ Completed phases:
 - `plans/agent_ops/1_coordination_core/checkpoints.md` (Phase 1 — COMPLETE, 2026-03-21)
 - `plans/agent_ops/2_visible_operating_model/checkpoints.md` (Phase 2 — COMPLETE, 2026-03-22)
 - `plans/agent_ops/3_supervision_and_scaling/checkpoints.md` (Phase 3 — COMPLETE, 2026-03-22)
+
+Pending phases:
+
 - `plans/agent_ops/4_remote_channel/checkpoints.md` (Phase 4 — PENDING)
 
 Agents should treat checkpoints as the human-readable source of current step
