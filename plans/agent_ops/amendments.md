@@ -1,7 +1,7 @@
 # Agentic Orchestration Platform — Amendments
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-22
+**Last updated:** 2026-03-22 (SP-3-04 closeout)
 
 ---
 
@@ -177,3 +177,30 @@ clean upgrade path to Claude Channels once remote-channel prerequisites exist,
 and treat `cmux` as a later transport/presentation upgrade rather than as
 control-plane truth. Recording the full ladder now prevents future slices from
 re-litigating the same architectural boundary.
+
+---
+
+## A7 — Phase 3 closeout and dual-domain transition entry (2026-03-22)
+
+**PR:** SP-3-04 closeout PR
+
+**What changed:**
+1. **Phase 3 durably closed** — All planning state (checkpoints, plan, QA log,
+   sub-plan registry, governing plan) reconciled to reflect Phase 3 completion.
+   BD-004 marked fixed (PR #1263), BD-001/BD-002/BD-003 marked fixed (PR #1261).
+   Platform-7 marked COMPLETE. Batch D pass gate checklist fully checked.
+2. **No active numbered phase** — The governing plan checkpoint contract now
+   states that no numbered phase is currently active. Phase 4 and Phase 5 are
+   both unblocked but not yet entered.
+3. **Dual-domain transition entry recorded** — SP-3-05 registered as a proposed
+   sub-plan for the dual-domain steward layout transition. This is a bounded
+   transition package between Phase 3 and Platform-8, not a new numbered phase.
+   It enables concurrent platform and browser-game development.
+4. **Next governed action made explicit** — The sequence is: SP-3-05 (layout
+   transition), then Phase 4 scope lock. Browser-game work may proceed after
+   the transition package is in place.
+
+**Rationale:** Phase 3 runtime work was complete but durable planning state
+lagged behind shipped reality. This amendment closes that gap and establishes
+the dual-domain layout transition as the next governed action, preventing
+future sessions from having to reconstruct intent from chat history.

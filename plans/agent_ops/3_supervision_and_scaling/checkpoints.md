@@ -15,7 +15,7 @@
 | Step 2: Platform-7 scope lock and sub-plan | COMPLETE | 2026-03-22 | author-c | SP-3-02 created and plan-reviewed. Worker-pool manager: idle reuse, bounded dynamic author creation, parking/retirement. |
 | Step 3: Platform-7 implementation | COMPLETE | 2026-03-22 | author-d | worker_pool.py module, CLI subcommand, 69 tests. PR #1250 + fix PR #1252. |
 | Step 4: Batch D pass gate verification | COMPLETE | 2026-03-22 | orchestrator (Batch D proving run) | Batch D pass gate PASSED. All 3 criteria met. PRs #1256, #1257, #1258. 5 findings (BD-001--BD-005). Phase 3 exit blocked on BD-004 (#1259). |
-| Step 5: Phase 3 handoff | COMPLETE | 2026-03-22 | author-b | BD-004 closed via PR #1263. Phase 3 COMPLETE. Governing plan, checkpoints, QA log, sub-plan registry, and MEMORY.md updated. |
+| Step 5: Phase 3 handoff | COMPLETE | 2026-03-22 | author-scratch (SP-3-04 closeout) | BD-004 closed via PR #1263. Phase 3 durably closed. All planning state reconciled. |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
 
@@ -25,6 +25,7 @@
 |-------------|------|--------|---------------|
 | SP-3-02 | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_platform7-worker-pool-manager.md` | completed | Step 3 |
 | SP-3-03 | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_bd004-v1-pane-delivery.md` | completed | Step 5 |
+| SP-3-04 | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_phase3-closeout-and-transition-entry.md` | completed | Step 5 |
 
 ## Blockers
 
@@ -88,3 +89,14 @@ None. All blockers resolved.
 - Governing plan updated: Phase 3 → COMPLETE. Phase 4/5 ready for entry.
 - Next: Phase 4 (remote channel) or Phase 5 (portability and learning),
   both depend on Phase 3 completion.
+
+### 2026-03-22 -- author-scratch (SP-3-04 closeout)
+- Phase 3 durable planning state reconciled across all plan files.
+- BD-004 closed (#1259) via PR #1263. BD-001/BD-002/BD-003 fixed via PR #1261.
+- plan.md: Phase Status → COMPLETE, Platform-7 → COMPLETE, Batch D pass gate
+  checklist → all checked, sub-plans table updated with SP-3-03/SP-3-04/SP-3-05.
+- qa_log.md: BD-001 through BD-004 → fixed. BD-005 remains open (INFO, non-blocking).
+- sub_plan_registry.md: SP-3-04 → completed, SP-3-05 → proposed.
+- governing_plan.md: no numbered phase currently active; next governed action
+  is SP-3-05 (dual-domain layout transition), then Platform-8 scope lock.
+- Phase 3 durably closed. No remaining work items.

@@ -2,8 +2,8 @@
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase:** `3_supervision_and_scaling`
-**Status:** IN_PROGRESS
-**Last updated:** 2026-03-22 by author-b (Phase 3 plan creation)
+**Status:** COMPLETE
+**Last updated:** 2026-03-22 by author-scratch (SP-3-04 closeout)
 
 ---
 
@@ -25,17 +25,17 @@ Phase 2 (`2_visible_operating_model`) is COMPLETE:
 | Slice | Goal | Status | Batch | Depends On |
 |-------|------|--------|-------|------------|
 | `Platform-6` | `ops` supervisor routines and delta summaries | COMPLETE (PR #1242) | D | Platform-3, Platform-4 |
-| `Platform-7` | Background worker-pool management and bounded dynamic author scaling | PENDING | D | Platform-1, Platform-2, Platform-3 |
+| `Platform-7` | Background worker-pool management and bounded dynamic author scaling | COMPLETE (PR #1250, #1252) | D | Platform-1, Platform-2, Platform-3 |
 
 ## Batch D Pass Gate
 
 Before treating Phase 4 as ready, verify Batch D (Platform-6 + Platform-7):
 
-- [ ] `ops` delta summaries are reliable enough to drive intervention decisions
-- [ ] Worker reuse/open-on-demand behavior works in a live multi-lane proving run
-- [ ] Stale/blocked/degraded lane handling is auditable and does not require pane
+- [x] `ops` delta summaries are reliable enough to drive intervention decisions
+- [x] Worker reuse/open-on-demand behavior works in a live multi-lane proving run
+- [x] Stale/blocked/degraded lane handling is auditable and does not require pane
   archaeology
-- [ ] In the current tmux-first steward layout, a dispatched task can land in the
+- [x] In the current tmux-first steward layout, a dispatched task can land in the
   target live author session through a repo-owned delivery adapter without
   manual pane inspection
 
@@ -104,7 +104,10 @@ Active sub-plans are tracked in `plans/agent_ops/sub_plan_registry.md`.
 | ID | Slice | Status |
 |----|-------|--------|
 | SP-3-01 | Platform-6 | completed |
-| SP-3-02 | Platform-7 | pending |
+| SP-3-02 | Platform-7 | completed |
+| SP-3-03 | BD-004 v1 pane delivery | completed |
+| SP-3-04 | Phase 3 closeout and transition entry | completed |
+| SP-3-05 | Dual-domain steward layout transition | proposed |
 
 ## Step Sequence
 
