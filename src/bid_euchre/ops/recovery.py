@@ -324,10 +324,20 @@ def format_recovery_json(
 
 # Persistent lanes that can accept rerouted work
 PERSISTENT_LANES: tuple[str, ...] = (
+    # Platform pool
     "author-a",
     "author-b",
     "author-c",
     "author-d",
+    # Browser-game pool
+    "brws-author-a",
+    "brws-author-b",
+    "brws-author-c",
+    "brws-author-d",
+    # Flex pool
+    "flex-a",
+    "flex-b",
+    "flex-c",
 )
 
 # Default retry cap per task

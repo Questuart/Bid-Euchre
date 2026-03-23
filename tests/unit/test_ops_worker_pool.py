@@ -146,7 +146,9 @@ class TestConstants:
         assert "author-a" in lanes
         assert "author-b" in lanes
         assert "author-scratch" in lanes
-        assert len(lanes) == 5
+        assert "brws-author-a" in lanes
+        assert "flex-a" in lanes
+        assert len(lanes) == 12
 
 
 class TestResolveAgentName:
@@ -458,6 +460,8 @@ class TestDomainRouting:
         """get_lane_domain returns configured domain or None."""
         assert get_lane_domain("author-a") == "platform"
         assert get_lane_domain("author-scratch") is None
+        assert get_lane_domain("brws-author-a") == "browser-game"
+        assert get_lane_domain("flex-a") is None
         assert get_lane_domain("unknown-lane") is None
 
     def test_lane_domains_constant(self) -> None:
@@ -581,6 +585,76 @@ class TestDomainRouting:
         assert w.domain == "platform"
         w_flex = _make_worker("author-scratch", "idle", domain=None)
         assert w_flex.domain is None
+
+
+class TestLaneExpansion:
+    """Test expanded lane identity (SP-3-05 PR 2)."""
+
+    def test_known_lanes_include_browser_and_flex(self) -> None:
+        from bid_euchre.ops.task_queue import KNOWN_AUTHOR_LANES
+
+        # Browser-game pool
+        assert "brws-author-a" in KNOWN_AUTHOR_LANES
+        assert "brws-author-d" in KNOWN_AUTHOR_LANES
+        # Flex pool
+        assert "flex-a" in KNOWN_AUTHOR_LANES
+        assert "flex-c" in KNOWN_AUTHOR_LANES
+        # Original platform pool still present
+        assert "author-a" in KNOWN_AUTHOR_LANES
+        assert "author-scratch" in KNOWN_AUTHOR_LANES
+
+    def test_browser_lanes_have_browser_game_domain(self) -> None:
+        assert get_lane_domain("brws-author-a") == "browser-game"
+        assert get_lane_domain("brws-author-b") == "browser-game"
+        assert get_lane_domain("brws-author-c") == "browser-game"
+        assert get_lane_domain("brws-author-d") == "browser-game"
+
+    def test_flex_lanes_have_none_domain(self) -> None:
+        assert get_lane_domain("flex-a") is None
+        assert get_lane_domain("flex-b") is None
+        assert get_lane_domain("flex-c") is None
+
+    def test_persistent_lanes_include_new_pools(self) -> None:
+        from bid_euchre.ops.recovery import PERSISTENT_LANES
+
+        assert "brws-author-a" in PERSISTENT_LANES
+        assert "flex-a" in PERSISTENT_LANES
+
+    def test_protected_worktrees_include_new_pools(self) -> None:
+        from bid_euchre.ops.worktrees import PROTECTED_WORKTREE_NAMES
+
+        assert "Bid-Euchre-steward-brws-author-a" in PROTECTED_WORKTREE_NAMES
+        assert "Bid-Euchre-steward-flex-a" in PROTECTED_WORKTREE_NAMES
+
+    def test_task_packet_accepts_browser_lane_owner(self) -> None:
+        from bid_euchre.ops.task_queue import create_packet
+
+        pkt = create_packet("test", "desc", owner="brws-author-a")
+        assert pkt.owner == "brws-author-a"
+
+    def test_task_packet_accepts_flex_lane_owner(self) -> None:
+        from bid_euchre.ops.task_queue import create_packet
+
+        pkt = create_packet("test", "desc", owner="flex-b")
+        assert pkt.owner == "flex-b"
+
+    def test_select_worker_with_browser_game_domain(self) -> None:
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "idle", domain="platform"),
+                _make_worker("brws-author-a", "idle", domain="browser-game"),
+            ]
+        )
+        assert select_worker(pool, domain="browser-game") == "brws-author-a"
+
+    def test_select_worker_flex_fallback_for_browser(self) -> None:
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "idle", domain="platform"),
+                _make_worker("flex-a", "idle", domain=None),
+            ]
+        )
+        assert select_worker(pool, domain="browser-game") == "flex-a"
 
 
 class TestTaskPacketDomain:
