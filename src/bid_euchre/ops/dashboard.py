@@ -201,6 +201,7 @@ class DashboardView:
     active_task_count: int = 0
     blocked_task_count: int = 0
     warning_count: int = 0
+    token_economy: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +393,16 @@ def build_dashboard_view(
     attention_items = _derive_attention_items(report)
     inbox_highlights = _derive_inbox_highlights(bus_root, now=now)
 
+    # Token economy (best-effort — never fail dashboard on missing data)
+    token_economy: dict[str, Any] = {}
+    try:
+        from bid_euchre.ops.token_economy import dashboard_token_economy
+
+        te_output_dir = (runtime_dir or Path(".claude/runtime")) / "token_economy"
+        token_economy = dashboard_token_economy(output_dir=te_output_dir)
+    except Exception:
+        pass  # Token economy data is optional
+
     return DashboardView(
         generated_at=now.isoformat(),
         foreground=DashboardSection(
@@ -408,6 +419,7 @@ def build_dashboard_view(
         active_task_count=len(report.active_tasks),
         blocked_task_count=len(report.blocked_tasks),
         warning_count=len(report.warnings),
+        token_economy=token_economy,
     )
 
 
@@ -560,6 +572,42 @@ def format_dashboard_text(
     if view.warning_count > 0:
         lines.append(f"Warnings: {view.warning_count}")
 
+    # Token economy
+    te = view.token_economy
+    if te:
+        lines.append("")
+        lines.append("Token Economy")
+        overview = te.get("overview", {})
+        if overview:
+            lines.append(
+                f"  Tokens: {overview.get('total_tokens', 0):,}"
+                f" ({overview.get('session_count', 0)} sessions"
+                f", {overview.get('total_git_commits', 0)} commits)"
+            )
+            lines.append(
+                f"  Efficiency: {overview.get('tokens_per_hour', 0):,.0f} tok/hr"
+                f", {overview.get('output_input_ratio', 0):.1f}x out/in"
+                f", {overview.get('net_lines', 0):+,d} net lines"
+            )
+
+        top_lanes = te.get("top_lanes", [])
+        if top_lanes:
+            lines.append("  Top lanes:")
+            for tl in top_lanes[:3]:
+                tpc = tl.get("tokens_per_commit")
+                tpc_str = f"{tpc:,.0f} tok/commit" if tpc else "—"
+                lines.append(
+                    f"    {tl['lane_id']:<18s} {tl['total_tokens']:>10,d} tok"
+                    f"  {tpc_str}"
+                )
+
+        anti_patterns = te.get("anti_patterns", [])
+        if anti_patterns:
+            lines.append(f"  Anti-patterns: {len(anti_patterns)} detected")
+            for ap in anti_patterns[:3]:
+                sev = ap.get("severity", "?")
+                lines.append(f"    [{sev}] {ap.get('name', '?')}")
+
     return "\n".join(lines)
 
 
@@ -594,4 +642,5 @@ def format_dashboard_json(view: DashboardView) -> dict[str, Any]:
         "attention_items": [asdict(item) for item in view.attention_items],
         "inbox_highlights": [asdict(h) for h in view.inbox_highlights],
         "task_queue": view.task_queue_summary,
+        "token_economy": view.token_economy or None,
     }
