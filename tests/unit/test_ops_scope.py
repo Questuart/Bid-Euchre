@@ -9,11 +9,14 @@ import pytest
 
 from bid_euchre.ops.scope import (
     ScopeDriftReport,
+    ScopeEnforcementResult,
     _matches_any_pattern,
     check_scope_drift,
     emit_scope_drift_event,
+    enforce_scope_drift,
     format_scope_drift_json,
     format_scope_drift_text,
+    get_active_task_scope,
 )
 
 # --- Pattern matching ---
@@ -355,3 +358,201 @@ class TestFormatScopeDriftJSON:
         assert d["task_id"] == "t1"
         assert d["has_drift"] is False
         json.dumps(d)
+
+
+# --- Enforcement ---
+
+
+class TestScopeEnforcementResult:
+    """Tests for ScopeEnforcementResult dataclass."""
+
+    def test_to_dict_serializable(self) -> None:
+        result = ScopeEnforcementResult(
+            action="block",
+            task_id="t1",
+            declared_patterns=["src/*.py"],
+            staged_files=["docs/a.md"],
+            out_of_scope=["docs/a.md"],
+            drift_ratio=1.0,
+            reason="all out of scope",
+        )
+        d = result.to_dict()
+        assert d["action"] == "block"
+        assert d["drift_ratio"] == 1.0
+        json.dumps(d)
+
+
+class TestEnforceScopeDrift:
+    """Tests for enforce_scope_drift()."""
+
+    def test_no_declared_patterns_skips(self) -> None:
+        result = enforce_scope_drift(
+            staged_files=["src/foo.py"],
+            declared_patterns=[],
+            task_id="t1",
+        )
+        assert result.action == "skip"
+        assert "skipping" in result.reason.lower()
+
+    def test_no_staged_files_allows(self) -> None:
+        result = enforce_scope_drift(
+            staged_files=[],
+            declared_patterns=["src/*.py"],
+            task_id="t1",
+        )
+        assert result.action == "allow"
+
+    def test_all_in_scope_allows(self) -> None:
+        result = enforce_scope_drift(
+            staged_files=["src/ops/scope.py", "src/ops/events.py"],
+            declared_patterns=["src/ops/*.py"],
+            task_id="t1",
+        )
+        assert result.action == "allow"
+        assert result.drift_ratio == 0.0
+        assert result.out_of_scope == []
+
+    def test_warn_threshold(self) -> None:
+        """3 of 5 files out of scope → 60% → warn (> 50%, ≤ 80%)."""
+        result = enforce_scope_drift(
+            staged_files=[
+                "src/a.py",
+                "src/b.py",
+                "docs/c.md",
+                "docs/d.md",
+                "docs/e.md",
+            ],
+            declared_patterns=["src/*.py"],
+            task_id="t1",
+        )
+        assert result.action == "warn"
+        assert result.drift_ratio == pytest.approx(0.6)
+        assert len(result.out_of_scope) == 3
+
+    def test_block_threshold(self) -> None:
+        """9 of 10 files out of scope → 90% → block (> 80%)."""
+        staged = [f"docs/file{i}.md" for i in range(9)] + ["src/a.py"]
+        result = enforce_scope_drift(
+            staged_files=staged,
+            declared_patterns=["src/*.py"],
+            task_id="t1",
+        )
+        assert result.action == "block"
+        assert result.drift_ratio == pytest.approx(0.9)
+
+    def test_exactly_at_warn_threshold_allows(self) -> None:
+        """Exactly 50% → allow (thresholds are strict >)."""
+        result = enforce_scope_drift(
+            staged_files=["src/a.py", "docs/b.md"],
+            declared_patterns=["src/*.py"],
+            task_id="t1",
+        )
+        assert result.action == "allow"
+        assert result.drift_ratio == pytest.approx(0.5)
+
+    def test_exactly_at_block_threshold_warns(self) -> None:
+        """Exactly 80% → warn (threshold is strict >)."""
+        staged = ["src/a.py"] + [f"docs/f{i}.md" for i in range(4)]
+        result = enforce_scope_drift(
+            staged_files=staged,
+            declared_patterns=["src/*.py"],
+            task_id="t1",
+        )
+        # 4/5 = 80% exactly → warn (not block, since > is strict)
+        assert result.action == "warn"
+        assert result.drift_ratio == pytest.approx(0.8)
+
+    def test_custom_thresholds(self) -> None:
+        """Custom thresholds override defaults."""
+        result = enforce_scope_drift(
+            staged_files=["src/a.py", "docs/b.md"],
+            declared_patterns=["src/*.py"],
+            task_id="t1",
+            warn_threshold=0.3,
+            block_threshold=0.4,
+        )
+        # 1/2 = 50% > 40% block threshold
+        assert result.action == "block"
+
+    def test_minor_drift_allows_with_reason(self) -> None:
+        """1 of 5 files out of scope (20%) → allow, but reason mentions it."""
+        staged = ["src/a.py", "src/b.py", "src/c.py", "src/d.py", "docs/e.md"]
+        result = enforce_scope_drift(
+            staged_files=staged,
+            declared_patterns=["src/*.py"],
+            task_id="t1",
+        )
+        assert result.action == "allow"
+        assert "1 file(s) outside scope" in result.reason
+
+    def test_block_narrow_scope_out_of_scope_file(self) -> None:
+        """End-to-end: narrow scope with all staged files outside → block."""
+        result = enforce_scope_drift(
+            staged_files=["tests/unit/test_rules.py", "docs/readme.md"],
+            declared_patterns=["src/bid_euchre/ops/scope.py"],
+            task_id="t-narrow",
+        )
+        assert result.action == "block"
+        assert result.drift_ratio == pytest.approx(1.0)
+        assert len(result.out_of_scope) == 2
+
+
+class TestGetActiveTaskScope:
+    """Tests for get_active_task_scope()."""
+
+    @pytest.fixture()
+    def queue_root(self, tmp_path: Path) -> Path:
+        """Create a task queue directory."""
+        qr = tmp_path / "task_queue"
+        qr.mkdir()
+        return qr
+
+    def _write_packet(
+        self,
+        queue_root: Path,
+        packet_id: str,
+        *,
+        owner: str = "author-a",
+        status: str = "dispatched",
+        scope: list[str] | None = None,
+    ) -> None:
+        """Write a minimal task packet JSON."""
+        pkt = {
+            "packet_id": packet_id,
+            "title": "Test",
+            "description": "test",
+            "owner": owner,
+            "created_by": "orchestrator",
+            "created_at": "2026-01-01T00:00:00Z",
+            "status": status,
+            "scope_declared": scope or [],
+            "validation": [],
+            "priority": "normal",
+        }
+        (queue_root / f"{packet_id}.json").write_text(json.dumps(pkt))
+
+    def test_finds_dispatched_task(self, queue_root: Path) -> None:
+        self._write_packet(
+            queue_root, "pkt-1", scope=["src/ops/*.py", "tests/unit/test_ops_*.py"]
+        )
+        task_id, patterns = get_active_task_scope("author-a", queue_root)
+        assert task_id == "pkt-1"
+        assert patterns == ["src/ops/*.py", "tests/unit/test_ops_*.py"]
+
+    def test_no_dispatched_task(self, queue_root: Path) -> None:
+        self._write_packet(queue_root, "pkt-1", status="pending")
+        task_id, patterns = get_active_task_scope("author-a", queue_root)
+        assert task_id is None
+        assert patterns == []
+
+    def test_wrong_owner(self, queue_root: Path) -> None:
+        self._write_packet(queue_root, "pkt-1", owner="author-b")
+        task_id, patterns = get_active_task_scope("author-a", queue_root)
+        assert task_id is None
+        assert patterns == []
+
+    def test_empty_scope(self, queue_root: Path) -> None:
+        self._write_packet(queue_root, "pkt-1", scope=[])
+        task_id, patterns = get_active_task_scope("author-a", queue_root)
+        assert task_id == "pkt-1"
+        assert patterns == []
