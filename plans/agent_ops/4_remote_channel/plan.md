@@ -22,6 +22,11 @@ treats the remote channel as a thin transport into `orchestrator`.
 - Existing repo-owned truth surfaces remain authoritative: lane/session
   registry, message bus, task state/task queue, and review verdict state
 - Kill switch / mute path is designed before enabling external channel access
+- SP-4-02 (remote-ops preflight hardening) hardens dispatch lifecycle before
+  Platform-8 transport work begins
+- SP-4-03 (token economy observability) establishes a token-cost baseline
+  before remote transport adds a new cost dimension. SP-4-02 and SP-4-03
+  are safe to run in parallel (disjoint file scopes).
 
 ## Phase Constraints
 
@@ -90,9 +95,11 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 
 ## Sub-Plans
 
-Implementation-heavy slices should create Phase 4 sub-plans during scope lock.
-The first expected sub-plan is likely `SP-4-01` for Platform-8 transport and
-audit wiring.
+| ID | Title | Status | File |
+|----|-------|--------|------|
+| SP-4-01 | Platform-8 scope lock | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` |
+| SP-4-02 | Remote-ops preflight hardening | in_progress | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` |
+| SP-4-03 | Token economy observability and dashboard | proposed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` |
 
 ## Step Sequence
 
