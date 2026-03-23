@@ -2664,6 +2664,23 @@ class TestDispatchRedispatchCycles:
                 pkt_id, "dispatched", runtime_dir / "task_queue"
             )
 
+            # --- Model completion (lifecycle gate for next cycle) ---
+            # In production, the post-merge hook transitions the dispatched
+            # packet to 'completed' and the lane returns to idle before the
+            # next dispatch.  Construct and verify the completed packet to
+            # validate the full dispatch → complete → redispatch lifecycle.
+            completed_pkt = self._make_packet(pkt_id, status="completed", owner=lane)
+            assert completed_pkt.status == "completed", (
+                f"Cycle {i + 1}: lifecycle invariant — packet {pkt_id!r} "
+                "must reach 'completed' before next dispatch"
+            )
+            assert (
+                completed_pkt.owner == lane
+            ), f"Cycle {i + 1}: completed packet must retain lane ownership"
+            # Make the completion observable — next iteration overwrites this
+            # with a fresh approved packet, modeling the real lifecycle gap.
+            mock_load.return_value = completed_pkt
+
         # After 3 cycles: 3 resets, 3 clears, 3 transitions total
         assert mock_save.call_count == 3
         assert mock_nudge.call_count == 3
@@ -2725,8 +2742,18 @@ class TestDispatchRedispatchCycles:
         )
 
         assert result.executed is True
+        assert result.action == "dispatch"
+        assert result.error is None
         # force=True is critical — ensures diff is saved before reset
         mock_reset.assert_called_once_with(lane, force=True, runtime_dir=runtime_dir)
+        # Verify the full dispatch pipeline continued past dirty reset:
+        # clear_session, transition to dispatched, save, and nudge all fired.
+        mock_clear.assert_called_once()
+        mock_transition.assert_called_once_with(
+            "dirty-pkt", "dispatched", runtime_dir / "task_queue"
+        )
+        mock_save.assert_called_once()
+        mock_nudge.assert_called_once()
 
     @patch(f"{_WORKER_POOL}._resolve_worktree_path")
     @patch(f"{_WORKER_POOL}.subprocess.run")
