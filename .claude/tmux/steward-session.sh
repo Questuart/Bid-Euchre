@@ -276,6 +276,15 @@ tmux new-window -t "$SESSION" -n ops -c "$MAIN_DIR" \
 tmux new-window -t "$SESSION" -n review -c "$REVIEW" \
     "$CLAUDE_BIN" --name review --agent steward-review
 
+# Auto-launch ops monitoring loop (SP-3-08).
+# Wait briefly for the claude process to initialize, then send the /loop
+# command.  Best-effort — if it fails the ops agent can start it manually.
+(
+    sleep 10
+    tmux send-keys -t "${SESSION}:ops" \
+        "/loop 3m uv run python scripts/internal/ops.py monitor" Enter
+) &
+
 tmux select-window -t "${SESSION}:orchestrator"
 
 update_last_active

@@ -47,10 +47,29 @@ uv run python scripts/internal/ops.py message send \
   --summary "CI failure on PR #<N>, author lane unresponsive"
 ```
 
-## Periodic Health Check (every 10 minutes)
+## Automated Monitoring (SP-3-08)
 
-On startup, schedule a recurring 10-minute monitoring loop using `/loop 10m`.
-Report only when something changes or needs attention — skip if steady-state.
+On startup, schedule the automated monitoring loop:
+
+```
+/loop 3m uv run python scripts/internal/ops.py monitor
+```
+
+This runs a monitoring cycle every 3 minutes that:
+1. Takes a pool snapshot (lane health, tmux pane liveness)
+2. Checks open PRs for merge conflicts and failing CI
+3. Detects stale dispatched packets (unacked after 30 min)
+4. Sends structured findings to the orchestrator inbox
+
+High-severity findings (dead tmux panes, merge conflicts, stale dispatches)
+are sent with `priority=high` so the orchestrator sees them immediately.
+
+Use `--skip-pr-check` to disable the `gh` call (offline/testing).
+Use `--no-notify` to suppress inbox messages (dry run).
+
+## Manual Health Check
+
+For deeper investigation beyond the automated cycle:
 
 ### What to check
 

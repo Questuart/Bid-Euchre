@@ -42,6 +42,7 @@ Usage:
     uv run python scripts/internal/ops.py message show MSG_ID [--json]
     uv run python scripts/internal/ops.py message send --from LANE --to LANE --type TYPE --summary TEXT [--task-id ID] [--thread ID] [--json]
     uv run python scripts/internal/ops.py supervisor [--json] [--save] [--diff SNAPSHOT_PATH]
+    uv run python scripts/internal/ops.py monitor [--skip-pr-check] [--no-notify] [--json]
     uv run python scripts/internal/ops.py workers [--json]
     uv run python scripts/internal/ops.py workers wake LANE_ID [--json]
     uv run python scripts/internal/ops.py workers park LANE_ID [--json]
@@ -1824,6 +1825,33 @@ def cmd_supervisor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_monitor(args: argparse.Namespace) -> int:
+    """Run a single ops monitoring cycle (SP-3-08)."""
+    from bid_euchre.ops.monitor import (
+        format_findings_json,
+        format_findings_text,
+        run_monitoring_cycle,
+    )
+
+    skip_pr = getattr(args, "skip_pr_check", False)
+    no_notify = getattr(args, "no_notify", False)
+
+    findings = run_monitoring_cycle(
+        runtime_dir=args.runtime_dir,
+        notify_orchestrator=not no_notify,
+        skip_pr_check=skip_pr,
+    )
+
+    if args.json:
+        print(json.dumps(format_findings_json(findings), indent=2))
+    else:
+        print(format_findings_text(findings))
+
+    # Exit 1 if any high-severity findings
+    has_high = any(f.severity == "high" for f in findings)
+    return 1 if has_high else 0
+
+
 def cmd_workers(args: argparse.Namespace) -> int:
     """Worker pool lifecycle management (Platform-7)."""
     from bid_euchre.ops.worker_pool import (
@@ -2449,6 +2477,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to a previous snapshot JSON file to diff against",
     )
 
+    # monitor (SP-3-08: ops monitoring cycle)
+    monitor_parser = subparsers.add_parser(
+        "monitor", help="Run a single ops monitoring cycle (SP-3-08)"
+    )
+    monitor_parser.add_argument(
+        "--skip-pr-check",
+        action="store_true",
+        help="Skip the gh pr list check (for testing or offline use)",
+    )
+    monitor_parser.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="Do not send findings to the orchestrator inbox",
+    )
+
     # workers (Platform-7: worker pool lifecycle management)
     workers_parser = subparsers.add_parser(
         "workers", help="Worker pool lifecycle management (Platform-7)"
@@ -2539,6 +2582,7 @@ def main(argv: list[str] | None = None) -> int:
         "inbox": cmd_inbox,
         "message": cmd_message,
         "supervisor": cmd_supervisor,
+        "monitor": cmd_monitor,
         "workers": cmd_workers,
     }
 
