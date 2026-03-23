@@ -1,132 +1,101 @@
-# Phase 4 — Remote Operator Channels
+# Phase 4 — Remote Channel
 
-**Status:** PENDING (scope lock not yet entered)
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Slices:** Platform-8 (Remote Operator Channel), Platform-9 (Idle Attention Flow)
-**Depends on:** Phase 3 (COMPLETE)
+**Phase:** `4_remote_channel`
+**Status:** READY FOR ENTRY
+**Last updated:** 2026-03-23 by Codex (thin remote-ops v1 outline)
 
-## Discovery: Official Claude Code Channels
+---
 
-> **Reference:** <https://code.claude.com/docs/en/channels-reference>
+## Scope
 
-Claude Code v2.1.80+ ships a Channels feature (research preview) with pre-built
-Telegram and Discord plugins. Key capabilities:
+Phase 4 covers `Platform-8` and `Platform-9`: remote operator transport,
+repo-owned remote audit trail, idle-attention alerts, and away-from-desk
+queue-moving supervision. The first version assumes one remote operator and
+treats the remote channel as a thin transport into `orchestrator`.
 
-| Capability | Description |
-|------------|-------------|
-| **Pairing** | Phone pairs to running Claude session via QR code / pairing code |
-| **Sender gating** | Only the paired account can send messages to the session |
-| **Reply tools** | Structured reply/approval surfaces in Telegram/Discord |
-| **Permission relay** | Remote tool-approval from phone — approve/deny tool calls without terminal access |
-| **Kill switch** | Terminate the channel subprocess to disconnect immediately |
+## Prerequisites
 
-This discovery significantly reduces Platform-8 scope: the transport skeleton,
-sender gating, and permission relay are provided by the framework rather than
-built from scratch.
+- Phase 3 (`3_supervision_and_scaling`) is COMPLETE
+- SP-3-05 (dual-domain steward layout transition) is COMPLETE (2026-03-23,
+  proving run passed)
+- Existing repo-owned truth surfaces remain authoritative: lane/session
+  registry, message bus, task state/task queue, and review verdict state
+- Kill switch / mute path is designed before enabling external channel access
 
-### Prerequisites
+## Phase Constraints
 
-- Claude Code v2.1.80+ (`claude --version`)
-- Active claude.ai login (`claude auth status`)
-- `--channels telegram` flag in session launch
-- Bun runtime (for official Telegram plugin)
+- Telegram first; Discord is deferred unless later experience justifies it
+- Inbound remote messages go to `orchestrator`
+- No remote-specific classifier, preview grammar, or separate command language
+  in v1
+- Free-form remote messages are allowed and follow the same orchestrator
+  workflow as local prompts
+- Existing repo-owned safeguards remain unchanged: review truth, merge gates,
+  filesystem boundary, and destructive-action approvals
+- Every inbound and outbound remote exchange must be durably recorded in
+  repo-owned state
+- The remote layer must not become a second control plane
 
-## Platform-8a — Telegram Plugin Configuration and Proving
+## Slices
 
-**Scope (updated from "build transport skeleton"):** Configure the official
-Telegram plugin, prove pairing + sender gating + permission relay + kill switch
-in the steward environment.
+| Slice | Goal | Status | Batch | Depends On |
+|-------|------|--------|-------|------------|
+| `Platform-8a` | Channel preflight, Telegram transport skeleton, kill/mute/fallback hooks | READY FOR SCOPE LOCK | E | Phase 3, Amendment A5 |
+| `Platform-8b` | Repo-owned audit trail for inbound/outbound remote exchanges | READY FOR SCOPE LOCK | E | Platform-3, Platform-8a |
+| `Platform-9a` | Idle-attention alerts and remote acknowledgement loop | READY FOR SCOPE LOCK | E | Platform-6, Platform-8b |
+| `Platform-9b` | Away-from-desk queue-moving supervision through `orchestrator` | READY FOR SCOPE LOCK | E | Platform-2, Platform-8b, Platform-9a |
+| `Platform-9c` | First hardening pass from real remote use | READY FOR SCOPE LOCK | E | Platform-9b |
 
-### Steps
+## Batch E Pass Gate
 
-1. **Preflight verification** — confirm Claude Code version, Bun availability,
-   plugin resolvability, and auth prerequisites
-2. **Plugin configuration** — set up Telegram bot token, configure
-   `STEWARD_CHANNELS="telegram"` in tmux launcher
-3. **Pairing proof** — pair from phone, verify sender gating rejects unknown
-   senders
-4. **Permission relay proof** — trigger a tool-approval prompt, approve remotely
-   from phone
-5. **Kill switch proof** — terminate channel subprocess, verify session continues
-   without channel
-6. **Registry integration** — record channel status in lane metadata via
-   `write_lane_metadata`
+Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 
-### Done when
+- [ ] Telegram proving run works end-to-end for one remote operator
+- [ ] Every inbound and outbound remote exchange is recorded in repo-owned state
+- [ ] Kill switch and mute path work without needing desktop intervention
+- [ ] At least one alert path is proven with acknowledgement, dedupe, and
+  backoff behavior
+- [ ] The operator can keep work moving while away from the desk through
+  `orchestrator`
+- [ ] No remote-only truth, command plane, or author-lane ingress is introduced
+- [ ] Existing review, merge, and filesystem safeguards behave the same for
+  remote and local requests
 
-- Telegram plugin pairs successfully with the steward session
-- Sender gating rejects messages from non-paired accounts
-- Permission relay enables remote tool approval
-- Kill switch terminates channel cleanly without affecting the session
-- Lane registry records channel health status
+## Rollout Order
 
-## Platform-8b — Audit Trail (Deferred to Hardening)
+1. Scope lock and transport preflight
+2. Telegram transport plus repo-owned logging
+3. Kill switch, mute, and operator fallback
+4. Alert / acknowledgement loop
+5. Queue-moving remote workflows through `orchestrator`
+6. First hardening pass from real use
 
-> **Known gap:** v1 relies on session logs + Telegram chat history for audit
-> trail. A repo-owned audit trail (structured log of all channel
-> messages/approvals) is deferred to Platform-14 (hardening phase).
+## High-Value Workflows To Prove
 
-This is a conscious deferral, not a missing requirement. The rationale:
+- Ask `orchestrator` for a status summary from the phone
+- Receive an idle, blocker, or review-ready alert remotely
+- Acknowledge an alert so the system stops repeating it
+- Request review for a PR or active task
+- Reroute or resume work through `orchestrator`
+- Pause retries or escalation churn
+- Inspect blocker context without opening the desktop steward session
 
-- Session logs capture all tool approvals and their outcomes
-- Telegram chat history preserves the operator-side conversation
-- A repo-owned structured audit trail adds value for cross-session analysis
-  but is not blocking for the v1 remote supervision use case
-- Hardening phase (Platform-14) is the natural home for structured logging
-  and operational observability improvements
+## Non-Goals
 
-## Platform-9 — Idle Attention Flow
+- A special remote-only command language
+- Remote-specific preview heuristics or risk classifiers
+- Direct remote ingress to author lanes
+- Replacing the steward desktop session as the richest operator interface
 
-**Scope:** Prove idle-attention alerts with dedupe and ack through the
-configured Telegram channel.
+## Sub-Plans
 
-### Steps
+Implementation-heavy slices should create Phase 4 sub-plans during scope lock.
+The first expected sub-plan is likely `SP-4-01` for Platform-8 transport and
+audit wiring.
 
-1. **Idle detection** — ops supervisor detects lanes awaiting user attention
-   for >5 minutes
-2. **Alert routing** — summarized alert sent through Telegram channel
-3. **Dedupe and backoff** — prevent duplicate alerts for the same idle event
-4. **Acknowledgement handling** — operator ack via Telegram reply is recorded
-   in durable coordination state
-5. **Bounded reply mapping** — Telegram replies map to bounded inbound commands
-   (inspect, reroute, pause, summarize)
+## Step Sequence
 
-### Done when
-
-- Idle-attention alerts fire after 5-minute threshold
-- Alerts are deduplicated and rate-limited
-- Acknowledgements and bounded replies are recorded durably
-
-## Phase 4 Operating Model
-
-### Permission Relay in v1
-
-Permission relay enables remote tool approval from phone. This is a key
-Platform-8 feature that was not anticipated in the original plan but is
-provided by the official Channels framework.
-
-In the v1 operating model:
-- Orchestrator and ops lanes receive `--channels telegram` by default
-- Author lanes remain tmux-only unless explicitly opted in
-- Permission relay is available on channel-enabled lanes
-- The operator can approve/deny tool calls from Telegram without terminal access
-
-### Channel Lifecycle
-
-```
-Session start
-  -> preflight check (version, auth, plugin)
-  -> if pass: launch with --channels telegram
-  -> if fail: fall back to tmux-only (no degradation)
-
-During operation:
-  -> pairing on first connect
-  -> sender gating on all inbound messages
-  -> permission relay on tool-approval prompts
-  -> idle alerts on 5-minute attention threshold
-
-Kill switch:
-  -> terminate channel subprocess
-  -> session continues without channel
-  -> reconnect by restarting channel subprocess
-```
+See `checkpoints.md` for current step progress. Phase 4 follows the standard
+step template from the governing plan: scope lock -> implementation ->
+verification -> handoff, repeated per slice.
