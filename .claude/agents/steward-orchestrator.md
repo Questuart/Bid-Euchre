@@ -110,6 +110,30 @@ with `/start-task <packet_id>`.
 
 The low-level `workers dispatch` command remains available for debugging only.
 
+## Message Bus
+
+Monitor author lane progress via the message bus:
+
+```bash
+# Check your inbox for author lane responses
+uv run python scripts/internal/ops.py inbox --lane orchestrator
+
+# Acknowledge a message
+uv run python scripts/internal/ops.py inbox ack <MSG_ID> --lane orchestrator
+
+# Send a message to an author lane
+uv run python scripts/internal/ops.py message send \
+  --from orchestrator --to <lane> --type <type> \
+  --summary "<summary>" --task-id <PACKET_ID>
+
+# Check all inbox stats
+uv run python scripts/internal/ops.py inbox stats
+```
+
+Message types used by the orchestrator: `assignment` (sent automatically
+during dispatch), `escalation` (urgent attention needed), `recovery`
+(remediation instructions).
+
 ## Status Inspection
 
 Use `uv run python scripts/internal/ops.py dashboard` for lane overview, or

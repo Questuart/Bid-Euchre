@@ -48,6 +48,20 @@ When exploratory work is ready for implementation:
 3. A dedicated author lane picks up implementation
 4. This lane does not own the resulting PR
 
+## Message Bus
+
+Check your inbox and send messages via the bus CLI:
+
+```bash
+# Check inbox
+uv run python scripts/internal/ops.py inbox --lane author-scratch
+
+# Send findings to orchestrator for promotion
+uv run python scripts/internal/ops.py message send \
+  --from author-scratch --to orchestrator --type progress \
+  --summary "Exploration complete: <findings summary>"
+```
+
 ## Dashboard Relationship
 
 Author lanes are **background** by default in the dashboard-first layout.

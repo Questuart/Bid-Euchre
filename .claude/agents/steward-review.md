@@ -44,3 +44,20 @@ Rules:
 - If no findings or all findings are WARN/INFO, status is `passed`.
 - Never return `passed` when you cannot confidently assess the diff.
   Use `failed` with a reason instead.
+
+## Message Bus
+
+Check your inbox and report review results via the bus:
+
+```bash
+# Check inbox for review requests
+uv run python scripts/internal/ops.py inbox --lane review
+
+# Acknowledge a review request
+uv run python scripts/internal/ops.py inbox ack <MSG_ID> --lane review
+
+# Report review completion to orchestrator
+uv run python scripts/internal/ops.py message send \
+  --from review --to orchestrator --type completion \
+  --summary "Review passed: PR #<N>"
+```

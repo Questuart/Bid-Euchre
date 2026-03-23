@@ -3290,3 +3290,157 @@ class TestCmdSupervisor:
         assert rc == 1
         captured = capsys.readouterr()
         assert "Error loading snapshot" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Message bus CLI (SP-3-07)
+# ---------------------------------------------------------------------------
+
+
+class TestMessageSend:
+    """Tests for ops.py message send subcommand."""
+
+    def test_message_send_basic(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        # Ensure message_bus dir exists
+        (runtime_dir / "message_bus" / "inbox").mkdir(parents=True)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "message",
+                "send",
+                "--from",
+                "author-a",
+                "--to",
+                "orchestrator",
+                "--type",
+                "ack",
+                "--summary",
+                "Task received: test",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Sent message:" in out
+        assert "author-a" in out
+
+    def test_message_send_json(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        (runtime_dir / "message_bus" / "inbox").mkdir(parents=True)
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "message",
+                "send",
+                "--from",
+                "author-b",
+                "--to",
+                "orchestrator",
+                "--type",
+                "progress",
+                "--summary",
+                "Tests passing",
+                "--task-id",
+                "abc123",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["from_lane"] == "author-b"
+        assert data["to_lane"] == "orchestrator"
+        assert data["message_type"] == "progress"
+        assert data["task_id"] == "abc123"
+
+
+class TestInboxAck:
+    """Tests for ops.py inbox ack subcommand."""
+
+    def test_inbox_ack_not_found(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        (runtime_dir / "message_bus" / "inbox").mkdir(parents=True)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "ack",
+                "nonexistent_msg_id",
+                "--lane",
+                "author-a",
+            ]
+        )
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "not found" in err
+
+    def test_inbox_ack_roundtrip(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Send a message then ack it via CLI."""
+        import ops
+
+        (runtime_dir / "message_bus" / "inbox").mkdir(parents=True)
+
+        # First send a message
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "message",
+                "send",
+                "--from",
+                "orchestrator",
+                "--to",
+                "author-a",
+                "--type",
+                "ack",
+                "--summary",
+                "Test assignment",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        msg_id = data["message_id"]
+
+        # Now ack it
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "ack",
+                msg_id,
+                "--lane",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Acknowledged" in out
+        assert msg_id in out
