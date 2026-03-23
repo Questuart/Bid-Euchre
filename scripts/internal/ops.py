@@ -51,6 +51,7 @@ Usage:
     uv run python scripts/internal/ops.py workers retire LANE_ID [--json]
     uv run python scripts/internal/ops.py workers dispatch PACKET_ID LANE_ID [--json]
     uv run python scripts/internal/ops.py workers maintain [--dry-run] [--json]
+    uv run python scripts/internal/ops.py usage import [--usage-dir DIR] [--output-dir DIR] [--json]
 """
 
 from __future__ import annotations
@@ -2406,6 +2407,39 @@ def cmd_workers(args: argparse.Namespace) -> int:
         return 0
 
 
+def cmd_usage(args: argparse.Namespace) -> int:
+    """Token economy: import and query usage data."""
+    action = getattr(args, "usage_action", None)
+
+    if action == "import":
+        from bid_euchre.ops.token_economy import import_usage_data
+
+        result = import_usage_data(
+            usage_dir=getattr(args, "usage_dir", None),
+            output_dir=getattr(args, "output_dir", None),
+        )
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2, default=str))
+        else:
+            print("Import complete:")
+            print(f"  Sessions imported: {result.sessions_imported}")
+            print(f"  Sessions skipped:  {result.sessions_skipped}")
+            print(f"  Sessions failed:   {result.sessions_failed}")
+            print(f"  Total sessions:    {result.total_sessions}")
+            print(f"  Output dir:        {result.output_dir}")
+        return 0
+
+    else:
+        print(
+            "Usage: ops.py usage {import}",
+            file=sys.stderr,
+        )
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -3102,6 +3136,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only propose actions without executing them",
     )
 
+    # usage (Token economy: import and query usage data)
+    usage_parser = subparsers.add_parser(
+        "usage", help="Token economy: import and query usage data"
+    )
+    usage_sub = usage_parser.add_subparsers(dest="usage_action")
+
+    usage_import_parser = usage_sub.add_parser(
+        "import", help="Import native Claude usage data into repo runtime"
+    )
+    usage_import_parser.add_argument(
+        "--usage-dir",
+        type=Path,
+        default=None,
+        help="Path to ~/.claude/usage-data/ (default: auto-detect)",
+    )
+    usage_import_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Output directory (default: .claude/runtime/token_economy/)",
+    )
+
     return parser
 
 
@@ -3160,6 +3216,7 @@ def main(argv: list[str] | None = None) -> int:
         "monitor": cmd_monitor,
         "review-check": cmd_review_check,
         "workers": cmd_workers,
+        "usage": cmd_usage,
     }
 
     handler = commands.get(args.command)
