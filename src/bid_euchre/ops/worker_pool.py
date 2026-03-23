@@ -1151,6 +1151,12 @@ def dispatch_to_worker(
         pkt_data = _asdict(packet)
         pkt_data["owner"] = lane_id
         pkt_data["status"] = "approved"  # keep current status for re-save
+        # Record dispatch timestamp in metadata for stall detection
+        meta = dict(pkt_data.get("metadata") or {})
+        meta["dispatched_at"] = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        pkt_data["metadata"] = meta
         updated_pkt = TaskPacket(**pkt_data)
         save_packet(updated_pkt, task_queue_root)
 

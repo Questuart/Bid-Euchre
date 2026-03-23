@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from bid_euchre.ops.monitor import (
@@ -328,6 +329,7 @@ def _make_dispatched_pkt(
     owner: str = "author-a",
     title: str = "Test task",
     created_at: str = "2026-03-23T11:00:00Z",
+    metadata: dict[str, Any] | None = None,
 ) -> MagicMock:
     """Helper to create a mock dispatched packet."""
     pkt = MagicMock()
@@ -335,6 +337,7 @@ def _make_dispatched_pkt(
     pkt.owner = owner
     pkt.title = title
     pkt.created_at = created_at
+    pkt.metadata = metadata or {}
     return pkt
 
 
@@ -590,6 +593,68 @@ class TestCheckStalledLanes:
 
         assert len(f2) == 1
         assert f2[0].severity == SEVERITY_WARN
+
+    def test_dispatched_at_metadata_preferred_over_created_at(
+        self, tmp_path: Path
+    ) -> None:
+        """Stall timer uses metadata.dispatched_at when available."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        # created_at is 60 min ago (would be past stall_minutes threshold)
+        # but dispatched_at is only 5 min ago (should be considered fresh)
+        pkt = _make_dispatched_pkt(
+            created_at="2026-03-23T11:00:00Z",
+            metadata={"dispatched_at": "2026-03-23T11:55:00Z"},
+        )
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            findings = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=lambda _: 1000,
+            )
+
+        # Should be considered fresh (5 min < 10 min threshold) despite
+        # created_at being 60 min ago.
+        assert len(findings) == 0
+
+    def test_falls_back_to_created_at_without_dispatched_at(
+        self, tmp_path: Path
+    ) -> None:
+        """Stall timer falls back to created_at when metadata.dispatched_at absent."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        # No dispatched_at in metadata — 60 min old created_at should be used
+        pkt = _make_dispatched_pkt(
+            created_at="2026-03-23T11:00:00Z",
+            metadata={},
+        )
+
+        def probe(_: str) -> int:
+            return 9999
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycle 1
+            f1 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            assert len(f1) == 0
+            # Cycle 2
+            f2 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            assert len(f2) == 0
+            # Cycle 3: should flag (past threshold + 2 unchanged cycles)
+            f3 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+
+        assert len(f3) == 1
+        assert f3[0].category == "stall_detection"
 
 
 # ---------------------------------------------------------------------------
