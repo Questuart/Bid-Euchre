@@ -471,9 +471,13 @@ def check_stalled_lanes(
 
         active_lanes.add(lane_id)
 
-        # Check dispatch age
+        # Check dispatch age — prefer metadata.dispatched_at (set by
+        # dispatch_to_worker) over created_at (packet creation time).
         try:
-            ts_str = pkt.created_at.replace("Z", "+00:00")
+            raw_ts: str = (getattr(pkt, "metadata", None) or {}).get(
+                "dispatched_at", ""
+            ) or pkt.created_at
+            ts_str = raw_ts.replace("Z", "+00:00")
             dispatch_time = datetime.fromisoformat(ts_str)
             if dispatch_time.tzinfo is None:
                 dispatch_time = dispatch_time.replace(tzinfo=timezone.utc)
