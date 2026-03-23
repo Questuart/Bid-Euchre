@@ -19,16 +19,23 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.token_economy import (
+    AntiPattern,
     AttributionQuality,
     AttributionResult,
     ImportResult,
     SchemaValidationError,
     SessionAttribution,
     SessionRecord,
+    ThroughputMetrics,
+    UsageSummary,
     attribute_sessions,
+    detect_anti_patterns,
     import_usage_data,
     infer_lane_from_path,
     join_to_packets,
+    lane_summary,
+    throughput_summary,
+    usage_summary,
     validate_facet,
     validate_session_meta,
 )
@@ -816,3 +823,347 @@ class TestJoinToPackets:
 
         assert result[0].matched_packets == []
         assert result[0].quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value
+
+
+# ---------------------------------------------------------------------------
+# Usage summary tests
+# ---------------------------------------------------------------------------
+
+
+def _make_session_record(
+    session_id: str,
+    *,
+    input_tokens: int = 100,
+    output_tokens: int = 500,
+    duration_minutes: int = 30,
+    lines_added: int = 20,
+    lines_removed: int = 5,
+    git_commits: int = 1,
+    git_pushes: int = 1,
+    files_modified: int = 3,
+    user_message_count: int = 2,
+    assistant_message_count: int = 10,
+    tool_errors: int = 0,
+    start_time: str = "2026-03-20T10:00:00Z",
+    project_path: str = "/tmp/test",
+) -> dict:
+    """Build a session record dict for summary tests."""
+    return {
+        "session_id": session_id,
+        "project_path": project_path,
+        "start_time": start_time,
+        "duration_minutes": duration_minutes,
+        "user_message_count": user_message_count,
+        "assistant_message_count": assistant_message_count,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "lines_added": lines_added,
+        "lines_removed": lines_removed,
+        "files_modified": files_modified,
+        "git_commits": git_commits,
+        "git_pushes": git_pushes,
+        "tool_errors": tool_errors,
+    }
+
+
+def _write_sessions(output_dir: Path, sessions: list[dict]) -> None:
+    """Write session records to session_usage.jsonl."""
+    usage_file = output_dir / "session_usage.jsonl"
+    with usage_file.open("w", encoding="utf-8") as f:
+        for s in sessions:
+            f.write(json.dumps(s) + "\n")
+
+
+def _write_attributions(output_dir: Path, attributions: list[dict]) -> None:
+    """Write attribution records to session_attributions.jsonl."""
+    attr_file = output_dir / "session_attributions.jsonl"
+    with attr_file.open("w", encoding="utf-8") as f:
+        for a in attributions:
+            f.write(json.dumps(a) + "\n")
+
+
+class TestUsageSummary:
+    def test_basic_summary(self, output_dir: Path) -> None:
+        """Summary aggregates token counts correctly."""
+        sessions = [
+            _make_session_record("s1", input_tokens=100, output_tokens=500),
+            _make_session_record(
+                "s2",
+                input_tokens=200,
+                output_tokens=1000,
+                start_time="2026-03-21T14:00:00Z",
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        result = usage_summary(output_dir=output_dir)
+
+        assert isinstance(result, UsageSummary)
+        assert result.session_count == 2
+        assert result.total_input_tokens == 300
+        assert result.total_output_tokens == 1500
+        assert result.total_tokens == 1800
+        assert result.time_range_start == "2026-03-20T10:00:00Z"
+        assert result.time_range_end == "2026-03-21T14:00:00Z"
+
+    def test_derived_metrics(self, output_dir: Path) -> None:
+        """Output/input ratio and tokens/hour are computed correctly."""
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=100,
+                output_tokens=400,
+                duration_minutes=60,
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        result = usage_summary(output_dir=output_dir)
+
+        assert result.output_input_ratio == pytest.approx(4.0)
+        assert result.tokens_per_hour == pytest.approx(500.0)
+
+    def test_empty_store(self, output_dir: Path) -> None:
+        """Empty store returns zero summary."""
+        result = usage_summary(output_dir=output_dir)
+        assert result.session_count == 0
+        assert result.total_tokens == 0
+
+
+# ---------------------------------------------------------------------------
+# Lane summary tests
+# ---------------------------------------------------------------------------
+
+
+class TestLaneSummary:
+    def test_per_lane_breakdown(self, output_dir: Path) -> None:
+        """Lanes are aggregated from attribution data."""
+        attributions = [
+            {
+                "session_id": "s1",
+                "lane_id": "author-a",
+                "worktree_class": "platform",
+                "input_tokens": 100,
+                "output_tokens": 500,
+                "duration_minutes": 30,
+                "lines_added": 20,
+                "lines_removed": 5,
+                "git_commits": 2,
+            },
+            {
+                "session_id": "s2",
+                "lane_id": "author-a",
+                "worktree_class": "platform",
+                "input_tokens": 200,
+                "output_tokens": 1000,
+                "duration_minutes": 45,
+                "lines_added": 30,
+                "lines_removed": 10,
+                "git_commits": 1,
+            },
+            {
+                "session_id": "s3",
+                "lane_id": "flex-a",
+                "worktree_class": "flex",
+                "input_tokens": 50,
+                "output_tokens": 200,
+                "duration_minutes": 10,
+                "lines_added": 5,
+                "lines_removed": 0,
+                "git_commits": 1,
+            },
+        ]
+        _write_attributions(output_dir, attributions)
+
+        result = lane_summary(output_dir=output_dir)
+
+        assert isinstance(result, list)
+        assert len(result) == 2
+
+        # Sorted by total_tokens desc — author-a first
+        assert result[0].lane_id == "author-a"
+        assert result[0].session_count == 2
+        assert result[0].total_tokens == 1800
+        assert result[0].git_commits == 3
+        assert result[0].tokens_per_commit == pytest.approx(600.0)
+        assert result[0].pool == "platform"
+
+        assert result[1].lane_id == "flex-a"
+        assert result[1].total_tokens == 250
+        assert result[1].pool == "flex"
+
+    def test_empty_attributions(self, output_dir: Path) -> None:
+        """Empty attributions returns empty list."""
+        result = lane_summary(output_dir=output_dir)
+        assert result == []
+
+    def test_unattributed_sessions(self, output_dir: Path) -> None:
+        """Sessions without lane_id are grouped as unattributed."""
+        attributions = [
+            {
+                "session_id": "s1",
+                "lane_id": None,
+                "input_tokens": 100,
+                "output_tokens": 500,
+                "git_commits": 0,
+            },
+        ]
+        _write_attributions(output_dir, attributions)
+
+        result = lane_summary(output_dir=output_dir)
+        assert len(result) == 1
+        assert result[0].lane_id == "unattributed"
+
+
+# ---------------------------------------------------------------------------
+# Throughput summary tests
+# ---------------------------------------------------------------------------
+
+
+class TestThroughputSummary:
+    def test_throughput_metrics(self, output_dir: Path) -> None:
+        """Throughput metrics are computed from usage summary."""
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=100,
+                output_tokens=400,
+                duration_minutes=60,
+                git_commits=2,
+                lines_added=50,
+                lines_removed=10,
+                tool_errors=3,
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        result = throughput_summary(output_dir=output_dir)
+
+        assert isinstance(result, ThroughputMetrics)
+        assert result.total_sessions == 1
+        assert result.total_tokens == 500
+        assert result.tokens_per_commit == pytest.approx(250.0)
+        assert result.tokens_per_net_line == pytest.approx(500 / 40)
+        assert result.tokens_per_hour == pytest.approx(500.0)
+        assert result.output_input_ratio == pytest.approx(4.0)
+        assert result.tool_errors_per_1k_tokens == pytest.approx(6.0)
+
+    def test_empty_store(self, output_dir: Path) -> None:
+        """Empty store returns zero metrics."""
+        result = throughput_summary(output_dir=output_dir)
+        assert result.total_sessions == 0
+        assert result.total_tokens == 0
+
+
+# ---------------------------------------------------------------------------
+# Anti-pattern detection tests
+# ---------------------------------------------------------------------------
+
+
+class TestDetectAntiPatterns:
+    def test_verbosity_waste(self, output_dir: Path) -> None:
+        """High tokens per net line triggers verbosity_waste."""
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=5000,
+                output_tokens=50000,
+                lines_added=20,
+                lines_removed=10,  # net 10 lines
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        findings = detect_anti_patterns(output_dir=output_dir)
+
+        verbosity = [f for f in findings if f.pattern_id == "verbosity_waste"]
+        assert len(verbosity) == 1
+        assert verbosity[0].severity == "high"
+        assert isinstance(verbosity[0], AntiPattern)
+
+    def test_retry_churn(self, output_dir: Path) -> None:
+        """Many zero-commit sessions triggers retry_churn."""
+        sessions = [
+            _make_session_record("s1", git_commits=0),
+            _make_session_record("s2", git_commits=0),
+            _make_session_record("s3", git_commits=1),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        findings = detect_anti_patterns(output_dir=output_dir)
+
+        churn = [f for f in findings if f.pattern_id == "retry_churn"]
+        assert len(churn) == 1
+        assert "67" in churn[0].description  # 66.7% rounds to 67%
+
+    def test_no_anti_patterns(self, output_dir: Path) -> None:
+        """Clean usage data produces no findings."""
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=100,
+                output_tokens=200,
+                lines_added=50,
+                lines_removed=5,
+                git_commits=3,
+                duration_minutes=30,
+                tool_errors=0,
+                user_message_count=5,
+                assistant_message_count=15,
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        findings = detect_anti_patterns(output_dir=output_dir)
+        assert findings == []
+
+    def test_empty_store(self, output_dir: Path) -> None:
+        """Empty store produces no findings."""
+        findings = detect_anti_patterns(output_dir=output_dir)
+        assert findings == []
+
+    def test_severity_ordering(self, output_dir: Path) -> None:
+        """Findings are sorted by severity: high first."""
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=10000,
+                output_tokens=100000,
+                lines_added=5,
+                lines_removed=0,
+                git_commits=0,
+                duration_minutes=30,
+                tool_errors=0,
+            ),
+            _make_session_record("s2", git_commits=0),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        findings = detect_anti_patterns(output_dir=output_dir)
+
+        if len(findings) >= 2:
+            severity_order = {"high": 0, "medium": 1, "low": 2}
+            for i in range(len(findings) - 1):
+                assert severity_order.get(
+                    findings[i].severity, 99
+                ) <= severity_order.get(findings[i + 1].severity, 99)
+
+    def test_fragmentation(self, output_dir: Path) -> None:
+        """Many short sessions triggers fragmentation."""
+        sessions = [
+            _make_session_record(
+                f"s{i}",
+                duration_minutes=2,
+                git_commits=1,
+                lines_added=50,
+                lines_removed=5,
+            )
+            for i in range(10)
+        ]
+        _write_sessions(output_dir, sessions)
+
+        findings = detect_anti_patterns(output_dir=output_dir)
+
+        frag = [f for f in findings if f.pattern_id == "fragmentation"]
+        assert len(frag) == 1
+        assert frag[0].severity == "low"
