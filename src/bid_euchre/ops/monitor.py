@@ -791,6 +791,128 @@ def check_stalled_lanes(
 # ---------------------------------------------------------------------------
 
 
+def _attempt_single_dispatch(
+    pkt: Any,
+    pool: Any,
+    *,
+    high_lanes: set[str],
+    _dispatch_fn: Any | None,
+    tmux_session: str,
+    runtime_dir: Path,
+) -> tuple[list[MonitorFinding], bool]:
+    """Try to dispatch one approved packet to an idle lane.
+
+    Selects a worker, applies safety guards (HIGH-lane skip), executes the
+    dispatch, and mutates ``pool`` on success so the caller's next iteration
+    won't re-select the same lane.
+
+    Args:
+        pkt: The approved task packet to dispatch.
+        pool: Live pool snapshot (mutated in-place on success).
+        high_lanes: Lane IDs with unresolved HIGH findings (skip these).
+        _dispatch_fn: Optional test callable(packet_id, lane_id).
+        tmux_session: tmux session name.
+        runtime_dir: Runtime directory root.
+
+    Returns:
+        ``(findings, success)`` — findings produced by this attempt and
+        whether the dispatch succeeded.
+    """
+    from bid_euchre.ops.worker_pool import select_worker
+
+    findings: list[MonitorFinding] = []
+
+    domain = getattr(pkt, "domain", None)
+    lane_id = select_worker(pool, domain=domain)
+
+    if lane_id is None:
+        return findings, False
+
+    # Skip lanes with unresolved HIGH findings
+    if lane_id in high_lanes:
+        return findings, False
+
+    try:
+        if _dispatch_fn is not None:
+            _dispatch_fn(pkt.packet_id, lane_id)
+        else:
+            from bid_euchre.ops.worker_pool import dispatch_to_worker
+
+            result = dispatch_to_worker(
+                pkt.packet_id,
+                lane_id,
+                tmux_session=tmux_session,
+                runtime_dir=runtime_dir,
+                reset=True,
+            )
+            if result.error:
+                findings.append(
+                    MonitorFinding(
+                        category="auto_dispatch",
+                        severity=SEVERITY_WARN,
+                        summary=(
+                            f"Auto-dispatch failed for packet "
+                            f"{pkt.packet_id!r} → {lane_id!r}: "
+                            f"{result.error}"
+                        ),
+                        details={
+                            "packet_id": pkt.packet_id,
+                            "lane_id": lane_id,
+                            "error": result.error,
+                        },
+                    )
+                )
+                return findings, False
+
+        findings.append(
+            MonitorFinding(
+                category="auto_dispatch",
+                severity=SEVERITY_INFO,
+                summary=(
+                    f"Auto-dispatched packet {pkt.packet_id!r} "
+                    f"({pkt.title!r}) → {lane_id!r}"
+                ),
+                details={
+                    "packet_id": pkt.packet_id,
+                    "title": pkt.title,
+                    "lane_id": lane_id,
+                    "domain": domain,
+                },
+            )
+        )
+
+        # Mark lane as no longer idle in the snapshot so the next
+        # iteration doesn't pick it again.
+        for w in pool.workers:
+            if w.lane_id == lane_id:
+                # WorkerState is a dataclass (not frozen), mutate in place
+                w.pool_status = "active"
+                w.current_task_id = pkt.packet_id
+                break
+        pool.active_count += 1
+        pool.available_capacity = max(0, pool.available_capacity - 1)
+
+        return findings, True
+
+    except Exception as exc:
+        findings.append(
+            MonitorFinding(
+                category="auto_dispatch",
+                severity=SEVERITY_WARN,
+                summary=(
+                    f"Auto-dispatch error for packet "
+                    f"{pkt.packet_id!r} → {lane_id!r}: {exc}"
+                ),
+                details={
+                    "packet_id": pkt.packet_id,
+                    "lane_id": lane_id,
+                    "error": str(exc),
+                },
+            )
+        )
+        return findings, False
+
+
 def check_auto_dispatch(
     runtime_dir: Path | None = None,
     *,
@@ -830,10 +952,7 @@ def check_auto_dispatch(
 
     try:
         from bid_euchre.ops.task_queue import list_packets
-        from bid_euchre.ops.worker_pool import (
-            select_worker,
-            take_pool_snapshot,
-        )
+        from bid_euchre.ops.worker_pool import take_pool_snapshot
 
         pool = take_pool_snapshot(runtime_dir, tmux_session=tmux_session)
         if runtime_dir is None:
@@ -871,95 +990,17 @@ def check_auto_dispatch(
         if dispatched_count >= max_dispatches:
             break
 
-        # Select best lane for this packet's domain
-        domain = getattr(pkt, "domain", None)
-        lane_id = select_worker(pool, domain=domain)
-
-        if lane_id is None:
-            continue
-
-        # Skip lanes with unresolved HIGH findings
-        if lane_id in high_lanes:
-            continue
-
-        # Attempt dispatch
-        try:
-            if _dispatch_fn is not None:
-                _dispatch_fn(pkt.packet_id, lane_id)
-            else:
-                from bid_euchre.ops.worker_pool import dispatch_to_worker
-
-                result = dispatch_to_worker(
-                    pkt.packet_id,
-                    lane_id,
-                    tmux_session=tmux_session,
-                    runtime_dir=runtime_dir,
-                    reset=True,
-                )
-                if result.error:
-                    findings.append(
-                        MonitorFinding(
-                            category="auto_dispatch",
-                            severity=SEVERITY_WARN,
-                            summary=(
-                                f"Auto-dispatch failed for packet "
-                                f"{pkt.packet_id!r} → {lane_id!r}: "
-                                f"{result.error}"
-                            ),
-                            details={
-                                "packet_id": pkt.packet_id,
-                                "lane_id": lane_id,
-                                "error": result.error,
-                            },
-                        )
-                    )
-                    continue
-
-            findings.append(
-                MonitorFinding(
-                    category="auto_dispatch",
-                    severity=SEVERITY_INFO,
-                    summary=(
-                        f"Auto-dispatched packet {pkt.packet_id!r} "
-                        f"({pkt.title!r}) → {lane_id!r}"
-                    ),
-                    details={
-                        "packet_id": pkt.packet_id,
-                        "title": pkt.title,
-                        "lane_id": lane_id,
-                        "domain": domain,
-                    },
-                )
-            )
+        attempt_findings, success = _attempt_single_dispatch(
+            pkt,
+            pool,
+            high_lanes=high_lanes,
+            _dispatch_fn=_dispatch_fn,
+            tmux_session=tmux_session,
+            runtime_dir=runtime_dir,
+        )
+        findings.extend(attempt_findings)
+        if success:
             dispatched_count += 1
-
-            # Mark lane as no longer idle in the snapshot so the next
-            # iteration doesn't pick it again.
-            for w in pool.workers:
-                if w.lane_id == lane_id:
-                    # WorkerState is a dataclass (not frozen), mutate in place
-                    w.pool_status = "active"
-                    w.current_task_id = pkt.packet_id
-                    break
-            pool.active_count += 1
-            pool.available_capacity = max(0, pool.available_capacity - 1)
-
-        except Exception as exc:
-            findings.append(
-                MonitorFinding(
-                    category="auto_dispatch",
-                    severity=SEVERITY_WARN,
-                    summary=(
-                        f"Auto-dispatch error for packet "
-                        f"{pkt.packet_id!r} → {lane_id!r}: {exc}"
-                    ),
-                    details={
-                        "packet_id": pkt.packet_id,
-                        "lane_id": lane_id,
-                        "error": str(exc),
-                    },
-                )
-            )
 
     return findings
 
