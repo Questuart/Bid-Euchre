@@ -1693,11 +1693,21 @@ def cmd_inbox(args: argparse.Namespace) -> int:
     from bid_euchre.ops.message_bus import (
         ack_message,
         bulk_ack_messages,
+        import_native_inbox,
         inbox_stats,
         read_inbox,
     )
 
     bus_root = args.runtime_dir / "message_bus"
+
+    # If --include-native is set, import native inbox first
+    include_native = getattr(args, "include_native", False)
+    native_lane = getattr(args, "lane", None)
+    if include_native and native_lane:
+        imported = import_native_inbox(native_lane, bus_root=bus_root)
+        if imported and not getattr(args, "json", False):
+            print(f"Imported {len(imported)} native message(s) for {native_lane}")
+            print()
 
     action = getattr(args, "inbox_action", None)
 
@@ -2768,6 +2778,12 @@ def build_parser() -> argparse.ArgumentParser:
     inbox_parser.add_argument("--status", default=None, help="Filter by message status")
     inbox_parser.add_argument("--type", default=None, help="Filter by message type")
     inbox_parser.add_argument("--thread", default=None, help="Filter by thread ID")
+    inbox_parser.add_argument(
+        "--include-native",
+        action="store_true",
+        default=False,
+        help="Import Claude native inbox messages before listing (requires --lane)",
+    )
 
     # message (Platform-3 audit trail)
     message_parser = subparsers.add_parser(
