@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Generate churn-corrected Bollinger Band dashboard for commit analytics.
+"""Generate churn-corrected Bollinger Band dashboard for PR analytics.
 
 Produces a 4-panel PNG:
-  1. Raw commits with Bollinger Bands (working days only)
-  2. Churn-corrected effective commits with Bollinger Bands
+  1. PRs merged per day with Bollinger Bands (working days only)
+  2. Additions merged per day with Bollinger Bands (volume-weighted)
   3. Line churn ratio with Bollinger Bands (percentage)
   4. File churn ratio with Bollinger Bands (percentage)
 
@@ -16,9 +16,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json as _json
 import os
 import subprocess
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
@@ -45,18 +46,48 @@ def _git(args: list[str], repo: str) -> str:
     return result.stdout
 
 
-def _gather_commit_counts(repo: str) -> tuple[list[str], np.ndarray]:
-    """Return sorted working-day dates and their commit counts."""
-    output = _git(["log", "--format=%ad", "--date=short"], repo)
-    counts = Counter(output.strip().split("\n"))
-    sorted_dates = sorted(counts.keys())
-    daily_commits = np.array([counts[d] for d in sorted_dates])
-    return sorted_dates, daily_commits
+def _gather_pr_counts(repo: str) -> tuple[dict[str, int], dict[str, int]]:
+    """Return per-day PR merge counts and total additions from merged PRs.
+
+    Uses ``gh pr list`` as the data source.  Requires the ``gh`` CLI to be
+    installed and authenticated.
+    """
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "merged",
+            "--json",
+            "mergedAt,additions",
+            "--limit",
+            "10000",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        check=True,
+    )
+    prs = _json.loads(result.stdout)
+
+    pr_counts: dict[str, int] = defaultdict(int)
+    pr_additions: dict[str, int] = defaultdict(int)
+
+    for pr in prs:
+        merged_at = pr.get("mergedAt", "")
+        if not merged_at:
+            continue
+        date = merged_at[:10]  # YYYY-MM-DD
+        pr_counts[date] += 1
+        pr_additions[date] += pr.get("additions", 0)
+
+    return dict(pr_counts), dict(pr_additions)
 
 
 def _gather_line_stats(repo: str) -> tuple[dict[str, int], dict[str, int]]:
-    """Return per-day insertions and deletions from git numstat."""
-    output = _git(["log", "--format=COMMIT %ad", "--date=short", "--numstat"], repo)
+    """Return per-day insertions and deletions from git numstat (commit date)."""
+    output = _git(["log", "--format=COMMIT %cd", "--date=short", "--numstat"], repo)
 
     day_ins: dict[str, int] = defaultdict(int)
     day_del: dict[str, int] = defaultdict(int)
@@ -75,8 +106,8 @@ def _gather_line_stats(repo: str) -> tuple[dict[str, int], dict[str, int]]:
 
 
 def _gather_file_churn(repo: str) -> tuple[dict[str, int], dict[str, int]]:
-    """Return per-day unique files and files touched more than once."""
-    output = _git(["log", "--format=COMMIT %ad", "--date=short", "--numstat"], repo)
+    """Return per-day unique files and files touched more than once (commit date)."""
+    output = _git(["log", "--format=COMMIT %cd", "--date=short", "--numstat"], repo)
 
     file_touches: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
@@ -120,13 +151,26 @@ def _bollinger(
 
 def generate_dashboard(repo: str, output: str) -> None:
     """Generate the full dashboard PNG."""
-    sorted_dates, raw_commits = _gather_commit_counts(repo)
+    pr_counts_map, pr_additions_map = _gather_pr_counts(repo)
     day_ins, day_del = _gather_line_stats(repo)
     unique_files_map, churned_files_map = _gather_file_churn(repo)
 
+    # Union of all active dates across both data sources
+    sorted_dates = sorted(
+        set(pr_counts_map.keys())
+        | set(day_ins.keys())
+        | set(day_del.keys())
+        | set(unique_files_map.keys())
+    )
     n = len(sorted_dates)
 
-    # ── Derived metrics ──────────────────────────────────────────────────
+    # ── Panel 1/2 metrics (PR-based) ─────────────────────────────────────
+    raw_prs = np.array([pr_counts_map.get(d, 0) for d in sorted_dates], dtype=float)
+    pr_additions = np.array(
+        [pr_additions_map.get(d, 0) for d in sorted_dates], dtype=float
+    )
+
+    # ── Panel 3/4 metrics (git-log-based, commit date) ───────────────────
     gross_lines = np.array(
         [day_ins.get(d, 0) + day_del.get(d, 0) for d in sorted_dates], dtype=float
     )
@@ -134,7 +178,8 @@ def generate_dashboard(repo: str, output: str) -> None:
         [abs(day_ins.get(d, 0) - day_del.get(d, 0)) for d in sorted_dates],
         dtype=float,
     )
-    churn_ratio = np.where(gross_lines > 0, 1 - net_lines / gross_lines, 0)
+    safe_gross = np.where(gross_lines > 0, gross_lines, 1.0)
+    churn_ratio = np.where(gross_lines > 0, 1 - net_lines / safe_gross, 0.0)
 
     unique_files = np.array(
         [unique_files_map.get(d, 0) for d in sorted_dates], dtype=float
@@ -142,17 +187,12 @@ def generate_dashboard(repo: str, output: str) -> None:
     churned_files = np.array(
         [churned_files_map.get(d, 0) for d in sorted_dates], dtype=float
     )
-    file_churn_ratio = np.where(unique_files > 0, churned_files / unique_files, 0)
-
-    effective_commits = raw_commits * (1 - churn_ratio)
+    safe_unique = np.where(unique_files > 0, unique_files, 1.0)
+    file_churn_ratio = np.where(unique_files > 0, churned_files / safe_unique, 0.0)
 
     # ── Bollinger Bands ──────────────────────────────────────────────────
-    raw_sma, raw_upper, raw_lower, raw_pctb = _bollinger(
-        raw_commits.astype(float), WINDOW, NUM_STD
-    )
-    eff_sma, eff_upper, eff_lower, eff_pctb = _bollinger(
-        effective_commits, WINDOW, NUM_STD
-    )
+    raw_sma, raw_upper, raw_lower, raw_pctb = _bollinger(raw_prs, WINDOW, NUM_STD)
+    add_sma, add_upper, add_lower, add_pctb = _bollinger(pr_additions, WINDOW, NUM_STD)
 
     # Churn ratios as percentages for Bollinger computation
     churn_pct = churn_ratio * 100
@@ -183,21 +223,21 @@ def generate_dashboard(repo: str, output: str) -> None:
         sharex=True,
     )
     fig.suptitle(
-        f"Commit Analytics Dashboard — Churn-Corrected Bollinger Bands\n"
+        f"PR Analytics Dashboard \u2014 Bollinger Bands\n"
         f"{WINDOW}-working-day SMA, {NUM_STD}\u03c3  \u2022  "
-        f"effective commits = raw \u00d7 (1 \u2212 line churn ratio)  \u2022  "
+        f"data source: gh pr list  \u2022  "
         f"{n} active days",
         fontsize=14,
         fontweight="bold",
         y=0.995,
     )
 
-    # ── Panel 1: Raw commits ─────────────────────────────────────────────
+    # ── Panel 1: PRs merged per day ──────────────────────────────────────
     ax1 = axes[0]
     _draw_bollinger_panel(
         ax1,
         x,
-        raw_commits.astype(float),
+        raw_prs,
         raw_sma,
         raw_upper,
         raw_lower,
@@ -208,28 +248,28 @@ def generate_dashboard(repo: str, output: str) -> None:
         sma_color="#2980b9",
         dot_color="#2c3e50",
     )
-    ax1.set_ylabel("Raw commits", fontsize=11)
-    ax1.set_title("Raw Commits (uncorrected)", fontsize=12, pad=4)
+    ax1.set_ylabel("PRs merged", fontsize=11)
+    ax1.set_title("PRs Merged per Day", fontsize=12, pad=4)
 
-    # ── Panel 2: Effective commits ───────────────────────────────────────
+    # ── Panel 2: Additions merged per day ────────────────────────────────
     ax2 = axes[1]
     _draw_bollinger_panel(
         ax2,
         x,
-        effective_commits,
-        eff_sma,
-        eff_upper,
-        eff_lower,
-        eff_pctb,
+        pr_additions,
+        add_sma,
+        add_upper,
+        add_lower,
+        add_pctb,
         valid,
         latest_idx,
         band_color="#27ae60",
         sma_color="#27ae60",
         dot_color="#1a5276",
     )
-    ax2.set_ylabel("Effective commits", fontsize=11)
+    ax2.set_ylabel("Additions merged", fontsize=11)
     ax2.set_title(
-        "Churn-Corrected Commits  (raw \u00d7 (1 \u2212 churn ratio))",
+        "Additions Merged per Day  (volume-weighted PR activity)",
         fontsize=12,
         pad=4,
     )
@@ -295,10 +335,13 @@ def generate_dashboard(repo: str, output: str) -> None:
     # ── Summary stats ────────────────────────────────────────────────────
     li = latest_idx
     print(f"  Latest day: {sorted_dates[li]}")
-    print(f"  Raw: {raw_commits[li]}, SMA: {raw_sma[li]:.1f}, %B: {raw_pctb[li]:.2f}")
     print(
-        f"  Effective: {effective_commits[li]:.1f}, "
-        f"SMA: {eff_sma[li]:.1f}, %B: {eff_pctb[li]:.2f}"
+        f"  PRs merged: {raw_prs[li]:.0f}, "
+        f"SMA: {raw_sma[li]:.1f}, %B: {raw_pctb[li]:.2f}"
+    )
+    print(
+        f"  Additions: {pr_additions[li]:.0f}, "
+        f"SMA: {add_sma[li]:.1f}, %B: {add_pctb[li]:.2f}"
     )
     print(
         f"  Line churn: {churn_pct[li]:.1f}%, "
@@ -477,7 +520,7 @@ def _draw_bollinger_panel(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate commit analytics dashboard")
+    parser = argparse.ArgumentParser(description="Generate PR analytics dashboard")
     parser.add_argument(
         "--output",
         default="assets/dashboard/commit_bollinger.png",

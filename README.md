@@ -4,9 +4,9 @@ A Python framework for deterministic simulation and strategy evaluation of the c
 
 ## Dashboard
 
-![Commit Analytics](assets/dashboard/commit_bollinger.png)
+![PR Analytics](assets/dashboard/commit_bollinger.png)
 
-Churn-corrected Bollinger Bands on daily commit counts (working days only). Updated automatically after each merge to main. See `scripts/generate_dashboard.py` for methodology.
+Bollinger Bands on daily PR merge counts and additions volume (working days only). Updated automatically after each push to main. See `scripts/generate_dashboard.py` for methodology.
 
 ## Quick Start
 
