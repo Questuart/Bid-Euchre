@@ -71,8 +71,8 @@ boundary.
 
 | Model | Agents |
 |-------|--------|
-| `sonnet` | All specialist reviewers, blind-comparator, steward-review, steward-ops |
-| `inherit` (default) | All author lanes, orchestrator, repair |
+| `sonnet` | All specialist reviewers, blind-comparator, steward-ops |
+| `inherit` (default) | All author lanes, orchestrator, steward-review, repair |
 
 ## Prompt-First Workflow
 
