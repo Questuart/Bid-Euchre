@@ -149,8 +149,10 @@ The baseline report must explicitly evaluate:
   - `~/.claude/usage-data/session-meta/*.json`
   - `~/.claude/usage-data/facets/*.json`
 - Normalize into (created by this sub-plan):
-  - `.claude/runtime/token_economy/session_usage.jsonl` (new)
-  - `.claude/runtime/token_economy/session_rollups.json` (new)
+  ```
+  .claude/runtime/token_economy/session_usage.jsonl
+  .claude/runtime/token_economy/session_rollups.json
+  ```
 - Preserve source identifiers so imports are idempotent
 - Record import timestamp and source path/hash
 
