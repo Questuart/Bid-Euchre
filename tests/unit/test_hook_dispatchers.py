@@ -6,7 +6,7 @@ verify:
   - Normal commands pass through with suppressOutput
   - Blocking commands propagate exit code 2
   - Rule-loader context injection works through the dispatcher
-  - PostToolUse dispatcher produces no output for non-matching commands
+  - PostToolUse dispatcher suppresses TUI notification for non-matching commands
   - Background process stdout is properly redirected (post-push-ci-check fix)
 """
 
@@ -117,9 +117,9 @@ class TestPostBashDispatch:
 
     SCRIPT = "post-bash-dispatch.sh"
 
-    def test_normal_command_produces_no_output(self) -> None:
-        """Non-matching commands should produce no output."""
-        rc, raw, _out = _run_hook(
+    def test_normal_command_suppresses_output(self) -> None:
+        """Non-matching commands should suppress TUI notification (issue #1360)."""
+        rc, _raw, out = _run_hook(
             self.SCRIPT,
             {
                 "tool_input": {"command": "git status"},
@@ -127,11 +127,12 @@ class TestPostBashDispatch:
             },
         )
         assert rc == 0
-        assert raw == ""
+        assert out is not None
+        assert out.get("suppressOutput") is True
 
-    def test_failed_command_produces_no_output(self) -> None:
-        """Failed commands should produce no output (exit_code != 0)."""
-        rc, raw, _out = _run_hook(
+    def test_failed_command_suppresses_output(self) -> None:
+        """Failed commands should suppress TUI notification (issue #1360)."""
+        rc, _raw, out = _run_hook(
             self.SCRIPT,
             {
                 "tool_input": {"command": "git push origin main"},
@@ -139,7 +140,8 @@ class TestPostBashDispatch:
             },
         )
         assert rc == 0
-        assert raw == ""
+        assert out is not None
+        assert out.get("suppressOutput") is True
 
 
 class TestPreBashDispatchTimeout:

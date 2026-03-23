@@ -17,11 +17,13 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
 
 # Only check Python files
 if [[ "$FILE_PATH" != *.py ]]; then
+    echo '{"suppressOutput": true}'
     exit 0
 fi
 
 # Only check if file exists
 if [[ ! -f "$FILE_PATH" ]]; then
+    echo '{"suppressOutput": true}'
     exit 0
 fi
 
@@ -80,6 +82,9 @@ if [ ${#findings[@]} -gt 0 ]; then
   }
 }
 EOF
+else
+    # No findings — suppress TUI notification (issue #1360)
+    echo '{"suppressOutput": true}'
 fi
 
 exit 0
