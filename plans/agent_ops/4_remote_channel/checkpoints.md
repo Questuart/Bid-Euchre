@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-23 by author-scratch (register SP-4-03)
+**Last updated:** 2026-03-23 by flex-a (register SP-4-04)
 
 ---
 
@@ -38,6 +38,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-01 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | completed | Step 0 |
 | SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | in_progress | Pre-Platform-8 |
 | SP-4-03 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | proposed | Pre-Platform-8 |
+| SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | proposed | Step 1 |
 
 ### Shared Surface Ownership
 
@@ -65,3 +66,4 @@ drift during parallel implementation.
 | 2026-03-23 | Step 0 (scope lock): SP-4-01 sub-plan created and registered. Key decisions: free-form messages allowed, no remote command grammar, orchestrator is single ingress, author lanes remain tmux-only. Platform-8b audit trail tracked in issue #1324. Phase status moved from PENDING to IN_PROGRESS. |
 | 2026-03-23 | SP-4-02 registered and committed. Preflight hardening plan covers 6 steps: lifecycle proving, operational cleanup, stall recovery, scope enforcement, reset/clear validation, and auto-dispatch. Gated rollout order (Steps 1-2 first, then 3-4 parallel, then 5-6). |
 | 2026-03-23 | SP-4-03 registered. Token economy observability alongside SP-4-02. Covers usage import, lane attribution, CLI/dashboard views, and baseline anti-pattern report. Overlaps SP-4-02 in `scripts/internal/ops.py` and dashboard — serialize shared surfaces during implementation. Codex review surfaced 3 plan-quality findings (boundary exception, malformed telemetry, attribution key) for orchestrator to address. |
+| 2026-03-23 | SP-4-04 registered (flex-a). Platform-8a Telegram transport sub-plan: 6 steps covering preflight, plugin config, pairing proof, permission relay proof, kill switch proof, and registry integration. Steps 3-5 parallelizable after Step 2. Key constraint: orchestrator-only ingress, no audit trail (deferred to Platform-9c). |

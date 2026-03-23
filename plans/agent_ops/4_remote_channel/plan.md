@@ -101,6 +101,7 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 | SP-4-01 | Platform-8 scope lock | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` |
 | SP-4-02 | Remote-ops preflight hardening | in_progress | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` |
 | SP-4-03 | Token economy observability and dashboard | proposed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` |
+| SP-4-04 | Platform-8a Telegram transport configuration | proposed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` |
 
 ## Step Sequence
 
