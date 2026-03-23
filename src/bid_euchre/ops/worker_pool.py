@@ -149,19 +149,70 @@ class PoolAction:
 # ---------------------------------------------------------------------------
 
 
+def _dynamic_pane_lookup(
+    lane_id: str,
+    tmux_session: str,
+    window: str,
+) -> str | None:
+    """Dynamically resolve a lane's pane index by querying tmux.
+
+    Runs ``tmux list-panes`` on the target window and matches pane titles
+    against the ``lane_id`` string.  This is robust to stale registry data
+    and works regardless of ``pane-base-index`` configuration.
+
+    The query is scoped to a single window, so substring matching on
+    ``lane_id`` is unambiguous (each window hosts a disjoint set of lanes).
+
+    Args:
+        lane_id: Lane identifier to look up (e.g. ``"author-a"``).
+        tmux_session: tmux session name (e.g. ``"steward"``).
+        window: tmux window name to query (e.g. ``"platform"``).
+
+    Returns:
+        The pane index as a string, or ``None`` if resolution fails.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "tmux",
+                "list-panes",
+                "-t",
+                f"{tmux_session}:{window}",
+                "-F",
+                "#{pane_index} #{pane_title}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.strip().splitlines():
+            parts = line.split(None, 1)
+            if len(parts) >= 2 and lane_id in parts[1]:
+                return parts[0]
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
 def _resolve_tmux_target(
     lane_id: str,
     tmux_session: str,
     runtime_dir: Path | None = None,
 ) -> str:
-    """Resolve a lane's tmux pane target from registry metadata.
+    """Resolve a lane's tmux pane target, preferring dynamic lookup.
 
-    Reads ``tmux_window`` and ``tmux_pane`` from the lane's worktree registry
-    entry to construct a ``{session}:{window}.{pane}`` target string.
+    Resolution strategy (most to least reliable):
 
-    Falls back to ``{session}:{lane_id}`` if the registry entry is missing or
-    does not contain pane metadata (backwards compatibility with the legacy
-    one-window-per-lane layout).
+    1. **Dynamic lookup** — query ``tmux list-panes`` for the lane's window
+       and match pane titles against ``lane_id``.  This is always correct
+       regardless of ``pane-base-index`` or stale registry data.
+    2. **Registry fallback** — read ``tmux_window`` and ``tmux_pane`` from
+       the lane's worktree registry entry.  Used when tmux is not available
+       (e.g. in tests or before the session is started).
+    3. **Legacy fallback** — ``{session}:{lane_id}`` for the legacy
+       one-window-per-lane layout.
 
     Args:
         lane_id: Lane identifier.
@@ -177,14 +228,25 @@ def _resolve_tmux_target(
     if runtime_dir is None:
         runtime_dir = Path(".claude/runtime")
     registry_file = runtime_dir / "worktree_registry" / f"{lane_id}.json"
+
+    window: str | None = None
+    registry_pane: str | None = None
     try:
         data = json.loads(registry_file.read_text())
         window = data.get("tmux_window")
-        pane = data.get("tmux_pane")
-        if window and pane is not None:
-            return f"{tmux_session}:{window}.{pane}"
+        registry_pane = data.get("tmux_pane")
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         pass
+
+    if window:
+        # Try dynamic resolution first — robust to stale registry pane indices
+        dynamic_pane = _dynamic_pane_lookup(lane_id, tmux_session, window)
+        if dynamic_pane is not None:
+            return f"{tmux_session}:{window}.{dynamic_pane}"
+        # Fall back to registry pane index
+        if registry_pane is not None:
+            return f"{tmux_session}:{window}.{registry_pane}"
+
     # Fallback: legacy one-window-per-lane naming
     return f"{tmux_session}:{lane_id}"
 
