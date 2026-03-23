@@ -969,3 +969,132 @@ def inbox_stats(bus_root: Path | None = None) -> dict[str, Any]:
         )
 
     return {"lanes": lane_stats}
+
+
+# ---------------------------------------------------------------------------
+# Native inbox bridge
+# ---------------------------------------------------------------------------
+
+#: Default path for Claude native team inboxes.
+DEFAULT_NATIVE_INBOX_DIR = Path.home() / ".claude" / "teams" / "default" / "inboxes"
+
+
+def _native_content_hash(entry: dict[str, Any]) -> str:
+    """Compute a stable content hash for a native inbox entry.
+
+    Uses (from, timestamp, summary) as the dedup key.  This is stable
+    across reruns as long as the native inbox entry hasn't changed.
+    """
+    import hashlib
+
+    key = f"{entry.get('from', '')}|{entry.get('timestamp', '')}|{entry.get('summary', '')}"
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def import_native_inbox(
+    lane_id: str,
+    *,
+    native_dir: Path | None = None,
+    bus_root: Path | None = None,
+    events_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Import messages from a Claude native inbox into the repo-owned bus.
+
+    Reads ``<native_dir>/<lane_id>.json``, converts each entry to a
+    :class:`BusMessage`, and sends it via :func:`send_message`.
+    Deduplicates using a content hash stored in ``payload.native_hash``
+    so the function is safe to rerun (idempotent).
+
+    Args:
+        lane_id: Lane whose native inbox to import.
+        native_dir: Override for the native inbox directory.
+        bus_root: Override for the bus root directory.
+        events_dir: Override for events directory (for testing).
+
+    Returns:
+        List of newly imported message dicts (skips already-imported ones).
+    """
+    native_path = (native_dir or DEFAULT_NATIVE_INBOX_DIR) / f"{lane_id}.json"
+    if not native_path.exists():
+        logger.debug("No native inbox file for %s at %s", lane_id, native_path)
+        return []
+
+    try:
+        with open(native_path) as f:
+            entries = json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Failed to read native inbox for %s: %s", lane_id, exc)
+        return []
+
+    if not isinstance(entries, list):
+        logger.warning("Native inbox for %s is not a JSON array", lane_id)
+        return []
+
+    # Read existing inbox to find already-imported hashes
+    root = shared_bus_root(bus_root)
+    existing_raw = _read_inbox_raw(lane_id, root)
+    existing_hashes: set[str] = set()
+    for rec in existing_raw:
+        payload = rec.get("payload", {})
+        native_hash = payload.get("native_hash")
+        if native_hash:
+            existing_hashes.add(native_hash)
+
+    imported: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        content_hash = _native_content_hash(entry)
+        if content_hash in existing_hashes:
+            continue
+
+        # Map native fields to BusMessage
+        from_lane = entry.get("from", "unknown")
+        summary = entry.get("summary", "")
+        text = entry.get("text", "")
+        timestamp = entry.get("timestamp", _now_iso())
+
+        msg = BusMessage(
+            message_id=uuid.uuid4().hex[:16],
+            thread_id=None,
+            task_id=None,
+            from_lane=from_lane,
+            to_lane=lane_id,
+            message_type="progress",  # best-fit generic type for native messages
+            priority="normal",
+            status="pending",
+            created_at=timestamp,
+            acked_at=None,
+            resolved_at=None,
+            requires_human=False,
+            summary=summary[:200] if summary else text[:200],
+            payload={
+                "native_hash": content_hash,
+                "native_text": text,
+                "native_read": entry.get("read", False),
+                "max_retries": DEFAULT_MAX_RETRIES,
+                "retry_count": 0,
+                "ttl_seconds": DEFAULT_TTL_SECONDS,
+            },
+            source_transport="claude_native",
+        )
+
+        try:
+            send_message(msg, bus_root, events_dir=events_dir)
+            imported.append(asdict(msg))
+            existing_hashes.add(content_hash)
+        except (ValueError, OSError) as exc:
+            logger.warning(
+                "Failed to import native message for %s (hash=%s): %s",
+                lane_id,
+                content_hash,
+                exc,
+            )
+
+    logger.info(
+        "Imported %d native message(s) for %s (%d skipped as duplicates)",
+        len(imported),
+        lane_id,
+        len(entries) - len(imported),
+    )
+    return imported

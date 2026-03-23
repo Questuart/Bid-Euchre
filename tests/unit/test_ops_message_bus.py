@@ -24,12 +24,14 @@ from bid_euchre.ops.message_bus import (
     VALID_MESSAGE_TRANSITIONS,
     VALID_MESSAGE_TYPES,
     BusMessage,
+    _native_content_hash,
     ack_message,
     append_message,
     bulk_ack_messages,
     check_dead_letters,
     check_expired,
     create_message,
+    import_native_inbox,
     inbox_stats,
     query_unresolved,
     read_inbox,
@@ -1135,3 +1137,232 @@ class TestTTLAutoExpireOnRead:
         """create_message injects DEFAULT_TTL_SECONDS into payload."""
         msg = create_message("a", "b", "assignment", "Default TTL")
         assert msg.payload["ttl_seconds"] == 86400
+
+
+# ---------------------------------------------------------------------------
+# Native inbox bridge
+# ---------------------------------------------------------------------------
+
+
+class TestNativeInboxBridge:
+    """Test import_native_inbox() and content hashing."""
+
+    @pytest.fixture()
+    def native_dir(self, tmp_path: Path) -> Path:
+        """Create a temp native inbox directory."""
+        d = tmp_path / "native_inboxes"
+        d.mkdir()
+        return d
+
+    def _write_native_inbox(
+        self, native_dir: Path, lane_id: str, entries: list[dict]
+    ) -> Path:
+        """Write a native inbox JSON file."""
+        path = native_dir / f"{lane_id}.json"
+        path.write_text(json.dumps(entries, indent=2))
+        return path
+
+    def test_content_hash_stable(self) -> None:
+        """Same input produces the same hash."""
+        entry = {
+            "from": "team-lead",
+            "timestamp": "2026-03-22T12:00:00Z",
+            "summary": "Review approved",
+        }
+        h1 = _native_content_hash(entry)
+        h2 = _native_content_hash(entry)
+        assert h1 == h2
+        assert len(h1) == 16
+
+    def test_content_hash_different_entries(self) -> None:
+        """Different entries produce different hashes."""
+        entry1 = {
+            "from": "team-lead",
+            "timestamp": "2026-03-22T12:00:00Z",
+            "summary": "Review approved",
+        }
+        entry2 = {
+            "from": "team-lead",
+            "timestamp": "2026-03-22T12:01:00Z",
+            "summary": "Review approved",
+        }
+        assert _native_content_hash(entry1) != _native_content_hash(entry2)
+
+    def test_import_basic(
+        self, bus_root: Path, events_dir: Path, native_dir: Path
+    ) -> None:
+        """Import native messages into the repo-owned bus."""
+        entries = [
+            {
+                "from": "team-lead",
+                "text": "Please fix the bug.",
+                "summary": "Bug fix request",
+                "timestamp": "2026-03-22T12:00:00Z",
+                "read": False,
+            },
+            {
+                "from": "orchestrator",
+                "text": "Task dispatched.",
+                "summary": "Task dispatch",
+                "timestamp": "2026-03-22T12:01:00Z",
+                "read": True,
+            },
+        ]
+        self._write_native_inbox(native_dir, "author-a", entries)
+
+        imported = import_native_inbox(
+            "author-a",
+            native_dir=native_dir,
+            bus_root=bus_root,
+            events_dir=events_dir,
+        )
+        assert len(imported) == 2
+
+        # Verify messages appear in the inbox
+        inbox = read_inbox("author-a", bus_root)
+        assert len(inbox) == 2
+
+        # Verify source_transport is set
+        for msg in inbox:
+            assert msg["source_transport"] == "claude_native"
+            assert "native_hash" in msg.get("payload", {})
+
+    def test_import_idempotent(
+        self, bus_root: Path, events_dir: Path, native_dir: Path
+    ) -> None:
+        """Running import twice doesn't create duplicate messages."""
+        entries = [
+            {
+                "from": "team-lead",
+                "text": "Review done.",
+                "summary": "Review complete",
+                "timestamp": "2026-03-22T12:00:00Z",
+                "read": False,
+            },
+        ]
+        self._write_native_inbox(native_dir, "author-b", entries)
+
+        # First import
+        imported1 = import_native_inbox(
+            "author-b",
+            native_dir=native_dir,
+            bus_root=bus_root,
+            events_dir=events_dir,
+        )
+        assert len(imported1) == 1
+
+        # Second import — should skip the duplicate
+        imported2 = import_native_inbox(
+            "author-b",
+            native_dir=native_dir,
+            bus_root=bus_root,
+            events_dir=events_dir,
+        )
+        assert len(imported2) == 0
+
+        # Only 1 message in inbox
+        inbox = read_inbox("author-b", bus_root)
+        assert len(inbox) == 1
+
+    def test_import_no_file(self, bus_root: Path, native_dir: Path) -> None:
+        """No native file for lane returns empty list."""
+        result = import_native_inbox(
+            "author-z",
+            native_dir=native_dir,
+            bus_root=bus_root,
+        )
+        assert result == []
+
+    def test_import_invalid_json(self, bus_root: Path, native_dir: Path) -> None:
+        """Malformed JSON file returns empty list without crashing."""
+        path = native_dir / "author-c.json"
+        path.write_text("not valid json {{{")
+        result = import_native_inbox(
+            "author-c",
+            native_dir=native_dir,
+            bus_root=bus_root,
+        )
+        assert result == []
+
+    def test_import_not_array(self, bus_root: Path, native_dir: Path) -> None:
+        """Non-array JSON returns empty list."""
+        path = native_dir / "author-d.json"
+        path.write_text(json.dumps({"not": "an array"}))
+        result = import_native_inbox(
+            "author-d",
+            native_dir=native_dir,
+            bus_root=bus_root,
+        )
+        assert result == []
+
+    def test_import_preserves_native_metadata(
+        self, bus_root: Path, events_dir: Path, native_dir: Path
+    ) -> None:
+        """Imported messages carry native_text and native_read in payload."""
+        entries = [
+            {
+                "from": "reviewer",
+                "text": "Detailed review text here.",
+                "summary": "PR review",
+                "timestamp": "2026-03-22T14:00:00Z",
+                "read": True,
+            },
+        ]
+        self._write_native_inbox(native_dir, "author-a", entries)
+        imported = import_native_inbox(
+            "author-a",
+            native_dir=native_dir,
+            bus_root=bus_root,
+            events_dir=events_dir,
+        )
+        assert len(imported) == 1
+        payload = imported[0]["payload"]
+        assert payload["native_text"] == "Detailed review text here."
+        assert payload["native_read"] is True
+
+    def test_import_incremental(
+        self, bus_root: Path, events_dir: Path, native_dir: Path
+    ) -> None:
+        """New entries added to native file are imported on second run."""
+        entries = [
+            {
+                "from": "a",
+                "text": "first",
+                "summary": "First",
+                "timestamp": "2026-03-22T12:00:00Z",
+                "read": False,
+            },
+        ]
+        self._write_native_inbox(native_dir, "author-a", entries)
+        import_native_inbox(
+            "author-a",
+            native_dir=native_dir,
+            bus_root=bus_root,
+            events_dir=events_dir,
+        )
+
+        # Add a second entry
+        entries.append(
+            {
+                "from": "b",
+                "text": "second",
+                "summary": "Second",
+                "timestamp": "2026-03-22T13:00:00Z",
+                "read": False,
+            }
+        )
+        self._write_native_inbox(native_dir, "author-a", entries)
+
+        imported2 = import_native_inbox(
+            "author-a",
+            native_dir=native_dir,
+            bus_root=bus_root,
+            events_dir=events_dir,
+        )
+        # Only the new one
+        assert len(imported2) == 1
+        assert imported2[0]["summary"] == "Second"
+
+        # Total in inbox
+        inbox = read_inbox("author-a", bus_root)
+        assert len(inbox) == 2
