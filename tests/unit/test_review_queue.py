@@ -744,3 +744,120 @@ class TestCrossWorktreeVisibility:
         # From "another worktree", check staleness against new SHA
         assert is_verdict_stale(42, "new_sha") is True
         assert is_verdict_stale(42, "old_sha") is False
+
+
+# ---------------------------------------------------------------------------
+# Verdict → orchestrator bus bridge
+# ---------------------------------------------------------------------------
+
+
+class TestVerdictBusBridge:
+    """Verify that terminal verdicts auto-send a bus message to the orchestrator."""
+
+    def test_terminal_verdict_sends_bus_message(self, tmp_path: Path) -> None:
+        """A passed verdict should emit a progress message to orchestrator."""
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+        bus_root = tmp_path / "bus"
+
+        verdict = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha_abc",
+            status="passed",
+            reason="Clean review",
+        )
+        write_verdict(
+            verdict,
+            queue_dir,
+            emit_event=True,
+            events_dir=events_dir,
+            emit_bus_message=True,
+            bus_root=bus_root,
+        )
+
+        # Verify bus message was sent
+        from bid_euchre.ops.message_bus import read_inbox
+
+        msgs = read_inbox("orchestrator", bus_root, auto_expire=False)
+        assert len(msgs) == 1
+        msg = msgs[0]
+        assert msg["message_type"] == "progress"
+        assert msg["from_lane"] == "review"
+        assert "PR #42" in msg["summary"]
+        assert msg["payload"]["verdict_status"] == "passed"
+        assert msg["payload"]["pr_number"] == 42
+
+    def test_blocked_verdict_sends_bus_message(self, tmp_path: Path) -> None:
+        """A blocked verdict should also emit a bus message."""
+        queue_dir = tmp_path / "queue"
+        bus_root = tmp_path / "bus"
+
+        verdict = ReviewVerdict(
+            pr_number=99,
+            reviewed_sha="sha_xyz",
+            status="blocked",
+            reason="C1 violation found",
+            findings=[{"check_id": "C1", "severity": "BLOCK", "message": "unseeded"}],
+        )
+        write_verdict(
+            verdict,
+            queue_dir,
+            emit_event=False,
+            emit_bus_message=True,
+            bus_root=bus_root,
+        )
+
+        from bid_euchre.ops.message_bus import read_inbox
+
+        msgs = read_inbox("orchestrator", bus_root, auto_expire=False)
+        assert len(msgs) == 1
+        assert msgs[0]["payload"]["verdict_status"] == "blocked"
+        assert msgs[0]["payload"]["n_findings"] == 1
+
+    def test_running_verdict_does_not_send_bus_message(self, tmp_path: Path) -> None:
+        """A running (non-terminal) verdict should NOT emit a bus message."""
+        queue_dir = tmp_path / "queue"
+        bus_root = tmp_path / "bus"
+
+        verdict = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha_abc",
+            status="running",
+            reason="Review in progress",
+        )
+        write_verdict(
+            verdict,
+            queue_dir,
+            emit_event=False,
+            emit_bus_message=True,
+            bus_root=bus_root,
+        )
+
+        from bid_euchre.ops.message_bus import read_inbox
+
+        msgs = read_inbox("orchestrator", bus_root, auto_expire=False)
+        assert len(msgs) == 0
+
+    def test_emit_bus_message_false_skips_send(self, tmp_path: Path) -> None:
+        """When emit_bus_message=False, no bus message is sent."""
+        queue_dir = tmp_path / "queue"
+        bus_root = tmp_path / "bus"
+
+        verdict = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha_abc",
+            status="passed",
+            reason="Clean",
+        )
+        write_verdict(
+            verdict,
+            queue_dir,
+            emit_event=False,
+            emit_bus_message=False,
+            bus_root=bus_root,
+        )
+
+        from bid_euchre.ops.message_bus import read_inbox
+
+        msgs = read_inbox("orchestrator", bus_root, auto_expire=False)
+        assert len(msgs) == 0

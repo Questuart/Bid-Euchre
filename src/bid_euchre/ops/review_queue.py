@@ -312,6 +312,9 @@ def read_request(pr_number: int, queue_dir: Path | None = None) -> ReviewRequest
         return None
 
 
+TERMINAL_VERDICT_STATUSES = frozenset({STATUS_PASSED, STATUS_BLOCKED, STATUS_FAILED})
+
+
 def write_verdict(
     verdict: ReviewVerdict,
     queue_dir: Path | None = None,
@@ -319,8 +322,15 @@ def write_verdict(
     emit_event: bool = True,
     lane_id: str = "review",
     events_dir: Path | None = None,
+    emit_bus_message: bool = True,
+    bus_root: Path | None = None,
 ) -> Path:
     """Write a review verdict to disk and optionally emit an event.
+
+    When the verdict is terminal (passed/blocked/failed) and
+    ``emit_bus_message`` is ``True``, a progress message is sent to the
+    orchestrator via the message bus so the ops lane can track review
+    outcomes without polling.
 
     Args:
         verdict: The review verdict to persist.
@@ -328,6 +338,9 @@ def write_verdict(
         emit_event: Whether to emit a ``review_verdict`` event.
         lane_id: Lane identity for the event.
         events_dir: Override for events directory.
+        emit_bus_message: Whether to send a bus message to the orchestrator
+            on terminal verdicts. Default ``True``.
+        bus_root: Override for message bus root directory.
 
     Returns:
         The path where the verdict was written.
@@ -363,6 +376,10 @@ def write_verdict(
             events_dir=events_dir,
         )
 
+    # Bus bridge: notify orchestrator of terminal verdicts
+    if emit_bus_message and verdict.status in TERMINAL_VERDICT_STATUSES:
+        _emit_verdict_bus_message(verdict, lane_id=lane_id, bus_root=bus_root)
+
     logger.info(
         "Review verdict written: PR #%d @ %s -> %s",
         verdict.pr_number,
@@ -370,6 +387,52 @@ def write_verdict(
         verdict.status,
     )
     return path
+
+
+def _emit_verdict_bus_message(
+    verdict: ReviewVerdict,
+    *,
+    lane_id: str = "review",
+    bus_root: Path | None = None,
+) -> None:
+    """Send a bus message to the orchestrator about a terminal verdict.
+
+    Best-effort: failures are logged but do not propagate — the verdict
+    file is already written and the event already emitted by this point.
+    """
+    try:
+        from bid_euchre.ops.message_bus import (
+            create_message,
+            send_message,
+            shared_bus_root,
+        )
+
+        root = shared_bus_root(bus_root)
+        msg = create_message(
+            from_lane=lane_id,
+            to_lane="orchestrator",
+            message_type="progress",
+            summary=(f"Review verdict for PR #{verdict.pr_number}: {verdict.status}"),
+            payload={
+                "pr_number": verdict.pr_number,
+                "reviewed_sha": verdict.reviewed_sha,
+                "verdict_status": verdict.status,
+                "n_findings": len(verdict.findings),
+                "reason": verdict.reason,
+            },
+        )
+        send_message(msg, bus_root=root)
+        logger.info(
+            "Bus message sent to orchestrator: PR #%d verdict=%s",
+            verdict.pr_number,
+            verdict.status,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to send bus message for PR #%d verdict",
+            verdict.pr_number,
+            exc_info=True,
+        )
 
 
 def read_verdict(pr_number: int, queue_dir: Path | None = None) -> ReviewVerdict | None:

@@ -3121,6 +3121,166 @@ class TestTaskDispatch:
         assert dispatch_subparser is not None, "Expected 'task dispatch' subcommand"
 
 
+class TestTaskAccept:
+    """Verify ``task accept`` CLI subcommand."""
+
+    def test_task_accept_not_found(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Accepting a nonexistent packet returns exit code 1."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "accept",
+                "nonexistent_id",
+                "--lane",
+                "author-b",
+            ]
+        )
+        assert rc == 1
+
+    def test_task_accept_existing_packet(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Accepting an existing packet succeeds and emits task_started event."""
+        import ops
+
+        # Create a pending packet
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Accept test",
+                "--owner",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        # Accept it
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "accept",
+                packet_id,
+                "--lane",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["packet_id"] == packet_id
+        assert result["lane"] == "author-b"
+        assert "emitted task_started event" in result["steps"]
+
+        # Verify task_started event was written
+        from bid_euchre.ops.events import read_events
+
+        events = read_events(runtime_dir / "events", event_type="task_started")
+        assert len(events) >= 1
+        assert events[-1]["payload"]["packet_id"] == packet_id
+
+    def test_task_accept_idempotent(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Running accept twice succeeds both times (idempotent)."""
+        import ops
+
+        # Create a packet
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Idempotent test",
+                "--owner",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        # Accept once
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "accept",
+                packet_id,
+                "--lane",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        capsys.readouterr()  # clear
+
+        # Accept again — should still succeed
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "accept",
+                packet_id,
+                "--lane",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+
+    def test_task_accept_subparser_exists(self) -> None:
+        """Verify the 'task accept' subparser is properly registered."""
+        import ops
+
+        parser = ops.build_parser()
+
+        task_subparser = None
+        for action in parser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                task_subparser = action.choices.get("task")
+                break
+
+        assert task_subparser is not None, "Expected 'task' subcommand"
+
+        accept_subparser = None
+        for action in task_subparser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                accept_subparser = action.choices.get("accept")
+                break
+
+        assert accept_subparser is not None, "Expected 'task accept' subcommand"
+
+
 class TestPriorityChoicesContract:
     """Verify CLI --priority choices stay in sync with VALID_PRIORITIES."""
 
