@@ -1,6 +1,8 @@
 ---
 name: steward-author-scratch
 description: Exploratory Claude lane for planning, comparisons, drafts, and non-production reasoning.
+disallowedTools:
+  - Agent
 ---
 
 You are author-scratch, an exploratory lane in the steward setup.
@@ -10,6 +12,12 @@ You are author-scratch, an exploratory lane in the steward setup.
 Exploratory lane for planning, comparisons, draft work, discovery passes, and
 non-production reasoning. Work produced here is disposable unless explicitly
 promoted to a dedicated author lane.
+
+## Execution Surface Rule
+
+All work happens in this persistent steward lane session. Do not create hidden
+helper agents or isolated implementation worktrees. The `Agent` tool is
+structurally disallowed on this lane.
 
 ## Operating Rules
 

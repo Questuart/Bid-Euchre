@@ -19,6 +19,7 @@ from bid_euchre.ops.status import (
     _format_relative_time,
     _probe_fallback_liveness,
     aggregate_status,
+    detect_untracked_agent_worktrees,
     emit_scope_snapshot,
     format_status_json,
     format_status_text,
@@ -3187,3 +3188,160 @@ class TestSynthesizeLaneActivityClockSkew:
         assert lane.attention_needed is False
         # No stale reason should be set
         assert lane.attention_reason is None or "stale" not in lane.attention_reason
+
+
+class TestDetectUntrackedAgentWorktrees:
+    """Tests for detect_untracked_agent_worktrees (SP-3-06)."""
+
+    @staticmethod
+    def _make_lane(lane_id: str, worktree_path: str = "/tmp/test") -> LaneStatus:
+        return LaneStatus(
+            lane_id=lane_id,
+            lane_class="author",
+            worktree_path=worktree_path,
+            branch="main",
+            lifecycle_class="persistent",
+            has_active_session=False,
+        )
+
+    def test_empty_report_returns_no_violations(self) -> None:
+        """No lanes + no git worktrees = no violations."""
+        from unittest.mock import patch
+
+        report = StatusReport()
+        with patch(
+            "bid_euchre.ops.worktrees.list_worktrees_git",
+            return_value=[],
+        ):
+            result = detect_untracked_agent_worktrees(report)
+        assert result == []
+
+    def test_registered_worktrees_not_flagged(self) -> None:
+        """Worktrees that match registered lanes are not flagged."""
+        from unittest.mock import patch
+
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        report = StatusReport(
+            lanes=[self._make_lane("author-a", "/tmp/Bid-Euchre-steward-author")]
+        )
+        with patch(
+            "bid_euchre.ops.worktrees.list_worktrees_git",
+            return_value=[
+                GitWorktree(
+                    path="/tmp/Bid-Euchre-steward-author",
+                    head="abc123",
+                    branch="main",
+                    bare=False,
+                    detached=False,
+                ),
+            ],
+        ):
+            result = detect_untracked_agent_worktrees(report)
+        assert result == []
+
+    def test_agent_prefix_worktree_flagged(self) -> None:
+        """Worktrees with 'agent-' prefix not in registry are flagged."""
+        from unittest.mock import patch
+
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        report = StatusReport(
+            lanes=[self._make_lane("author-a", "/tmp/known-worktree")]
+        )
+        with patch(
+            "bid_euchre.ops.worktrees.list_worktrees_git",
+            return_value=[
+                GitWorktree(
+                    path="/tmp/known-worktree",
+                    head="abc123",
+                    branch="main",
+                    bare=False,
+                    detached=False,
+                ),
+                GitWorktree(
+                    path="/tmp/agent-hidden-task",
+                    head="def456",
+                    branch="fix/hidden",
+                    bare=False,
+                    detached=False,
+                ),
+            ],
+        ):
+            result = detect_untracked_agent_worktrees(report)
+        assert len(result) == 1
+        assert "agent-hidden-task" in result[0]
+
+    def test_work_prefix_worktree_flagged(self) -> None:
+        """Worktrees with 'work-' prefix not in registry are flagged."""
+        from unittest.mock import patch
+
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        report = StatusReport(lanes=[self._make_lane("author-a", "/tmp/known")])
+        with patch(
+            "bid_euchre.ops.worktrees.list_worktrees_git",
+            return_value=[
+                GitWorktree(
+                    path="/tmp/known",
+                    head="abc123",
+                    branch="main",
+                    bare=False,
+                    detached=False,
+                ),
+                GitWorktree(
+                    path="/tmp/work-temp-fix",
+                    head="ghi789",
+                    branch="fix/temp",
+                    bare=False,
+                    detached=False,
+                ),
+            ],
+        ):
+            result = detect_untracked_agent_worktrees(report)
+        assert len(result) == 1
+        assert "work-temp-fix" in result[0]
+
+    def test_bare_worktrees_skipped(self) -> None:
+        """Bare worktrees are not flagged (they're the main repo)."""
+        from unittest.mock import patch
+
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        report = StatusReport()
+        with patch(
+            "bid_euchre.ops.worktrees.list_worktrees_git",
+            return_value=[
+                GitWorktree(
+                    path="/tmp/agent-repo",
+                    head="abc123",
+                    branch="",
+                    bare=True,
+                    detached=False,
+                ),
+            ],
+        ):
+            result = detect_untracked_agent_worktrees(report)
+        assert result == []
+
+    def test_non_suspicious_unregistered_worktree_not_flagged(self) -> None:
+        """Unregistered worktrees without suspicious prefixes are not flagged."""
+        from unittest.mock import patch
+
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        report = StatusReport()
+        with patch(
+            "bid_euchre.ops.worktrees.list_worktrees_git",
+            return_value=[
+                GitWorktree(
+                    path="/tmp/my-custom-checkout",
+                    head="abc123",
+                    branch="feature/x",
+                    bare=False,
+                    detached=False,
+                ),
+            ],
+        ):
+            result = detect_untracked_agent_worktrees(report)
+        assert result == []

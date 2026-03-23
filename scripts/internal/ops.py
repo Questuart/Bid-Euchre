@@ -35,6 +35,7 @@ Usage:
     uv run python scripts/internal/ops.py task list [--status STATUS] [--owner LANE] [--domain DOMAIN] [--json]
     uv run python scripts/internal/ops.py task show PACKET_ID [--json]
     uv run python scripts/internal/ops.py task approve PACKET_ID [--json]
+    uv run python scripts/internal/ops.py task dispatch PACKET_ID LANE_ID [--approve] [--json]
     uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--json]
     uv run python scripts/internal/ops.py inbox stats [--json]
     uv run python scripts/internal/ops.py message show MSG_ID [--json]
@@ -1533,8 +1534,47 @@ def cmd_task(args: argparse.Namespace) -> int:
             print(f"  Status: {updated.status}")
         return 0
 
+    elif action == "dispatch":
+        from bid_euchre.ops.worker_pool import (
+            dispatch_to_worker,
+            format_action_text,
+        )
+
+        packet_id = args.packet_id
+        lane_id = args.lane_id
+
+        # Optional --approve: transition to approved first if needed
+        if getattr(args, "auto_approve", False):
+            pkt = load_packet(packet_id, task_queue_root)
+            if pkt is None:
+                print(f"Packet {packet_id!r} not found.", file=sys.stderr)
+                return 1
+            if pkt.status in ("pending", "previewing"):
+                approved = transition_status(packet_id, "approved", task_queue_root)
+                if approved is None:
+                    print(
+                        f"Failed to approve packet {packet_id!r}.",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+        result = dispatch_to_worker(packet_id, lane_id, runtime_dir=args.runtime_dir)
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2))
+        else:
+            print(format_action_text(result))
+            if result.executed:
+                print(f"\nDispatched {packet_id} -> {lane_id}")
+                print(f"  The lane should receive /start-task {packet_id}")
+        return 0 if result.executed else 1
+
     else:
-        print("Usage: ops.py task {list|show|create|approve}", file=sys.stderr)
+        print(
+            "Usage: ops.py task {list|show|create|approve|dispatch}",
+            file=sys.stderr,
+        )
         return 1
 
 
@@ -2255,6 +2295,21 @@ def build_parser() -> argparse.ArgumentParser:
         "approve", help="Transition a task packet to 'approved' status"
     )
     task_approve_parser.add_argument("packet_id", help="The packet ID to approve")
+
+    task_dispatch_parser = task_sub.add_parser(
+        "dispatch",
+        help="Approve (optionally) and dispatch a task packet to an author lane",
+    )
+    task_dispatch_parser.add_argument("packet_id", help="The packet ID to dispatch")
+    task_dispatch_parser.add_argument(
+        "lane_id", help="Target author lane (e.g. author-a)"
+    )
+    task_dispatch_parser.add_argument(
+        "--approve",
+        action="store_true",
+        dest="auto_approve",
+        help="Auto-approve the packet before dispatching (for pending/previewing packets)",
+    )
 
     # inbox (Platform-3 message bus)
     inbox_parser = subparsers.add_parser(

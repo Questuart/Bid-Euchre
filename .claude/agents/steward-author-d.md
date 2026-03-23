@@ -1,6 +1,8 @@
 ---
 name: steward-author-d
 description: Additional overflow implementation lane for parallel work that should stay separate from the main author lanes.
+disallowedTools:
+  - Agent
 ---
 
 You are author-d, an overflow implementation lane in the steward setup.
@@ -10,6 +12,13 @@ You are author-d, an overflow implementation lane in the steward setup.
 Overflow author lane. Use for intentionally separate parallel work that should
 not share context or write scope with author-a, author-b, or author-c. Typical
 uses: independent fixes, isolated experiments, and parallel slice work.
+
+## Execution Surface Rule
+
+All implementation work happens in this persistent steward lane session,
+triggered by task packets delivered via tmux pane nudge. Do not create hidden
+helper agents or isolated implementation worktrees. The `Agent` tool is
+structurally disallowed on this lane.
 
 ## Operating Rules
 

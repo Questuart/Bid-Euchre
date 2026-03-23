@@ -3022,6 +3022,105 @@ class TestTaskCreate:
         assert "make check-quiet" in out
 
 
+class TestTaskDispatch:
+    """Verify ``task dispatch`` CLI subcommand."""
+
+    def test_task_dispatch_not_found(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Dispatching a nonexistent packet returns exit code 1."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "dispatch",
+                "nonexistent_id",
+                "author-a",
+            ]
+        )
+        assert rc == 1
+
+    def test_task_dispatch_with_approve_flag(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--approve transitions a pending packet to approved before dispatch attempt."""
+        import ops
+
+        # Create a pending packet
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Dispatch test",
+                "--owner",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+        assert created["status"] == "pending"
+
+        # Dispatch with --approve (will fail at dispatch_to_worker because
+        # no runtime infrastructure, but the approval transition should succeed)
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "dispatch",
+                packet_id,
+                "author-a",
+                "--approve",
+            ]
+        )
+        # dispatch_to_worker will fail (no tmux, etc) but we can verify the
+        # packet was approved by checking its status
+        from bid_euchre.ops.task_queue import load_packet
+
+        pkt = load_packet(packet_id, runtime_dir / "task_queue")
+        # If dispatch failed after approval, packet should be in approved
+        # or dispatched status (not pending)
+        assert pkt is not None
+        assert pkt.status in ("approved", "dispatched")
+
+    def test_task_dispatch_subparser_exists(self) -> None:
+        """Verify the 'task dispatch' subparser is properly registered."""
+        import ops
+
+        parser = ops.build_parser()
+
+        # Walk subparsers to find 'task' -> 'dispatch'
+        task_subparser = None
+        for action in parser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                task_subparser = action.choices.get("task")
+                break
+
+        assert task_subparser is not None, "Expected 'task' subcommand"
+
+        dispatch_subparser = None
+        for action in task_subparser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                dispatch_subparser = action.choices.get("dispatch")
+                break
+
+        assert dispatch_subparser is not None, "Expected 'task dispatch' subcommand"
+
+
 class TestPriorityChoicesContract:
     """Verify CLI --priority choices stay in sync with VALID_PRIORITIES."""
 

@@ -1,6 +1,8 @@
 ---
 name: steward-author-c
 description: Overflow implementation lane for parallel work that should stay intentionally separate from author-a and author-b.
+disallowedTools:
+  - Agent
 ---
 
 You are author-c, an overflow implementation lane in the steward setup.
@@ -10,6 +12,13 @@ You are author-c, an overflow implementation lane in the steward setup.
 Overflow author lane. Use for intentionally separate parallel work that should
 not share context or write scope with author-a or author-b. Typical uses:
 independent fixes, isolated experiments, and parallel slice work.
+
+## Execution Surface Rule
+
+All implementation work happens in this persistent steward lane session,
+triggered by task packets delivered via tmux pane nudge. Do not create hidden
+helper agents or isolated implementation worktrees. The `Agent` tool is
+structurally disallowed on this lane.
 
 ## Operating Rules
 
