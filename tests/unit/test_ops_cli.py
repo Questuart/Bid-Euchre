@@ -3795,3 +3795,82 @@ class TestCmdReviewCheck:
             ]
         )
         assert rc == 1
+
+    def test_notify_sends_message(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Without --no-notify, findings should be sent to orchestrator inbox."""
+        import subprocess as sp
+
+        import ops
+
+        pr_list_json = json.dumps(
+            [
+                {
+                    "number": 500,
+                    "title": "feat: big change",
+                    "mergedAt": "2026-03-22T10:00:00Z",
+                    "changedFiles": 50,
+                    "additions": 4000,
+                    "deletions": 2000,
+                }
+            ]
+        )
+
+        def mock_run(
+            cmd: list[str], *args: object, **kwargs: object
+        ) -> sp.CompletedProcess[str]:
+            if "pr" in cmd and "list" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd, returncode=0, stdout=pr_list_json, stderr=""
+                )
+            if "pr" in cmd and "diff" in cmd:
+                return sp.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="src/big.py\n",
+                    stderr="",
+                )
+            return sp.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        # Ensure message_bus dir exists for send_message.
+        # The bus uses {bus_root}/inbox/{lane}.jsonl for per-lane inboxes
+        # and {bus_root}/messages.jsonl for the audit trail.
+        bus_root = runtime_dir / "message_bus"
+        (bus_root / "inbox").mkdir(parents=True)
+
+        # Point send_message at our temp bus_root
+        monkeypatch.setenv("BID_EUCHRE_BUS_DIR", str(bus_root))
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-check",
+                # No --no-notify: exercises the notification path
+            ]
+        )
+        assert rc == 0  # warnings don't block
+
+        # Verify a message was written to the orchestrator inbox (JSONL)
+        inbox_file = bus_root / "inbox" / "orchestrator.jsonl"
+        assert inbox_file.exists(), "Expected orchestrator inbox JSONL"
+        lines = [
+            json.loads(line)
+            for line in inbox_file.read_text().strip().splitlines()
+            if line.strip()
+        ]
+        assert len(lines) >= 1, "Expected at least one inbox message"
+
+        msg_data = lines[0]
+        assert msg_data["message_type"] == "supervisor_alert"
+        assert msg_data["to_lane"] == "orchestrator"
+        assert "review-check" in msg_data["summary"]

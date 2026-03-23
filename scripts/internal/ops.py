@@ -2058,17 +2058,20 @@ def cmd_review_check(args: argparse.Namespace) -> int:
             f"review-check: {', '.join(summary_parts)} across {len(prs)} merged PRs"
         )
 
-        msg = create_message(
-            from_lane="review",
-            to_lane="orchestrator",
-            message_type="finding",
-            summary=summary,
-            payload={"findings": findings, "prs_checked": len(prs)},
-        )
         try:
+            msg = create_message(
+                from_lane="review",
+                to_lane="orchestrator",
+                message_type="supervisor_alert",
+                summary=summary,
+                payload={"findings": findings, "prs_checked": len(prs)},
+            )
             send_message(msg, bus_root)
         except Exception as exc:
-            print(f"Warning: could not send findings to orchestrator: {exc}")
+            print(
+                f"Warning: could not send findings to orchestrator: {exc}",
+                file=sys.stderr,
+            )
 
     has_blockers = any(f["severity"] == "block" for f in findings)
     return 1 if has_blockers else 0
