@@ -39,6 +39,17 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | in_progress | Pre-Platform-8 |
 | SP-4-03 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | proposed | Pre-Platform-8 |
 
+### Shared Surface Ownership
+
+SP-4-02 and SP-4-03 both modify `scripts/internal/ops.py` and dashboard
+surfaces. Ownership is declared here to prevent merge conflicts and scope
+drift during parallel implementation.
+
+| File | Primary Owner | Secondary Owner | Serialization Rule |
+|------|---------------|-----------------|-------------------|
+| `scripts/internal/ops.py` | SP-4-02 | SP-4-03 | SP-4-02 lands CLI hardening first; SP-4-03 rebases before adding token subcommands |
+| `scripts/generate_dashboard.py` | SP-4-03 | SP-4-02 | SP-4-03 owns new dashboard panels; SP-4-02 may add data feeds but not panel layout |
+
 ## Blockers
 
 - [x] ~~SP-3-05 dual-domain steward layout transition~~ — COMPLETE (2026-03-23).
