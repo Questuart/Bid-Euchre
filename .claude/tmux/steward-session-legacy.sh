@@ -1,19 +1,16 @@
 #!/bin/bash
-# Canonical steward session bootstrap — dual-domain layout (SP-3-05 PR 3).
+# Canonical steward session bootstrap.
 # Usage: steward-session.sh [session-name]
 #
-# Creates (or attaches to) a tmux session with 4 logical window groups:
-#
-#   Window 1: central-ops    -- orchestrator, ops, review, issues
-#   Window 2: platform-workers -- author-a through author-d (platform domain)
-#   Window 3: browser-workers  -- brws-author-a through brws-author-d (browser-game domain)
-#   Window 4: scratch-flex     -- author-scratch, flex-a through flex-c (cross-domain)
-#
-# Each lane gets its own full-page tmux window. The "groups" above are
-# organizational — every lane is a separate window, not a pane split.
-#
-# Legacy rollback: steward-session-legacy.sh preserves the pre-cutover
-# 8-window layout for immediate fallback if the proving run fails.
+# Creates (or attaches to) a tmux session with full-page windows:
+#   1. orchestrator    -- single intake point for delegating work
+#   2. author-a        -- primary author lane
+#   3. author-b        -- secondary author lane
+#   4. author-c        -- overflow author lane
+#   5. author-d        -- overflow author lane
+#   6. author-scratch  -- exploratory Claude lane
+#   7. ops             -- operator monitoring lane
+#   8. review          -- independent review lane
 #
 # Writes v2 worktree registry metadata for each launched lane.
 # See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full model.
@@ -39,29 +36,12 @@ if [ -z "$CLAUDE_BIN" ]; then
     exit 1
 fi
 
-# --- Platform pool worktrees ------------------------------------------------
 AUTHOR_A="${PARENT_DIR}/${REPO_NAME}-steward-author"
 AUTHOR_B="${PARENT_DIR}/${REPO_NAME}-steward-author-b"
 AUTHOR_C="${PARENT_DIR}/${REPO_NAME}-steward-author-c"
 AUTHOR_D="${PARENT_DIR}/${REPO_NAME}-steward-author-d"
-
-# --- Browser-game pool worktrees -------------------------------------------
-BRWS_AUTHOR_A="${PARENT_DIR}/${REPO_NAME}-steward-brws-author-a"
-BRWS_AUTHOR_B="${PARENT_DIR}/${REPO_NAME}-steward-brws-author-b"
-BRWS_AUTHOR_C="${PARENT_DIR}/${REPO_NAME}-steward-brws-author-c"
-BRWS_AUTHOR_D="${PARENT_DIR}/${REPO_NAME}-steward-brws-author-d"
-
-# --- Flex pool worktrees ----------------------------------------------------
-FLEX_A="${PARENT_DIR}/${REPO_NAME}-steward-flex-a"
-FLEX_B="${PARENT_DIR}/${REPO_NAME}-steward-flex-b"
-FLEX_C="${PARENT_DIR}/${REPO_NAME}-steward-flex-c"
-
-# --- Scratch ----------------------------------------------------------------
 AUTHOR_SCRATCH="${PARENT_DIR}/${REPO_NAME}-steward-author-scratch"
-
-# --- Control plane ----------------------------------------------------------
 REVIEW="${PARENT_DIR}/${REPO_NAME}-steward-review"
-
 MAIN_DIR="$(git -C "$MAIN_DIR" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
 
 # ---------------------------------------------------------------------------
@@ -246,139 +226,55 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
     exec caffeinate -dims tmux attach-session -t "$SESSION"
 fi
 
-# ---------------------------------------------------------------------------
-# Ensure all worktrees exist
-# ---------------------------------------------------------------------------
-
-# Platform pool
 ensure_worktree "$AUTHOR_A" "codex/steward-author"
 ensure_worktree "$AUTHOR_B" "codex/steward-author-b"
 ensure_worktree "$AUTHOR_C" "codex/steward-author-c"
 ensure_worktree "$AUTHOR_D" "codex/steward-author-d"
-
-# Browser-game pool
-ensure_worktree "$BRWS_AUTHOR_A" "codex/steward-brws-author-a"
-ensure_worktree "$BRWS_AUTHOR_B" "codex/steward-brws-author-b"
-ensure_worktree "$BRWS_AUTHOR_C" "codex/steward-brws-author-c"
-ensure_worktree "$BRWS_AUTHOR_D" "codex/steward-brws-author-d"
-
-# Flex pool
-ensure_worktree "$FLEX_A" "codex/steward-flex-a"
-ensure_worktree "$FLEX_B" "codex/steward-flex-b"
-ensure_worktree "$FLEX_C" "codex/steward-flex-c"
-
-# Scratch + control plane
 ensure_worktree "$AUTHOR_SCRATCH" "codex/steward-author-scratch"
 ensure_review_worktree
 
-# ---------------------------------------------------------------------------
 # Write v2 registry metadata for each lane
-# ---------------------------------------------------------------------------
-# All lanes are full-page windows with foreground visibility.
-
-# --- Central / control plane ---
-write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "orchestrator"   "null" "foreground" "Orchestrator"
-write_lane_metadata "ops"            "ops"          "$MAIN_DIR"       "--"                              "ops"            "null" "foreground" "Ops"
-write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "review"         "null" "foreground" "Review"
-write_lane_metadata "issues"         "ops"          "$MAIN_DIR"       "--"                              "issues"         "null" "foreground" "Issues"
-
-# --- Platform workers ---
-write_lane_metadata "author-a"       "author"       "$AUTHOR_A"       "codex/steward-author"            "author-a"       "null" "foreground" "Author A"
-write_lane_metadata "author-b"       "author"       "$AUTHOR_B"       "codex/steward-author-b"          "author-b"       "null" "foreground" "Author B"
-write_lane_metadata "author-c"       "author"       "$AUTHOR_C"       "codex/steward-author-c"          "author-c"       "null" "foreground" "Author C"
-write_lane_metadata "author-d"       "author"       "$AUTHOR_D"       "codex/steward-author-d"          "author-d"       "null" "foreground" "Author D"
-
-# --- Browser-game workers ---
-write_lane_metadata "brws-author-a"  "author"       "$BRWS_AUTHOR_A"  "codex/steward-brws-author-a"     "brws-author-a"  "null" "foreground" "Browser A"
-write_lane_metadata "brws-author-b"  "author"       "$BRWS_AUTHOR_B"  "codex/steward-brws-author-b"     "brws-author-b"  "null" "foreground" "Browser B"
-write_lane_metadata "brws-author-c"  "author"       "$BRWS_AUTHOR_C"  "codex/steward-brws-author-c"     "brws-author-c"  "null" "foreground" "Browser C"
-write_lane_metadata "brws-author-d"  "author"       "$BRWS_AUTHOR_D"  "codex/steward-brws-author-d"     "brws-author-d"  "null" "foreground" "Browser D"
-
-# --- Scratch / flex ---
-write_lane_metadata "author-scratch" "scratch"      "$AUTHOR_SCRATCH"  "codex/steward-author-scratch"   "author-scratch"  "null" "foreground" "Scratch"
-write_lane_metadata "flex-a"         "flex"         "$FLEX_A"          "codex/steward-flex-a"            "flex-a"          "null" "foreground" "Flex A"
-write_lane_metadata "flex-b"         "flex"         "$FLEX_B"          "codex/steward-flex-b"            "flex-b"          "null" "foreground" "Flex B"
-write_lane_metadata "flex-c"         "flex"         "$FLEX_C"          "codex/steward-flex-c"            "flex-c"          "null" "foreground" "Flex C"
-
-# ---------------------------------------------------------------------------
-# Create tmux windows — one full-page window per lane
-# ---------------------------------------------------------------------------
-
-# === Group 1: Central / control plane ===
+# All lanes are full-page windows with foreground visibility
+write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                           "orchestrator" "null" "foreground" "Orchestrator"
+write_lane_metadata "author-a"       "author"  "$AUTHOR_A"       "codex/steward-author"         "author-a"  "null" "foreground" "Author A"
+write_lane_metadata "author-b"       "author"  "$AUTHOR_B"       "codex/steward-author-b"       "author-b"  "null" "foreground" "Author B"
+write_lane_metadata "author-c"       "author"  "$AUTHOR_C"       "codex/steward-author-c"       "author-c"  "null" "foreground" "Author C"
+write_lane_metadata "author-d"       "author"  "$AUTHOR_D"       "codex/steward-author-d"       "author-d"  "null" "foreground" "Author D"
+write_lane_metadata "author-scratch" "scratch" "$AUTHOR_SCRATCH" "codex/steward-author-scratch"  "author-scratch" "null" "foreground" "Scratch"
+write_lane_metadata "ops"            "ops"     "$MAIN_DIR"       "--"                           "ops"       "null" "foreground" "Ops"
+write_lane_metadata "review"         "review"  "$REVIEW"         "detached"                     "review"    "null" "foreground" "Review"
 
 # Window 1: orchestrator (first window = session creation)
 tmux new-session -d -s "$SESSION" -n orchestrator -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator
 
-# Window 2: ops
-tmux new-window -t "$SESSION" -n ops -c "$MAIN_DIR" \
-    "$CLAUDE_BIN" --name ops --agent steward-ops
-
-# Window 3: review
-tmux new-window -t "$SESSION" -n review -c "$REVIEW" \
-    "$CLAUDE_BIN" --name review --agent steward-review
-
-# Window 4: issues
-tmux new-window -t "$SESSION" -n issues -c "$MAIN_DIR" \
-    "$CLAUDE_BIN" --name issues --agent issues
-
-# === Group 2: Platform workers ===
-
-# Window 5: author-a
+# Window 2: author-a
 tmux new-window -t "$SESSION" -n author-a -c "$AUTHOR_A" \
     "$CLAUDE_BIN" --name author-a --agent steward-author-a
 
-# Window 6: author-b
+# Window 3: author-b
 tmux new-window -t "$SESSION" -n author-b -c "$AUTHOR_B" \
     "$CLAUDE_BIN" --name author-b --agent steward-author-b
 
-# Window 7: author-c
+# Window 4: author-c
 tmux new-window -t "$SESSION" -n author-c -c "$AUTHOR_C" \
     "$CLAUDE_BIN" --name author-c --agent steward-author-c
 
-# Window 8: author-d
+# Window 5: author-d
 tmux new-window -t "$SESSION" -n author-d -c "$AUTHOR_D" \
     "$CLAUDE_BIN" --name author-d --agent steward-author-d
 
-# === Group 3: Browser-game workers ===
-
-# Window 9: brws-author-a
-tmux new-window -t "$SESSION" -n brws-author-a -c "$BRWS_AUTHOR_A" \
-    "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a
-
-# Window 10: brws-author-b
-tmux new-window -t "$SESSION" -n brws-author-b -c "$BRWS_AUTHOR_B" \
-    "$CLAUDE_BIN" --name brws-author-b --agent steward-brws-author-b
-
-# Window 11: brws-author-c
-tmux new-window -t "$SESSION" -n brws-author-c -c "$BRWS_AUTHOR_C" \
-    "$CLAUDE_BIN" --name brws-author-c --agent steward-brws-author-c
-
-# Window 12: brws-author-d
-tmux new-window -t "$SESSION" -n brws-author-d -c "$BRWS_AUTHOR_D" \
-    "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d
-
-# === Group 4: Scratch / flex ===
-
-# Window 13: author-scratch
+# Window 6: author-scratch
 tmux new-window -t "$SESSION" -n author-scratch -c "$AUTHOR_SCRATCH" \
     "$CLAUDE_BIN" --name author-scratch --agent steward-author-scratch
 
-# Window 14: flex-a
-tmux new-window -t "$SESSION" -n flex-a -c "$FLEX_A" \
-    "$CLAUDE_BIN" --name flex-a --agent steward-flex-a
+# Window 7: ops
+tmux new-window -t "$SESSION" -n ops -c "$MAIN_DIR" \
+    "$CLAUDE_BIN" --name ops --agent steward-ops
 
-# Window 15: flex-b
-tmux new-window -t "$SESSION" -n flex-b -c "$FLEX_B" \
-    "$CLAUDE_BIN" --name flex-b --agent steward-flex-b
-
-# Window 16: flex-c
-tmux new-window -t "$SESSION" -n flex-c -c "$FLEX_C" \
-    "$CLAUDE_BIN" --name flex-c --agent steward-flex-c
-
-# ---------------------------------------------------------------------------
-# Post-launch setup
-# ---------------------------------------------------------------------------
+# Window 8: review
+tmux new-window -t "$SESSION" -n review -c "$REVIEW" \
+    "$CLAUDE_BIN" --name review --agent steward-review
 
 # Auto-launch ops monitoring loop (SP-3-08).
 # Wait briefly for the claude process to initialize, then send the /loop

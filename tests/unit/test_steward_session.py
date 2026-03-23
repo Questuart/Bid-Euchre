@@ -1,7 +1,8 @@
 """Tests for the steward session bootstrap script (.claude/tmux/steward-session.sh).
 
-Covers update_last_active(), detached-mode support, and launchd recovery
-infrastructure without requiring tmux to be running.
+Covers update_last_active(), detached-mode support, dual-domain 4-window
+layout (SP-3-05 PR 3), legacy rollback, and launchd recovery infrastructure
+without requiring tmux to be running.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STEWARD_SCRIPT = REPO_ROOT / ".claude" / "tmux" / "steward-session.sh"
+LEGACY_SCRIPT = REPO_ROOT / ".claude" / "tmux" / "steward-session-legacy.sh"
 INSTALL_SCRIPT = REPO_ROOT / ".claude" / "launchd" / "install-launchd.sh"
 PLIST_TEMPLATE = REPO_ROOT / ".claude" / "launchd" / "ensure-steward-session.plist"
 
@@ -277,37 +279,66 @@ class TestStewardSessionScript:
         ), "ensure_worktree() must call validate_worktree_path before creating"
 
 
-class TestFullPageLaneLayout:
-    """Validate that all lanes use individual full-page windows (no dashboard)."""
+# ---------------------------------------------------------------------------
+# Dual-domain 4-window layout tests (SP-3-05 PR 3)
+# ---------------------------------------------------------------------------
 
-    EXPECTED_LANES = [
-        "orchestrator",
-        "author-a",
-        "author-b",
-        "author-c",
-        "author-d",
-        "author-scratch",
-        "ops",
-        "review",
+
+class TestDualDomainLayout:
+    """Validate the 4-window-group layout with all pool lanes."""
+
+    # All lanes that must have individual tmux windows
+    CENTRAL_LANES = ["orchestrator", "ops", "review", "issues"]
+    PLATFORM_LANES = ["author-a", "author-b", "author-c", "author-d"]
+    BROWSER_LANES = [
+        "brws-author-a",
+        "brws-author-b",
+        "brws-author-c",
+        "brws-author-d",
     ]
+    FLEX_LANES = ["author-scratch", "flex-a", "flex-b", "flex-c"]
 
-    def test_no_dashboard_window(self) -> None:
-        """The script must not create a dashboard window."""
-        content = STEWARD_SCRIPT.read_text()
-        # No tmux window named "dashboard" and no split-window/select-layout
-        assert "dashboard" not in content.lower(), (
-            "steward-session.sh must not reference a 'dashboard' window; "
-            "all lanes should have individual full-page windows"
-        )
+    ALL_LANES = CENTRAL_LANES + PLATFORM_LANES + BROWSER_LANES + FLEX_LANES
 
     def test_all_lanes_have_individual_windows(self) -> None:
         """Each lane must have its own tmux window (new-session or new-window)."""
         content = STEWARD_SCRIPT.read_text()
-        for lane in self.EXPECTED_LANES:
+        for lane in self.ALL_LANES:
             assert f"-n {lane}" in content, (
                 f"Lane '{lane}' must have its own tmux window "
                 f"(expected '-n {lane}' in new-session or new-window command)"
             )
+
+    def test_window_count_matches_lane_count(self) -> None:
+        """Number of tmux window creation commands must match total lane count."""
+        content = STEWARD_SCRIPT.read_text()
+        lines = content.split("\n")
+        window_cmds = [
+            line
+            for line in lines
+            if line.strip().startswith("tmux")
+            and ("new-session" in line or "new-window" in line)
+        ]
+        assert len(window_cmds) == len(self.ALL_LANES), (
+            f"Expected {len(self.ALL_LANES)} window creation commands, "
+            f"found {len(window_cmds)}"
+        )
+
+    def test_first_window_uses_new_session(self) -> None:
+        """First window (orchestrator) must use tmux new-session."""
+        content = STEWARD_SCRIPT.read_text()
+        lines = content.split("\n")
+        window_cmds = [
+            line
+            for line in lines
+            if line.strip().startswith("tmux")
+            and ("new-session" in line or "new-window" in line)
+        ]
+        assert "new-session" in window_cmds[0], "First window must use tmux new-session"
+        for cmd in window_cmds[1:]:
+            assert (
+                "new-window" in cmd
+            ), f"Non-first windows must use tmux new-window: {cmd.strip()}"
 
     @staticmethod
     def _metadata_invocation_lines() -> list[str]:
@@ -319,50 +350,131 @@ class TestFullPageLaneLayout:
             if line.strip().startswith('write_lane_metadata "')
         ]
 
+    def test_metadata_count_matches_lanes(self) -> None:
+        """write_lane_metadata must be called once per lane."""
+        metadata_lines = self._metadata_invocation_lines()
+        assert len(metadata_lines) == len(self.ALL_LANES), (
+            f"Expected {len(self.ALL_LANES)} write_lane_metadata calls, "
+            f"found {len(metadata_lines)}"
+        )
+
     def test_all_lanes_foreground_visibility(self) -> None:
         """All write_lane_metadata calls must use foreground visibility."""
         metadata_lines = self._metadata_invocation_lines()
-        assert len(metadata_lines) == len(self.EXPECTED_LANES), (
-            f"Expected {len(self.EXPECTED_LANES)} write_lane_metadata calls, "
-            f"found {len(metadata_lines)}"
-        )
         for line in metadata_lines:
             assert (
                 '"foreground"' in line
-            ), f"All lanes must have foreground visibility, but found: {line.strip()}"
+            ), f"All lanes must have foreground visibility: {line.strip()}"
 
     def test_no_pane_indices_in_metadata(self) -> None:
         """No lane should use numbered pane indices (all windows are full-page)."""
         metadata_lines = self._metadata_invocation_lines()
         for line in metadata_lines:
-            # The tmux_pane argument (6th positional) should be "null"
-            # Numbered pane indices like "1", "2", "3", "4" indicate
-            # a dashboard pane layout, not individual windows
             assert (
                 '"null"' in line or "null" in line
             ), f"Lane metadata should not use numbered pane indices: {line.strip()}"
 
-    def test_window_creation_order(self) -> None:
-        """Windows must be created in the expected order."""
+    def test_no_dashboard_window(self) -> None:
+        """The script must not create a dashboard window."""
         content = STEWARD_SCRIPT.read_text()
+        # "dashboard" should not appear as a window name
         lines = content.split("\n")
-        window_lines = [
-            line for line in lines if "new-session" in line or "new-window" in line
+        window_cmds = [
+            line
+            for line in lines
+            if line.strip().startswith("tmux")
+            and ("new-session" in line or "new-window" in line)
         ]
-        # Filter to only the tmux window creation commands (not comments)
-        window_cmds = [l for l in window_lines if l.strip().startswith("tmux")]
-        assert len(window_cmds) == len(self.EXPECTED_LANES), (
-            f"Expected {len(self.EXPECTED_LANES)} window creation commands, "
-            f"found {len(window_cmds)}"
-        )
-        # First window uses new-session, rest use new-window
-        assert (
-            "new-session" in window_cmds[0]
-        ), "First window (orchestrator) must use tmux new-session"
-        for cmd in window_cmds[1:]:
+        for cmd in window_cmds:
             assert (
-                "new-window" in cmd
-            ), f"Non-first windows must use tmux new-window: {cmd.strip()}"
+                "dashboard" not in cmd.lower()
+            ), f"Must not create a 'dashboard' window: {cmd.strip()}"
+
+    def test_browser_worktree_variables_defined(self) -> None:
+        """Browser-game worktree path variables must be defined."""
+        content = STEWARD_SCRIPT.read_text()
+        for var in ["BRWS_AUTHOR_A", "BRWS_AUTHOR_B", "BRWS_AUTHOR_C", "BRWS_AUTHOR_D"]:
+            assert var in content, f"Missing worktree variable: {var}"
+
+    def test_flex_worktree_variables_defined(self) -> None:
+        """Flex worktree path variables must be defined."""
+        content = STEWARD_SCRIPT.read_text()
+        for var in ["FLEX_A", "FLEX_B", "FLEX_C"]:
+            assert var in content, f"Missing worktree variable: {var}"
+
+    def test_browser_worktrees_created(self) -> None:
+        """ensure_worktree must be called for all browser-game worktrees."""
+        content = STEWARD_SCRIPT.read_text()
+        for var in ["BRWS_AUTHOR_A", "BRWS_AUTHOR_B", "BRWS_AUTHOR_C", "BRWS_AUTHOR_D"]:
+            assert (
+                f'"${var}"' in content or f'"${{{var}}}"' in content
+            ), f"ensure_worktree must be called for ${var}"
+
+    def test_flex_worktrees_created(self) -> None:
+        """ensure_worktree must be called for all flex worktrees."""
+        content = STEWARD_SCRIPT.read_text()
+        for var in ["FLEX_A", "FLEX_B", "FLEX_C"]:
+            assert (
+                f'"${var}"' in content or f'"${{{var}}}"' in content
+            ), f"ensure_worktree must be called for ${var}"
+
+    def test_issues_lane_exists(self) -> None:
+        """The issues lane must be created as a tmux window."""
+        content = STEWARD_SCRIPT.read_text()
+        assert "-n issues" in content, "Must create an 'issues' tmux window"
+
+    def test_issues_uses_issues_agent(self) -> None:
+        """The issues window must use the issues agent profile."""
+        content = STEWARD_SCRIPT.read_text()
+        assert "--agent issues" in content, "Issues window must use --agent issues"
+
+
+# ---------------------------------------------------------------------------
+# Legacy rollback tests
+# ---------------------------------------------------------------------------
+
+
+class TestLegacyRollback:
+    """Validate the legacy rollback script exists for safety."""
+
+    def test_legacy_script_exists(self) -> None:
+        """steward-session-legacy.sh must exist as a rollback path."""
+        assert (
+            LEGACY_SCRIPT.exists()
+        ), f"Missing legacy rollback script: {LEGACY_SCRIPT}"
+
+    def test_legacy_script_is_executable(self) -> None:
+        assert LEGACY_SCRIPT.stat().st_mode & 0o111, "Legacy script must be executable"
+
+    def test_legacy_script_valid_bash(self) -> None:
+        result = subprocess.run(
+            ["bash", "-n", str(LEGACY_SCRIPT)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"Syntax error: {result.stderr}"
+
+    def test_legacy_has_original_lanes(self) -> None:
+        """Legacy script should have the original 8-lane layout."""
+        content = LEGACY_SCRIPT.read_text()
+        for lane in [
+            "orchestrator",
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            "author-scratch",
+            "ops",
+            "review",
+        ]:
+            assert (
+                f"-n {lane}" in content
+            ), f"Legacy script missing original lane: {lane}"
+
+
+# ---------------------------------------------------------------------------
+# Boundary validation tests
+# ---------------------------------------------------------------------------
 
 
 class TestBoundaryValidation:
