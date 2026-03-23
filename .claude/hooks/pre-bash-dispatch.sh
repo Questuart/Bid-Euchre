@@ -12,7 +12,7 @@
 # command is allowed to proceed.
 #
 # Exit codes: 0 = allow, 2 = block (propagated from sub-hooks)
-# Timeout: 15s (accommodates merge guard's gh API calls)
+# Timeout: 20s (accommodates merge guard's gh API calls)
 set -euo pipefail
 
 HOOKS_DIR="${CLAUDE_PROJECT_DIR:-.}/.claude/hooks"
