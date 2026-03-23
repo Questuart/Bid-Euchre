@@ -892,8 +892,10 @@ def reset_worktree(
     Before resetting, checks for uncommitted changes.  If the worktree is
     dirty and *force* is ``False``, the reset is aborted and a
     ``dirty_worktree`` error is returned.  If *force* is ``True``, the diff
-    is saved to ``/tmp/<lane_id>.diff`` before proceeding with the reset so
-    that no work is silently lost.
+    is saved to ``/tmp/<lane_id>_<timestamp>.diff`` before proceeding with
+    the reset so that no work is silently lost.  The timestamp suffix
+    ensures concurrent resets across lanes never overwrite each other's
+    backup diffs.
 
     Args:
         lane_id: Lane whose worktree should be reset.
@@ -927,6 +929,7 @@ def reset_worktree(
             text=True,
         )
         is_dirty = bool(status_result.stdout.strip())
+        diff_path: Path | None = None
 
         if is_dirty and not force:
             dirty_files = status_result.stdout.strip()
@@ -942,7 +945,8 @@ def reset_worktree(
             )
 
         if is_dirty and force:
-            diff_path = Path(f"/tmp/{lane_id}.diff")
+            ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S")
+            diff_path = Path(f"/tmp/{lane_id}_{ts}.diff")
             diff_result = subprocess.run(
                 ["git", "diff", "HEAD"],
                 cwd=worktree_path,
@@ -975,8 +979,8 @@ def reset_worktree(
         )
 
         reason = f"Reset worktree at {worktree_path} to origin/main"
-        if is_dirty:
-            reason += f" (dirty diff saved to /tmp/{lane_id}.diff)"
+        if diff_path is not None:
+            reason += f" (dirty diff saved to {diff_path})"
         return PoolAction(
             action="reset_worktree",
             lane_id=lane_id,

@@ -1178,12 +1178,12 @@ class TestTakePoolSnapshot:
                 LaneHealthAssessment(lane_id="author-b", health="idle", state="idle"),
             ]
         )
-        mock_vis.side_effect = (
-            lambda lane: "foreground" if lane.lane_id == "author-a" else "background"
+        mock_vis.side_effect = lambda lane: (
+            "foreground" if lane.lane_id == "author-a" else "background"
         )
         mock_probe.side_effect = lambda lid, _: lid == "author-a"
-        mock_task.side_effect = (
-            lambda lid, rd=None: "pkt1" if lid == "author-a" else None
+        mock_task.side_effect = lambda lid, rd=None: (
+            "pkt1" if lid == "author-a" else None
         )
 
         now = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
@@ -1951,7 +1951,7 @@ class TestResetWorktree:
     def test_dirty_worktree_force_saves_diff(
         self, mock_run: MagicMock, mock_resolve: MagicMock, tmp_path: Path
     ) -> None:
-        """Dirty worktree + force=True → saves diff, then resets successfully."""
+        """Dirty worktree + force=True → saves diff with timestamped path."""
         mock_resolve.return_value = "/tmp/wt-author-a"
         dirty_status = self._make_status_dirty()
         diff_mock = self._make_diff("diff content here")
@@ -1963,18 +1963,25 @@ class TestResetWorktree:
             ok,
         ]  # status, diff, fetch, reset
 
-        diff_path = Path("/tmp/author-a.diff")
-        result = reset_worktree("author-a", force=True)
+        from datetime import datetime, timezone
 
+        frozen = datetime(2026, 1, 15, 12, 30, 45, tzinfo=timezone.utc)
+        with patch(f"{_WORKER_POOL}.datetime") as mock_dt:
+            mock_dt.now.return_value = frozen
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = reset_worktree("author-a", force=True)
+
+        diff_path = Path("/tmp/author-a_20260115T123045.diff")
         assert result.executed is True
         assert result.error is None
         assert "origin/main" in result.reason
         assert "dirty diff saved" in result.reason
+        assert "20260115T123045" in result.reason
         # 4 calls: status, diff, fetch, reset
         assert mock_run.call_count == 4
         diff_call = mock_run.call_args_list[1]
         assert diff_call[0][0] == ["git", "diff", "HEAD"]
-        # Verify the diff was written to /tmp/<lane>.diff
+        # Verify the diff was written to timestamped path
         assert diff_path.exists()
         assert diff_path.read_text() == "diff content here"
         # Cleanup
