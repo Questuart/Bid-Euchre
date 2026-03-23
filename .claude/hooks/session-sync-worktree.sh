@@ -38,7 +38,6 @@ fi
 
 # Already on main — just pull
 if [[ "$CURRENT_BRANCH" == "main" ]]; then
-  echo >&2 "${LOG_PREFIX} Already on main — pulling latest."
   git -C "$PROJECT_DIR" pull origin main --ff-only 2>/dev/null || true
   exit 0
 fi
@@ -55,7 +54,6 @@ PR_STATE="$(gh pr view "$CURRENT_BRANCH" --repo Questuart/Bid-Euchre --json stat
 PR_STATE="${PR_STATE:-NONE}"
 
 if [[ "$PR_STATE" == "OPEN" ]]; then
-  echo >&2 "${LOG_PREFIX} Branch '$CURRENT_BRANCH' has an open PR — skipping auto-sync."
   exit 0
 fi
 
@@ -74,8 +72,6 @@ fi
 # --------------------------------------------------------------------------
 # Safe to sync: no open PR, no unpushed commits, clean working tree
 # --------------------------------------------------------------------------
-echo >&2 "${LOG_PREFIX} Syncing '$CURRENT_BRANCH' → main (PR state: ${PR_STATE})"
-
 # Switch to tracking origin/main. We can't checkout 'main' directly because
 # it's used by the primary worktree — instead reset the current branch to
 # origin/main, giving us the same effect.
@@ -83,5 +79,3 @@ git -C "$PROJECT_DIR" reset --hard origin/main 2>/dev/null || {
   echo >&2 "${LOG_PREFIX} WARNING: Failed to reset to origin/main — skipping."
   exit 0
 }
-
-echo >&2 "${LOG_PREFIX} Synced to $(git -C "$PROJECT_DIR" log --oneline -1)"
