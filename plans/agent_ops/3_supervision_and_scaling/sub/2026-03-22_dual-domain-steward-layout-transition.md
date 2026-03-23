@@ -4,8 +4,8 @@
 **ID:** SP-3-05
 **Date:** 2026-03-22
 **Parent:** post-Phase-3 transition package before Phase 4 (`4_remote_channel`)
-**Status:** proposed
-**Owner:** TBD
+**Status:** completed
+**Owner:** orchestrator
 
 ---
 
@@ -262,3 +262,37 @@ make check-quiet
 - land routing before layout
 - prove one real platform task plus one real browser-game task before retiring
   any old worktrees
+
+---
+
+## Outcome — COMPLETE (2026-03-23)
+
+Dual-domain layout shipped in the pre-proving hardening session and verified
+by a full dual-domain proving run.
+
+**Key PRs:**
+- #1281 — docs: register SP-3-06/07/08 and update lane docs
+- #1282 — fix: dispatch copies packet JSON to target worktree
+- #1283 — ops: rewrite tmux launcher for 4-window tiled layout
+- #1284 — ops: add bulk-ack and TTL auto-expire to message bus
+- #1286 — ops: add post-merge-notify hook (BD-005)
+- #1287 — ops: add review-check CLI and auto-launch on boot
+- #1293 — ops: add review verdict bus bridge and task accept command
+- #1294 — ops: add native inbox bridge and importer for message bus
+
+**Proving run results:**
+- Platform task dispatched to author-a pool ✅
+- Browser-game task dispatched to brws-author-a pool ✅
+- Flex task dispatched to flex-a pool ✅
+- Ops monitor detected all dispatches ✅
+- 4-window tiled layout canonical, 12 worker lanes active across
+  platform/browser-game/flex pools
+
+**Acceptance criteria satisfied:**
+- [x] Domain stored on task packets and supplied through CLI/orchestrator intake
+- [x] Worker selection honors same-domain → flex → explicit override
+- [x] Platform pool keeps `author-a` through `author-d` identities
+- [x] Browser and flex lanes have explicit lane identities
+- [x] One central ops/review/orchestrator surface supervises both domains
+- [x] New tmux layout boots cleanly in detached mode
+- [x] Legacy layout superseded (proving run passed, no rollback needed)

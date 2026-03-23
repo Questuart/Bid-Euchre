@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-19
 **Status:** ACTIVE
-**Scope:** Build the prompt-first orchestration platform that sits on top of the current steward control plane: single-entry orchestration, dashboard-first supervision, durable communication, remote operator reachability, bounded second-model reviewer/maintainer lanes, and portability to other coding repos.
+**Scope:** Build the prompt-first orchestration platform that sits on top of the current steward control plane: single-entry orchestration, dashboard-first supervision, durable communication, early remote operator reachability for away-from-desk velocity, bounded second-model reviewer/maintainer lanes, and portability to other coding repos.
 **Supersedes:** [Post-PR-5 Follow-On Roadmap](../post_pr5_follow_on_roadmap.md) for committed orchestration-platform scope; seeded from [2026-03-19_agentic-orchestration-platform.md](2026-03-19_agentic-orchestration-platform.md)
 **Parent context:** [Autonomous Agent Ops Workflow](../sessions/2026-03-15_autonomous-agent-ops-workflow.md)
 
@@ -17,11 +17,17 @@ core that can later be reused outside Bid-Euchre. The platform should land in
 consumable batches that accelerate current repo work and browser-game work as
 they ship, rather than forming one monolithic prerequisite wall.
 
+Remote reachability remains an early platform priority because the operator is
+the only remote user and uses away-from-desk supervision to keep work moving.
+The first remote slice should therefore optimize for a thin transport into the
+existing `orchestrator` workflow rather than a richer remote-only control
+surface.
+
 ## 2. Goals
 
 1. Add a single user-facing `orchestrator` lane for normal task intake and delegation.
 2. Move the visible steward experience toward dashboard-first supervision with resumable background workers.
-3. Add durable lane-to-lane communication, remote operator reachability, and high-signal idle escalation.
+3. Add durable lane-to-lane communication plus early remote operator reachability that reduces away-from-desk idle time through high-signal escalation and queue-moving supervision.
 4. Add bounded self-improving skill promotion and bounded second-model reviewer/maintainer service lanes.
 5. Preserve a clean core-vs-adapter boundary so the orchestration layer can later be reused in another coding or research repo.
 
@@ -30,7 +36,8 @@ they ship, rather than forming one monolithic prerequisite wall.
 - **`orchestrator`**: the single normal ingress for user-submitted work; it creates task packets, delegates, and reports outcomes.
 - **Worker pool**: the background `author-*` lanes that execute bounded delegated tasks and can be reused or scaled within repo-owned limits.
 - **Communication bus**: the durable message/event/summarization layer used for coordination between lanes.
-- **Remote operator channel**: the Telegram and/or Discord path used for bounded remote supervision and 5-minute idle-attention alerts; it is not the source of truth.
+- **Remote operator channel**: the Telegram and/or Discord path used for remote supervision and 5-minute idle-attention alerts. In v1 it is a thin transport into `orchestrator`, not a separate workflow engine or source of truth.
+- **Away-from-desk velocity**: reducing the time work sits idle waiting for operator attention while the operator is away from the steward session.
 - **Repo adapter**: the repo-specific policy layer for CI, branch policy, validation commands, labels, and workflow conventions.
 - **Second-model service lane**: an advisory reviewer or maintainer lane, such as Codex, operating through durable task packets rather than a hook-coupled local review loop.
 
@@ -101,11 +108,13 @@ Each active phase maintains a checkpoint file at:
 
 Current active phase:
 
-- No numbered phase is currently active. The next governed action is the
-  post-Phase-3 dual-domain layout transition (SP-3-05), followed by
-  Phase 4 scope lock. Phase 4 (`4_remote_channel`) and Phase 5
-  (`5_portability_and_learning`) are both unblocked and ready for entry
-  (both depend on Phase 3, which is COMPLETE).
+- Phase 4 (`4_remote_channel`) is unblocked and ready for entry. SP-3-05
+  (dual-domain layout transition) is COMPLETE — the proving run passed
+  2026-03-23. Phase 4 scaffolding exists at
+  `plans/agent_ops/4_remote_channel/plan.md` and
+  `plans/agent_ops/4_remote_channel/checkpoints.md`.
+  Phase 5 (`5_portability_and_learning`) remains unentered and depends on
+  Phase 3 completion (satisfied).
 
 Completed phases:
 
@@ -113,7 +122,6 @@ Completed phases:
 - `plans/agent_ops/1_coordination_core/checkpoints.md` (Phase 1 — COMPLETE, 2026-03-21)
 - `plans/agent_ops/2_visible_operating_model/checkpoints.md` (Phase 2 — COMPLETE, 2026-03-22)
 - `plans/agent_ops/3_supervision_and_scaling/checkpoints.md` (Phase 3 — COMPLETE, 2026-03-22)
-- `plans/agent_ops/4_remote_channel/checkpoints.md` (Phase 4 — PENDING)
 
 Agents should treat checkpoints as the human-readable source of current step
 status, blockers, and session handoff state.
@@ -167,7 +175,7 @@ The system manages a worker pool of:
 - repo runtime state = operational truth
 - GitHub = PR/review/CI truth
 - communication bus = coordination truth
-- Telegram/Discord = notification and bounded remote control, not source of truth
+- Telegram/Discord = notification and remote supervision transport, not source of truth
 
 ## Core Principles
 
@@ -182,6 +190,8 @@ The system manages a worker pool of:
 8. **Exportable core:** Generic orchestration logic should be separable from repo-specific policy.
 9. **Remote reachability is required:** The user must be reachable through Telegram and/or Discord when away from the steward session.
 10. **Learning loop is explicit:** Repeated successful workflows should be turned into reviewed, reusable skills over time.
+11. **Remote parity:** Remote messages are another ingress into the existing
+   `orchestrator` workflow, not a separate remote-only workflow engine.
 
 ## Non-Goals
 
@@ -379,10 +389,11 @@ The platform must not rely on best-effort message passing between lanes.
   - supervisor alerts, retry/reroute recommendations
 - `review -> orchestrator`
   - plan review outcome, PR findings, validation status
-- `review -> orchestrator`
-  - issue created/updated, threshold crossed, triage results
-- remote channel -> `orchestrator` / `ops`
-  - bounded user replies, acknowledgements, reroute/inspect requests
+- `issues -> orchestrator`
+  - issue created/updated, threshold crossed
+- remote channel -> `orchestrator`
+  - remote operator messages, acknowledgements, reroute/inspect requests, and
+    queue-moving supervision requests
 
 ## Prompt And Skill Layer
 
@@ -577,16 +588,6 @@ The platform must expose its own health signals, including:
 
 ## Remote Operator Channels
 
-> **Discovery (2026-03-23):** Claude Code v2.1.80+ ships a Channels feature
-> (research preview) with pre-built Telegram and Discord plugins. These provide
-> pairing, sender gating, reply tools, and permission relay out of the box.
-> Reference: <https://code.claude.com/docs/en/channels-reference>
->
-> This significantly reduces Platform-8 scope: the transport skeleton, sender
-> gating, and permission relay are framework-provided. Platform-8a becomes
-> "configure official Telegram plugin and prove core capabilities" rather than
-> "build transport skeleton." See `plans/agent_ops/4_remote_channel/plan.md`.
-
 The platform should support an official Claude Code plugin path for:
 
 - Telegram
@@ -597,24 +598,46 @@ Recommended pilot:
 - Telegram first for personal DM-based supervision
 - Discord later if shared/team-room workflows become important
 
-### Allowed remote behaviors
+### Phase 4 v1 operating model
+
+Phase 4 should optimize for away-from-desk velocity for a single remote
+operator. The first rollout should stay intentionally simple:
+
+- Telegram is the first remote path; Discord is deferred unless needed later.
+- Inbound remote messages go to `orchestrator`, which continues to own routing,
+  delegation, review requests, and user-facing state.
+- The remote channel does **not** introduce a separate command grammar,
+  classifier, or remote-specific preview heuristic in v1.
+- Free-form remote messages are allowed; the remote channel is a transport into
+  the existing orchestrator flow, not a new workflow engine.
+- Existing repo-owned safety controls remain in force: merge gates, review
+  truth, filesystem boundaries, and destructive-action approvals do not change
+  just because a request arrived remotely.
+- Every inbound and outbound remote exchange must be durably recorded in
+  repo-owned state.
+
+### High-value first remote behaviors
+
+The first rollout should prove that the remote path can support the most useful
+away-from-desk workflows:
 
 - summaries
 - alerts
 - acknowledgements
-- bounded commands such as:
-  - inspect
-  - reroute
-  - pause retries
-  - summarize active lanes
-  - send review to PR N
+- inspect current work or blockers
+- reroute work through `orchestrator`
+- pause retries
+- summarize active lanes
+- request review for a PR or active task
+
+This is a proving target, not a separate remote-only command language.
 
 At least one of Telegram or Discord must be adopted as part of the platform.
 Telegram is the recommended first path, but the remote operator channel is not
 optional in the target end state.
 
 If an official Claude Code plugin path is unavailable, unstable, or lacks the
-required bounded-command surface when `Platform-8` begins, that slice should
+required message, audit, or operator-control surface when `Platform-8` begins, that slice should
 use a minimal repo-owned adapter with the same command and audit contract
 instead of blocking the roadmap on that external dependency.
 
@@ -627,7 +650,8 @@ summary. This must be:
 - deduplicated
 - summarized
 - rate-limited / backoff-controlled
-- routed through `ops` or `orchestrator`, not emitted independently by every author lane
+- routed through `orchestrator` from repo-owned platform state, not emitted
+  independently by every author lane
 
 ## Exportability To Other Coding Repos
 
@@ -759,7 +783,7 @@ The orchestrator platform is an enabling layer, not a prerequisite wall.
 | Batch B (`Platform-2` + `Platform-3`) | Browser-game and other in-repo implementation can start benefiting from orchestrated intake, durable handoff, clearer delegation, and the primary PR review substrate (review requests, verdicts, merge-safety state) |
 | Batch C (`Platform-4` + `Platform-5`) | Browser-game Phase 0-3 style work can use dashboard-first supervision and prompt-first author/review flows daily |
 | Batch D (`Platform-6` + `Platform-7`) | Sustained multi-lane application work benefits from automatic supervision, worker reuse, and bounded scaling |
-| Batch E (`Platform-8` + `Platform-9`) | Remote supervision helps longer-running game/app sprints but is not a prerequisite for starting browser-game work |
+| Batch E (`Platform-8` + `Platform-9`) | Remote supervision improves away-from-desk velocity for longer-running game/app sprints and reduces idle waits without becoming a second control plane |
 | Batch F (`Platform-10` + `Platform-11`) | Portability and learning-loop value mainly benefits future repos and later-stage reuse |
 | Batch G (`Platform-12` + `Platform-13`) | Cross-model review/maintenance (extending Platform-3's review substrate with second-model service lanes) plus second-project validation strengthen long-run confidence and portability |
 | Batch H (`Platform-14`) | Hardening and closeout consolidate the platform after the major capabilities have landed |
@@ -1269,8 +1293,7 @@ These are the short names future handoffs should use.
     channel is needed immediately
 - security boundary:
   - require pairing and sender allowlists before enabling two-way use
-  - permission relay (remote tool approval from phone) is available in the
-    official Channels framework; enable it as part of Platform-8a proving
+  - keep permission relay disabled by default in Platform-8
   - treat inbound remote messages as transport only until they are recorded or
     reflected in repo-owned state
 - fallback boundary:
