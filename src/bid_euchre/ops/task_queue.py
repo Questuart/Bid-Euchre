@@ -47,6 +47,10 @@ VALID_STATUSES = frozenset(
 
 VALID_PRIORITIES = frozenset({"low", "normal", "high"})
 
+# Known execution domains for routing.  ``None`` means "unspecified" and
+# the orchestrator may assign one later.
+KNOWN_DOMAINS: frozenset[str] = frozenset({"platform", "browser-game"})
+
 VALID_ACK_ACTIONS = frozenset({"approve", "edit", "redirect", "reject"})
 
 VALID_RESULT_STATUSES = frozenset({"completed", "failed", "blocked"})
@@ -102,6 +106,7 @@ class TaskPacket:
     scope_declared: list[str] = field(default_factory=list)
     validation: list[str] = field(default_factory=list)
     priority: str = "normal"
+    domain: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -116,6 +121,10 @@ class TaskPacket:
         if self.owner is not None and self.owner not in KNOWN_AUTHOR_LANES:
             raise ValueError(
                 f"Unknown owner lane {self.owner!r}; expected one of {sorted(KNOWN_AUTHOR_LANES)}"
+            )
+        if self.domain is not None and self.domain not in KNOWN_DOMAINS:
+            raise ValueError(
+                f"Unknown domain {self.domain!r}; expected one of {sorted(KNOWN_DOMAINS)} or None"
             )
 
 
@@ -185,6 +194,7 @@ def create_packet(
     scope_declared: list[str] | None = None,
     validation: list[str] | None = None,
     priority: str = "normal",
+    domain: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> TaskPacket:
     """Create a new TaskPacket with generated ID and timestamp."""
@@ -199,6 +209,7 @@ def create_packet(
         scope_declared=scope_declared or [],
         validation=validation or [],
         priority=priority,
+        domain=domain,
         metadata=metadata or {},
     )
 
@@ -405,6 +416,7 @@ def list_packets(
     *,
     status_filter: str | None = None,
     owner_filter: str | None = None,
+    domain_filter: str | None = None,
 ) -> list[TaskPacket]:
     """List all active TaskPackets in the queue.
 
@@ -412,6 +424,7 @@ def list_packets(
         root: Override for the task queue root directory.
         status_filter: If set, only return packets with this status.
         owner_filter: If set, only return packets assigned to this lane.
+        domain_filter: If set, only return packets with this domain.
 
     Returns:
         List of TaskPacket instances, sorted by created_at ascending.
@@ -438,6 +451,8 @@ def list_packets(
         if status_filter and pkt.status != status_filter:
             continue
         if owner_filter and pkt.owner != owner_filter:
+            continue
+        if domain_filter and pkt.domain != domain_filter:
             continue
 
         packets.append(pkt)
@@ -559,6 +574,7 @@ def apply_ack(
             scope_declared=list(pkt.scope_declared),
             validation=list(pkt.validation),
             priority=pkt.priority,
+            domain=pkt.domain,
             metadata={
                 **pkt.metadata,
                 "redirected_from": ack.packet_id,
@@ -626,12 +642,15 @@ def queue_summary(root: Path | None = None) -> dict[str, Any]:
     packets = list_packets(root)
     by_status: dict[str, int] = {}
     by_owner: dict[str, int] = {}
+    by_domain: dict[str, int] = {}
     packet_summaries: list[dict[str, Any]] = []
 
     for pkt in packets:
         by_status[pkt.status] = by_status.get(pkt.status, 0) + 1
         owner_key = pkt.owner or "(unassigned)"
         by_owner[owner_key] = by_owner.get(owner_key, 0) + 1
+        domain_key = pkt.domain or "(unspecified)"
+        by_domain[domain_key] = by_domain.get(domain_key, 0) + 1
         packet_summaries.append(
             {
                 "packet_id": pkt.packet_id,
@@ -639,6 +658,7 @@ def queue_summary(root: Path | None = None) -> dict[str, Any]:
                 "status": pkt.status,
                 "owner": pkt.owner,
                 "priority": pkt.priority,
+                "domain": pkt.domain,
                 "created_at": pkt.created_at,
             }
         )
@@ -647,5 +667,6 @@ def queue_summary(root: Path | None = None) -> dict[str, Any]:
         "total": len(packets),
         "by_status": by_status,
         "by_owner": by_owner,
+        "by_domain": by_domain,
         "packets": packet_summaries,
     }

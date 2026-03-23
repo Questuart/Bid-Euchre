@@ -12,6 +12,7 @@ import pytest
 from bid_euchre.ops.worker_pool import (
     DEFAULT_TMUX_SESSION,
     IDLE_PARK_MINUTES,
+    LANE_DOMAINS,
     MAX_ACTIVE_AUTHORS,
     PARKED_RETIRE_MINUTES,
     POOL_STATUSES,
@@ -29,6 +30,7 @@ from bid_euchre.ops.worker_pool import (
     format_actions_json,
     format_pool_json,
     format_pool_text,
+    get_lane_domain,
     nudge_pane,
     park_worker,
     retire_worker,
@@ -68,6 +70,7 @@ def _make_worker(
     visibility: str = "background",
     tmux_alive: bool = True,
     session_handle: str | None = None,
+    domain: str | None = None,
 ) -> WorkerState:
     """Create a WorkerState for testing."""
     return WorkerState(
@@ -79,6 +82,7 @@ def _make_worker(
         visibility=visibility,
         tmux_alive=tmux_alive,
         session_handle=session_handle,
+        domain=domain,
     )
 
 
@@ -440,6 +444,218 @@ class TestSelectWorker:
             ]
         )
         assert select_worker(pool, preferred_lane="author-b") == "author-b"
+
+
+# ---------------------------------------------------------------------------
+# Domain routing
+# ---------------------------------------------------------------------------
+
+
+class TestDomainRouting:
+    """Test domain-aware select_worker() routing."""
+
+    def test_get_lane_domain(self) -> None:
+        """get_lane_domain returns configured domain or None."""
+        assert get_lane_domain("author-a") == "platform"
+        assert get_lane_domain("author-scratch") is None
+        assert get_lane_domain("unknown-lane") is None
+
+    def test_lane_domains_constant(self) -> None:
+        """LANE_DOMAINS covers all known author lanes."""
+        from bid_euchre.ops.task_queue import KNOWN_AUTHOR_LANES
+
+        assert set(LANE_DOMAINS.keys()) == set(KNOWN_AUTHOR_LANES)
+
+    def test_same_domain_preferred(self) -> None:
+        """Same-domain lane selected over flex lane."""
+        pool = _make_pool(
+            [
+                _make_worker("author-scratch", "idle", domain=None),  # flex
+                _make_worker("author-a", "idle", domain="platform"),
+            ]
+        )
+        assert select_worker(pool, domain="platform") == "author-a"
+
+    def test_flex_used_when_no_same_domain(self) -> None:
+        """Flex lane selected when no same-domain lanes available."""
+        pool = _make_pool(
+            [
+                _make_worker(
+                    "author-a", "active", domain="platform", current_task_id="t1"
+                ),
+                _make_worker("author-scratch", "idle", domain=None),  # flex
+            ]
+        )
+        assert select_worker(pool, domain="platform") == "author-scratch"
+
+    def test_cross_domain_rejected_by_default(self) -> None:
+        """Cross-domain lanes not selected without allow_cross_domain."""
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "idle", domain="platform"),
+            ]
+        )
+        assert select_worker(pool, domain="browser-game") is None
+
+    def test_cross_domain_allowed_with_override(self) -> None:
+        """Cross-domain lanes selected when allow_cross_domain=True."""
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "idle", domain="platform"),
+            ]
+        )
+        result = select_worker(pool, domain="browser-game", allow_cross_domain=True)
+        assert result == "author-a"
+
+    def test_no_domain_selects_any(self) -> None:
+        """When domain=None, all lanes are eligible (backward compat)."""
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "idle", domain="platform"),
+                _make_worker("author-b", "idle", domain="browser-game"),
+            ]
+        )
+        # Should pick first idle regardless of domain
+        assert select_worker(pool, domain=None) == "author-a"
+
+    def test_domain_routing_prefers_idle_same_domain_over_parked(self) -> None:
+        """Idle same-domain preferred over parked same-domain."""
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "parked", domain="platform"),
+                _make_worker("author-b", "idle", domain="platform"),
+            ]
+        )
+        assert select_worker(pool, domain="platform") == "author-b"
+
+    def test_domain_routing_parked_same_domain_over_idle_flex(self) -> None:
+        """Parked same-domain NOT preferred over idle flex — idle tier wins."""
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "parked", domain="platform"),
+                _make_worker("author-scratch", "idle", domain=None),
+            ]
+        )
+        # Idle (any domain-compatible) should beat parked
+        assert select_worker(pool, domain="platform") == "author-scratch"
+
+    def test_preferred_lane_domain_incompatible(self) -> None:
+        """Preferred lane skipped if domain-incompatible."""
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "idle", domain="platform"),
+                _make_worker("author-b", "idle", domain="browser-game"),
+            ]
+        )
+        # author-b is browser-game, but we want platform — should skip it
+        result = select_worker(pool, preferred_lane="author-b", domain="platform")
+        assert result == "author-a"
+
+    def test_preferred_lane_domain_compatible(self) -> None:
+        """Preferred lane selected when domain-compatible."""
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "idle", domain="platform"),
+                _make_worker("author-b", "idle", domain="platform"),
+            ]
+        )
+        result = select_worker(pool, preferred_lane="author-b", domain="platform")
+        assert result == "author-b"
+
+    def test_flex_preferred_lane(self) -> None:
+        """Flex preferred lane is domain-compatible with any domain."""
+        pool = _make_pool(
+            [
+                _make_worker("author-a", "idle", domain="platform"),
+                _make_worker("author-scratch", "idle", domain=None),
+            ]
+        )
+        result = select_worker(
+            pool, preferred_lane="author-scratch", domain="browser-game"
+        )
+        assert result == "author-scratch"
+
+    def test_worker_state_domain_field(self) -> None:
+        """WorkerState has domain field."""
+        w = _make_worker("author-a", "idle", domain="platform")
+        assert w.domain == "platform"
+        w_flex = _make_worker("author-scratch", "idle", domain=None)
+        assert w_flex.domain is None
+
+
+class TestTaskPacketDomain:
+    """Test domain field on TaskPacket."""
+
+    def test_create_packet_with_domain(self) -> None:
+        from bid_euchre.ops.task_queue import create_packet
+
+        pkt = create_packet("test", "desc", domain="platform")
+        assert pkt.domain == "platform"
+
+    def test_create_packet_without_domain(self) -> None:
+        from bid_euchre.ops.task_queue import create_packet
+
+        pkt = create_packet("test", "desc")
+        assert pkt.domain is None
+
+    def test_invalid_domain_rejected(self) -> None:
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        with pytest.raises(ValueError, match="Unknown domain"):
+            TaskPacket(
+                packet_id="x",
+                title="t",
+                description="d",
+                owner=None,
+                created_by="o",
+                created_at="now",
+                status="pending",
+                domain="invalid",
+            )
+
+    def test_list_packets_domain_filter(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.task_queue import create_packet, list_packets, save_packet
+
+        root = tmp_path / "tq"
+        root.mkdir()
+        (root / "archive").mkdir()
+
+        p1 = create_packet("A", "desc", domain="platform")
+        p2 = create_packet("B", "desc", domain="browser-game")
+        p3 = create_packet("C", "desc")  # no domain
+        save_packet(p1, root)
+        save_packet(p2, root)
+        save_packet(p3, root)
+
+        plat = list_packets(root, domain_filter="platform")
+        assert len(plat) == 1
+        assert plat[0].domain == "platform"
+
+        brws = list_packets(root, domain_filter="browser-game")
+        assert len(brws) == 1
+        assert brws[0].domain == "browser-game"
+
+        all_pkts = list_packets(root)
+        assert len(all_pkts) == 3
+
+    def test_queue_summary_includes_domain(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.task_queue import (
+            create_packet,
+            queue_summary,
+            save_packet,
+        )
+
+        root = tmp_path / "tq"
+        root.mkdir()
+        (root / "archive").mkdir()
+
+        p1 = create_packet("A", "desc", domain="platform")
+        save_packet(p1, root)
+
+        summary = queue_summary(root)
+        assert "by_domain" in summary
+        assert summary["by_domain"]["platform"] == 1
+        assert summary["packets"][0]["domain"] == "platform"
 
 
 # ---------------------------------------------------------------------------

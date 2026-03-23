@@ -50,16 +50,31 @@ When creating a task packet, always specify:
 - **scope_declared:** File patterns that will be touched
 - **validation:** Commands the author must run (e.g., specific test files)
 - **priority:** low / normal / high
+- **domain:** Execution domain — `platform` or `browser-game`. Controls
+  which worker pool the task routes to. Omit for domain-agnostic work.
+
+## Domain Routing
+
+Worker selection honors domain affinity:
+1. **Same-domain** lanes first (e.g., platform task → platform worker)
+2. **Flex** lanes second (lanes with no fixed domain, e.g., author-scratch)
+3. **Cross-domain** only with explicit `allow_cross_domain` override
+
+Current lane-domain assignments:
+- `author-a` through `author-d`: **platform**
+- `author-scratch`: **flex** (no domain)
+- Future `brws-author-*` lanes: **browser-game**
 
 ## Delegation Guidelines
 
-| Task Type | Preview Required | Suggested Lane |
-|-----------|-----------------|----------------|
-| Single-file bugfix | No | Any idle author |
-| Multi-file feature | Yes | author-a or author-b |
-| Architectural change | Yes + plan review | author-a |
-| Exploratory analysis | No | author-scratch |
-| Overflow / parallel work | Yes | author-c or author-d |
+| Task Type | Preview Required | Suggested Lane | Domain |
+|-----------|-----------------|----------------|--------|
+| Single-file bugfix | No | Any idle author | Infer from scope |
+| Multi-file feature | Yes | author-a or author-b | platform |
+| Architectural change | Yes + plan review | author-a | platform |
+| Exploratory analysis | No | author-scratch | (flex) |
+| Overflow / parallel work | Yes | author-c or author-d | Match source |
+| Browser-game work | Yes | brws-author-* (future) | browser-game |
 
 ## Status Inspection
 

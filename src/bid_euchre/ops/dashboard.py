@@ -551,9 +551,10 @@ def format_dashboard_text(
         lines.append(f"Task Queue: {tq['total']} packets")
         for pkt_info in tq.get("packets", []):
             owner_str = pkt_info.get("owner") or "(unassigned)"
+            domain_str = f" [{pkt_info['domain']}]" if pkt_info.get("domain") else ""
             lines.append(
                 f"  [{pkt_info.get('status', '?')}] "
-                f"{pkt_info.get('title', '?')} -> {owner_str}"
+                f"{pkt_info.get('title', '?')} -> {owner_str}{domain_str}"
             )
 
     if view.warning_count > 0:

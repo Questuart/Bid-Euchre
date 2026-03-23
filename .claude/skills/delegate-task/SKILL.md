@@ -27,6 +27,8 @@ intake-to-dispatch flow into a reusable workflow.
    - **scope_declared:** File patterns that will be touched
    - **validation:** Commands the author must run (e.g., specific test files)
    - **priority:** low / normal / high
+   - **domain:** Execution domain for routing — `platform` or `browser-game`.
+     Determines which worker pool the task routes to. Omit for flex/unspecified.
 
 2. **Choose the target lane** using the delegation guidelines:
 
@@ -63,7 +65,9 @@ intake-to-dispatch flow into a reusable workflow.
      --description "<description with acceptance criteria>" \
      --owner "<lane>" \
      --priority "<priority>" \
-     --scope-declared "<comma-separated file patterns>"
+     --domain "<platform|browser-game>" \
+     --scope "<file-pattern>" \
+     --scope "<another-pattern>"
    ```
 
 7. **Verify dispatch:**

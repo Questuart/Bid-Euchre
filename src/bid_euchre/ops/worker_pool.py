@@ -60,6 +60,17 @@ DEFAULT_TMUX_SESSION: str = "steward"
 #: Pool status values.
 POOL_STATUSES: frozenset[str] = frozenset({"active", "idle", "parked", "retired"})
 
+#: Default domain assignment for each managed lane.
+#: Lanes with ``None`` are "flex" — available to any domain when same-domain
+#: lanes are exhausted.
+LANE_DOMAINS: dict[str, str | None] = {
+    "author-a": "platform",
+    "author-b": "platform",
+    "author-c": "platform",
+    "author-d": "platform",
+    "author-scratch": None,  # flex
+}
+
 
 def _managed_lanes() -> frozenset[str]:
     """Return the set of lane IDs managed by the worker pool.
@@ -69,6 +80,11 @@ def _managed_lanes() -> frozenset[str]:
     from bid_euchre.ops.task_queue import KNOWN_AUTHOR_LANES
 
     return KNOWN_AUTHOR_LANES
+
+
+def get_lane_domain(lane_id: str) -> str | None:
+    """Return the configured domain for a lane, or None if flex/unknown."""
+    return LANE_DOMAINS.get(lane_id)
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +104,7 @@ class WorkerState:
     visibility: str  # "foreground", "background", "hidden"
     tmux_alive: bool  # whether the tmux pane/window exists and has a process
     session_handle: str | None
+    domain: str | None = None  # configured lane domain, None = flex
 
 
 @dataclass
@@ -415,6 +432,7 @@ def take_pool_snapshot(
                 visibility=visibility,
                 tmux_alive=tmux_alive,
                 session_handle=lane.session_handle,
+                domain=get_lane_domain(lane.lane_id),
             )
         )
         counts[pool_status] = counts.get(pool_status, 0) + 1
@@ -434,19 +452,33 @@ def select_worker(
     pool: PoolSnapshot,
     *,
     preferred_lane: str | None = None,
+    domain: str | None = None,
+    allow_cross_domain: bool = False,
 ) -> str | None:
-    """Choose the best lane for new work.
+    """Choose the best lane for new work, with optional domain routing.
 
-    Priority order:
-    1. preferred_lane (if idle or parked and healthy)
+    Priority order (within each tier, same-domain lanes are tried first,
+    then flex lanes, then cross-domain only if *allow_cross_domain* is set):
+
+    1. preferred_lane (if idle or parked and healthy, and domain-compatible)
     2. idle lanes (already running, no active task)
     3. parked lanes (need waking, but worktree exists)
     4. retired lanes (need full resume)
     5. None if at MAX_ACTIVE_AUTHORS
 
+    Domain routing rule:
+    - same-domain first (worker.domain == domain)
+    - flex second (worker.domain is None)
+    - cross-domain only if *allow_cross_domain* is True
+
+    When *domain* is None, all lanes are eligible (no domain filtering).
+
     Args:
         pool: Current pool snapshot.
         preferred_lane: Preferred lane ID, if any.
+        domain: Execution domain to route to (e.g. "platform", "browser-game").
+        allow_cross_domain: If True, allow routing to lanes in a different
+            domain when same-domain and flex lanes are exhausted.
 
     Returns:
         Lane ID or None if no capacity.
@@ -456,32 +488,60 @@ def select_worker(
 
     workers_by_id = {w.lane_id: w for w in pool.workers}
 
+    def _domain_compatible(w: WorkerState) -> bool:
+        """Check if a worker is compatible with the requested domain."""
+        if domain is None:
+            return True  # no domain preference — all lanes eligible
+        if w.domain == domain:
+            return True  # same domain
+        if w.domain is None:
+            return True  # flex lane
+        return allow_cross_domain  # cross-domain only if explicitly allowed
+
+    def _domain_sort_key(w: WorkerState) -> int:
+        """Sort key: same-domain (0) > flex (1) > cross-domain (2)."""
+        if domain is None:
+            return 0
+        if w.domain == domain:
+            return 0
+        if w.domain is None:
+            return 1
+        return 2
+
     # 1. Check preferred lane
     if preferred_lane and preferred_lane in workers_by_id:
         w = workers_by_id[preferred_lane]
-        if w.pool_status in ("idle", "parked", "retired"):
+        if w.pool_status in ("idle", "parked", "retired") and _domain_compatible(w):
             return preferred_lane
 
+    # Helper: filter, sort by domain preference, return first match
+    def _best_from(status: str) -> str | None:
+        candidates = [
+            w
+            for w in pool.workers
+            if w.pool_status == status
+            and w.health != "critical"
+            and _domain_compatible(w)
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=_domain_sort_key)
+        return candidates[0].lane_id
+
     # 2. Idle lanes (already running)
-    idle_workers = [
-        w for w in pool.workers if w.pool_status == "idle" and w.health != "critical"
-    ]
-    if idle_workers:
-        return idle_workers[0].lane_id
+    result = _best_from("idle")
+    if result:
+        return result
 
     # 3. Parked lanes
-    parked_workers = [
-        w for w in pool.workers if w.pool_status == "parked" and w.health != "critical"
-    ]
-    if parked_workers:
-        return parked_workers[0].lane_id
+    result = _best_from("parked")
+    if result:
+        return result
 
     # 4. Retired lanes
-    retired_workers = [
-        w for w in pool.workers if w.pool_status == "retired" and w.health != "critical"
-    ]
-    if retired_workers:
-        return retired_workers[0].lane_id
+    result = _best_from("retired")
+    if result:
+        return result
 
     return None
 
@@ -1061,10 +1121,11 @@ def format_pool_text(pool: PoolSnapshot) -> str:
         for w in pool.workers:
             tmux_str = "tmux:up" if w.tmux_alive else "tmux:down"
             task_str = f"  task:{w.current_task_id}" if w.current_task_id else ""
+            domain_str = f"  domain:{w.domain}" if w.domain else "  domain:flex"
             lines.append(
                 f"  {w.lane_id:15s} [{w.pool_status:8s}] "
                 f"health:{w.health:8s} vis:{w.visibility:10s} "
-                f"{tmux_str}{task_str}"
+                f"{tmux_str}{domain_str}{task_str}"
             )
     else:
         lines.append("  (no managed workers found)")
