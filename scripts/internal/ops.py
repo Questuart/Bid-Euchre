@@ -1406,7 +1406,9 @@ def cmd_repairs(args: argparse.Namespace) -> int:
 def cmd_task(args: argparse.Namespace) -> int:
     """Orchestrator task queue inspection (Platform-2)."""
     from bid_euchre.ops.task_queue import (
+        complete_packet,
         create_packet,
+        create_result,
         list_packets,
         load_ack,
         load_packet,
@@ -1578,9 +1580,61 @@ def cmd_task(args: argparse.Namespace) -> int:
     elif action == "accept":
         return _cmd_task_accept(args, task_queue_root)
 
+    elif action == "complete":
+        packet_id = args.packet_id
+        summary = getattr(args, "summary", "") or ""
+        pr_number = getattr(args, "pr_number", None)
+        completed_by = getattr(args, "completed_by", "") or ""
+        no_archive = getattr(args, "no_archive", False)
+
+        # Verify the packet exists before creating the result
+        pkt = load_packet(packet_id, task_queue_root)
+        if pkt is None:
+            print(f"Packet {packet_id!r} not found.", file=sys.stderr)
+            return 1
+
+        # Auto-transition approved → dispatched so the completion
+        # follows the state machine (approved → dispatched → completed).
+        if pkt.status == "approved":
+            transition_status(packet_id, "dispatched", task_queue_root)
+        elif pkt.status != "dispatched":
+            print(
+                f"Cannot complete packet in {pkt.status!r} state "
+                f"(expected 'dispatched' or 'approved').",
+                file=sys.stderr,
+            )
+            return 1
+
+        result = create_result(
+            packet_id=packet_id,
+            status="completed",
+            summary=summary,
+            pr_number=pr_number,
+            completed_by=completed_by,
+        )
+
+        updated = complete_packet(result, task_queue_root, archive=not no_archive)
+        if updated is None:
+            print(f"Failed to complete packet {packet_id!r}.", file=sys.stderr)
+            return 1
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(updated), indent=2, default=str))
+        else:
+            print(f"Completed: {updated.packet_id}")
+            print(f"  Status:  {updated.status}")
+            print(f"  Summary: {summary}")
+            if pr_number:
+                print(f"  PR:      #{pr_number}")
+            if not no_archive:
+                print("  (archived)")
+        return 0
+
     else:
         print(
-            "Usage: ops.py task {list|show|create|approve|dispatch|accept}",
+            "Usage: ops.py task {list|show|create|approve|dispatch|accept|complete}",
             file=sys.stderr,
         )
         return 1
@@ -2749,6 +2803,30 @@ def build_parser() -> argparse.ArgumentParser:
     task_accept_parser.add_argument("packet_id", help="The packet ID to accept")
     task_accept_parser.add_argument(
         "--lane", required=True, dest="lane_id", help="Lane accepting the task"
+    )
+
+    task_complete_parser = task_sub.add_parser(
+        "complete",
+        help="Complete a dispatched task: record result and archive",
+    )
+    task_complete_parser.add_argument("packet_id", help="The packet ID to complete")
+    task_complete_parser.add_argument(
+        "--summary", default="", help="Completion summary (one-line description)"
+    )
+    task_complete_parser.add_argument(
+        "--pr", type=int, default=None, dest="pr_number", help="Associated PR number"
+    )
+    task_complete_parser.add_argument(
+        "--by",
+        default="",
+        dest="completed_by",
+        help="Lane or actor completing the task",
+    )
+    task_complete_parser.add_argument(
+        "--no-archive",
+        action="store_true",
+        dest="no_archive",
+        help="Keep the packet in active queue (do not archive)",
     )
 
     # inbox (Platform-3 message bus)

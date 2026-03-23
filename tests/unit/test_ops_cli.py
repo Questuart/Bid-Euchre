@@ -3281,6 +3281,277 @@ class TestTaskAccept:
         assert accept_subparser is not None, "Expected 'task accept' subcommand"
 
 
+class TestTaskComplete:
+    """Verify ``task complete`` CLI subcommand."""
+
+    @staticmethod
+    def _create_dispatched_packet(
+        runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> str:
+        """Helper: create a packet and transition it to dispatched state."""
+        import ops
+
+        from bid_euchre.ops.task_queue import transition_status
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Complete test",
+                "--owner",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        tq_root = runtime_dir / "task_queue"
+        transition_status(packet_id, "approved", tq_root)
+        transition_status(packet_id, "dispatched", tq_root)
+        return packet_id
+
+    def test_task_complete_not_found(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Completing a nonexistent packet returns exit code 1."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                "nonexistent_id",
+            ]
+        )
+        assert rc == 1
+        assert "not found" in capsys.readouterr().err
+
+    def test_task_complete_wrong_state(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Completing a pending packet returns exit code 1."""
+        import ops
+
+        # Create a pending packet
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Wrong state test",
+                "--owner",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+            ]
+        )
+        assert rc == 1
+        assert "pending" in capsys.readouterr().err
+
+    def test_task_complete_dispatched(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Completing a dispatched packet transitions to completed and archives."""
+        import ops
+
+        packet_id = self._create_dispatched_packet(runtime_dir, plans_dir, capsys)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+                "--summary",
+                "All done",
+                "--pr",
+                "1234",
+                "--by",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Completed:" in out
+        assert "All done" in out
+        assert "#1234" in out
+        assert "(archived)" in out
+
+        # Verify archived (not in active list)
+        from bid_euchre.ops.task_queue import list_packets
+
+        active = list_packets(runtime_dir / "task_queue")
+        assert all(p.packet_id != packet_id for p in active)
+
+        # Verify result file in archive
+        archive_path = (
+            runtime_dir / "task_queue" / "archive" / f"{packet_id}.result.json"
+        )
+        assert archive_path.exists()
+
+    def test_task_complete_json_output(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JSON output includes the completed packet data."""
+        import ops
+
+        packet_id = self._create_dispatched_packet(runtime_dir, plans_dir, capsys)
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+                "--summary",
+                "JSON test",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["packet_id"] == packet_id
+        assert data["status"] == "completed"
+
+    def test_task_complete_approved_auto_dispatches(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """An approved packet is auto-dispatched before completion."""
+        import ops
+
+        from bid_euchre.ops.task_queue import transition_status
+
+        # Create a packet in approved state (not dispatched)
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Auto-dispatch test",
+                "--owner",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        tq_root = runtime_dir / "task_queue"
+        transition_status(packet_id, "approved", tq_root)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+                "--summary",
+                "Auto dispatched then completed",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Completed:" in out
+
+    def test_task_complete_no_archive(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The --no-archive flag keeps the packet in the active queue."""
+        import ops
+
+        packet_id = self._create_dispatched_packet(runtime_dir, plans_dir, capsys)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+                "--summary",
+                "Stay active",
+                "--no-archive",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "(archived)" not in out
+
+        # Verify still in active list
+        from bid_euchre.ops.task_queue import load_packet
+
+        pkt = load_packet(packet_id, runtime_dir / "task_queue")
+        assert pkt is not None
+        assert pkt.status == "completed"
+
+    def test_task_complete_subparser_exists(self) -> None:
+        """Verify the 'task complete' subparser is properly registered."""
+        import ops
+
+        parser = ops.build_parser()
+
+        task_subparser = None
+        for action in parser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                task_subparser = action.choices.get("task")
+                break
+
+        assert task_subparser is not None, "Expected 'task' subcommand"
+
+        complete_subparser = None
+        for action in task_subparser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                complete_subparser = action.choices.get("complete")
+                break
+
+        assert complete_subparser is not None, "Expected 'task complete' subcommand"
+
+
 class TestPriorityChoicesContract:
     """Verify CLI --priority choices stay in sync with VALID_PRIORITIES."""
 
