@@ -26,7 +26,8 @@ treats the remote channel as a thin transport into `orchestrator`.
   Platform-8 transport work begins
 - SP-4-03 (token economy observability) establishes a token-cost baseline
   before remote transport adds a new cost dimension. SP-4-02 and SP-4-03
-  are safe to run in parallel (disjoint file scopes).
+  overlap in `scripts/internal/ops.py` and dashboard surfaces — serialize
+  shared CLI/dashboard work or split further during implementation.
 
 ## Phase Constraints
 
