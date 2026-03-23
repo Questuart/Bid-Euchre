@@ -1,29 +1,27 @@
 #!/bin/bash
-# Canonical steward session bootstrap — 4-window tiled layout.
+# Canonical steward session bootstrap — 4-window layout.
 # Usage: steward-session.sh [session-name]
 #
-# Creates (or attaches to) a tmux session with 4 windows, each containing
-# 4 tiled panes:
+# Creates (or attaches to) a tmux session with 4 windows:
 #
-#   Window 1 — central-ops (pane targeting: steward:central-ops.{0-3})
-#     .0  orchestrator    -- single intake point for delegating work
-#     .1  ops             -- operator monitoring lane
-#     .2  review          -- independent review lane
-#     .3  issues          -- issue triage lane
+#   Window 1 — central-ops (3 panes, main-vertical layout)
+#     .0  orchestrator    -- single intake point (large left, ~66%)
+#     .1  ops             -- operator monitoring lane (top right)
+#     .2  review          -- independent review lane (bottom right)
 #
-#   Window 2 — platform (pane targeting: steward:platform.{0-3})
+#   Window 2 — platform (4 panes, tiled)
 #     .0  author-a        -- primary platform author lane
 #     .1  author-b        -- secondary platform author lane
 #     .2  author-c        -- overflow platform author lane
 #     .3  author-d        -- overflow platform author lane
 #
-#   Window 3 — browser (pane targeting: steward:browser.{0-3})
+#   Window 3 — browser (4 panes, tiled)
 #     .0  brws-author-a   -- primary browser-game author lane
 #     .1  brws-author-b   -- secondary browser-game author lane
 #     .2  brws-author-c   -- overflow browser-game author lane
 #     .3  brws-author-d   -- overflow browser-game author lane
 #
-#   Window 4 — scratch (pane targeting: steward:scratch.{0-3})
+#   Window 4 — scratch (4 panes, tiled)
 #     .0  author-scratch  -- exploratory Claude lane
 #     .1  flex-a          -- domain-agnostic overflow lane
 #     .2  flex-b          -- domain-agnostic overflow lane
@@ -281,14 +279,13 @@ ensure_worktree "$FLEX_C" "codex/steward-flex-c"
 ensure_review_worktree
 
 # Write v2 registry metadata for each lane.
-# tmux_window = group name, tmux_pane = pane index within the window (0-3).
+# tmux_window = group name, tmux_pane = pane index within the window.
 # Pane target format: ${SESSION}:${tmux_window}.${tmux_pane}
 
-# Central ops  (window: central-ops, panes 0-3)
+# Central ops  (window: central-ops, panes 0-2, main-vertical layout)
 write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "central-ops" "0" "foreground" "Orchestrator"
 write_lane_metadata "ops"            "ops"          "$MAIN_DIR"       "--"                              "central-ops" "1" "foreground" "Ops"
 write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "2" "foreground" "Review"
-write_lane_metadata "issues"         "issues"       "$MAIN_DIR"       "--"                              "central-ops" "3" "foreground" "Issues"
 
 # Platform workers  (window: platform, panes 0-3)
 write_lane_metadata "author-a"       "author"       "$AUTHOR_A"       "codex/steward-author"            "platform" "0" "background" "Author A"
@@ -309,23 +306,19 @@ write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/s
 write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "scratch" "3" "background" "Flex C"
 
 # ---------------------------------------------------------------------------
-# Window + pane creation — 4 windows × 4 tiled panes
+# Window + pane creation — 4 windows (central-ops: 3 panes, others: 4 panes)
 # ---------------------------------------------------------------------------
-# Pattern per window:
-#   new-session / new-window creates the window with pane .0
-#   3 × split-window adds panes .1, .2, .3
-#   select-layout tiled evens out the quadrants
+# central-ops uses main-vertical: orchestrator large left, ops/review stacked right.
+# Worker windows use tiled: 4 equal quadrants.
 
-# --- Window 1: central-ops ---
+# --- Window 1: central-ops (3 panes, main-vertical) ---
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator
 tmux split-window -t "${SESSION}:central-ops" -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name ops --agent steward-ops
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
     "$CLAUDE_BIN" --name review --agent steward-review
-tmux split-window -t "${SESSION}:central-ops" -c "$MAIN_DIR" \
-    "$CLAUDE_BIN" --name issues --agent issues
-tmux select-layout -t "${SESSION}:central-ops" tiled
+tmux select-layout -t "${SESSION}:central-ops" main-vertical
 
 # --- Window 2: platform ---
 tmux new-window -t "$SESSION" -n platform -c "$AUTHOR_A" \

@@ -277,17 +277,19 @@ class TestStewardSessionScript:
         ), "ensure_worktree() must call validate_worktree_path before creating"
 
 
-class TestTiledWindowLayout:
-    """Validate the 4-window tiled layout (4 panes per window)."""
+class TestWindowLayout:
+    """Validate the 4-window layout (central-ops: 3 panes, others: 4 panes)."""
 
     EXPECTED_WINDOWS = ["central-ops", "platform", "browser", "scratch"]
 
+    # Worker windows with 4 tiled panes each
+    TILED_WINDOWS = ["platform", "browser", "scratch"]
+
     EXPECTED_LANES = [
-        # Central ops
+        # Central ops (3 panes)
         "orchestrator",
         "ops",
         "review",
-        "issues",
         # Platform workers
         "author-a",
         "author-b",
@@ -307,7 +309,7 @@ class TestTiledWindowLayout:
 
     # Lanes per window, in pane creation order (pane 0 = first)
     WINDOW_PANES = {
-        "central-ops": ["orchestrator", "ops", "review", "issues"],
+        "central-ops": ["orchestrator", "ops", "review"],
         "platform": ["author-a", "author-b", "author-c", "author-d"],
         "browser": [
             "brws-author-a",
@@ -324,6 +326,20 @@ class TestTiledWindowLayout:
         assert (
             "dashboard" not in content.lower()
         ), "steward-session.sh must not reference a 'dashboard' window"
+
+    def test_no_issues_lane(self) -> None:
+        """The issues lane must not appear in the launcher."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            "--name issues" not in content
+        ), "issues lane must be removed from the launcher"
+        # Metadata should not include issues
+        metadata_lines = [
+            line
+            for line in content.split("\n")
+            if line.strip().startswith('write_lane_metadata "issues"')
+        ]
+        assert len(metadata_lines) == 0, "issues metadata must be removed"
 
     def test_four_windows_created(self) -> None:
         """Exactly 4 tmux windows must be created (1 new-session + 3 new-window)."""
@@ -343,26 +359,41 @@ class TestTiledWindowLayout:
                 f"-n {window_name}" in content
             ), f"Expected window named '{window_name}'"
 
-    def test_split_window_creates_panes(self) -> None:
-        """Each window must have 3 split-window commands (for panes .1, .2, .3)."""
+    def test_central_ops_has_3_panes(self) -> None:
+        """central-ops must have 2 split-window commands (for 3 panes total)."""
         content = STEWARD_SCRIPT.read_text()
-        for window_name in self.EXPECTED_WINDOWS:
+        split_count = content.count('split-window -t "${SESSION}:central-ops"')
+        assert (
+            split_count == 2
+        ), f"central-ops must have 2 split-window commands, found {split_count}"
+
+    def test_central_ops_main_vertical(self) -> None:
+        """central-ops must use main-vertical layout (orchestrator large left)."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            'select-layout -t "${SESSION}:central-ops" main-vertical' in content
+        ), "central-ops must use main-vertical layout"
+
+    def test_worker_windows_have_4_panes(self) -> None:
+        """Each worker window must have 3 split-window commands (for 4 panes)."""
+        content = STEWARD_SCRIPT.read_text()
+        for window_name in self.TILED_WINDOWS:
             split_count = content.count(f'split-window -t "${{SESSION}}:{window_name}"')
             assert split_count == 3, (
                 f"Window '{window_name}' must have 3 split-window commands, "
                 f"found {split_count}"
             )
 
-    def test_tiled_layout_applied(self) -> None:
-        """Each window must have select-layout tiled applied."""
+    def test_worker_windows_tiled(self) -> None:
+        """Worker windows must use tiled layout."""
         content = STEWARD_SCRIPT.read_text()
-        for window_name in self.EXPECTED_WINDOWS:
+        for window_name in self.TILED_WINDOWS:
             assert (
                 f'select-layout -t "${{SESSION}}:{window_name}" tiled' in content
             ), f"Window '{window_name}' must have select-layout tiled"
 
     def test_all_lanes_launched(self) -> None:
-        """All 16 lanes must appear in new-session, new-window, or split-window commands."""
+        """All 15 lanes must appear in new-session, new-window, or split-window."""
         content = STEWARD_SCRIPT.read_text()
         for lane in self.EXPECTED_LANES:
             assert (
@@ -380,14 +411,13 @@ class TestTiledWindowLayout:
         ]
 
     def test_metadata_pane_indices(self) -> None:
-        """All lanes must have pane indices 0-3 in their metadata."""
+        """All lanes must have valid pane indices in their metadata."""
         metadata_lines = self._metadata_invocation_lines()
         assert len(metadata_lines) == len(self.EXPECTED_LANES), (
             f"Expected {len(self.EXPECTED_LANES)} write_lane_metadata calls, "
             f"found {len(metadata_lines)}"
         )
         for line in metadata_lines:
-            # Each line must have a pane index (0, 1, 2, or 3)
             has_pane_idx = any(f'"{i}"' in line for i in range(4))
             assert (
                 has_pane_idx
@@ -405,9 +435,8 @@ class TestTiledWindowLayout:
     def test_central_ops_foreground(self) -> None:
         """Central ops lanes must have foreground visibility."""
         metadata_lines = self._metadata_invocation_lines()
-        central_ops_lanes = {"orchestrator", "ops", "review", "issues"}
+        central_ops_lanes = {"orchestrator", "ops", "review"}
         for line in metadata_lines:
-            # Check if this line is for a central ops lane
             for lane in central_ops_lanes:
                 if f'"{lane}"' in line and line.index(f'"{lane}"') < 30:
                     assert (
@@ -442,6 +471,11 @@ class TestTiledWindowLayout:
         """The ops monitoring loop must target central-ops.1 (ops pane)."""
         content = STEWARD_SCRIPT.read_text()
         assert "central-ops.1" in content, "Ops monitoring must target central-ops.1"
+
+    def test_review_check_targets_correct_pane(self) -> None:
+        """The review-check loop must target central-ops.2 (review pane)."""
+        content = STEWARD_SCRIPT.read_text()
+        assert "central-ops.2" in content, "Review-check must target central-ops.2"
 
     def test_legacy_rollback_exists(self) -> None:
         """steward-session-legacy.sh must exist for rollback."""

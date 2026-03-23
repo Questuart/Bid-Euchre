@@ -30,7 +30,7 @@ Each `.md` file defines an agent that can be launched via the Agent tool.
 
 ### Specialist Agents
 
-- `issues` — bounded issue triage; files issues, never implements fixes
+- `issues` — bounded issue triage; files issues, never implements fixes (standalone, not session-launched)
 - `repair` — bounded post-merge repair; fixes shipped mistakes via follow-up PRs
 - `plan-reviewer` — independent plan review with tiered rubrics
 - `coverage-reviewer` — post-merge test coverage gap detection
@@ -52,7 +52,7 @@ outside the lane's intended role.
 |------|-------------|-----------|
 | `steward-review` | `allowedTools` (Read, Grep, Glob, Bash, ToolSearch, Skill) | Read-only review; cannot Edit/Write code |
 | `steward-ops` | `disallowedTools` (Edit, Write, Agent) | Monitoring-only; cannot modify files or spawn agents |
-| `issues` | `allowedTools` (Read, Grep, Glob, Bash, ToolSearch, Skill) | Triage-only; files issues via Bash/gh, cannot Edit/Write code |
+| `issues` | `allowedTools` (Read, Grep, Glob, Bash, ToolSearch, Skill) | Triage-only; files issues via Bash/gh, cannot Edit/Write code (standalone, not session-launched) |
 
 ### Lanes Without Enforced Boundaries (by design)
 
@@ -72,7 +72,7 @@ boundary.
 | Model | Agents |
 |-------|--------|
 | `sonnet` | All specialist reviewers, blind-comparator, steward-review, steward-ops |
-| `inherit` (default) | All author lanes, orchestrator, issues, repair |
+| `inherit` (default) | All author lanes, orchestrator, repair |
 
 ## Prompt-First Workflow
 
@@ -83,4 +83,6 @@ steward dashboard using the orchestrator, dashboard, and named skills.
 
 These agents are launched by `steward-session.sh` via `--agent <name>` flags,
 which writes v2 registry metadata and establishes stable role identity per
-tmux window.
+tmux pane. The session launches 15 lanes across 4 windows (central-ops,
+platform, browser, scratch). Standalone agents like `issues` can be invoked
+manually but are not part of the session layout.
