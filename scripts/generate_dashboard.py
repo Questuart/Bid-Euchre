@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate churn-corrected Bollinger Band dashboard for PR analytics.
+"""PR analytics Bollinger Band dashboard.
 
 Produces a 4-panel PNG:
   1. PRs merged per day with Bollinger Bands (working days only)
@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import argparse
 import json as _json
+import logging
 import os
 import subprocess
 from collections import defaultdict
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import matplotlib
 
@@ -46,11 +49,17 @@ def _git(args: list[str], repo: str) -> str:
     return result.stdout
 
 
+_GH_PR_LIMIT = 10_000
+
+
 def _gather_pr_counts(repo: str) -> tuple[dict[str, int], dict[str, int]]:
     """Return per-day PR merge counts and total additions from merged PRs.
 
     Uses ``gh pr list`` as the data source.  Requires the ``gh`` CLI to be
     installed and authenticated.
+
+    Warns when the number of PRs returned equals ``_GH_PR_LIMIT``, which
+    indicates the result set may be truncated.
     """
     result = subprocess.run(
         [
@@ -62,7 +71,7 @@ def _gather_pr_counts(repo: str) -> tuple[dict[str, int], dict[str, int]]:
             "--json",
             "mergedAt,additions",
             "--limit",
-            "10000",
+            str(_GH_PR_LIMIT),
         ],
         capture_output=True,
         text=True,
@@ -70,6 +79,13 @@ def _gather_pr_counts(repo: str) -> tuple[dict[str, int], dict[str, int]]:
         check=True,
     )
     prs = _json.loads(result.stdout)
+
+    if len(prs) >= _GH_PR_LIMIT:
+        logger.warning(
+            "gh pr list returned %d PRs (the configured limit). "
+            "Results may be truncated — consider increasing _GH_PR_LIMIT.",
+            len(prs),
+        )
 
     pr_counts: dict[str, int] = defaultdict(int)
     pr_additions: dict[str, int] = defaultdict(int)
@@ -212,6 +228,7 @@ def generate_dashboard(repo: str, output: str) -> None:
     tick_labels = [sorted_dates[i] for i in tick_positions]
 
     valid = ~np.isnan(raw_sma)
+    add_valid = ~np.isnan(add_sma)
     churn_valid = ~np.isnan(lc_sma)
 
     # ── Plot ─────────────────────────────────────────────────────────────
@@ -261,7 +278,7 @@ def generate_dashboard(repo: str, output: str) -> None:
         add_upper,
         add_lower,
         add_pctb,
-        valid,
+        add_valid,
         latest_idx,
         band_color="#27ae60",
         sma_color="#27ae60",
