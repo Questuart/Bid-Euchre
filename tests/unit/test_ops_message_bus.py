@@ -1134,16 +1134,18 @@ class TestTTLAutoExpireOnRead:
         )
         send_message(msg2, bus_root, events_dir=events_dir)
 
-        # Sleep briefly to ensure TTL elapses
-        _time.sleep(1.1)
+        # Use deterministic future timestamp instead of sleeping
+        future = _time.time() + 2.0
 
         # Reading inbox should auto-expire
-        inbox2 = read_inbox("target2", bus_root)
+        inbox2 = read_inbox("target2", bus_root, now=future)
         assert len(inbox2) == 1
         assert inbox2[0]["status"] == "expired"
 
     def test_auto_expire_disabled(self, bus_root: Path, events_dir: Path) -> None:
         """When auto_expire=False, stale messages are not expired."""
+        import time as _time
+
         msg = create_message(
             "a",
             "target",
@@ -1153,12 +1155,12 @@ class TestTTLAutoExpireOnRead:
         )
         send_message(msg, bus_root, events_dir=events_dir)
 
-        import time as _time
-
-        _time.sleep(1.1)
+        # Use deterministic future timestamp — auto_expire=False so now is
+        # irrelevant, but proves the message isn't expired by side-effect.
+        future = _time.time() + 2.0
 
         # With auto_expire=False, message stays pending
-        inbox = read_inbox("target", bus_root, auto_expire=False)
+        inbox = read_inbox("target", bus_root, auto_expire=False, now=future)
         assert len(inbox) == 1
         assert inbox[0]["status"] == "pending"
 
@@ -1166,6 +1168,8 @@ class TestTTLAutoExpireOnRead:
         self, bus_root: Path, events_dir: Path
     ) -> None:
         """Already-resolved messages are not re-expired on read."""
+        import time as _time
+
         msg = create_message(
             "a",
             "target",
@@ -1177,11 +1181,10 @@ class TestTTLAutoExpireOnRead:
         ack_message(msg.message_id, "target", bus_root, events_dir=events_dir)
         resolve_message(msg.message_id, "target", bus_root, events_dir=events_dir)
 
-        import time as _time
+        # Use deterministic future timestamp instead of sleeping
+        future = _time.time() + 2.0
 
-        _time.sleep(1.1)
-
-        inbox = read_inbox("target", bus_root, status="resolved")
+        inbox = read_inbox("target", bus_root, status="resolved", now=future)
         assert len(inbox) == 1
         assert inbox[0]["status"] == "resolved"
 

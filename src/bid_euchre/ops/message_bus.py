@@ -434,6 +434,7 @@ def read_inbox(
     message_type: str | None = None,
     limit: int = 50,
     auto_expire: bool = True,
+    now: float | None = None,
 ) -> list[dict[str, Any]]:
     """Read and filter a lane's inbox messages.
 
@@ -443,6 +444,11 @@ def read_inbox(
     When *auto_expire* is ``True`` (the default), messages whose
     ``payload.ttl_seconds`` has elapsed are automatically transitioned
     to ``expired`` before filtering.
+
+    *now* is an optional epoch timestamp forwarded to
+    ``_expire_stale_on_read``.  When ``None`` (default), the current
+    wall-clock time is used.  Pass an explicit value in tests to avoid
+    ``time.sleep`` calls.
     """
     root = shared_bus_root(bus_root)
     raw = _read_inbox_raw(lane_id, root)
@@ -456,7 +462,7 @@ def read_inbox(
 
     # Lazily expire stale messages before applying user filters
     if auto_expire:
-        _expire_stale_on_read(by_id, lane_id, root)
+        _expire_stale_on_read(by_id, lane_id, root, now=now)
 
     # Apply filters
     from collections import deque
