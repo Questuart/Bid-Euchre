@@ -26,13 +26,13 @@ operational reliability, not missing implementations:
 
 | Subsystem | First Version | Gap |
 |-----------|--------------|-----|
-| Shared bus | `shared_bus_root()` in `message_bus.py` | Sessions started pre-fix still use local bus until restarted |
-| Post-merge packet close | `post-merge-notify.sh` | Not proving reliable in practice -- packets still go stale |
-| Scope drift detection | `check_scope_drift()` in `scope.py` | Detection only, no enforcement at commit/review time |
-| Stall detection | `check_stalled_lanes()` in `monitor.py` | Detection only, no recovery (re-nudge, escalate, reset) |
-| Lane reset/clear | `reset_worktree()` in `worker_pool.py` | Exists but untested in real dispatch flow |
-| Pane targeting | Registry-based in `worker_pool.py` + 1-based in launcher | Needs proving and cleanup, not redesign |
-| Inbox management | `inbox purge` CLI in `ops.py` | Tools exist but data not cleaned; monitor doesn't poll inbox |
+| Shared bus | `shared_bus_root()` in `src/bid_euchre/ops/message_bus.py` | Sessions started pre-fix still use local bus until restarted |
+| Post-merge packet close | `.claude/hooks/post-merge-notify.sh` | Not proving reliable in practice -- packets still go stale |
+| Scope drift detection | `check_scope_drift()` in `src/bid_euchre/ops/scope.py` | Detection only, no enforcement at commit/review time |
+| Stall detection | `check_stalled_lanes()` in `src/bid_euchre/ops/monitor.py` | Detection only, no recovery (re-nudge, escalate, reset) |
+| Lane reset/clear | `reset_worktree()` in `src/bid_euchre/ops/worker_pool.py` | Exists but untested in real dispatch flow |
+| Pane targeting | Registry-based in `src/bid_euchre/ops/worker_pool.py` + 1-based in launcher | Needs proving and cleanup, not redesign |
+| Inbox management | `inbox purge` CLI in `scripts/internal/ops.py` | Tools exist but data not cleaned; monitor doesn't poll inbox |
 
 ## Approach
 
@@ -44,10 +44,10 @@ Do not build new subsystems or add new transports.
 To reduce interpretation error, this sub-plan is locked to the following:
 
 - Reuse existing seams first:
-  - `post-merge-notify.sh` for packet closeout
-  - `check_stalled_lanes()` in `monitor.py` for stall detection
-  - `check_scope_drift()` in `scope.py` for scope analysis
-  - `dispatch_to_worker()` / `reset_worktree()` / `nudge_pane()` in `worker_pool.py`
+  - `.claude/hooks/post-merge-notify.sh` for packet closeout
+  - `check_stalled_lanes()` in `src/bid_euchre/ops/monitor.py` for stall detection
+  - `check_scope_drift()` in `src/bid_euchre/ops/scope.py` for scope analysis
+  - `dispatch_to_worker()` / `reset_worktree()` / `nudge_pane()` in `src/bid_euchre/ops/worker_pool.py`
 - Do **not** introduce:
   - a new task lifecycle subsystem
   - a second dispatch queue
@@ -74,7 +74,7 @@ completion without manual intervention.
 **Method:**
 - Use current stuck `dispatched` packets as the diagnostic set
 - For each stuck packet, identify exactly where the lifecycle broke:
-  - Did `post-merge-notify.sh` fire? Check sentinel files in `/tmp/`
+  - Did `.claude/hooks/post-merge-notify.sh` fire? Check sentinel files in `/tmp/`
   - Did the lane's session have the hook registered? Check the repo-level `.claude/settings.json`
   - Did the completion message reach the orchestrator? Check the shared bus and event log
   - Did packet status transition to `completed`? Check packet JSON state directly
@@ -157,7 +157,10 @@ completion without manual intervention.
 **Validation:**
 - Simulate stall: dispatch task, manually idle the lane, verify monitor
   re-nudges on first cycle and escalates on second
-- `uv run python -m pytest tests/unit/test_ops_monitor.py`
+- Run tests:
+  ```bash
+  uv run python -m pytest tests/unit/test_ops_monitor.py
+  ```
 
 **Files:**
 - `src/bid_euchre/ops/monitor.py` (`check_stalled_lanes` → add recovery)
@@ -168,7 +171,7 @@ completion without manual intervention.
 **Goal:** Block commits that exceed declared scope, preventing blown-scope agents.
 
 **Method:**
-- Reuse existing `check_scope_drift()` from `scope.py`
+- Reuse existing `check_scope_drift()` from `src/bid_euchre/ops/scope.py`
 - Use one enforcement seam only:
   - preferred: commit-time guard
   - fallback only if needed: review precheck
@@ -182,7 +185,10 @@ completion without manual intervention.
 
 **Validation:**
 - Create a task with narrow scope, stage an out-of-scope file, verify block
-- `uv run python -m pytest tests/unit/test_ops_scope.py` (if exists, or add)
+- Run tests (if file exists, or add):
+  ```bash
+  uv run python -m pytest tests/unit/test_ops_scope.py
+  ```
 
 **Files:**
 - `src/bid_euchre/ops/scope.py` (may need threshold configuration)
