@@ -17,6 +17,8 @@ Usage::
         wake_worker,
         park_worker,
         retire_worker,
+        reset_worktree,
+        clear_session,
         dispatch_to_worker,
         nudge_pane,
         run_pool_maintenance,
@@ -813,6 +815,128 @@ def retire_worker(
     )
 
 
+def reset_worktree(
+    lane_id: str,
+    *,
+    runtime_dir: Path | None = None,
+) -> PoolAction:
+    """Reset a lane's worktree to origin/main.
+
+    Runs ``git fetch origin main && git reset --hard origin/main`` inside the
+    target worktree.  This ensures the worktree starts from a clean state
+    before a new task begins.
+
+    Args:
+        lane_id: Lane whose worktree should be reset.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A :class:`PoolAction` with ``action="reset_worktree"`` describing the
+        outcome.
+    """
+    worktree_path = _resolve_worktree_path(lane_id, runtime_dir)
+    if not worktree_path:
+        return PoolAction(
+            action="reset_worktree",
+            lane_id=lane_id,
+            reason=f"Could not resolve worktree path for {lane_id!r}",
+            executed=False,
+            error="worktree_not_found",
+        )
+
+    try:
+        subprocess.run(
+            ["git", "fetch", "origin", "main"],
+            cwd=worktree_path,
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        subprocess.run(
+            ["git", "reset", "--hard", "origin/main"],
+            cwd=worktree_path,
+            check=True,
+            capture_output=True,
+            timeout=15,
+        )
+        return PoolAction(
+            action="reset_worktree",
+            lane_id=lane_id,
+            reason=f"Reset worktree at {worktree_path} to origin/main",
+            executed=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return PoolAction(
+            action="reset_worktree",
+            lane_id=lane_id,
+            reason=f"Failed to reset worktree: {exc}",
+            executed=False,
+            error="reset_failed",
+        )
+    except (FileNotFoundError, OSError) as exc:
+        return PoolAction(
+            action="reset_worktree",
+            lane_id=lane_id,
+            reason=f"Failed to reset worktree: {exc}",
+            executed=False,
+            error="reset_failed",
+        )
+
+
+def clear_session(
+    lane_id: str,
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+) -> PoolAction:
+    """Send /clear to a lane's tmux pane to reset the Claude Code session.
+
+    Uses ``tmux send-keys`` to inject ``/clear`` followed by Enter into the
+    target pane.  This resets the Claude Code context window so the lane
+    starts fresh.
+
+    Args:
+        lane_id: Target lane whose session should be cleared.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A :class:`PoolAction` with ``action="clear_session"`` describing the
+        outcome.
+    """
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+
+    try:
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, "/clear", "Enter"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        return PoolAction(
+            action="clear_session",
+            lane_id=lane_id,
+            reason=f"Sent /clear to pane {target}",
+            executed=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return PoolAction(
+            action="clear_session",
+            lane_id=lane_id,
+            reason=f"Failed to clear session: {exc}",
+            executed=False,
+            error="clear_failed",
+        )
+    except (FileNotFoundError, OSError) as exc:
+        return PoolAction(
+            action="clear_session",
+            lane_id=lane_id,
+            reason=f"Failed to clear session: {exc}",
+            executed=False,
+            error="clear_failed",
+        )
+
+
 def nudge_pane(
     lane_id: str,
     packet_id: str,
@@ -879,6 +1003,7 @@ def dispatch_to_worker(
     *,
     tmux_session: str = DEFAULT_TMUX_SESSION,
     runtime_dir: Path | None = None,
+    reset: bool = False,
 ) -> PoolAction:
     """Complete lifecycle: wake worker, assign task packet, nudge pane.
 
@@ -886,6 +1011,7 @@ def dispatch_to_worker(
     1. Load task packet, verify it is in "approved" status.
     2. Take pool snapshot, verify lane_id has capacity.
     3. If lane is parked/retired: wake_worker() first.
+    3b. If ``reset=True``: reset worktree to origin/main and clear session.
     4. Transition packet to "dispatched" with owner = lane_id.
     4b. Copy dispatched packet JSON to the target worktree's task_queue
         so the author lane can discover it via ``/start-task``.
@@ -902,6 +1028,9 @@ def dispatch_to_worker(
         lane_id: Target lane for the work.
         tmux_session: tmux session name.
         runtime_dir: Override for the runtime directory root.
+        reset: If True, reset the worktree to origin/main and send /clear
+            to the Claude session before dispatching.  Recommended when the
+            lane is idle and stale context should be discarded.
 
     Returns:
         A :class:`PoolAction` describing what happened.
@@ -987,6 +1116,29 @@ def dispatch_to_worker(
                 executed=False,
                 error=f"wake_failed:{wake_result.error}",
             )
+
+    # 3b. Reset worktree and clear session if requested
+    if reset:
+        reset_result = reset_worktree(lane_id, runtime_dir=runtime_dir)
+        if not reset_result.executed:
+            logger.warning(
+                "Worktree reset failed for %s: %s (continuing dispatch)",
+                lane_id,
+                reset_result.reason,
+            )
+        clear_result = clear_session(
+            lane_id, tmux_session=tmux_session, runtime_dir=runtime_dir
+        )
+        if not clear_result.executed:
+            logger.warning(
+                "Session clear failed for %s: %s (continuing dispatch)",
+                lane_id,
+                clear_result.reason,
+            )
+        import time
+
+        # Brief pause to let /clear complete before sending /start-task
+        time.sleep(2)
 
     # 4. Transition packet to dispatched
     try:
