@@ -355,7 +355,7 @@ tmux select-layout -t "${SESSION}:scratch" tiled
 # Wait briefly for the claude process to initialize, then send the /loop
 # command.  Best-effort — if it fails the ops agent can start it manually.
 # Target: central-ops window, pane 2 (ops lane).
-# Note: pane-base-index=1, so orchestrator=.1, ops=.2, review=.3, issues=.4.
+# Note: pane-base-index=1, so orchestrator=.1, ops=.2, review=.3.
 (
     sleep 10
     tmux send-keys -t "${SESSION}:central-ops.2" \

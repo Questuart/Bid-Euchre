@@ -340,6 +340,10 @@ class TestWindowLayout:
             if line.strip().startswith('write_lane_metadata "issues"')
         ]
         assert len(metadata_lines) == 0, "issues metadata must be removed"
+        # No stale "issues" references in pane-index comments
+        assert (
+            "issues=" not in content
+        ), "stale 'issues=' reference in pane-index comment"
 
     def test_four_windows_created(self) -> None:
         """Exactly 4 tmux windows must be created (1 new-session + 3 new-window)."""
