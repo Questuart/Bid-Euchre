@@ -101,13 +101,15 @@ Each active phase maintains a checkpoint file at:
 
 Current active phase:
 
-- `plans/agent_ops/3_supervision_and_scaling/checkpoints.md`
+- Phase 4 (`4_remote_channel`) and Phase 5 (`5_portability_and_learning`) are
+  both unblocked and ready for entry (both depend on Phase 3).
 
 Completed phases:
 
 - `plans/agent_ops/0_bootstrap/checkpoints.md` (Phase 0 — COMPLETE)
 - `plans/agent_ops/1_coordination_core/checkpoints.md` (Phase 1 — COMPLETE, 2026-03-21)
 - `plans/agent_ops/2_visible_operating_model/checkpoints.md` (Phase 2 — COMPLETE, 2026-03-22)
+- `plans/agent_ops/3_supervision_and_scaling/checkpoints.md` (Phase 3 — COMPLETE, 2026-03-22)
 
 Agents should treat checkpoints as the human-readable source of current step
 status, blockers, and session handoff state.

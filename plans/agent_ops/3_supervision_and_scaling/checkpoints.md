@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase/Rung:** `3_supervision_and_scaling`
-**Last updated:** 2026-03-22 by orchestrator (Batch D COMPLETE, Step 5 blocked on BD-004)
+**Last updated:** 2026-03-22 by author-b (Phase 3 COMPLETE)
 
 ---
 
@@ -15,7 +15,7 @@
 | Step 2: Platform-7 scope lock and sub-plan | COMPLETE | 2026-03-22 | author-c | SP-3-02 created and plan-reviewed. Worker-pool manager: idle reuse, bounded dynamic author creation, parking/retirement. |
 | Step 3: Platform-7 implementation | COMPLETE | 2026-03-22 | author-d | worker_pool.py module, CLI subcommand, 69 tests. PR #1250 + fix PR #1252. |
 | Step 4: Batch D pass gate verification | COMPLETE | 2026-03-22 | orchestrator (Batch D proving run) | Batch D pass gate PASSED. All 3 criteria met. PRs #1256, #1257, #1258. 5 findings (BD-001--BD-005). Phase 3 exit blocked on BD-004 (#1259). |
-| Step 5: Phase 3 handoff | PENDING | -- | -- | Update governing plan, prepare Phase 4/5 entry. Blocked on BD-004 (end-to-end pane delivery, #1259). |
+| Step 5: Phase 3 handoff | COMPLETE | 2026-03-22 | author-b | BD-004 closed via PR #1263. Phase 3 COMPLETE. Governing plan, checkpoints, QA log, sub-plan registry, and MEMORY.md updated. |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
 
@@ -24,10 +24,11 @@
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
 | SP-3-02 | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_platform7-worker-pool-manager.md` | completed | Step 3 |
+| SP-3-03 | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_bd004-v1-pane-delivery.md` | completed | Step 5 |
 
 ## Blockers
 
-- **BD-004** (#1259): End-to-end tmux pane delivery not proven. Phase 3 exit gate.
+None. All blockers resolved.
 
 ## Session Log
 
@@ -75,3 +76,15 @@
 - Phase 3 exit gate: BD-004 — end-to-end tmux pane delivery must be proven
   before Step 5 can complete.
 - Fix PR dispatched for BD-001 + BD-002 (author-a).
+
+### 2026-03-22 -- author-b (Phase 3 handoff)
+- Step 5 → COMPLETE. Phase 3 is COMPLETE.
+- BD-004 closed: PR #1263 merged (tmux pane delivery adapter). E2E proving
+  test passed: packet `225eeaae480c` dispatched, `/start-task` appeared in
+  author-a pane, inbox message status `delivered`.
+- Follow-up #1266 filed for mark_delivered public API.
+- SP-3-03 (BD-004 v1 pane delivery) marked completed in sub-plan registry.
+- All 6 steps COMPLETE. Phase 3 exit gate satisfied.
+- Governing plan updated: Phase 3 → COMPLETE. Phase 4/5 ready for entry.
+- Next: Phase 4 (remote channel) or Phase 5 (portability and learning),
+  both depend on Phase 3 completion.
