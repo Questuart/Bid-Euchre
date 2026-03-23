@@ -1583,7 +1583,12 @@ def cmd_task(args: argparse.Namespace) -> int:
 
 def cmd_inbox(args: argparse.Namespace) -> int:
     """Communication bus inbox inspection and acknowledgment (Platform-3)."""
-    from bid_euchre.ops.message_bus import ack_message, inbox_stats, read_inbox
+    from bid_euchre.ops.message_bus import (
+        ack_message,
+        bulk_ack_messages,
+        inbox_stats,
+        read_inbox,
+    )
 
     bus_root = args.runtime_dir / "message_bus"
 
@@ -1610,6 +1615,42 @@ def cmd_inbox(args: argparse.Namespace) -> int:
         else:
             print(f"Acknowledged: {msg_id} in {lane} inbox")
             print(f"  Status: {result.get('status', '?')}")
+        return 0
+
+    elif action == "ack-all":
+        import re
+
+        lane = getattr(args, "lane", None)
+        if not lane:
+            print(
+                "Usage: ops.py inbox ack-all --lane LANE [--filter-summary PATTERN]",
+                file=sys.stderr,
+            )
+            return 1
+        summary_pattern = getattr(args, "filter_summary", None)
+        if summary_pattern:
+            pat = re.compile(summary_pattern, re.IGNORECASE)
+
+            def filter_fn(msg: dict) -> bool:
+                return bool(pat.search(msg.get("summary", "")))
+        else:
+
+            def filter_fn(msg: dict) -> bool:
+                return True
+
+        acked = bulk_ack_messages(lane, filter_fn, bus_root)
+        if args.json:
+            print(json.dumps(acked, indent=2, default=str))
+        else:
+            if not acked:
+                print(f"No ack-able messages in {lane} inbox.")
+            else:
+                print(f"Bulk-acked {len(acked)} message(s) in {lane} inbox:")
+                for msg in acked:
+                    print(
+                        f"  {msg.get('message_id', '?'):16s}  "
+                        f"{msg.get('summary', '')[:60]}"
+                    )
         return 0
 
     elif action == "stats":
@@ -2408,6 +2449,18 @@ def build_parser() -> argparse.ArgumentParser:
     inbox_ack_parser.add_argument("message_id", help="The message ID to acknowledge")
     inbox_ack_parser.add_argument(
         "--lane", required=True, help="Lane whose inbox contains the message"
+    )
+
+    inbox_ack_all_parser = inbox_sub.add_parser(
+        "ack-all", help="Bulk-acknowledge inbox messages"
+    )
+    inbox_ack_all_parser.add_argument(
+        "--lane", required=True, help="Lane whose inbox to bulk-ack"
+    )
+    inbox_ack_all_parser.add_argument(
+        "--filter-summary",
+        default=None,
+        help="Regex pattern to match against message summary (case-insensitive)",
     )
 
     inbox_parser.add_argument(
