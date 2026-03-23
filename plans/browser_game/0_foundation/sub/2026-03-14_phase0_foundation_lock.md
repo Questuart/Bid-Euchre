@@ -3,7 +3,7 @@
 **ID:** SP-0-01
 **Date:** 2026-03-14
 **Parent:** `plans/browser_game/governing_plan.md` -- §7.4 Phase 0 Dependencies
-**Status:** in_progress
+**Status:** completed
 **Owner:** Codex
 
 ---
@@ -36,7 +36,9 @@
 ### Step 1: Lock package and persistence boundaries
 - Confirm `src/bid_euchre/hosted_play/` as the reusable domain layer.
 - Confirm `web/` as the FastAPI interface layer.
-- Define the initial storage entities: `matches`, `hands`, `action_events`, `model_registry`.
+- Define the initial storage entities: `players`, `matches`, `hands`, `decisions`.
+- Keep the approved model roster in config/runtime state for V1 instead of a
+  database `model_registry` table.
 - Lock the future extraction boundary so web/ORM concerns do not leak into the hosted-play domain package.
 - Lock persistence mode to SQLite for local/dev and Postgres for deployed environments.
 
@@ -48,7 +50,9 @@
 ### Step 3: Inventory bidder artifacts and launch roster
 - Locate actual artifact files and determine which ones are suitable for hosted play.
 - Record any blockers if artifact generation or publication policy is still missing.
-- Lock the initial launch roster to `heuristic` (always), `hybrid_olsa` (if artifact present), and `gbt_action_value` (if artifact present).
+- Lock the initial launch roster to `heuristic` (always) and `hybrid_olsa`
+  (if artifact present).
+- Defer `gbt_action_value` until post-MVP.
 
 ### Step 4: Prepare PR-1 execution handoff
 - Convert the locked decisions into a concrete implementation sub-plan for PR-1.
@@ -60,18 +64,21 @@
 - `plans/browser_game/0_foundation/plan.md` -- Phase 0 details and exit criteria
 - `plans/browser_game/0_foundation/checkpoints.md` -- phase progress and active sub-plan tracking
 - `plans/browser_game/sub_plan_registry.md` -- register this sub-plan
+- `plans/browser_game/amendments.md` -- BG-1 records the V1 serving contract change
 - `docs/01_core/HOSTED_PLAY_RULES.md` -- NEW: rules extension document for hosted play
 - `pyproject.toml` -- dependency additions for web stack
+- `web/schema.sql` -- NEW: initial hosted-play persistence contract
 - `plans/browser_game/2_backend_api/sub/2026-03-14_fastapi_app.md` -- align AI manager and persistence assumptions with locked Phase 0 decisions
+- `plans/browser_game/2_backend_api/checkpoints.md` -- align backend Step 1/2 notes with the config-backed roster
 - `plans/browser_game/5_deployment_launch/checkpoints.md` -- align hosting target with locked Phase 0 decision
 
 ## Validation
 
-- [ ] Plan audit: referenced files and paths exist or are explicitly marked NEW
-- [ ] Contract check: package layout and PR boundaries align with the governing plan
-- [ ] Extraction check: hosted-play domain responsibilities are distinct from `web/` responsibilities
-- [ ] Artifact inventory: at least one approved bidder artifact path is identified, or a concrete blocker is recorded
-- [ ] Dependency check: `hosted` extras in `pyproject.toml` match the locked Phase 0 decision
+- [x] Plan audit: referenced files and paths exist or are explicitly marked NEW
+- [x] Contract check: package layout and PR boundaries align with the governing plan
+- [x] Extraction check: hosted-play domain responsibilities are distinct from `web/` responsibilities
+- [x] Artifact inventory: at least one approved bidder artifact path is identified, or a concrete blocker is recorded
+- [x] Dependency check: `hosted` extras in `pyproject.toml` match the locked Phase 0 decision
 
 ## Planned Outputs
 
@@ -86,21 +93,28 @@ _Filled during/after execution._
 - Output 1: `docs/01_core/HOSTED_PLAY_RULES.md` -- authoritative hosted-play rules contract created on 2026-03-15
 - Output 2: `plans/browser_game/hosted_play_rules.md` -- reduced to a pointer note so planning and implementation sources do not diverge
 - Output 3: `pyproject.toml` -- `hosted` optional dependency group added on 2026-03-15
+- Output 4: `plans/browser_game/amendments.md` -- BG-1 locked the V1 config-backed startup preload contract on 2026-03-23
+- Output 5: `web/schema.sql` -- initial hosted-play schema added on 2026-03-23
 
 ## Outcome
 
 _Filled after completion._
 
-- Status: --
+- Status: completed
 - PR: --
-- Deviations from plan: --
-- Issues discovered: --
+- Deviations from plan: Replaced the planned V1 `model_registry` table with a
+  config-backed approved roster recorded in amendment BG-1.
+- Issues discovered: None blocking. Artifact inventory showed that GBT assets
+  exist, but they were intentionally deferred from V1 to reduce serving
+  complexity.
 
 ## Handoff
 
 _Filled at session end if work is incomplete._
 
-- Current state: Governing plan revised; Phase 0 still needs execution decisions locked in code/docs.
-- Next action: Add package markers, then lock the initial schema sketch in the backend sub-plan.
-- Blockers: Initial schema is not yet locked in files.
+- Current state: Phase 0 foundation lock is complete. Rules contract, dependency
+  stack, package skeleton, model-serving amendment, and initial schema are all
+  locked in files.
+- Next action: Start Phase 1 by reading `plans/browser_game/1_state_engine/sub/2026-03-14_stepwise_engine.md` and implementing `state.py`, `engine.py`, and `tests/unit/hosted_play/test_engine.py`.
+- Blockers: None in Phase 0.
 - Files with uncommitted changes: --
