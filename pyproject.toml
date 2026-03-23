@@ -45,11 +45,9 @@ dev = [
   "papermill>=2.4.0",
 ]
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["bid_euchre*", "web*"]
 
 [tool.ruff]
 extend-exclude = ["data/", "experiments/_deprecated/", ".claude/worktrees/"]
@@ -59,4 +57,4 @@ select = ["E", "F", "I"]
 ignore = ["E501", "E402", "E712", "E741"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["bid_euchre"]
+known-first-party = ["bid_euchre", "web"]
