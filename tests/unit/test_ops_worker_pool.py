@@ -25,6 +25,7 @@ from bid_euchre.ops.worker_pool import (
     _minutes_since,
     _probe_tmux_pane,
     _resolve_agent_name,
+    _resolve_tmux_target,
     dispatch_to_worker,
     format_action_text,
     format_actions_json,
@@ -304,19 +305,57 @@ class TestGetLaneTaskId:
 # ---------------------------------------------------------------------------
 
 
+class TestResolveTmuxTarget:
+    """Test _resolve_tmux_target() registry-based target resolution."""
+
+    def test_registry_with_window_and_pane(self, tmp_path: Path) -> None:
+        """When registry has tmux_window and tmux_pane, use them."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_window": "platform", "tmux_pane": "0"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        result = _resolve_tmux_target("author-a", "steward", tmp_path)
+        assert result == "steward:platform.0"
+
+    def test_registry_missing_falls_back(self, tmp_path: Path) -> None:
+        """When registry file is missing, fall back to session:lane_id."""
+        result = _resolve_tmux_target("author-a", "steward", tmp_path)
+        assert result == "steward:author-a"
+
+    def test_registry_no_pane_falls_back(self, tmp_path: Path) -> None:
+        """When registry has window but no pane, fall back."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_window": "platform"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        result = _resolve_tmux_target("author-a", "steward", tmp_path)
+        assert result == "steward:author-a"
+
+    def test_registry_pane_zero_is_valid(self, tmp_path: Path) -> None:
+        """Pane index 0 should not be treated as falsy."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_window": "central-ops", "tmux_pane": "0"}
+        (registry_dir / "orchestrator.json").write_text(json.dumps(entry))
+        result = _resolve_tmux_target("orchestrator", "steward", tmp_path)
+        assert result == "steward:central-ops.0"
+
+
 class TestProbeTmuxPane:
-    """Test _probe_tmux_pane() with mocked subprocess."""
+    """Test _probe_tmux_pane() with mocked subprocess.
+
+    The function now uses ``tmux display-message -t <target> -p #{pane_pid}``
+    to probe pane liveness, with the target resolved from registry metadata.
+    """
 
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_window_found(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="dashboard\nauthor-a\nauthor-b\n"
-        )
+    def test_pane_alive(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=0, stdout="12345\n")
         assert _probe_tmux_pane("author-a", "steward") is True
 
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_window_not_found(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = MagicMock(returncode=0, stdout="dashboard\nauthor-b\n")
+    def test_pane_not_found(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
         assert _probe_tmux_pane("author-a", "steward") is False
 
     @patch(f"{_WORKER_POOL}.subprocess.run")
@@ -335,6 +374,26 @@ class TestProbeTmuxPane:
 
         mock_run.side_effect = subprocess.TimeoutExpired("tmux", 5)
         assert _probe_tmux_pane("author-a", "steward") is False
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_empty_stdout(self, mock_run: MagicMock) -> None:
+        """Pane exists but pid is empty — treat as not alive."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        assert _probe_tmux_pane("author-a", "steward") is False
+
+    def test_with_registry_target(self, tmp_path: Path) -> None:
+        """When registry provides window.pane, probe targets that."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_window": "platform", "tmux_pane": "0"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="12345\n")
+            result = _probe_tmux_pane("author-a", "steward", runtime_dir=tmp_path)
+            assert result is True
+            # Verify it targeted the correct pane
+            call_args = mock_run.call_args[0][0]
+            assert "steward:platform.0" in call_args
 
 
 # ---------------------------------------------------------------------------
@@ -1650,6 +1709,20 @@ class TestNudgePane:
         result = nudge_pane("author-a", "pkt123")
         assert result.executed is False
         assert result.error == "nudge_failed"
+
+    def test_nudge_uses_registry_target(self, tmp_path: Path) -> None:
+        """When registry has window.pane, nudge targets that."""
+        registry_dir = tmp_path / "worktree_registry"
+        registry_dir.mkdir()
+        entry = {"tmux_window": "platform", "tmux_pane": "0"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = nudge_pane("author-a", "pkt789", runtime_dir=tmp_path)
+            assert result.executed is True
+            assert "steward:platform.0" in result.reason
+            call_args = mock_run.call_args[0][0]
+            assert call_args[3] == "steward:platform.0"
 
 
 # ---------------------------------------------------------------------------
