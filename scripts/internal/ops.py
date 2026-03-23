@@ -52,6 +52,7 @@ Usage:
     uv run python scripts/internal/ops.py workers dispatch PACKET_ID LANE_ID [--json]
     uv run python scripts/internal/ops.py workers maintain [--dry-run] [--json]
     uv run python scripts/internal/ops.py usage import [--usage-dir DIR] [--output-dir DIR] [--json]
+    uv run python scripts/internal/ops.py usage attribute [--output-dir DIR] [--json]
 """
 
 from __future__ import annotations
@@ -2432,9 +2433,31 @@ def cmd_usage(args: argparse.Namespace) -> int:
             print(f"  Output dir:        {result.output_dir}")
         return 0
 
+    elif action == "attribute":
+        from bid_euchre.ops.token_economy import attribute_sessions
+
+        result = attribute_sessions(
+            output_dir=getattr(args, "output_dir", None),
+        )
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2, default=str))
+        else:
+            print("Attribution complete:")
+            print(f"  Total sessions:          {result.total_sessions}")
+            print(f"  Attributed:              {result.attributed}")
+            print(f"  Partially attributed:    {result.partially_attributed}")
+            print(f"  Unattributed:            {result.unattributed}")
+            if result.lanes_found:
+                print(f"  Lanes found:             {', '.join(result.lanes_found)}")
+            print(f"  Output dir:              {result.output_dir}")
+        return 0
+
     else:
         print(
-            "Usage: ops.py usage {import}",
+            "Usage: ops.py usage {import|attribute}",
             file=sys.stderr,
         )
         return 1
@@ -3156,6 +3179,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Output directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_attr_parser = usage_sub.add_parser(
+        "attribute", help="Attribute sessions to lanes and work outcomes"
+    )
+    usage_attr_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
     )
 
     return parser
