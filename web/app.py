@@ -1,0 +1,71 @@
+"""FastAPI application setup for the Bid Euchre browser game.
+
+Handles startup/shutdown lifecycle:
+1. Load configuration from environment
+2. Initialize database (create tables if needed)
+3. Preload approved V1 AI models via :class:`AIManager`
+4. Store manager and session factory in ``app.state``
+
+Routes are NOT defined here — they will be added in Phase 2 Step 2.
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .ai_manager import AIManager
+from .config import HostedPlayConfig, get_config, override_config
+from .db import create_tables, init_engine, make_session_factory
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown."""
+    config = get_config()
+
+    # 1. Database
+    engine = init_engine(config.database_url)
+    create_tables(engine)
+
+    # 2. AI models
+    ai_manager = AIManager(config)
+
+    # 3. Stash on app.state for route access
+    app.state.config = config
+    app.state.engine = engine
+    app.state.session_factory = make_session_factory(engine)
+    app.state.ai_manager = ai_manager
+
+    yield
+
+    # Shutdown — dispose engine connections
+    engine.dispose()
+
+
+def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
+    """Build and return the FastAPI application.
+
+    If *config* is provided it replaces the environment-derived default.
+    This is the primary entry point for tests and programmatic usage.
+    """
+    if config is not None:
+        override_config(config)
+
+    app = FastAPI(
+        title="Bid Euchre Browser Game",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+
+    # CORS — permissive for development; tighten in production
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    return app

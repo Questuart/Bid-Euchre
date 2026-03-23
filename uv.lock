@@ -339,8 +339,11 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "fastapi" },
+    { name = "httpx" },
     { name = "hypothesis" },
     { name = "ipykernel" },
+    { name = "jinja2" },
     { name = "jupyterlab" },
     { name = "jupytext" },
     { name = "nbstripout" },
@@ -351,11 +354,14 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-split" },
+    { name = "python-multipart" },
     { name = "ruff" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "seaborn" },
+    { name = "sqlalchemy" },
     { name = "statsmodels" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 hosted = [
     { name = "fastapi" },
@@ -369,10 +375,13 @@ hosted = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.115.0" },
     { name = "fastapi", marker = "extra == 'hosted'", specifier = ">=0.115.0" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
     { name = "httpx", marker = "extra == 'hosted'", specifier = ">=0.28.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "jinja2", marker = "extra == 'dev'", specifier = ">=3.1.0" },
     { name = "jinja2", marker = "extra == 'hosted'", specifier = ">=3.1.0" },
     { name = "jupyterlab", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "jupytext", marker = "extra == 'dev'", specifier = ">=1.16.2" },
@@ -387,6 +396,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "pytest-split", marker = "extra == 'dev'", specifier = ">=0.9.0" },
+    { name = "python-multipart", marker = "extra == 'dev'", specifier = ">=0.0.12" },
     { name = "python-multipart", marker = "extra == 'hosted'", specifier = ">=0.0.12" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0,<0.10" },
@@ -394,8 +404,10 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.7.0" },
     { name = "seaborn", marker = "extra == 'dev'", specifier = ">=0.12.0" },
     { name = "shap", specifier = ">=0.49.1" },
+    { name = "sqlalchemy", marker = "extra == 'dev'", specifier = ">=2.0.0" },
     { name = "sqlalchemy", marker = "extra == 'hosted'", specifier = ">=2.0.0" },
     { name = "statsmodels", marker = "extra == 'dev'", specifier = ">=0.14.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'dev'", specifier = ">=0.32.0" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'hosted'", specifier = ">=0.32.0" },
 ]
 provides-extras = ["hosted", "dev"]
