@@ -959,13 +959,6 @@ def reset_worktree(
 
         if is_dirty and force:
             ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S")
-            diff_path = Path(f"/tmp/{lane_id}_{ts}.diff")
-            # Disambiguate if a backup with this timestamp already exists
-            # (multiple resets within the same second)
-            seq = 1
-            while diff_path.exists():
-                diff_path = Path(f"/tmp/{lane_id}_{ts}_{seq}.diff")
-                seq += 1
             diff_result = subprocess.run(
                 ["git", "diff", "HEAD"],
                 cwd=worktree_path,
@@ -974,7 +967,18 @@ def reset_worktree(
                 timeout=15,
                 text=True,
             )
-            diff_path.write_text(diff_result.stdout)
+            # Atomic exclusive creation — avoids TOCTOU race when multiple
+            # resets fire within the same second.
+            diff_path = Path(f"/tmp/{lane_id}_{ts}.diff")
+            seq = 1
+            while True:
+                try:
+                    with diff_path.open("x") as f:
+                        f.write(diff_result.stdout)
+                    break
+                except FileExistsError:
+                    diff_path = Path(f"/tmp/{lane_id}_{ts}_{seq}.diff")
+                    seq += 1
             logger.warning(
                 "Worktree for %s was dirty — diff saved to %s",
                 lane_id,

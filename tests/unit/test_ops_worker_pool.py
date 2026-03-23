@@ -2011,6 +2011,46 @@ class TestResetWorktree:
 
     @patch(f"{_WORKER_POOL}._resolve_worktree_path")
     @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_dirty_worktree_force_atomic_collision(
+        self, mock_run: MagicMock, mock_resolve: MagicMock, tmp_path: Path
+    ) -> None:
+        """Same-second resets use atomic exclusive creation to avoid TOCTOU race."""
+        mock_resolve.return_value = "/tmp/wt-author-a"
+        dirty_status = self._make_status_dirty()
+        diff_mock = self._make_diff("second diff content")
+        ok = MagicMock(returncode=0)
+        mock_run.side_effect = [dirty_status, diff_mock, ok, ok]
+
+        from datetime import datetime, timezone
+
+        frozen = datetime(2026, 1, 15, 12, 30, 45, tzinfo=timezone.utc)
+        ts = "20260115T123045"
+
+        # Pre-create the base path to simulate a same-second collision
+        base_diff = Path(f"/tmp/author-a_{ts}.diff")
+        base_diff.write_text("first diff content")
+
+        try:
+            with patch(f"{_WORKER_POOL}.datetime") as mock_dt:
+                mock_dt.now.return_value = frozen
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                result = reset_worktree("author-a", force=True)
+
+            assert result.executed is True
+            assert result.error is None
+
+            # Should have created the _1 suffixed file
+            seq_diff = Path(f"/tmp/author-a_{ts}_1.diff")
+            assert seq_diff.exists()
+            assert seq_diff.read_text() == "second diff content"
+            # Original file should be untouched
+            assert base_diff.read_text() == "first diff content"
+        finally:
+            base_diff.unlink(missing_ok=True)
+            Path(f"/tmp/author-a_{ts}_1.diff").unlink(missing_ok=True)
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
     def test_clean_worktree_with_force(
         self, mock_run: MagicMock, mock_resolve: MagicMock
     ) -> None:
