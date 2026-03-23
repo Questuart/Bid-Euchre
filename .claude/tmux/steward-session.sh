@@ -51,6 +51,13 @@ if [ -z "$CLAUDE_BIN" ]; then
     exit 1
 fi
 
+# Telegram channel configuration (Platform-8a).
+# Set STEWARD_TELEGRAM_ENABLED=1 to add --channels telegram to the
+# orchestrator pane.  Default is 0 (disabled / tmux-only).
+# Only the orchestrator lane gets the channel flag — author lanes remain
+# tmux-only per SP-4-01 key decisions.
+STEWARD_TELEGRAM_ENABLED="${STEWARD_TELEGRAM_ENABLED:-0}"
+
 # Platform pool worktrees
 AUTHOR_A="${PARENT_DIR}/${REPO_NAME}-steward-author"
 AUTHOR_B="${PARENT_DIR}/${REPO_NAME}-steward-author-b"
@@ -306,6 +313,18 @@ write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/s
 write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "scratch" "4" "background" "Flex C"
 
 # ---------------------------------------------------------------------------
+# Orchestrator channel flags (Platform-8a)
+# ---------------------------------------------------------------------------
+# When STEWARD_TELEGRAM_ENABLED=1 the orchestrator pane gets
+# --channels telegram so the Channels plugin connects on boot.
+# All other panes launch without --channels (tmux-only).
+ORCH_CHANNEL_FLAGS=""
+if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
+    ORCH_CHANNEL_FLAGS="--channels telegram"
+    export STEWARD_CHANNELS="telegram"
+fi
+
+# ---------------------------------------------------------------------------
 # Window + pane creation — 4 windows (central-ops: 3 panes, others: 4 panes)
 # ---------------------------------------------------------------------------
 # central-ops uses main-vertical: orchestrator large left, ops/review stacked right.
@@ -313,7 +332,7 @@ write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/s
 
 # --- Window 1: central-ops (3 panes, main-vertical) ---
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
-    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator
+    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $ORCH_CHANNEL_FLAGS
 tmux split-window -t "${SESSION}:central-ops" -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name ops --agent steward-ops
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
