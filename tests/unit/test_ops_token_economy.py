@@ -29,6 +29,7 @@ from bid_euchre.ops.token_economy import (
     ThroughputMetrics,
     UsageSummary,
     attribute_sessions,
+    dashboard_token_economy,
     detect_anti_patterns,
     import_usage_data,
     infer_lane_from_path,
@@ -1167,3 +1168,126 @@ class TestDetectAntiPatterns:
         frag = [f for f in findings if f.pattern_id == "fragmentation"]
         assert len(frag) == 1
         assert frag[0].severity == "low"
+
+
+# ---------------------------------------------------------------------------
+# Dashboard token economy tests
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardTokenEconomy:
+    def test_dashboard_with_data(self, output_dir: Path) -> None:
+        """Dashboard builds complete sections when data exists."""
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=100,
+                output_tokens=400,
+                duration_minutes=30,
+                git_commits=2,
+                lines_added=50,
+                lines_removed=10,
+                project_path="/Users/foo/Bid-Euchre-steward-author",
+            ),
+            _make_session_record(
+                "s2",
+                input_tokens=200,
+                output_tokens=800,
+                duration_minutes=45,
+                git_commits=1,
+                lines_added=30,
+                lines_removed=5,
+                project_path="/Users/foo/Bid-Euchre-steward-flex-a",
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        # Write attributions for lane breakdown
+        attributions = [
+            {
+                "session_id": "s1",
+                "lane_id": "author-a",
+                "worktree_class": "platform",
+                "input_tokens": 100,
+                "output_tokens": 400,
+                "git_commits": 2,
+                "lines_added": 50,
+                "lines_removed": 10,
+                "duration_minutes": 30,
+            },
+            {
+                "session_id": "s2",
+                "lane_id": "flex-a",
+                "worktree_class": "flex",
+                "input_tokens": 200,
+                "output_tokens": 800,
+                "git_commits": 1,
+                "lines_added": 30,
+                "lines_removed": 5,
+                "duration_minutes": 45,
+            },
+        ]
+        _write_attributions(output_dir, attributions)
+
+        result = dashboard_token_economy(output_dir=output_dir)
+
+        assert isinstance(result, dict)
+        assert "overview" in result
+        assert "top_lanes" in result
+        assert "efficient_lanes" in result
+        assert "throughput" in result
+        assert "anti_patterns" in result
+
+        # Overview checks
+        assert result["overview"]["session_count"] == 2
+        assert result["overview"]["total_tokens"] == 1500
+        assert result["overview"]["total_git_commits"] == 3
+
+        # Top lanes
+        assert len(result["top_lanes"]) == 2
+        assert result["top_lanes"][0]["lane_id"] == "flex-a"  # most expensive
+
+        # Efficient lanes (sorted by tokens_per_commit asc)
+        assert len(result["efficient_lanes"]) == 2
+
+        # Throughput
+        assert result["throughput"]["tokens_per_commit"] > 0
+
+    def test_dashboard_empty_store(self, output_dir: Path) -> None:
+        """Dashboard returns empty dict when no data exists."""
+        result = dashboard_token_economy(output_dir=output_dir)
+        assert result == {}
+
+    def test_dashboard_null_safe(self, output_dir: Path) -> None:
+        """Dashboard handles sessions with missing optional fields."""
+        sessions = [
+            {
+                "session_id": "s1",
+                "start_time": "2026-03-20T10:00:00Z",
+                # Minimal fields — many optional fields missing
+            },
+        ]
+        _write_sessions(output_dir, sessions)
+
+        result = dashboard_token_economy(output_dir=output_dir)
+
+        assert result["overview"]["session_count"] == 1
+        assert result["overview"]["total_tokens"] == 0
+
+    def test_dashboard_anti_patterns_included(self, output_dir: Path) -> None:
+        """Dashboard includes anti-pattern findings."""
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=5000,
+                output_tokens=50000,
+                lines_added=20,
+                lines_removed=10,  # net 10 → 5500 tok/net line
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        result = dashboard_token_economy(output_dir=output_dir)
+
+        assert len(result["anti_patterns"]) > 0
+        assert result["anti_patterns"][0]["pattern_id"] == "verbosity_waste"

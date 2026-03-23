@@ -18,6 +18,8 @@ throughput_summary
     Compute throughput-normalized token metrics.
 detect_anti_patterns
     Flag high-waste usage patterns.
+dashboard_token_economy
+    Build a dashboard-ready dict with token economy sections.
 """
 
 from __future__ import annotations
@@ -1252,3 +1254,119 @@ def detect_anti_patterns(*, output_dir: Path | None = None) -> list[AntiPattern]
     findings.sort(key=lambda x: severity_order.get(x.severity, 99))
 
     return findings
+
+
+# ---------------------------------------------------------------------------
+# Dashboard surface — JSON-serializable token economy snapshot
+# ---------------------------------------------------------------------------
+
+
+def dashboard_token_economy(*, output_dir: Path | None = None) -> dict[str, Any]:
+    """Build a dashboard-ready dict with token economy sections.
+
+    Returns a JSON-serializable dict containing:
+    - ``overview``: aggregate metrics
+    - ``top_lanes``: most expensive lanes
+    - ``efficient_lanes``: cheapest productive lanes
+    - ``throughput``: throughput-normalized metrics
+    - ``anti_patterns``: detected anti-patterns
+
+    Returns an empty dict (``{}``) when no usage data is imported,
+    ensuring the dashboard renders cleanly without token data.
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to repo runtime path.
+    """
+    try:
+        resolved_output = _resolve_output_dir(output_dir)
+    except ValueError:
+        return {}
+
+    sessions = _load_sessions(resolved_output)
+    if not sessions:
+        return {}
+
+    # Overview
+    s = usage_summary(output_dir=resolved_output)
+    overview = {
+        "session_count": s.session_count,
+        "total_tokens": s.total_tokens,
+        "total_input_tokens": s.total_input_tokens,
+        "total_output_tokens": s.total_output_tokens,
+        "total_duration_minutes": s.total_duration_minutes,
+        "net_lines": s.net_lines,
+        "total_git_commits": s.total_git_commits,
+        "output_input_ratio": round(s.output_input_ratio, 1),
+        "tokens_per_hour": round(s.tokens_per_hour, 0),
+        "time_range_start": s.time_range_start,
+        "time_range_end": s.time_range_end,
+    }
+
+    # Top expensive lanes
+    lanes = lane_summary(output_dir=resolved_output)
+    top_lanes = [
+        {
+            "lane_id": ls.lane_id,
+            "pool": ls.pool,
+            "total_tokens": ls.total_tokens,
+            "session_count": ls.session_count,
+            "git_commits": ls.git_commits,
+            "tokens_per_commit": round(ls.tokens_per_commit, 0)
+            if ls.tokens_per_commit
+            else None,
+            "net_lines": ls.net_lines,
+        }
+        for ls in lanes[:5]  # top 5 most expensive
+    ]
+
+    # Cheapest productive lanes (have commits, sorted by tokens_per_commit asc)
+    productive = [ls for ls in lanes if ls.git_commits > 0]
+    productive.sort(
+        key=lambda x: x.tokens_per_commit if x.tokens_per_commit else float("inf")
+    )
+    efficient_lanes = [
+        {
+            "lane_id": ls.lane_id,
+            "pool": ls.pool,
+            "total_tokens": ls.total_tokens,
+            "git_commits": ls.git_commits,
+            "tokens_per_commit": round(ls.tokens_per_commit, 0)
+            if ls.tokens_per_commit
+            else None,
+            "net_lines": ls.net_lines,
+        }
+        for ls in productive[:5]  # top 5 most efficient
+    ]
+
+    # Throughput
+    t = throughput_summary(output_dir=resolved_output)
+    throughput = {
+        "tokens_per_commit": round(t.tokens_per_commit, 0),
+        "tokens_per_net_line": round(t.tokens_per_net_line, 0),
+        "tokens_per_hour": round(t.tokens_per_hour, 0),
+        "output_input_ratio": round(t.output_input_ratio, 1),
+        "tool_errors_per_1k_tokens": round(t.tool_errors_per_1k_tokens, 2),
+        "assistant_per_user_message": round(t.assistant_per_user_message, 1),
+    }
+
+    # Anti-patterns
+    findings = detect_anti_patterns(output_dir=resolved_output)
+    anti_patterns = [
+        {
+            "pattern_id": f.pattern_id,
+            "name": f.name,
+            "severity": f.severity,
+            "description": f.description,
+        }
+        for f in findings
+    ]
+
+    return {
+        "overview": overview,
+        "top_lanes": top_lanes,
+        "efficient_lanes": efficient_lanes,
+        "throughput": throughput,
+        "anti_patterns": anti_patterns,
+    }
