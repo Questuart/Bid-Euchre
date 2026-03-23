@@ -64,11 +64,21 @@ POOL_STATUSES: frozenset[str] = frozenset({"active", "idle", "parked", "retired"
 #: Lanes with ``None`` are "flex" — available to any domain when same-domain
 #: lanes are exhausted.
 LANE_DOMAINS: dict[str, str | None] = {
+    # Platform pool (original)
     "author-a": "platform",
     "author-b": "platform",
     "author-c": "platform",
     "author-d": "platform",
     "author-scratch": None,  # flex
+    # Browser-game pool
+    "brws-author-a": "browser-game",
+    "brws-author-b": "browser-game",
+    "brws-author-c": "browser-game",
+    "brws-author-d": "browser-game",
+    # Flex pool (domain-agnostic overflow)
+    "flex-a": None,
+    "flex-b": None,
+    "flex-c": None,
 }
 
 

@@ -24,11 +24,22 @@ DEFAULT_REGISTRY_DIR = Path(".claude/runtime/worktree_registry")
 # Matches the list in .claude/rules/75_worktree_protection.md
 PROTECTED_WORKTREE_NAMES = frozenset(
     {
+        # Platform pool
         "Bid-Euchre-steward-author",
         "Bid-Euchre-steward-author-b",
         "Bid-Euchre-steward-author-c",
         "Bid-Euchre-steward-author-d",
         "Bid-Euchre-steward-author-scratch",
+        # Browser-game pool
+        "Bid-Euchre-steward-brws-author-a",
+        "Bid-Euchre-steward-brws-author-b",
+        "Bid-Euchre-steward-brws-author-c",
+        "Bid-Euchre-steward-brws-author-d",
+        # Flex pool
+        "Bid-Euchre-steward-flex-a",
+        "Bid-Euchre-steward-flex-b",
+        "Bid-Euchre-steward-flex-c",
+        # Control plane
         "Bid-Euchre-steward-review",
         "Bid-Euchre-steward-ops",
     }
