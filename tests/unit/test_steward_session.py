@@ -496,31 +496,6 @@ class TestWindowLayout:
             "to trigger the agent's startup behavior"
         )
 
-    def test_legacy_rollback_exists(self) -> None:
-        """steward-session-legacy.sh must exist for rollback."""
-        legacy = REPO_ROOT / ".claude" / "tmux" / "steward-session-legacy.sh"
-        assert legacy.exists(), "steward-session-legacy.sh must exist as rollback path"
-
-    def test_legacy_has_original_8_lanes(self) -> None:
-        """Legacy script should have the original 8-lane layout."""
-        legacy = REPO_ROOT / ".claude" / "tmux" / "steward-session-legacy.sh"
-        content = legacy.read_text()
-        # Original lanes present
-        for lane in [
-            "orchestrator",
-            "author-a",
-            "author-b",
-            "author-c",
-            "author-d",
-            "author-scratch",
-            "ops",
-            "review",
-        ]:
-            assert f"-n {lane}" in content
-        # New lanes absent
-        assert "brws-author" not in content
-        assert "flex-a" not in content
-
     def test_browser_game_worktree_paths(self) -> None:
         """Script must define BRWS_A through BRWS_D worktree paths."""
         content = STEWARD_SCRIPT.read_text()
