@@ -596,8 +596,15 @@ class TestScopeDriftGuardHookContract:
         assert (
             "sys.argv[1]" in hook_content
         ), "Hook should read LANE_ID from sys.argv[1]"
-        # The shell argument should be passed after the closing quote
-        # of the -c string
+        # The shell argument should be double-quoted after the closing
+        # quote of the -c string so the variable expands correctly
         assert (
-            '"$LANE_ID"' in hook_content or "'$LANE_ID'" in hook_content
-        ), "Hook should pass $LANE_ID as a shell argument to python -c"
+            '"$LANE_ID"' in hook_content
+        ), "Hook should pass $LANE_ID as a double-quoted shell argument to python -c"
+
+    def test_no_single_quoted_lane_id_argument(self, hook_content: str) -> None:
+        """Single-quoted '$LANE_ID' must not appear — it prevents expansion."""
+        assert "'$LANE_ID'" not in hook_content, (
+            "Hook uses single-quoted '$LANE_ID' which prevents shell "
+            "variable expansion — use double quotes instead"
+        )
