@@ -277,6 +277,94 @@ class TestStewardSessionScript:
         ), "ensure_worktree() must call validate_worktree_path before creating"
 
 
+class TestFullPageLaneLayout:
+    """Validate that all lanes use individual full-page windows (no dashboard)."""
+
+    EXPECTED_LANES = [
+        "orchestrator",
+        "author-a",
+        "author-b",
+        "author-c",
+        "author-d",
+        "author-scratch",
+        "ops",
+        "review",
+    ]
+
+    def test_no_dashboard_window(self) -> None:
+        """The script must not create a dashboard window."""
+        content = STEWARD_SCRIPT.read_text()
+        # No tmux window named "dashboard" and no split-window/select-layout
+        assert "dashboard" not in content.lower(), (
+            "steward-session.sh must not reference a 'dashboard' window; "
+            "all lanes should have individual full-page windows"
+        )
+
+    def test_all_lanes_have_individual_windows(self) -> None:
+        """Each lane must have its own tmux window (new-session or new-window)."""
+        content = STEWARD_SCRIPT.read_text()
+        for lane in self.EXPECTED_LANES:
+            assert f"-n {lane}" in content, (
+                f"Lane '{lane}' must have its own tmux window "
+                f"(expected '-n {lane}' in new-session or new-window command)"
+            )
+
+    @staticmethod
+    def _metadata_invocation_lines() -> list[str]:
+        """Return write_lane_metadata invocation lines (not the function def)."""
+        content = STEWARD_SCRIPT.read_text()
+        return [
+            line
+            for line in content.split("\n")
+            if line.strip().startswith('write_lane_metadata "')
+        ]
+
+    def test_all_lanes_foreground_visibility(self) -> None:
+        """All write_lane_metadata calls must use foreground visibility."""
+        metadata_lines = self._metadata_invocation_lines()
+        assert len(metadata_lines) == len(self.EXPECTED_LANES), (
+            f"Expected {len(self.EXPECTED_LANES)} write_lane_metadata calls, "
+            f"found {len(metadata_lines)}"
+        )
+        for line in metadata_lines:
+            assert (
+                '"foreground"' in line
+            ), f"All lanes must have foreground visibility, but found: {line.strip()}"
+
+    def test_no_pane_indices_in_metadata(self) -> None:
+        """No lane should use numbered pane indices (all windows are full-page)."""
+        metadata_lines = self._metadata_invocation_lines()
+        for line in metadata_lines:
+            # The tmux_pane argument (6th positional) should be "null"
+            # Numbered pane indices like "1", "2", "3", "4" indicate
+            # a dashboard pane layout, not individual windows
+            assert (
+                '"null"' in line or "null" in line
+            ), f"Lane metadata should not use numbered pane indices: {line.strip()}"
+
+    def test_window_creation_order(self) -> None:
+        """Windows must be created in the expected order."""
+        content = STEWARD_SCRIPT.read_text()
+        lines = content.split("\n")
+        window_lines = [
+            line for line in lines if "new-session" in line or "new-window" in line
+        ]
+        # Filter to only the tmux window creation commands (not comments)
+        window_cmds = [l for l in window_lines if l.strip().startswith("tmux")]
+        assert len(window_cmds) == len(self.EXPECTED_LANES), (
+            f"Expected {len(self.EXPECTED_LANES)} window creation commands, "
+            f"found {len(window_cmds)}"
+        )
+        # First window uses new-session, rest use new-window
+        assert (
+            "new-session" in window_cmds[0]
+        ), "First window (orchestrator) must use tmux new-session"
+        for cmd in window_cmds[1:]:
+            assert (
+                "new-window" in cmd
+            ), f"Non-first windows must use tmux new-window: {cmd.strip()}"
+
+
 class TestBoundaryValidation:
     """Tests for validate_worktree_path() in steward-session.sh."""
 

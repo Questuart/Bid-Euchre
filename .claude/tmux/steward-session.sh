@@ -2,16 +2,15 @@
 # Canonical steward session bootstrap.
 # Usage: steward-session.sh [session-name]
 #
-# Creates (or attaches to) a tmux session with:
-#   1. dashboard       -- 4-pane mission-control view
-#      pane 1: author-a
-#      pane 2: author-b
-#      pane 3: review
-#      pane 4: ops
-#   2. orchestrator    -- single intake point for delegating work
-#   3. author-c        -- overflow author lane
-#   4. author-d        -- overflow author lane
-#   5. author-scratch  -- exploratory Claude lane
+# Creates (or attaches to) a tmux session with full-page windows:
+#   1. orchestrator    -- single intake point for delegating work
+#   2. author-a        -- primary author lane
+#   3. author-b        -- secondary author lane
+#   4. author-c        -- overflow author lane
+#   5. author-d        -- overflow author lane
+#   6. author-scratch  -- exploratory Claude lane
+#   7. ops             -- operator monitoring lane
+#   8. review          -- independent review lane
 #
 # Writes v2 worktree registry metadata for each launched lane.
 # See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full model.
@@ -235,49 +234,49 @@ ensure_worktree "$AUTHOR_SCRATCH" "codex/steward-author-scratch"
 ensure_review_worktree
 
 # Write v2 registry metadata for each lane
-# Dashboard panes: visibility=foreground; off-dashboard windows: visibility=background
-write_lane_metadata "author-a"       "author"  "$AUTHOR_A"       "codex/steward-author"         "dashboard" "1"    "foreground" "Author A"
-write_lane_metadata "author-b"       "author"  "$AUTHOR_B"       "codex/steward-author-b"       "dashboard" "2"    "foreground" "Author B"
-write_lane_metadata "review"         "review"  "$REVIEW"         "detached"                     "dashboard" "3"    "foreground" "Review"
-write_lane_metadata "ops"            "ops"     "$MAIN_DIR"       "--"                           "dashboard" "4"    "foreground" "Ops"
-write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR" "--"                           "orchestrator" "null" "foreground" "Orchestrator"
-write_lane_metadata "author-c"       "author"  "$AUTHOR_C"       "codex/steward-author-c"       "author-c"  "null" "background" "Author C"
-write_lane_metadata "author-d"       "author"  "$AUTHOR_D"       "codex/steward-author-d"       "author-d"  "null" "background" "Author D"
-write_lane_metadata "author-scratch" "scratch" "$AUTHOR_SCRATCH" "codex/steward-author-scratch"  "author-scratch" "null" "background" "Scratch"
+# All lanes are full-page windows with foreground visibility
+write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                           "orchestrator" "null" "foreground" "Orchestrator"
+write_lane_metadata "author-a"       "author"  "$AUTHOR_A"       "codex/steward-author"         "author-a"  "null" "foreground" "Author A"
+write_lane_metadata "author-b"       "author"  "$AUTHOR_B"       "codex/steward-author-b"       "author-b"  "null" "foreground" "Author B"
+write_lane_metadata "author-c"       "author"  "$AUTHOR_C"       "codex/steward-author-c"       "author-c"  "null" "foreground" "Author C"
+write_lane_metadata "author-d"       "author"  "$AUTHOR_D"       "codex/steward-author-d"       "author-d"  "null" "foreground" "Author D"
+write_lane_metadata "author-scratch" "scratch" "$AUTHOR_SCRATCH" "codex/steward-author-scratch"  "author-scratch" "null" "foreground" "Scratch"
+write_lane_metadata "ops"            "ops"     "$MAIN_DIR"       "--"                           "ops"       "null" "foreground" "Ops"
+write_lane_metadata "review"         "review"  "$REVIEW"         "detached"                     "review"    "null" "foreground" "Review"
 
-tmux new-session -d -s "$SESSION" -n dashboard -c "$AUTHOR_A" \
-    "$CLAUDE_BIN" --name author-a --agent steward-author-a
-
-tmux split-window -h -t "${SESSION}:dashboard" -c "$AUTHOR_B" \
-    "$CLAUDE_BIN" --name author-b --agent steward-author-b
-
-tmux split-window -v -t "${SESSION}:dashboard.1" -c "$REVIEW" \
-    "$CLAUDE_BIN" --name review --agent steward-review
-
-tmux split-window -v -t "${SESSION}:dashboard.2" -c "$MAIN_DIR" \
-    "$CLAUDE_BIN" --name ops --agent steward-ops
-
-tmux select-layout -t "${SESSION}:dashboard" tiled
-tmux swap-pane -s "${SESSION}:dashboard.2" -t "${SESSION}:dashboard.4"
-tmux swap-pane -s "${SESSION}:dashboard.3" -t "${SESSION}:dashboard.4"
-tmux select-pane -t "${SESSION}:dashboard.1" -T author-a
-tmux select-pane -t "${SESSION}:dashboard.2" -T author-b
-tmux select-pane -t "${SESSION}:dashboard.3" -T review
-tmux select-pane -t "${SESSION}:dashboard.4" -T ops
-
-tmux new-window -t "$SESSION" -n orchestrator -c "$MAIN_DIR" \
+# Window 1: orchestrator (first window = session creation)
+tmux new-session -d -s "$SESSION" -n orchestrator -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator
 
+# Window 2: author-a
+tmux new-window -t "$SESSION" -n author-a -c "$AUTHOR_A" \
+    "$CLAUDE_BIN" --name author-a --agent steward-author-a
+
+# Window 3: author-b
+tmux new-window -t "$SESSION" -n author-b -c "$AUTHOR_B" \
+    "$CLAUDE_BIN" --name author-b --agent steward-author-b
+
+# Window 4: author-c
 tmux new-window -t "$SESSION" -n author-c -c "$AUTHOR_C" \
     "$CLAUDE_BIN" --name author-c --agent steward-author-c
 
+# Window 5: author-d
 tmux new-window -t "$SESSION" -n author-d -c "$AUTHOR_D" \
     "$CLAUDE_BIN" --name author-d --agent steward-author-d
 
+# Window 6: author-scratch
 tmux new-window -t "$SESSION" -n author-scratch -c "$AUTHOR_SCRATCH" \
     "$CLAUDE_BIN" --name author-scratch --agent steward-author-scratch
 
-tmux select-window -t "${SESSION}:dashboard"
+# Window 7: ops
+tmux new-window -t "$SESSION" -n ops -c "$MAIN_DIR" \
+    "$CLAUDE_BIN" --name ops --agent steward-ops
+
+# Window 8: review
+tmux new-window -t "$SESSION" -n review -c "$REVIEW" \
+    "$CLAUDE_BIN" --name review --agent steward-review
+
+tmux select-window -t "${SESSION}:orchestrator"
 
 update_last_active
 
