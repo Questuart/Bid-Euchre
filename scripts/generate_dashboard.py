@@ -3,10 +3,10 @@
 
 Produces a 5-panel PNG:
   1. PRs merged per day with Bollinger Bands (working days only)
-  2. Net lines per day with Bollinger Bands (additions - deletions from PRs)
-  3. Additions merged per day with Bollinger Bands (volume-weighted)
-  4. Line churn ratio with Bollinger Bands (percentage)
-  5. File churn ratio with Bollinger Bands (percentage)
+  2. Churn-adjusted PRs merged per day (raw PRs * (1 - line churn ratio))
+  3. Line churn ratio with Bollinger Bands (percentage)
+  4. File churn ratio with Bollinger Bands (percentage)
+  5. Additions per PR (total additions / PRs merged per day)
 
 Usage:
     uv run python scripts/generate_dashboard.py
@@ -194,17 +194,13 @@ def generate_dashboard(repo: str, output: str) -> None:
     )
     n = len(sorted_dates)
 
-    # ── Panel 1/2/3 metrics (PR-based) ───────────────────────────────────
+    # ── Panel 1 metrics (PR-based) ───────────────────────────────────────
     raw_prs = np.array([pr_counts_map.get(d, 0) for d in sorted_dates], dtype=float)
     pr_additions = np.array(
         [pr_additions_map.get(d, 0) for d in sorted_dates], dtype=float
     )
-    pr_net_lines = np.array(
-        [pr_additions_map.get(d, 0) - pr_deletions_map.get(d, 0) for d in sorted_dates],
-        dtype=float,
-    )
 
-    # ── Panel 4/5 metrics (git-log-based, commit date) ───────────────────
+    # ── Panel 3/4 metrics (git-log-based, commit date) ───────────────────
     gross_lines = np.array(
         [day_ins.get(d, 0) + day_del.get(d, 0) for d in sorted_dates], dtype=float
     )
@@ -224,12 +220,17 @@ def generate_dashboard(repo: str, output: str) -> None:
     safe_unique = np.where(unique_files > 0, unique_files, 1.0)
     file_churn_ratio = np.where(unique_files > 0, churned_files / safe_unique, 0.0)
 
+    # ── Panel 2: Churn-adjusted PRs ──────────────────────────────────────
+    effective_prs = raw_prs * (1 - churn_ratio)
+
+    # ── Panel 5: Additions per PR ────────────────────────────────────────
+    safe_prs = np.where(raw_prs > 0, raw_prs, 1.0)
+    adds_per_pr = np.where(raw_prs > 0, pr_additions / safe_prs, 0.0)
+
     # ── Bollinger Bands ──────────────────────────────────────────────────
     raw_sma, raw_upper, raw_lower, raw_pctb = _bollinger(raw_prs, WINDOW, NUM_STD)
-    net_sma, net_upper, net_lower, net_pctb = _bollinger(
-        pr_net_lines, WINDOW, NUM_STD, clamp_lower=False
-    )
-    add_sma, add_upper, add_lower, add_pctb = _bollinger(pr_additions, WINDOW, NUM_STD)
+    eff_sma, eff_upper, eff_lower, eff_pctb = _bollinger(effective_prs, WINDOW, NUM_STD)
+    app_sma, app_upper, app_lower, app_pctb = _bollinger(adds_per_pr, WINDOW, NUM_STD)
 
     # Churn ratios as percentages for Bollinger computation
     churn_pct = churn_ratio * 100
@@ -249,23 +250,23 @@ def generate_dashboard(repo: str, output: str) -> None:
     tick_labels = [sorted_dates[i] for i in tick_positions]
 
     valid = ~np.isnan(raw_sma)
-    net_valid = ~np.isnan(net_sma)
-    add_valid = ~np.isnan(add_sma)
+    eff_valid = ~np.isnan(eff_sma)
     churn_valid = ~np.isnan(lc_sma)
     fc_valid = ~np.isnan(fc_sma)
+    app_valid = ~np.isnan(app_sma)
 
     # ── Plot ─────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(
         5,
         1,
         figsize=(16, 25),
-        gridspec_kw={"height_ratios": [3, 3, 3, 2.5, 2.5]},
+        gridspec_kw={"height_ratios": [3, 3, 2.5, 2.5, 3]},
         sharex=True,
     )
     fig.suptitle(
         f"PR Analytics Dashboard \u2014 Bollinger Bands\n"
         f"{WINDOW}-working-day SMA, {NUM_STD}\u03c3  \u2022  "
-        f"data source: gh pr list  \u2022  "
+        f"effective PRs = raw \u00d7 (1 \u2212 line churn ratio)  \u2022  "
         f"{n} active days",
         fontsize=14,
         fontweight="bold",
@@ -291,58 +292,33 @@ def generate_dashboard(repo: str, output: str) -> None:
     ax1.set_ylabel("PRs merged", fontsize=11)
     ax1.set_title("PRs Merged per Day", fontsize=12, pad=4)
 
-    # ── Panel 2: Net lines per day ───────────────────────────────────────
+    # ── Panel 2: Churn-adjusted PRs merged per day ─────────────────────
     ax2 = axes[1]
     _draw_bollinger_panel(
         ax2,
         x,
-        pr_net_lines,
-        net_sma,
-        net_upper,
-        net_lower,
-        net_pctb,
-        net_valid,
+        effective_prs,
+        eff_sma,
+        eff_upper,
+        eff_lower,
+        eff_pctb,
+        eff_valid,
         latest_idx,
         band_color="#16a085",
         sma_color="#1abc9c",
         dot_color="#2c3e50",
-        allow_negative=True,
     )
-    ax2.set_ylabel("Net lines", fontsize=11)
+    ax2.set_ylabel("Effective PRs", fontsize=11)
     ax2.set_title(
-        "Net Lines per Day  (additions \u2212 deletions from PRs)",
+        "Churn-Adjusted PRs Merged per Day  (raw \u00d7 (1 \u2212 line churn ratio))",
         fontsize=12,
         pad=4,
     )
-    ax2.axhline(y=0, color="#7f8c8d", linewidth=0.8, linestyle="-", alpha=0.5, zorder=1)
 
-    # ── Panel 3: Additions merged per day ────────────────────────────────
+    # ── Panel 3: Line churn ratio (Bollinger) ────────────────────────────
     ax3 = axes[2]
     _draw_bollinger_panel(
         ax3,
-        x,
-        pr_additions,
-        add_sma,
-        add_upper,
-        add_lower,
-        add_pctb,
-        add_valid,
-        latest_idx,
-        band_color="#27ae60",
-        sma_color="#27ae60",
-        dot_color="#1a5276",
-    )
-    ax3.set_ylabel("Additions merged", fontsize=11)
-    ax3.set_title(
-        "Additions Merged per Day  (volume-weighted PR activity)",
-        fontsize=12,
-        pad=4,
-    )
-
-    # ── Panel 4: Line churn ratio (Bollinger) ───────────────────────────
-    ax4 = axes[3]
-    _draw_bollinger_panel(
-        ax4,
         x,
         churn_pct,
         lc_sma,
@@ -357,13 +333,13 @@ def generate_dashboard(repo: str, output: str) -> None:
         max_y=100.0,
         fmt=".1f",
     )
-    ax4.set_ylabel("Line churn %", fontsize=11)
-    ax4.set_title("Line Churn Ratio  (1 \u2212 net/gross)", fontsize=12, pad=4)
+    ax3.set_ylabel("Line churn %", fontsize=11)
+    ax3.set_title("Line Churn Ratio  (1 \u2212 net/gross)", fontsize=12, pad=4)
 
-    # ── Panel 5: File churn ratio (Bollinger) ─────────────────────────
-    ax5 = axes[4]
+    # ── Panel 4: File churn ratio (Bollinger) ─────────────────────────
+    ax4 = axes[3]
     _draw_bollinger_panel(
-        ax5,
+        ax4,
         x,
         file_churn_pct,
         fc_sma,
@@ -378,9 +354,30 @@ def generate_dashboard(repo: str, output: str) -> None:
         max_y=100.0,
         fmt=".1f",
     )
-    ax5.set_ylabel("File churn %", fontsize=11)
-    ax5.set_title(
+    ax4.set_ylabel("File churn %", fontsize=11)
+    ax4.set_title(
         "File Churn Ratio  (multi-touch files / unique files)", fontsize=12, pad=4
+    )
+
+    # ── Panel 5: Additions per PR ─────────────────────────────────────
+    ax5 = axes[4]
+    _draw_bollinger_panel(
+        ax5,
+        x,
+        adds_per_pr,
+        app_sma,
+        app_upper,
+        app_lower,
+        app_pctb,
+        app_valid,
+        latest_idx,
+        band_color="#27ae60",
+        sma_color="#27ae60",
+        dot_color="#1a5276",
+    )
+    ax5.set_ylabel("Additions / PR", fontsize=11)
+    ax5.set_title(
+        "Additions per PR  (total additions / PRs merged)", fontsize=12, pad=4
     )
     ax5.set_xlabel("Working day", fontsize=11)
 
@@ -405,12 +402,8 @@ def generate_dashboard(repo: str, output: str) -> None:
         f"SMA: {raw_sma[li]:.1f}, %B: {raw_pctb[li]:.2f}"
     )
     print(
-        f"  Net lines: {pr_net_lines[li]:+.0f}, "
-        f"SMA: {net_sma[li]:+.1f}, %B: {net_pctb[li]:.2f}"
-    )
-    print(
-        f"  Additions: {pr_additions[li]:.0f}, "
-        f"SMA: {add_sma[li]:.1f}, %B: {add_pctb[li]:.2f}"
+        f"  Effective PRs: {effective_prs[li]:.2f}, "
+        f"SMA: {eff_sma[li]:.2f}, %B: {eff_pctb[li]:.2f}"
     )
     print(
         f"  Line churn: {churn_pct[li]:.1f}%, "
@@ -419,6 +412,10 @@ def generate_dashboard(repo: str, output: str) -> None:
     print(
         f"  File churn: {file_churn_pct[li]:.1f}%, "
         f"SMA: {fc_sma[li]:.1f}%, %B: {fc_pctb[li]:.2f}"
+    )
+    print(
+        f"  Adds/PR: {adds_per_pr[li]:.1f}, "
+        f"SMA: {app_sma[li]:.1f}, %B: {app_pctb[li]:.2f}"
     )
 
 
