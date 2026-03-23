@@ -338,6 +338,120 @@ def check_stale_dispatches(
 
 
 # ---------------------------------------------------------------------------
+# Merged-dispatch completion (Gap A: auto-merge bypass)
+# ---------------------------------------------------------------------------
+
+
+def check_merged_dispatches(
+    runtime_dir: Path | None = None,
+) -> list[MonitorFinding]:
+    """Complete dispatched packets whose PRs have already been merged.
+
+    When GitHub auto-merges a PR (server-side), the PostToolUse hook in
+    ``post-merge-notify.sh`` never fires because no ``gh pr merge`` runs in
+    a Claude session.  This check scans dispatched packets that carry a
+    ``metadata.pr_number``, queries GitHub for each PR's merge state, and
+    auto-completes any that are merged.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        List of findings (one per auto-completed packet, plus errors).
+    """
+    findings: list[MonitorFinding] = []
+
+    try:
+        from bid_euchre.ops.task_queue import (
+            list_packets,
+            transition_status,
+        )
+
+        if runtime_dir is None:
+            runtime_dir = Path(".claude/runtime")
+
+        task_queue_root = runtime_dir / "task_queue"
+        dispatched = list_packets(task_queue_root, status_filter="dispatched")
+    except Exception as exc:
+        findings.append(
+            MonitorFinding(
+                category="merged_dispatch",
+                severity=SEVERITY_WARN,
+                summary=f"Could not check dispatched packets: {exc}",
+            )
+        )
+        return findings
+
+    for pkt in dispatched:
+        pr_number = (getattr(pkt, "metadata", None) or {}).get("pr_number")
+        if pr_number is None:
+            continue
+
+        # Query GitHub for the PR's merge state
+        try:
+            result = subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "view",
+                    str(pr_number),
+                    "--json",
+                    "state",
+                    "--jq",
+                    ".state",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode != 0:
+                continue
+            state = result.stdout.strip()
+        except (
+            FileNotFoundError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ):
+            continue
+
+        if state != "MERGED":
+            continue
+
+        # Auto-complete the packet
+        try:
+            transition_status(pkt.packet_id, "completed", task_queue_root)
+            findings.append(
+                MonitorFinding(
+                    category="merged_dispatch",
+                    severity=SEVERITY_INFO,
+                    summary=(
+                        f"Auto-completed packet {pkt.packet_id!r} "
+                        f"(PR #{pr_number} merged via auto-merge)"
+                    ),
+                    details={
+                        "packet_id": pkt.packet_id,
+                        "pr_number": pr_number,
+                        "owner": pkt.owner,
+                    },
+                )
+            )
+        except Exception as exc:
+            findings.append(
+                MonitorFinding(
+                    category="merged_dispatch",
+                    severity=SEVERITY_WARN,
+                    summary=(
+                        f"Failed to auto-complete packet {pkt.packet_id!r} "
+                        f"(PR #{pr_number}): {exc}"
+                    ),
+                    details={"packet_id": pkt.packet_id, "error": str(exc)},
+                )
+            )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Stall detection helpers
 # ---------------------------------------------------------------------------
 
@@ -675,7 +789,11 @@ def run_monitoring_cycle(
     # 4. Stalled lane detection (acked dispatches with no progress)
     findings.extend(check_stalled_lanes(runtime_dir, now=now))
 
-    # 5. Notify orchestrator
+    # 5. Auto-complete dispatched packets whose PRs were merged externally
+    if not skip_pr_check:
+        findings.extend(check_merged_dispatches(runtime_dir))
+
+    # 6. Notify orchestrator
     if notify_orchestrator:
         _send_findings_to_orchestrator(findings)
 
