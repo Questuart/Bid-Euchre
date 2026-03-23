@@ -107,6 +107,22 @@ following happens automatically:
 The nudge is best-effort — if it fails, the task remains in durable state
 and you can pick it up manually via `task list`.
 
+## Auto-Completion on Merge
+
+When you merge a PR via `gh pr merge`, the `post-merge-notify.sh` hook
+automatically closes the task lifecycle:
+
+1. Finds the active dispatched task packet owned by your lane
+2. Transitions the packet from `dispatched` → `completed`
+3. Sends a `completion` message to the orchestrator via message bus
+
+This means **you do not need to manually complete your task packet** after
+merging. The hook handles it. If the hook fails (best-effort), the
+orchestrator can complete the packet manually.
+
+The hook identifies your lane via `CLAUDE_AGENT_NAME` env var, falling
+back to `CLAUDE_PROJECT_DIR` directory name parsing.
+
 ## Gotchas
 
 - This skill is for single-task bootstrap, not multi-unit plan decomposition —
@@ -124,3 +140,4 @@ and you can pick it up manually via `task list`.
 - `.claude/rules/15_testing_tiers.md` — validation tiers
 - `src/bid_euchre/ops/worker_pool.py` — dispatch_to_worker, nudge_pane
 - `src/bid_euchre/ops/message_bus.py` — inbox messages, ack_message
+- `.claude/hooks/post-merge-notify.sh` — auto-completion hook (dispatched → completed)
