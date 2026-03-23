@@ -468,14 +468,20 @@ class TestWindowLayout:
                     ), f"Worker lane must be background: {line.strip()}"
 
     def test_ops_monitoring_targets_correct_pane(self) -> None:
-        """The ops monitoring loop must target central-ops.1 (ops pane)."""
+        """The ops monitoring loop must target central-ops.2 (ops pane).
+
+        With pane-base-index=1: orchestrator=.1, ops=.2, review=.3.
+        """
         content = STEWARD_SCRIPT.read_text()
-        assert "central-ops.1" in content, "Ops monitoring must target central-ops.1"
+        assert "central-ops.2" in content, "Ops monitoring must target central-ops.2"
 
     def test_review_check_targets_correct_pane(self) -> None:
-        """The review-check loop must target central-ops.2 (review pane)."""
+        """The review-check loop must target central-ops.3 (review pane).
+
+        With pane-base-index=1: orchestrator=.1, ops=.2, review=.3.
+        """
         content = STEWARD_SCRIPT.read_text()
-        assert "central-ops.2" in content, "Review-check must target central-ops.2"
+        assert "central-ops.3" in content, "Review-check must target central-ops.3"
 
     def test_legacy_rollback_exists(self) -> None:
         """steward-session-legacy.sh must exist for rollback."""
