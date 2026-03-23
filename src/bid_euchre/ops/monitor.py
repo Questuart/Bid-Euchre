@@ -29,6 +29,10 @@ logger = logging.getLogger("ops.monitor")
 # A dispatched packet with no progress after this many minutes is flagged.
 STALE_DISPATCH_MINUTES: int = 30
 
+# Stall detection: dispatched+acked lane with no tmux activity growth.
+STALL_THRESHOLD_MINUTES: int = 10
+STALL_CONSECUTIVE_CYCLES: int = 2
+
 # Severity levels for findings.
 SEVERITY_INFO = "info"
 SEVERITY_WARN = "warn"
@@ -334,6 +338,222 @@ def check_stale_dispatches(
 
 
 # ---------------------------------------------------------------------------
+# Stall detection helpers
+# ---------------------------------------------------------------------------
+
+
+def _default_stall_state_path(runtime_dir: Path | None = None) -> Path:
+    """Return the path to the stall detection state file."""
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+    return runtime_dir / "stall_state.json"
+
+
+def _load_stall_state(state_path: Path) -> dict[str, Any]:
+    """Load stall detection state from disk.
+
+    Returns an empty dict if the file doesn't exist or is corrupt.
+    """
+    try:
+        return json.loads(state_path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_stall_state(state_path: Path, state: dict[str, Any]) -> None:
+    """Persist stall detection state to disk."""
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2) + "\n")
+
+
+def _get_pane_activity_epoch(
+    lane_id: str,
+    tmux_session: str = "steward",
+    runtime_dir: Path | None = None,
+) -> int | None:
+    """Query the tmux pane's last-activity epoch for a lane.
+
+    Uses ``tmux display-message -t <target> -p '#{pane_activity}'``.
+
+    Returns:
+        The unix epoch timestamp of last pane activity, or None if the
+        probe fails (pane dead, tmux unavailable, etc.).
+    """
+    from bid_euchre.ops.worker_pool import _resolve_tmux_target
+
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+    try:
+        result = subprocess.run(
+            ["tmux", "display-message", "-t", target, "-p", "#{pane_activity}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip().isdigit():
+            return int(result.stdout.strip())
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def check_stalled_lanes(
+    runtime_dir: Path | None = None,
+    *,
+    stall_minutes: int = STALL_THRESHOLD_MINUTES,
+    consecutive_cycles: int = STALL_CONSECUTIVE_CYCLES,
+    now: datetime | None = None,
+    tmux_session: str = "steward",
+    _activity_probe: Any | None = None,
+) -> list[MonitorFinding]:
+    """Detect dispatched+acked lanes that have stopped making progress.
+
+    A lane is considered stalled when:
+    1. It has a dispatched packet that has been acked (lane accepted the work).
+    2. The dispatch is older than ``stall_minutes``.
+    3. The tmux pane's activity epoch has not changed over
+       ``consecutive_cycles`` consecutive monitor invocations.
+
+    Cross-cycle state is persisted in a JSON state file so that each
+    single-shot monitor invocation can compare against previous observations.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+        stall_minutes: Minimum dispatch age before stall detection activates.
+        consecutive_cycles: Number of unchanged cycles before flagging.
+        now: Override current time for testing.
+        tmux_session: tmux session name.
+        _activity_probe: Optional callable(lane_id) -> int|None for testing.
+            If provided, used instead of tmux probe.
+
+    Returns:
+        List of WARN findings for stalled lanes.
+    """
+    findings: list[MonitorFinding] = []
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    try:
+        from bid_euchre.ops.task_queue import list_packets, load_ack
+
+        if runtime_dir is None:
+            runtime_dir = Path(".claude/runtime")
+
+        task_queue_root = runtime_dir / "task_queue"
+        dispatched = list_packets(task_queue_root, status_filter="dispatched")
+    except Exception as exc:
+        findings.append(
+            MonitorFinding(
+                category="stall_detection",
+                severity=SEVERITY_WARN,
+                summary=f"Could not check for stalled lanes: {exc}",
+            )
+        )
+        return findings
+
+    # Load cross-cycle state
+    state_path = _default_stall_state_path(runtime_dir)
+    state = _load_stall_state(state_path)
+    observations: dict[str, Any] = state.get("observations", {})
+
+    # Track which lanes are still dispatched (for cleanup)
+    active_lanes: set[str] = set()
+
+    for pkt in dispatched:
+        lane_id = pkt.owner
+        if lane_id is None:
+            continue
+
+        # Only check acked dispatches (lane has started work)
+        ack = load_ack(pkt.packet_id, task_queue_root)
+        if ack is None:
+            continue
+
+        active_lanes.add(lane_id)
+
+        # Check dispatch age
+        try:
+            ts_str = pkt.created_at.replace("Z", "+00:00")
+            dispatch_time = datetime.fromisoformat(ts_str)
+            if dispatch_time.tzinfo is None:
+                dispatch_time = dispatch_time.replace(tzinfo=timezone.utc)
+            age_minutes = (now - dispatch_time).total_seconds() / 60.0
+        except (ValueError, TypeError):
+            age_minutes = 0.0
+
+        if age_minutes < stall_minutes:
+            # Too fresh — reset observation and skip
+            observations[lane_id] = {
+                "packet_id": pkt.packet_id,
+                "activity_epoch": None,
+                "unchanged_count": 0,
+            }
+            continue
+
+        # Probe tmux pane activity
+        if _activity_probe is not None:
+            activity_epoch = _activity_probe(lane_id)
+        else:
+            activity_epoch = _get_pane_activity_epoch(
+                lane_id, tmux_session, runtime_dir
+            )
+
+        if activity_epoch is None:
+            # Can't probe — skip (dead panes caught by check_lane_health)
+            continue
+
+        # Compare with previous observation
+        prev = observations.get(lane_id, {})
+        prev_packet = prev.get("packet_id")
+        prev_epoch = prev.get("activity_epoch")
+        prev_count = prev.get("unchanged_count", 0)
+
+        if prev_packet == pkt.packet_id and prev_epoch == activity_epoch:
+            # Same packet, same activity — increment stall counter
+            unchanged_count = prev_count + 1
+        else:
+            # Activity changed or new packet — reset
+            unchanged_count = 0
+
+        observations[lane_id] = {
+            "packet_id": pkt.packet_id,
+            "activity_epoch": activity_epoch,
+            "unchanged_count": unchanged_count,
+        }
+
+        if unchanged_count >= consecutive_cycles:
+            findings.append(
+                MonitorFinding(
+                    category="stall_detection",
+                    severity=SEVERITY_WARN,
+                    summary=(
+                        f"Lane {lane_id!r} may be stalled: dispatched "
+                        f"{age_minutes:.0f}min ago, no activity change over "
+                        f"{unchanged_count} monitor cycle(s)"
+                    ),
+                    details={
+                        "lane_id": lane_id,
+                        "packet_id": pkt.packet_id,
+                        "title": pkt.title,
+                        "age_minutes": round(age_minutes),
+                        "unchanged_cycles": unchanged_count,
+                        "last_activity_epoch": activity_epoch,
+                    },
+                )
+            )
+
+    # Clean up observations for lanes no longer dispatched
+    for old_lane in list(observations.keys()):
+        if old_lane not in active_lanes:
+            del observations[old_lane]
+
+    # Persist state
+    _save_stall_state(state_path, {"observations": observations})
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator notification
 # ---------------------------------------------------------------------------
 
@@ -420,6 +640,7 @@ def run_monitoring_cycle(
     1. Lane pool health snapshot
     2. Open PR status (via ``gh``)
     3. Stale dispatched packet detection
+    4. Stalled lane detection (acked but idle)
 
     Optionally sends a summary to the orchestrator inbox.
 
@@ -447,7 +668,10 @@ def run_monitoring_cycle(
         check_stale_dispatches(runtime_dir, stale_minutes=stale_minutes, now=now)
     )
 
-    # 4. Notify orchestrator
+    # 4. Stalled lane detection (acked dispatches with no progress)
+    findings.extend(check_stalled_lanes(runtime_dir, now=now))
+
+    # 5. Notify orchestrator
     if notify_orchestrator:
         _send_findings_to_orchestrator(findings)
 

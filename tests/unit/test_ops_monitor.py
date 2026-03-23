@@ -12,9 +12,12 @@ from bid_euchre.ops.monitor import (
     SEVERITY_INFO,
     SEVERITY_WARN,
     MonitorFinding,
+    _default_stall_state_path,
+    _save_stall_state,
     check_lane_health,
     check_open_prs,
     check_stale_dispatches,
+    check_stalled_lanes,
     format_findings_json,
     format_findings_text,
     run_monitoring_cycle,
@@ -313,6 +316,280 @@ class TestCheckStaleDispatches:
 
         assert len(findings) == 1
         assert findings[0].severity == SEVERITY_HIGH
+
+
+# ---------------------------------------------------------------------------
+# check_stalled_lanes tests
+# ---------------------------------------------------------------------------
+
+
+def _make_dispatched_pkt(
+    packet_id: str = "pkt100",
+    owner: str = "author-a",
+    title: str = "Test task",
+    created_at: str = "2026-03-23T11:00:00Z",
+) -> MagicMock:
+    """Helper to create a mock dispatched packet."""
+    pkt = MagicMock()
+    pkt.packet_id = packet_id
+    pkt.owner = owner
+    pkt.title = title
+    pkt.created_at = created_at
+    return pkt
+
+
+class TestCheckStalledLanes:
+    """Tests for stall detection on dispatched+acked lanes."""
+
+    def test_no_dispatched_packets(self, tmp_path: Path) -> None:
+        """No dispatched packets produces no findings."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        with patch(
+            "bid_euchre.ops.task_queue.list_packets",
+            return_value=[],
+        ):
+            findings = check_stalled_lanes(runtime_dir)
+
+        assert len(findings) == 0
+
+    def test_unacked_dispatch_skipped(self, tmp_path: Path) -> None:
+        """Dispatched but unacked packets are not checked (handled by stale check)."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=None),
+        ):
+            findings = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=lambda _: 1000,
+            )
+
+        assert len(findings) == 0
+
+    def test_fresh_dispatch_not_flagged(self, tmp_path: Path) -> None:
+        """Acked dispatch younger than stall_minutes is not flagged."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        # Only 5 min old — below the 10-min threshold
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:55:00Z")
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            findings = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=lambda _: 1000,
+            )
+
+        assert len(findings) == 0
+
+    def test_active_lane_not_flagged_first_cycle(self, tmp_path: Path) -> None:
+        """First observation of an active lane does not flag (needs 2+ cycles)."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")  # 60min ago
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            findings = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=lambda _: 1000,
+            )
+
+        assert len(findings) == 0
+
+    def test_stalled_lane_detected_after_two_cycles(self, tmp_path: Path) -> None:
+        """Lane flagged as stalled when activity unchanged over 2 consecutive cycles."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")  # 60min ago
+
+        def probe(_: str) -> int:
+            return 9999  # fixed activity epoch — simulates no change
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycle 1: first observation — no finding
+            f1 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            assert len(f1) == 0
+
+            # Cycle 2: same activity — unchanged_count=1, still below threshold
+            f2 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            assert len(f2) == 0
+
+            # Cycle 3: same activity — unchanged_count=2, now at threshold
+            f3 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+
+        assert len(f3) == 1
+        assert f3[0].severity == SEVERITY_WARN
+        assert f3[0].category == "stall_detection"
+        assert "author-a" in f3[0].summary
+        assert "stalled" in f3[0].summary
+        assert f3[0].details["unchanged_cycles"] == 2
+
+    def test_activity_change_resets_counter(self, tmp_path: Path) -> None:
+        """Activity change resets the stall counter."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        call_count = [0]
+
+        def changing_probe(_: str) -> int:
+            call_count[0] += 1
+            # Returns same value for first 2 calls, then changes
+            if call_count[0] <= 2:
+                return 9999
+            return 10001  # activity changed
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycle 1: first observation
+            check_stalled_lanes(runtime_dir, now=now, _activity_probe=changing_probe)
+            # Cycle 2: same activity (unchanged_count=1)
+            check_stalled_lanes(runtime_dir, now=now, _activity_probe=changing_probe)
+            # Cycle 3: activity changed — resets counter
+            f3 = check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=changing_probe
+            )
+
+        assert len(f3) == 0
+
+    def test_probe_failure_skips_lane(self, tmp_path: Path) -> None:
+        """Lane is skipped if activity probe returns None."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            findings = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=lambda _: None,
+            )
+
+        assert len(findings) == 0
+
+    def test_state_file_persisted(self, tmp_path: Path) -> None:
+        """State file is written after each cycle."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=lambda _: 5000,
+            )
+
+        state_path = _default_stall_state_path(runtime_dir)
+        assert state_path.exists()
+        state = json.loads(state_path.read_text())
+        assert "observations" in state
+        assert "author-a" in state["observations"]
+        assert state["observations"]["author-a"]["activity_epoch"] == 5000
+
+    def test_stale_observations_cleaned_up(self, tmp_path: Path) -> None:
+        """Observations for lanes no longer dispatched are cleaned up."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        # Pre-seed state with an old lane observation
+        state_path = _default_stall_state_path(runtime_dir)
+        _save_stall_state(
+            state_path,
+            {
+                "observations": {
+                    "author-z": {
+                        "packet_id": "old",
+                        "activity_epoch": 1000,
+                        "unchanged_count": 5,
+                    }
+                }
+            },
+        )
+
+        with patch(
+            "bid_euchre.ops.task_queue.list_packets",
+            return_value=[],
+        ):
+            check_stalled_lanes(runtime_dir)
+
+        state = json.loads(state_path.read_text())
+        assert "author-z" not in state.get("observations", {})
+
+    def test_custom_thresholds(self, tmp_path: Path) -> None:
+        """Custom stall_minutes and consecutive_cycles are respected."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        # 5 min ago — would be skipped at default 10min, but not at 3min
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:55:00Z")
+
+        def probe(_: str) -> int:
+            return 9999
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # With stall_minutes=3 and consecutive_cycles=1, second cycle flags
+            f1 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                stall_minutes=3,
+                consecutive_cycles=1,
+                _activity_probe=probe,
+            )
+            assert len(f1) == 0  # first observation
+
+            f2 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                stall_minutes=3,
+                consecutive_cycles=1,
+                _activity_probe=probe,
+            )
+
+        assert len(f2) == 1
+        assert f2[0].severity == SEVERITY_WARN
 
 
 # ---------------------------------------------------------------------------
