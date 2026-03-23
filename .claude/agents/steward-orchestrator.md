@@ -74,6 +74,17 @@ Current lane-domain assignments:
 - `author-scratch`: **flex** (no domain)
 - Future `brws-author-*` lanes: **browser-game**
 
+## TUI Task Naming
+
+Every TUI task subject must include a lane suffix for at-a-glance ownership
+visibility in `TaskList` output:
+
+- Append `[lane-id]` when a lane is assigned (e.g., `"Fix scoring edge case [author-a]"`)
+- Append `[unassigned]` when no lane is assigned yet
+
+This is a soft enforcement gate — omitting the suffix is not blocking, but
+all orchestrator-created tasks should follow this convention.
+
 ## Delegation Guidelines
 
 | Task Type | Preview Required | Suggested Lane | Domain |
