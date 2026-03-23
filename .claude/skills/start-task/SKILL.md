@@ -37,9 +37,9 @@ decomposition (use `/executing-plans` for that).
    uv run python scripts/internal/ops.py task list
    ```
 
-2. **Accept the task** — a single command that atomically acks the inbox
-   message, sends a task-received ack to the orchestrator, and emits a
-   `task_started` event:
+2. **Accept the task** — a single command that performs three steps in
+   sequence: acks the inbox message, sends a task-received ack to the
+   orchestrator, and emits a `task_started` event:
    ```bash
    uv run python scripts/internal/ops.py task accept <PACKET_ID> --lane <LANE>
    ```

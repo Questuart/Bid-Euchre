@@ -1634,7 +1634,7 @@ def _cmd_task_accept(args: argparse.Namespace, task_queue_root: Path) -> int:
     else:
         steps_done.append("inbox already acked (or no assignment message)")
 
-    # 3. Send ack message to orchestrator (idempotent via duplicate suppression)
+    # 3. Send ack message to orchestrator (safe to re-run — duplicate acks are harmless)
     try:
         ack_msg = create_message(
             from_lane=lane_id,
