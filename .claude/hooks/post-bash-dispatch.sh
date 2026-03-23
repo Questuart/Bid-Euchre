@@ -70,9 +70,12 @@ run_hook "$HOOKS_DIR/post-tool-daemon-notify.sh"
 run_hook "$HOOKS_DIR/post-task-event.sh"
 run_hook "$HOOKS_DIR/post-merge-notify.sh"
 
-# Return combined output (if any hooks produced context)
+# Return combined output (if any hooks produced context),
+# otherwise suppress TUI notification (issue #1360).
 if [ -n "$COMBINED_CONTEXT" ]; then
     echo "$COMBINED_CONTEXT" | jq -Rs '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: .}}'
+else
+    echo '{"suppressOutput": true}'
 fi
 
 exit 0
