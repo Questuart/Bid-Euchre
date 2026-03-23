@@ -4034,3 +4034,27 @@ class TestCmdReviewCheck:
         assert msg_data["message_type"] == "supervisor_alert"
         assert msg_data["to_lane"] == "orchestrator"
         assert "review-check" in msg_data["summary"]
+
+
+class TestBusRootRegression:
+    """Regression: ops.py must use shared_bus_root() — not worktree-local paths.
+
+    Issue #1299: four callsites bypassed git-common-dir resolution by using
+    ``args.runtime_dir / "message_bus"`` directly, causing messages from
+    worktree lanes to land in the wrong bus.
+    """
+
+    def test_no_worktree_local_bus_paths(self) -> None:
+        """ops.py must not construct bus paths via args.runtime_dir."""
+        ops_path = SCRIPTS_DIR / "ops.py"
+        source = ops_path.read_text()
+        # This pattern is the exact anti-pattern that caused #1299
+        hits = [
+            (i + 1, line)
+            for i, line in enumerate(source.splitlines())
+            if "runtime_dir" in line and '"message_bus"' in line
+        ]
+        assert hits == [], (
+            "Found worktree-local bus path(s) in ops.py — use shared_bus_root() instead:\n"
+            + "\n".join(f"  L{n}: {l.strip()}" for n, l in hits)
+        )
