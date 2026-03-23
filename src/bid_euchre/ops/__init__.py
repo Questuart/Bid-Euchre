@@ -25,6 +25,7 @@ Modules:
     dashboard   -- Dashboard-first supervision surface (Platform-4)
     supervisor  -- Supervisor routines and delta summaries (Platform-6)
     worker_pool -- Worker pool lifecycle management (Platform-7)
+    token_economy -- Token economy observability (usage data import/rollups)
 """
 
 # Shared constant: GitHub status/check context names that represent
