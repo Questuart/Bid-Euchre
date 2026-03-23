@@ -138,19 +138,56 @@ claude-work  # Uses auto-generated timestamp branch
 4. Changes to worktree directory
 5. Starts `claude` session in worktree
 
+### `pre-bash-dispatch.sh` (PreToolUse — Bash)
+
+**Trigger:** Before any Bash tool call
+
+**Purpose:** Consolidated dispatcher that runs all PreToolUse Bash hooks in a
+single invocation to minimize "Async hook completed" TUI messages (issue #1255).
+
+**Dispatches to (in order):**
+1. `pre-worktree-cleanup.sh` — blocks dangerous rm/worktree commands
+2. `pre-merge-review-guard.sh` — blocks merge without review verdict
+3. `rule-loader.sh` — progressive rule disclosure (context injection)
+
+Guards run first: if either blocks (exit 2), the block propagates immediately
+and rule-loader is skipped.
+
+### `post-bash-dispatch.sh` (PostToolUse — Bash)
+
+**Trigger:** After any Bash tool call
+
+**Purpose:** Consolidated dispatcher that runs all PostToolUse Bash hooks in a
+single invocation to minimize "Async hook completed" TUI messages (issue #1255).
+
+**Dispatches to (in order):**
+1. `post-pr-review.sh` — enqueues review request after `gh pr create`
+2. `post-pr-review-loop.sh` — launches review driver after `gh pr create`
+3. `post-push-ci-check.sh` — launches CI poller after `git push`
+4. `post-merge-ci-check.sh` — checks main CI after `gh pr merge`
+5. `post-merge-review.sh` — triggers post-merge review after `gh pr merge`
+6. `post-tool-daemon-notify.sh` — checks for background daemon failures
+7. `post-task-event.sh` — emits task events on relevant commands
+8. `post-merge-notify.sh` — auto-completes task lifecycle on merge
+
+For typical Bash commands, all sub-hooks exit immediately (<100ms each).
+Only specific commands (`gh pr create`, `git push`, `gh pr merge`) trigger
+meaningful work.
+
 ## Configuration
 
 Hooks are registered across two files:
 
 **`.claude/settings.json`** (committed, shared):
-- `SessionStart` → `compact-context.sh`
-- `PostToolUse` (Write) → `post-write-check.sh`
-- `PreToolUse` (Bash) → `pre-merge-review-guard.sh`
+- `SessionStart` → `compact-context.sh`, `session-sync-worktree.sh`
+- `PreToolUse` (Edit|Write) → `rule-loader.sh`
+- `PreToolUse` (Bash) → `pre-bash-dispatch.sh` (consolidated dispatcher)
+- `PostToolUse` (Write|Edit) → `post-write-check.sh`
+- `PostToolUse` (Bash) → `post-bash-dispatch.sh` (consolidated dispatcher)
 
 **`.claude/settings.local.json`** (gitignored, per-machine):
 - `SessionStart` → `worktree-reminder.sh`
 - `UserPromptSubmit` → `worktree-guard.sh`
-- `PostToolUse` (Bash) → `post-pr-review.sh`
 
 ## Limitations
 
