@@ -127,41 +127,39 @@ class TestGenerateDashboardWiring:
     def _make_dates(self, n: int = 12) -> list[str]:
         return [f"2026-03-{d:02d}" for d in range(1, n + 1)]
 
-    def test_panel5_receives_file_churn_data(self, tmp_path):
-        """Panel 5 receives file_churn_pct data/SMA/valid, not Panel 4's line churn.
+    def test_panel_wiring_all_five(self, tmp_path):
+        """All 5 panels receive correct data, SMA, and validity masks.
 
-        Wiring regression test for the validity mask fix in PR #1365 / #1346.
-        The test captures data, SMA, and valid mask for each panel and verifies:
-        1. Data arrays differ (churn_pct ≈ 33.33 vs file_churn_pct = 30.0)
-        2. SMA arrays match the correct metric (not swapped)
-        3. Valid mask is consistent with SMA (derived from correct Bollinger)
+        Panel layout (after redesign):
+          1. PRs merged per day (raw_prs)
+          2. Churn-adjusted PRs (effective_prs = raw_prs * (1 - churn_ratio))
+          3. Line churn ratio % (churn_pct)
+          4. File churn ratio % (file_churn_pct)
+          5. Additions per PR (adds_per_pr)
 
-        Note: With same WINDOW and same date set, validity masks for panels 4
-        and 5 are structurally identical (same NaN pattern). The SMA check is
-        the discriminating assertion — it WILL fail if panel 5 accidentally
-        receives panel 4's Bollinger outputs.
+        Verifies each panel receives distinct data arrays and correct SMA values.
         """
         dates = self._make_dates(12)
 
-        # PR data: 1 PR per day, 10 additions, 5 deletions
-        pr_counts = {d: 1 for d in dates}
-        pr_additions = {d: 10 for d in dates}
-        pr_deletions = {d: 5 for d in dates}
+        # PR data: 2 PRs per day, 100 additions, 20 deletions
+        pr_counts = {d: 2 for d in dates}
+        pr_additions = {d: 100 for d in dates}
+        pr_deletions = {d: 20 for d in dates}
 
         # Line stats: 100 insertions, 20 deletions per day
-        # → gross = 120, net = 80, churn_ratio = 1 - 80/120 ≈ 0.333, churn_pct ≈ 33.33
+        # churn_ratio = 1 - |100 - 20| / (100 + 20) = 1 - 80/120 = 1/3
+        # churn_pct = 33.33
         day_ins = {d: 100 for d in dates}
         day_del = {d: 20 for d in dates}
 
         # File churn: 10 unique files, 3 churned per day
-        # → file_churn_ratio = 3/10 = 0.30, file_churn_pct = 30.0
+        # file_churn_pct = 30.0
         unique_files = {d: 10 for d in dates}
         churned_files = {d: 3 for d in dates}
 
         draw_calls: list[dict] = []
 
         def tracking_draw(*args, **kwargs):
-            # _draw_bollinger_panel(ax, x, data, sma, upper, lower, pct_b, valid, ...)
             draw_calls.append(
                 {
                     "data": args[2].copy(),
@@ -194,67 +192,129 @@ class TestGenerateDashboardWiring:
 
         assert len(draw_calls) == 5, f"Expected 5 panel draws, got {len(draw_calls)}"
 
-        # ── Data arrays: correct metric routed to each panel ──────────────
-        # Panel 4 (line churn): churn_pct ≈ 33.33 for every date
-        panel4_data = draw_calls[3]["data"]
-        assert panel4_data[0] == pytest.approx(33.33, abs=0.1)
-
-        # Panel 5 (file churn): file_churn_pct = 30.0 for every date
-        panel5_data = draw_calls[4]["data"]
-        assert panel5_data[0] == pytest.approx(30.0, abs=0.1)
-
-        # The two panels must receive different data arrays
-        assert not np.allclose(panel4_data, panel5_data), (
-            "Panel 4 and Panel 5 should receive different data arrays "
-            "(churn_pct vs file_churn_pct)"
-        )
-
-        # ── SMA arrays: correct Bollinger wired to each panel ─────────────
-        # This is the discriminating check: SMA values reflect the metric
-        # passed to _bollinger(). If panel 5 accidentally received panel 4's
-        # lc_sma (≈33.33) instead of fc_sma (≈30.0), this assertion fails.
-        panel4_sma = draw_calls[3]["sma"]
-        panel5_sma = draw_calls[4]["sma"]
-
-        # At the first valid index (WINDOW-1), SMA = mean of first WINDOW values
         first_valid = WINDOW - 1
-        assert (
-            panel4_sma[first_valid] == pytest.approx(33.33, abs=0.1)
-        ), f"Panel 4 SMA should match line churn (≈33.33), got {panel4_sma[first_valid]:.2f}"
-        assert (
-            panel5_sma[first_valid] == pytest.approx(30.0, abs=0.1)
-        ), f"Panel 5 SMA should match file churn (≈30.0), got {panel5_sma[first_valid]:.2f}"
 
-        # SMA arrays must differ (same test as data, but for the Bollinger output)
-        assert not np.allclose(panel4_sma[first_valid:], panel5_sma[first_valid:]), (
-            "Panel 4 and Panel 5 should receive different SMA arrays "
-            "(lc_sma vs fc_sma)"
-        )
+        # ── Panel 1: raw PRs = 2.0 ──────────────────────────────────────
+        assert draw_calls[0]["data"][0] == pytest.approx(2.0)
+        assert draw_calls[0]["sma"][first_valid] == pytest.approx(2.0)
+
+        # ── Panel 2: effective PRs = 2.0 * (1 - 1/3) = 4/3 ≈ 1.333 ─────
+        assert draw_calls[1]["data"][0] == pytest.approx(4.0 / 3, abs=0.01)
+        assert draw_calls[1]["sma"][first_valid] == pytest.approx(4.0 / 3, abs=0.01)
+
+        # ── Panel 3: line churn % ≈ 33.33 ───────────────────────────────
+        assert draw_calls[2]["data"][0] == pytest.approx(33.33, abs=0.1)
+        assert draw_calls[2]["sma"][first_valid] == pytest.approx(33.33, abs=0.1)
+
+        # ── Panel 4: file churn % = 30.0 ────────────────────────────────
+        assert draw_calls[3]["data"][0] == pytest.approx(30.0, abs=0.1)
+        assert draw_calls[3]["sma"][first_valid] == pytest.approx(30.0, abs=0.1)
+
+        # ── Panel 5: adds/PR = 100 / 2 = 50.0 ──────────────────────────
+        assert draw_calls[4]["data"][0] == pytest.approx(50.0)
+        assert draw_calls[4]["sma"][first_valid] == pytest.approx(50.0)
+
+        # Panels 3 and 4 must receive different data (churn vs file churn)
+        assert not np.allclose(
+            draw_calls[2]["data"], draw_calls[3]["data"]
+        ), "Panel 3 (line churn) and Panel 4 (file churn) should differ"
 
         # ── Valid masks: consistent with own SMA ──────────────────────────
-        # Verify each panel's valid mask matches the NaN pattern of the SMA
-        # it received (internal consistency check).
-        panel4_valid = draw_calls[3]["valid"]
-        panel5_valid = draw_calls[4]["valid"]
+        for i in range(5):
+            panel_valid = draw_calls[i]["valid"]
+            panel_sma = draw_calls[i]["sma"]
+            assert np.array_equal(
+                panel_valid, ~np.isnan(panel_sma)
+            ), f"Panel {i + 1} valid mask should match NaN pattern of its SMA"
 
-        assert np.array_equal(
-            panel4_valid, ~np.isnan(panel4_sma)
-        ), "Panel 4 valid mask should match NaN pattern of its SMA"
-        assert np.array_equal(
-            panel5_valid, ~np.isnan(panel5_sma)
-        ), "Panel 5 valid mask should match NaN pattern of its SMA"
+    def test_effective_prs_computation(self, tmp_path):
+        """Churn-adjusted PRs = raw_prs * (1 - churn_ratio) is correct."""
+        dates = self._make_dates(12)
 
-        n_dates = len(dates)
-        expected_valid = n_dates - WINDOW + 1  # warmup period = WINDOW - 1
+        # 3 PRs per day, churn_ratio = 1 - |50 - 50|/100 = 1.0 (pure churn)
+        pr_counts = {d: 3 for d in dates}
+        pr_additions = {d: 10 for d in dates}
+        pr_deletions = {d: 10 for d in dates}
+        day_ins = {d: 50 for d in dates}
+        day_del = {d: 50 for d in dates}
+        unique_files = {d: 5 for d in dates}
+        churned_files = {d: 1 for d in dates}
 
-        assert panel4_valid.sum() == expected_valid, (
-            f"Panel 4 validity mask: expected {expected_valid} valid, "
-            f"got {panel4_valid.sum()}"
-        )
-        assert panel5_valid.sum() == expected_valid, (
-            f"Panel 5 validity mask: expected {expected_valid} valid, "
-            f"got {panel5_valid.sum()}"
-        )
+        draw_calls: list[dict] = []
+
+        def tracking_draw(*args, **kwargs):
+            draw_calls.append({"data": args[2].copy()})
+
+        output_path = str(tmp_path / "test_dashboard.png")
+
+        with (
+            patch(
+                "generate_dashboard._gather_pr_counts",
+                return_value=(pr_counts, pr_additions, pr_deletions),
+            ),
+            patch(
+                "generate_dashboard._gather_line_stats",
+                return_value=(day_ins, day_del),
+            ),
+            patch(
+                "generate_dashboard._gather_file_churn",
+                return_value=(unique_files, churned_files),
+            ),
+            patch(
+                "generate_dashboard._draw_bollinger_panel",
+                side_effect=tracking_draw,
+            ),
+        ):
+            generate_dashboard("/fake/repo", output_path)
+
+        # Panel 2: effective_prs = 3 * (1 - 1.0) = 0.0 (100% churn)
+        assert draw_calls[1]["data"][0] == pytest.approx(0.0)
+
+    def test_adds_per_pr_zero_prs(self, tmp_path):
+        """Additions per PR is 0 on days with 0 PRs (no division by zero)."""
+        dates = self._make_dates(12)
+
+        # 0 PRs every day
+        pr_counts = {d: 0 for d in dates}
+        pr_additions = {d: 0 for d in dates}
+        pr_deletions = {d: 0 for d in dates}
+        day_ins = {d: 50 for d in dates}
+        day_del = {d: 10 for d in dates}
+        unique_files = {d: 5 for d in dates}
+        churned_files = {d: 1 for d in dates}
+
+        draw_calls: list[dict] = []
+
+        def tracking_draw(*args, **kwargs):
+            draw_calls.append({"data": args[2].copy()})
+
+        output_path = str(tmp_path / "test_dashboard.png")
+
+        with (
+            patch(
+                "generate_dashboard._gather_pr_counts",
+                return_value=(pr_counts, pr_additions, pr_deletions),
+            ),
+            patch(
+                "generate_dashboard._gather_line_stats",
+                return_value=(day_ins, day_del),
+            ),
+            patch(
+                "generate_dashboard._gather_file_churn",
+                return_value=(unique_files, churned_files),
+            ),
+            patch(
+                "generate_dashboard._draw_bollinger_panel",
+                side_effect=tracking_draw,
+            ),
+        ):
+            generate_dashboard("/fake/repo", output_path)
+
+        # Panel 5: adds_per_pr = 0 when no PRs
+        panel5_data = draw_calls[4]["data"]
+        assert np.all(
+            panel5_data == 0.0
+        ), f"Additions per PR should be 0 on days with 0 PRs, got {panel5_data}"
 
 
 class TestDrawBollingerPanel:
