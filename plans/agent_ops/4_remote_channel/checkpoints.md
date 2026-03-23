@@ -14,8 +14,8 @@
 sub-plan registry, and update checkpoints. Docs-only — no code changes.
 **Depends on:** Phase 3 COMPLETE
 **Done when:**
-- SP-4-01 sub-plan exists at `4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md`
-- Sub-plan registered in `sub_plan_registry.md`
+- SP-4-01 sub-plan exists at `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md`
+- Sub-plan registered in `plans/agent_ops/sub_plan_registry.md`
 - Checkpoints updated with Step 0 entry and session log
 
 ### Step 1 — Platform-8a: Configure Telegram plugin and prove core capabilities
@@ -35,7 +35,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
-| SP-4-01 | `4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | completed | Step 0 |
+| SP-4-01 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | completed | Step 0 |
 | SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | in_progress | Pre-Platform-8 |
 | SP-4-03 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | proposed | Pre-Platform-8 |
 
@@ -53,4 +53,4 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | 2026-03-23 | SP-3-05 blocker cleared. Dual-domain layout shipped (PRs #1281–#1294), proving run passed. 4-window tiled layout canonical, 12 worker lanes active across platform/browser-game/flex pools. |
 | 2026-03-23 | Step 0 (scope lock): SP-4-01 sub-plan created and registered. Key decisions: free-form messages allowed, no remote command grammar, orchestrator is single ingress, author lanes remain tmux-only. Platform-8b audit trail tracked in issue #1324. Phase status moved from PENDING to IN_PROGRESS. |
 | 2026-03-23 | SP-4-02 registered and committed. Preflight hardening plan covers 6 steps: lifecycle proving, operational cleanup, stall recovery, scope enforcement, reset/clear validation, and auto-dispatch. Gated rollout order (Steps 1-2 first, then 3-4 parallel, then 5-6). |
-| 2026-03-23 | SP-4-03 registered. Token economy observability as parallel preflight slice alongside SP-4-02. Covers usage import, lane attribution, CLI/dashboard views, and baseline anti-pattern report. Disjoint file scope from SP-4-02 — safe to run in parallel. |
+| 2026-03-23 | SP-4-03 registered. Token economy observability alongside SP-4-02. Covers usage import, lane attribution, CLI/dashboard views, and baseline anti-pattern report. Overlaps SP-4-02 in `scripts/internal/ops.py` and dashboard — serialize shared surfaces during implementation. Codex review surfaced 3 plan-quality findings (boundary exception, malformed telemetry, attribution key) for orchestrator to address. |
