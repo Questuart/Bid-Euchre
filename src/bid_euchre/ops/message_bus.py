@@ -1025,6 +1025,163 @@ def inbox_stats(bus_root: Path | None = None) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Inbox compaction (purge terminal messages)
+# ---------------------------------------------------------------------------
+
+
+def compact_inbox(
+    lane_id: str,
+    bus_root: Path | None = None,
+    *,
+    max_age_hours: float = 24.0,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Compact a lane's inbox by removing old handled messages.
+
+    Rewrites the per-lane inbox JSONL file, keeping only:
+    - Active messages (pending, delivered) regardless of age
+    - Handled messages (acked, resolved, expired, dead_lettered) newer
+      than ``max_age_hours``
+
+    The global audit trail (``messages.jsonl``) is **not** touched.
+
+    Deduplication is applied during compaction: only the latest record per
+    ``message_id`` is retained (the inbox is append-only, so multiple
+    records may exist for the same message as its status changed).
+
+    Args:
+        lane_id: The lane whose inbox to compact.
+        bus_root: Override for bus root directory.
+        max_age_hours: Remove handled messages older than this (default 24h).
+        now: Override for current time as Unix timestamp (for testing).
+
+    Returns:
+        Dict with keys: ``lane_id``, ``before`` (raw line count),
+        ``after`` (deduplicated retained count), ``removed`` (unique
+        messages purged).
+    """
+    root = shared_bus_root(bus_root)
+    inbox = _inbox_path(lane_id, root)
+    lock = _inbox_lock_path(lane_id, root)
+
+    if not inbox.exists():
+        return {"lane_id": lane_id, "before": 0, "after": 0, "removed": 0}
+
+    current_time = now or time.time()
+    cutoff_ts = current_time - (max_age_hours * 3600)
+    # Messages that have been handled — safe to purge when old enough.
+    # Includes acked (handled but not yet resolved) and all terminal states.
+    purgeable = {"acked", "resolved", "expired", "dead_lettered"}
+
+    # Read under lock to prevent concurrent writes during compaction
+    with open(lock, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
+        try:
+            raw = []
+            with open(inbox) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+
+            before_count = len(raw)
+
+            # Deduplicate: latest record per message_id wins
+            by_id: dict[str, dict[str, Any]] = {}
+            for rec in raw:
+                mid = rec.get("message_id")
+                if mid:
+                    by_id[mid] = rec
+
+            # Partition: keep vs remove
+            kept: list[dict[str, Any]] = []
+            removed_count = 0
+            for mid, rec in by_id.items():
+                status = rec.get("status", "pending")
+                if status not in purgeable:
+                    kept.append(rec)
+                    continue
+
+                # Handled message — check age
+                created = rec.get("created_at", "")
+                try:
+                    created_ts = datetime.fromisoformat(created).timestamp()
+                except (ValueError, TypeError):
+                    # Can't parse timestamp — keep to be safe
+                    kept.append(rec)
+                    continue
+
+                if created_ts < cutoff_ts:
+                    removed_count += 1
+                else:
+                    kept.append(rec)
+
+            # Rewrite the inbox file atomically (write tmp then rename)
+            tmp_path = inbox.with_suffix(".jsonl.tmp")
+            with open(tmp_path, "w") as f:
+                for rec in kept:
+                    f.write(json.dumps(rec, sort_keys=True, default=str) + "\n")
+                f.flush()
+            tmp_path.rename(inbox)
+
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+
+    logger.info(
+        "Compacted inbox for %s: %d raw -> %d kept (%d removed)",
+        lane_id,
+        before_count,
+        len(kept),
+        removed_count,
+    )
+    return {
+        "lane_id": lane_id,
+        "before": before_count,
+        "after": len(kept),
+        "removed": removed_count,
+    }
+
+
+def compact_all_inboxes(
+    bus_root: Path | None = None,
+    *,
+    max_age_hours: float = 24.0,
+    now: float | None = None,
+) -> list[dict[str, Any]]:
+    """Compact all per-lane inbox files.
+
+    Iterates over every ``*.jsonl`` file in the inbox directory and
+    calls :func:`compact_inbox` for each.
+
+    Args:
+        bus_root: Override for bus root directory.
+        max_age_hours: Remove terminal messages older than this (default 24h).
+        now: Override for current time as Unix timestamp (for testing).
+
+    Returns:
+        List of per-lane compaction result dicts.
+    """
+    root = shared_bus_root(bus_root)
+    inbox_dir = root / INBOX_DIR
+    if not inbox_dir.exists():
+        return []
+
+    results: list[dict[str, Any]] = []
+    for inbox_file in sorted(inbox_dir.glob("*.jsonl")):
+        lane_id = inbox_file.stem
+        if lane_id.startswith("."):
+            continue  # Skip lock files and temp files
+        result = compact_inbox(lane_id, root, max_age_hours=max_age_hours, now=now)
+        results.append(result)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Native inbox bridge
 # ---------------------------------------------------------------------------
 
