@@ -556,3 +556,48 @@ class TestGetActiveTaskScope:
         task_id, patterns = get_active_task_scope("author-a", queue_root)
         assert task_id == "pkt-1"
         assert patterns == []
+
+
+# --- Hook contract regression tests ---
+
+
+class TestScopeDriftGuardHookContract:
+    """Regression tests for scope-drift-guard.sh hook.
+
+    Issue #1379: the hook previously embedded LANE_ID directly into
+    Python source via shell interpolation ('${LANE_ID}'). If the env
+    var contained quotes, this would break the Python string literal.
+    The fix passes LANE_ID as sys.argv[1] instead.
+    """
+
+    @pytest.fixture()
+    def hook_content(self) -> str:
+        """Read the scope-drift-guard hook source."""
+        hook_path = (
+            Path(__file__).resolve().parents[2]
+            / ".claude"
+            / "hooks"
+            / "scope-drift-guard.sh"
+        )
+        assert hook_path.exists(), f"Hook not found at {hook_path}"
+        return hook_path.read_text()
+
+    def test_no_shell_interpolation_of_lane_id_in_python(
+        self, hook_content: str
+    ) -> None:
+        """LANE_ID must not be shell-interpolated into Python source."""
+        assert "'${LANE_ID}'" not in hook_content, (
+            "Hook still uses unsafe shell interpolation of LANE_ID "
+            "into Python source (issue #1379)"
+        )
+
+    def test_lane_id_passed_via_sys_argv(self, hook_content: str) -> None:
+        """LANE_ID must be passed as a command-line argument."""
+        assert (
+            "sys.argv[1]" in hook_content
+        ), "Hook should read LANE_ID from sys.argv[1]"
+        # The shell argument should be passed after the closing quote
+        # of the -c string
+        assert (
+            '"$LANE_ID"' in hook_content or "'$LANE_ID'" in hook_content
+        ), "Hook should pass $LANE_ID as a shell argument to python -c"

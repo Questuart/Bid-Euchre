@@ -58,14 +58,17 @@ if [ -z "$LANE_ID" ]; then
   exit 0
 fi
 
-# Run enforcement via Python
+# Run enforcement via Python — pass LANE_ID as sys.argv[1] to avoid
+# unsafe shell interpolation into Python source (issue #1379).
 RESULT=$(uv run python -c "
 import json, subprocess, sys
 
 from bid_euchre.ops.scope import enforce_scope_drift, get_active_task_scope
 
+lane_id = sys.argv[1]
+
 # Find active task for this lane
-task_id, patterns = get_active_task_scope('${LANE_ID}')
+task_id, patterns = get_active_task_scope(lane_id)
 if task_id is None or not patterns:
     print(json.dumps({'action': 'skip', 'reason': 'No active task or no scope patterns.'}))
     sys.exit(0)
@@ -86,7 +89,7 @@ if not staged:
 
 verdict = enforce_scope_drift(staged, patterns, task_id=task_id)
 print(json.dumps(verdict.to_dict()))
-" 2>/dev/null)
+" "$LANE_ID" 2>/dev/null)
 
 if [ -z "$RESULT" ]; then
   # Python invocation failed — don't block work
