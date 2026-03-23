@@ -27,8 +27,6 @@
 #     .2  flex-b          -- domain-agnostic overflow lane
 #     .3  flex-c          -- domain-agnostic overflow lane
 #
-# Rollback: use steward-session-legacy.sh to restore the pre-SP-3-05 layout.
-#
 # Writes v2 worktree registry metadata for each launched lane.
 # See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full model.
 
