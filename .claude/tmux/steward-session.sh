@@ -356,10 +356,11 @@ tmux select-layout -t "${SESSION}:scratch" tiled
 # Auto-launch ops monitoring loop (SP-3-08).
 # Wait briefly for the claude process to initialize, then send the /loop
 # command.  Best-effort — if it fails the ops agent can start it manually.
-# Target: central-ops window, pane 1 (ops lane).
+# Target: central-ops window, pane 2 (ops lane).
+# Note: pane-base-index=1, so orchestrator=.1, ops=.2, review=.3, issues=.4.
 (
     sleep 10
-    tmux send-keys -t "${SESSION}:central-ops.1" \
+    tmux send-keys -t "${SESSION}:central-ops.2" \
         "/loop 3m uv run python scripts/internal/ops.py monitor" Enter
 ) &
 
@@ -367,10 +368,10 @@ tmux select-layout -t "${SESSION}:scratch" tiled
 # Runs every 20 minutes, checking recently merged PRs for contract and
 # diff-stat issues.  Best-effort — if it fails the review agent can
 # start it manually.
-# Target: central-ops window, pane 2 (review lane).
+# Target: central-ops window, pane 3 (review lane).
 (
     sleep 15
-    tmux send-keys -t "${SESSION}:central-ops.2" \
+    tmux send-keys -t "${SESSION}:central-ops.3" \
         "/loop 20m uv run python scripts/internal/ops.py review-check" Enter
 ) &
 
