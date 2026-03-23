@@ -32,7 +32,7 @@ Usage:
     uv run python scripts/internal/ops.py skills promote CANDIDATE_ID [--json]
     uv run python scripts/internal/ops.py skills disable NAME [--reason TEXT] [--disabled-by LANE] [--json]
     uv run python scripts/internal/ops.py repairs [--json]
-    uv run python scripts/internal/ops.py task list [--status STATUS] [--owner LANE] [--json]
+    uv run python scripts/internal/ops.py task list [--status STATUS] [--owner LANE] [--domain DOMAIN] [--json]
     uv run python scripts/internal/ops.py task show PACKET_ID [--json]
     uv run python scripts/internal/ops.py task approve PACKET_ID [--json]
     uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--json]
@@ -1418,6 +1418,7 @@ def cmd_task(args: argparse.Namespace) -> int:
             task_queue_root,
             status_filter=args.status,
             owner_filter=args.owner,
+            domain_filter=getattr(args, "domain", None),
         )
         if args.json:
             from dataclasses import asdict
@@ -1461,6 +1462,8 @@ def cmd_task(args: argparse.Namespace) -> int:
             print(f"  Status:      {pkt.status}")
             print(f"  Owner:       {pkt.owner or '(unassigned)'}")
             print(f"  Priority:    {pkt.priority}")
+            if pkt.domain:
+                print(f"  Domain:      {pkt.domain}")
             print(f"  Created by:  {pkt.created_by}")
             print(f"  Created at:  {pkt.created_at}")
             print(f"  Description: {pkt.description}")
@@ -1494,6 +1497,7 @@ def cmd_task(args: argparse.Namespace) -> int:
             description=args.description or "",
             owner=args.owner,
             priority=args.priority,
+            domain=getattr(args, "domain", None),
             scope_declared=args.scope_declared,
             validation=args.validation,
         )
@@ -1507,6 +1511,8 @@ def cmd_task(args: argparse.Namespace) -> int:
             print(f"  Title:    {pkt.title}")
             print(f"  Owner:    {pkt.owner or '(unassigned)'}")
             print(f"  Priority: {pkt.priority}")
+            if pkt.domain:
+                print(f"  Domain:   {pkt.domain}")
             if pkt.scope_declared:
                 print(f"  Scope:    {', '.join(pkt.scope_declared)}")
             if pkt.validation:
@@ -2202,6 +2208,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--status", default=None, help="Filter by packet status"
     )
     task_list_parser.add_argument("--owner", default=None, help="Filter by owner lane")
+    task_list_parser.add_argument(
+        "--domain", default=None, help="Filter by execution domain"
+    )
 
     task_show_parser = task_sub.add_parser("show", help="Show a task packet by ID")
     task_show_parser.add_argument("packet_id", help="The packet ID to show")
@@ -2221,6 +2230,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     task_create_parser.add_argument(
         "--description", default="", help="Full task description"
+    )
+    task_create_parser.add_argument(
+        "--domain",
+        default=None,
+        choices=["platform", "browser-game"],
+        help="Execution domain for routing (platform / browser-game)",
     )
     task_create_parser.add_argument(
         "--scope",
