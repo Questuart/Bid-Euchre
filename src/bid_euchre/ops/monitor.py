@@ -29,6 +29,9 @@ logger = logging.getLogger("ops.monitor")
 # A dispatched packet with no progress after this many minutes is flagged.
 STALE_DISPATCH_MINUTES: int = 30
 
+# Maximum auto-dispatches per monitor cycle (rate limit / kill switch).
+MAX_AUTO_DISPATCH_PER_CYCLE: int = 2
+
 # Stall detection: dispatched+acked lane with no tmux activity growth.
 STALL_THRESHOLD_MINUTES: int = 10
 STALL_CONSECUTIVE_CYCLES: int = 2
@@ -784,6 +787,184 @@ def check_stalled_lanes(
 
 
 # ---------------------------------------------------------------------------
+# Auto-dispatch: assign approved packets to idle lanes (SP-4-02 Step 6)
+# ---------------------------------------------------------------------------
+
+
+def check_auto_dispatch(
+    runtime_dir: Path | None = None,
+    *,
+    max_dispatches: int = MAX_AUTO_DISPATCH_PER_CYCLE,
+    current_findings: list[MonitorFinding] | None = None,
+    tmux_session: str = "steward",
+    _dispatch_fn: Any | None = None,
+) -> list[MonitorFinding]:
+    """Auto-dispatch approved packets to idle lanes.
+
+    When a lane goes idle after completing a task, the monitor can
+    auto-dispatch the next queued approved packet.  Domain affinity is
+    used to match packets to lanes: same-domain → flex → skip.
+
+    Safety guards:
+    - Rate limit: at most ``max_dispatches`` dispatches per cycle.
+    - Skip lanes that have unresolved HIGH findings in the current cycle.
+    - Skip lanes that already have a dispatched packet.
+    - Skip lanes with ``health == "critical"``.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+        max_dispatches: Maximum dispatches per cycle (kill switch).
+        current_findings: Findings from earlier checks in the current cycle.
+            Used to skip lanes with unresolved HIGH findings.
+        tmux_session: tmux session name.
+        _dispatch_fn: Optional callable(packet_id, lane_id) for testing.
+            If provided, used instead of ``dispatch_to_worker()``.
+
+    Returns:
+        List of findings (INFO for successful dispatches, WARN for errors).
+    """
+    findings: list[MonitorFinding] = []
+
+    if max_dispatches <= 0:
+        return findings
+
+    try:
+        from bid_euchre.ops.task_queue import list_packets
+        from bid_euchre.ops.worker_pool import (
+            select_worker,
+            take_pool_snapshot,
+        )
+
+        pool = take_pool_snapshot(runtime_dir, tmux_session=tmux_session)
+        if runtime_dir is None:
+            runtime_dir = Path(".claude/runtime")
+        task_queue_root = runtime_dir / "task_queue"
+        approved = list_packets(task_queue_root, status_filter="approved")
+    except Exception as exc:
+        findings.append(
+            MonitorFinding(
+                category="auto_dispatch",
+                severity=SEVERITY_WARN,
+                summary=f"Could not check for auto-dispatch: {exc}",
+            )
+        )
+        return findings
+
+    if not approved:
+        return findings
+
+    if pool.available_capacity <= 0:
+        return findings
+
+    # Build set of lanes with unresolved HIGH findings from this cycle.
+    high_lanes: set[str] = set()
+    if current_findings:
+        for f in current_findings:
+            if f.severity == SEVERITY_HIGH:
+                lane_id = f.details.get("lane_id")
+                if lane_id:
+                    high_lanes.add(lane_id)
+
+    dispatched_count = 0
+
+    for pkt in approved:
+        if dispatched_count >= max_dispatches:
+            break
+
+        # Select best lane for this packet's domain
+        domain = getattr(pkt, "domain", None)
+        lane_id = select_worker(pool, domain=domain)
+
+        if lane_id is None:
+            continue
+
+        # Skip lanes with unresolved HIGH findings
+        if lane_id in high_lanes:
+            continue
+
+        # Attempt dispatch
+        try:
+            if _dispatch_fn is not None:
+                _dispatch_fn(pkt.packet_id, lane_id)
+            else:
+                from bid_euchre.ops.worker_pool import dispatch_to_worker
+
+                result = dispatch_to_worker(
+                    pkt.packet_id,
+                    lane_id,
+                    tmux_session=tmux_session,
+                    runtime_dir=runtime_dir,
+                    reset=True,
+                )
+                if result.error:
+                    findings.append(
+                        MonitorFinding(
+                            category="auto_dispatch",
+                            severity=SEVERITY_WARN,
+                            summary=(
+                                f"Auto-dispatch failed for packet "
+                                f"{pkt.packet_id!r} → {lane_id!r}: "
+                                f"{result.error}"
+                            ),
+                            details={
+                                "packet_id": pkt.packet_id,
+                                "lane_id": lane_id,
+                                "error": result.error,
+                            },
+                        )
+                    )
+                    continue
+
+            findings.append(
+                MonitorFinding(
+                    category="auto_dispatch",
+                    severity=SEVERITY_INFO,
+                    summary=(
+                        f"Auto-dispatched packet {pkt.packet_id!r} "
+                        f"({pkt.title!r}) → {lane_id!r}"
+                    ),
+                    details={
+                        "packet_id": pkt.packet_id,
+                        "title": pkt.title,
+                        "lane_id": lane_id,
+                        "domain": domain,
+                    },
+                )
+            )
+            dispatched_count += 1
+
+            # Mark lane as no longer idle in the snapshot so the next
+            # iteration doesn't pick it again.
+            for w in pool.workers:
+                if w.lane_id == lane_id:
+                    # WorkerState is a dataclass (not frozen), mutate in place
+                    w.pool_status = "active"
+                    w.current_task_id = pkt.packet_id
+                    break
+            pool.active_count += 1
+            pool.available_capacity = max(0, pool.available_capacity - 1)
+
+        except Exception as exc:
+            findings.append(
+                MonitorFinding(
+                    category="auto_dispatch",
+                    severity=SEVERITY_WARN,
+                    summary=(
+                        f"Auto-dispatch error for packet "
+                        f"{pkt.packet_id!r} → {lane_id!r}: {exc}"
+                    ),
+                    details={
+                        "packet_id": pkt.packet_id,
+                        "lane_id": lane_id,
+                        "error": str(exc),
+                    },
+                )
+            )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator notification
 # ---------------------------------------------------------------------------
 
@@ -864,6 +1045,7 @@ def run_monitoring_cycle(
     notify_orchestrator: bool = True,
     skip_pr_check: bool = False,
     no_recovery: bool = False,
+    no_auto_dispatch: bool = False,
 ) -> list[MonitorFinding]:
     """Run a single monitoring sweep.
 
@@ -872,6 +1054,8 @@ def run_monitoring_cycle(
     2. Open PR status (via ``gh``)
     3. Stale dispatched packet detection
     4. Stalled lane detection (acked but idle), with optional recovery
+    5. Auto-complete dispatched packets whose PRs were merged externally
+    6. Auto-dispatch approved packets to idle lanes
 
     Optionally sends a summary to the orchestrator inbox.
 
@@ -882,6 +1066,7 @@ def run_monitoring_cycle(
         notify_orchestrator: If True, send findings to orchestrator inbox.
         skip_pr_check: If True, skip the gh pr check (for testing).
         no_recovery: If True, disable stall recovery actions (report only).
+        no_auto_dispatch: If True, disable auto-dispatch of approved packets.
 
     Returns:
         List of all findings from the sweep.
@@ -907,7 +1092,11 @@ def run_monitoring_cycle(
     if not skip_pr_check:
         findings.extend(check_merged_dispatches(runtime_dir))
 
-    # 6. Notify orchestrator
+    # 6. Auto-dispatch approved packets to idle lanes
+    if not no_auto_dispatch:
+        findings.extend(check_auto_dispatch(runtime_dir, current_findings=findings))
+
+    # 7. Notify orchestrator
     if notify_orchestrator:
         _send_findings_to_orchestrator(findings)
 

@@ -2111,12 +2111,14 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     skip_pr = getattr(args, "skip_pr_check", False)
     no_notify = getattr(args, "no_notify", False)
     no_recovery = getattr(args, "no_recovery", False)
+    no_auto_dispatch = getattr(args, "no_auto_dispatch", False)
 
     findings = run_monitoring_cycle(
         runtime_dir=args.runtime_dir,
         notify_orchestrator=not no_notify,
         skip_pr_check=skip_pr,
         no_recovery=no_recovery,
+        no_auto_dispatch=no_auto_dispatch,
     )
 
     if args.json:
@@ -3035,6 +3037,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-recovery",
         action="store_true",
         help="Disable stall recovery actions (report only, no re-nudge/escalate)",
+    )
+    monitor_parser.add_argument(
+        "--no-auto-dispatch",
+        action="store_true",
+        help="Disable auto-dispatch of approved packets to idle lanes",
     )
 
     # review-check (merged PR review scanning)
