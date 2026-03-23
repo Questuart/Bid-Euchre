@@ -2110,11 +2110,13 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
     skip_pr = getattr(args, "skip_pr_check", False)
     no_notify = getattr(args, "no_notify", False)
+    no_recovery = getattr(args, "no_recovery", False)
 
     findings = run_monitoring_cycle(
         runtime_dir=args.runtime_dir,
         notify_orchestrator=not no_notify,
         skip_pr_check=skip_pr,
+        no_recovery=no_recovery,
     )
 
     if args.json:
@@ -3028,6 +3030,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-notify",
         action="store_true",
         help="Do not send findings to the orchestrator inbox",
+    )
+    monitor_parser.add_argument(
+        "--no-recovery",
+        action="store_true",
+        help="Disable stall recovery actions (report only, no re-nudge/escalate)",
     )
 
     # review-check (merged PR review scanning)

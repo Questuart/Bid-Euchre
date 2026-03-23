@@ -420,7 +420,10 @@ class TestCheckStalledLanes:
         assert len(findings) == 0
 
     def test_stalled_lane_detected_after_two_cycles(self, tmp_path: Path) -> None:
-        """Lane flagged as stalled when activity unchanged over 2 consecutive cycles."""
+        """Lane flagged as stalled when activity unchanged over 2 consecutive cycles.
+
+        With no_recovery=True, the original report-only behavior is preserved.
+        """
         runtime_dir = tmp_path / "runtime"
         (runtime_dir / "task_queue").mkdir(parents=True)
 
@@ -435,15 +438,21 @@ class TestCheckStalledLanes:
             patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
         ):
             # Cycle 1: first observation — no finding
-            f1 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            f1 = check_stalled_lanes(
+                runtime_dir, now=now, no_recovery=True, _activity_probe=probe
+            )
             assert len(f1) == 0
 
             # Cycle 2: same activity — unchanged_count=1, still below threshold
-            f2 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            f2 = check_stalled_lanes(
+                runtime_dir, now=now, no_recovery=True, _activity_probe=probe
+            )
             assert len(f2) == 0
 
             # Cycle 3: same activity — unchanged_count=2, now at threshold
-            f3 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            f3 = check_stalled_lanes(
+                runtime_dir, now=now, no_recovery=True, _activity_probe=probe
+            )
 
         assert len(f3) == 1
         assert f3[0].severity == SEVERITY_WARN
@@ -580,6 +589,7 @@ class TestCheckStalledLanes:
                 now=now,
                 stall_minutes=3,
                 consecutive_cycles=1,
+                no_recovery=True,
                 _activity_probe=probe,
             )
             assert len(f1) == 0  # first observation
@@ -589,6 +599,7 @@ class TestCheckStalledLanes:
                 now=now,
                 stall_minutes=3,
                 consecutive_cycles=1,
+                no_recovery=True,
                 _activity_probe=probe,
             )
 
@@ -646,16 +657,365 @@ class TestCheckStalledLanes:
             patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
         ):
             # Cycle 1
-            f1 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            f1 = check_stalled_lanes(
+                runtime_dir, now=now, no_recovery=True, _activity_probe=probe
+            )
             assert len(f1) == 0
             # Cycle 2
-            f2 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            f2 = check_stalled_lanes(
+                runtime_dir, now=now, no_recovery=True, _activity_probe=probe
+            )
             assert len(f2) == 0
             # Cycle 3: should flag (past threshold + 2 unchanged cycles)
-            f3 = check_stalled_lanes(runtime_dir, now=now, _activity_probe=probe)
+            f3 = check_stalled_lanes(
+                runtime_dir, now=now, no_recovery=True, _activity_probe=probe
+            )
 
         assert len(f3) == 1
         assert f3[0].category == "stall_detection"
+
+
+# ---------------------------------------------------------------------------
+# Stall recovery tests (SP-4-02 Step 3)
+# ---------------------------------------------------------------------------
+
+
+class TestStallRecovery:
+    """Tests for bounded stall recovery ladder."""
+
+    def test_first_stall_triggers_nudge(self, tmp_path: Path) -> None:
+        """First stall detection re-nudges the lane."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        nudges: list[tuple[str, str]] = []
+
+        def mock_nudge(lane_id: str, packet_id: str) -> None:
+            nudges.append((lane_id, packet_id))
+
+        def probe(_: str) -> int:
+            return 9999
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Build up to stall threshold (cycles 1-2 with default consecutive_cycles=2)
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            # Cycle 3: unchanged_count=2 >= threshold, first stall -> nudge
+            f3 = check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+
+        assert len(f3) == 1
+        assert f3[0].category == "stall_recovery"
+        assert f3[0].severity == SEVERITY_WARN
+        assert "re-nudged" in f3[0].summary
+        assert f3[0].details["recovery_action"] == "nudge"
+        assert len(nudges) == 1
+        assert nudges[0] == ("author-a", "pkt100")
+
+    def test_second_stall_escalates_to_high(self, tmp_path: Path) -> None:
+        """Second consecutive stall after re-nudge escalates to HIGH."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        nudges: list[tuple[str, str]] = []
+
+        def mock_nudge(lane_id: str, packet_id: str) -> None:
+            nudges.append((lane_id, packet_id))
+
+        def probe(_: str) -> int:
+            return 9999
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycles 1-2: build up observations
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            # Cycle 3: first stall -> nudge (recovery_count becomes 1)
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            # Cycle 4: still stalled -> escalate (recovery_count >= 1)
+            f4 = check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+
+        assert len(f4) == 1
+        assert f4[0].category == "stall_recovery"
+        assert f4[0].severity == SEVERITY_HIGH
+        assert "escalating" in f4[0].summary
+        assert f4[0].details["recovery_action"] == "escalate"
+        assert f4[0].details["recovery_count"] == 2
+        # Nudge was only called once (at step 1)
+        assert len(nudges) == 1
+
+    def test_no_recovery_flag_disables_actions(self, tmp_path: Path) -> None:
+        """no_recovery=True disables nudge and escalation (report only)."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        nudges: list[tuple[str, str]] = []
+
+        def mock_nudge(lane_id: str, packet_id: str) -> None:
+            nudges.append((lane_id, packet_id))
+
+        def probe(_: str) -> int:
+            return 9999
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Build up stall threshold
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _nudge_fn=mock_nudge,
+            )
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _nudge_fn=mock_nudge,
+            )
+            # Cycle 3: would normally nudge, but no_recovery=True
+            f3 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _nudge_fn=mock_nudge,
+            )
+
+        assert len(f3) == 1
+        assert f3[0].category == "stall_detection"  # Not "stall_recovery"
+        assert f3[0].severity == SEVERITY_WARN
+        assert "stalled" in f3[0].summary
+        # No nudge was called
+        assert len(nudges) == 0
+
+    def test_activity_change_after_nudge_resets_recovery(self, tmp_path: Path) -> None:
+        """Activity change after a nudge resets the recovery counter."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        nudges: list[tuple[str, str]] = []
+
+        def mock_nudge(lane_id: str, packet_id: str) -> None:
+            nudges.append((lane_id, packet_id))
+
+        call_count = [0]
+
+        def probe(_: str) -> int:
+            call_count[0] += 1
+            # First 3 calls return same value (stall), then change (recovery)
+            if call_count[0] <= 3:
+                return 9999
+            return 11111  # activity changed
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycles 1-2: build up
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            # Cycle 3: stall -> nudge
+            f3 = check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            assert len(f3) == 1
+            assert f3[0].details["recovery_action"] == "nudge"
+
+            # Cycle 4: activity changed -> reset
+            f4 = check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+
+        assert len(f4) == 0  # No finding — activity recovered
+
+        # Verify state was reset
+        state_path = _default_stall_state_path(runtime_dir)
+        state = json.loads(state_path.read_text())
+        obs = state["observations"]["author-a"]
+        assert obs["unchanged_count"] == 0
+        assert obs["recovery_count"] == 0
+
+    def test_new_packet_resets_recovery_count(self, tmp_path: Path) -> None:
+        """A new packet on the same lane resets recovery_count."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+
+        nudges: list[tuple[str, str]] = []
+
+        def mock_nudge(lane_id: str, packet_id: str) -> None:
+            nudges.append((lane_id, packet_id))
+
+        def probe(_: str) -> int:
+            return 9999
+
+        # First packet stalls and gets nudged
+        pkt1 = _make_dispatched_pkt(
+            packet_id="pkt_old", created_at="2026-03-23T11:00:00Z"
+        )
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt1]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            # Cycle 3: first stall -> nudge
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+
+        assert len(nudges) == 1
+
+        # New packet dispatched — should reset recovery_count
+        pkt2 = _make_dispatched_pkt(
+            packet_id="pkt_new", created_at="2026-03-23T11:00:00Z"
+        )
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt2]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycle 1 with new packet
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+            # Cycle 3: should nudge again (not escalate) because new packet
+            f3 = check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=mock_nudge
+            )
+
+        assert len(f3) == 1
+        assert f3[0].details["recovery_action"] == "nudge"  # Not escalate
+        assert len(nudges) == 2  # Two nudges total (one per packet)
+
+    def test_recovery_count_persisted_in_state(self, tmp_path: Path) -> None:
+        """recovery_count is persisted in stall_state.json."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        def probe(_: str) -> int:
+            return 9999
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=lambda *_: None
+            )
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=lambda *_: None
+            )
+            # Cycle 3: nudge happens, recovery_count becomes 1
+            check_stalled_lanes(
+                runtime_dir, now=now, _activity_probe=probe, _nudge_fn=lambda *_: None
+            )
+
+        state_path = _default_stall_state_path(runtime_dir)
+        state = json.loads(state_path.read_text())
+        obs = state["observations"]["author-a"]
+        assert obs["recovery_count"] == 1
+
+    def test_escalation_includes_required_details(self, tmp_path: Path) -> None:
+        """Escalation finding includes packet_id, lane_id, and stall duration."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(
+            packet_id="pkt_esc",
+            owner="author-c",
+            title="Stuck task",
+            created_at="2026-03-23T11:00:00Z",
+        )
+
+        def probe(_: str) -> int:
+            return 9999
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Build stall -> nudge -> escalate
+            for _ in range(2):
+                check_stalled_lanes(
+                    runtime_dir,
+                    now=now,
+                    _activity_probe=probe,
+                    _nudge_fn=lambda *_: None,
+                )
+            # Cycle 3: nudge
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+            )
+            # Cycle 4: escalate
+            f4 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+            )
+
+        assert len(f4) == 1
+        d = f4[0].details
+        assert d["packet_id"] == "pkt_esc"
+        assert d["lane_id"] == "author-c"
+        assert d["age_minutes"] == 60
+        assert d["recovery_action"] == "escalate"
+        assert d["recovery_count"] == 2
 
 
 # ---------------------------------------------------------------------------
