@@ -683,6 +683,64 @@ def _time_overlaps(
         return False
 
 
+def _load_all_packets(task_queue_root: Path) -> list[dict[str, Any]]:
+    """Load all task packets from the queue directory, including archived ones."""
+    packets: list[dict[str, Any]] = []
+    for pkt_file in sorted(task_queue_root.glob("*.json")):
+        data = _load_json(pkt_file)
+        if data and data.get("packet_id"):
+            packets.append(data)
+
+    archive_dir = task_queue_root / "archive"
+    if archive_dir.is_dir():
+        for pkt_file in sorted(archive_dir.glob("*.json")):
+            data = _load_json(pkt_file)
+            if data and data.get("packet_id"):
+                packets.append(data)
+
+    return packets
+
+
+def _build_lane_index(
+    attributions: list[SessionAttribution],
+) -> dict[str, list[SessionAttribution]]:
+    """Build a lane_id → session list index for efficient packet matching."""
+    lane_sessions: dict[str, list[SessionAttribution]] = {}
+    for attr in attributions:
+        if attr.lane_id and attr.lane_id != "main-checkout":
+            lane_sessions.setdefault(attr.lane_id, []).append(attr)
+    return lane_sessions
+
+
+def _match_packet_to_sessions(
+    pkt: dict[str, Any],
+    lane_sessions: dict[str, list[SessionAttribution]],
+) -> None:
+    """Match a single packet to sessions by lane ownership + time overlap.
+
+    Modifies matching :class:`SessionAttribution` objects in-place.
+    """
+    pkt_owner = pkt.get("owner")
+    if not pkt_owner:
+        return
+    pkt_id = pkt.get("packet_id", "")
+    pkt_created = pkt.get("created_at", "")
+    pkt_meta = pkt.get("metadata", {})
+    pkt_completed = pkt_meta.get("completed_at")
+
+    for attr in lane_sessions.get(pkt_owner, []):
+        if _time_overlaps(
+            attr.attribution_timestamp,
+            attr.duration_minutes if attr.duration_minutes else 60,
+            pkt_created,
+            pkt_completed,
+        ):
+            if pkt_id not in attr.matched_packets:
+                attr.matched_packets.append(pkt_id)
+                if attr.quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value:
+                    attr.quality = AttributionQuality.ATTRIBUTED.value
+
+
 def join_to_packets(
     attributions: list[SessionAttribution],
     *,
@@ -716,52 +774,11 @@ def join_to_packets(
     if not resolved_tq.is_dir():
         return attributions
 
-    # Load all packets (including archived)
-    packets: list[dict[str, Any]] = []
-    for pkt_file in sorted(resolved_tq.glob("*.json")):
-        data = _load_json(pkt_file)
-        if data and data.get("packet_id"):
-            packets.append(data)
+    packets = _load_all_packets(resolved_tq)
+    lane_sessions = _build_lane_index(attributions)
 
-    # Also check archive directory
-    archive_dir = resolved_tq / "archive"
-    if archive_dir.is_dir():
-        for pkt_file in sorted(archive_dir.glob("*.json")):
-            data = _load_json(pkt_file)
-            if data and data.get("packet_id"):
-                packets.append(data)
-
-    # Build lane→session index for efficient matching
-    lane_sessions: dict[str, list[SessionAttribution]] = {}
-    for attr in attributions:
-        if attr.lane_id and attr.lane_id != "main-checkout":
-            lane_sessions.setdefault(attr.lane_id, []).append(attr)
-
-    # Match packets to sessions by lane ownership + time overlap
     for pkt in packets:
-        pkt_owner = pkt.get("owner")
-        if not pkt_owner:
-            continue
-        pkt_id = pkt.get("packet_id", "")
-        pkt_created = pkt.get("created_at", "")
-        # Check metadata for completion timestamp
-        pkt_meta = pkt.get("metadata", {})
-        pkt_completed = pkt_meta.get("completed_at")
-
-        sessions_for_lane = lane_sessions.get(pkt_owner, [])
-        for attr in sessions_for_lane:
-            # Time overlap: use attribution_timestamp (= session start_time)
-            # with generous duration fallback for sessions missing duration
-            if _time_overlaps(
-                attr.attribution_timestamp,  # fallback to attr timestamp
-                attr.duration_minutes if attr.duration_minutes else 60,
-                pkt_created,
-                pkt_completed,
-            ):
-                if pkt_id not in attr.matched_packets:
-                    attr.matched_packets.append(pkt_id)
-                    if attr.quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value:
-                        attr.quality = AttributionQuality.ATTRIBUTED.value
+        _match_packet_to_sessions(pkt, lane_sessions)
 
     return attributions
 
@@ -776,6 +793,77 @@ class AttributionResult:
     unattributed: int
     lanes_found: list[str]
     output_dir: str
+
+
+def _build_attribution(
+    session: dict[str, Any], now: str
+) -> tuple[SessionAttribution, str | None]:
+    """Build a :class:`SessionAttribution` for a single session record.
+
+    Returns
+    -------
+    tuple[SessionAttribution, str | None]
+        The attribution object and the lane_id (or None if unattributed).
+    """
+    sid = session.get("session_id", "")
+    project_path = session.get("project_path")
+    lane_id, worktree_name = infer_lane_from_path(project_path)
+    pool = _classify_pool(lane_id) if lane_id else None
+
+    if lane_id is not None:
+        quality = AttributionQuality.PARTIALLY_ATTRIBUTED.value
+    else:
+        quality = AttributionQuality.UNATTRIBUTED.value
+
+    attr = SessionAttribution(
+        session_id=sid,
+        lane_id=lane_id,
+        worktree_class=pool,
+        worktree_name=worktree_name,
+        quality=quality,
+        attribution_timestamp=session.get("start_time", now),
+        input_tokens=session.get("input_tokens") or 0,
+        output_tokens=session.get("output_tokens") or 0,
+        duration_minutes=session.get("duration_minutes") or 0,
+        lines_added=session.get("lines_added") or 0,
+        lines_removed=session.get("lines_removed") or 0,
+        git_commits=session.get("git_commits") or 0,
+    )
+    return attr, lane_id
+
+
+def _write_attributions(
+    attributions: list[SessionAttribution], output_dir: Path
+) -> None:
+    """Write attribution records to ``session_attributions.jsonl``."""
+    attr_file = output_dir / "session_attributions.jsonl"
+    with attr_file.open("w", encoding="utf-8") as f:
+        for attr in attributions:
+            f.write(json.dumps(asdict(attr), default=str) + "\n")
+
+
+def _count_attribution_quality(
+    attributions: list[SessionAttribution],
+) -> tuple[int, int, int]:
+    """Count attributions by quality tier.
+
+    Returns
+    -------
+    tuple[int, int, int]
+        ``(attributed, partially_attributed, unattributed)`` counts.
+    """
+    n_attributed = sum(
+        1 for a in attributions if a.quality == AttributionQuality.ATTRIBUTED.value
+    )
+    n_partial = sum(
+        1
+        for a in attributions
+        if a.quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value
+    )
+    n_unattributed = sum(
+        1 for a in attributions if a.quality == AttributionQuality.UNATTRIBUTED.value
+    )
+    return n_attributed, n_partial, n_unattributed
 
 
 def attribute_sessions(
@@ -820,58 +908,15 @@ def attribute_sessions(
     lanes_seen: set[str] = set()
 
     for session in sessions:
-        sid = session.get("session_id", "")
-        project_path = session.get("project_path")
-        lane_id, worktree_name = infer_lane_from_path(project_path)
-
-        pool = _classify_pool(lane_id) if lane_id else None
-
-        if lane_id is not None and lane_id != "main-checkout":
-            quality = AttributionQuality.PARTIALLY_ATTRIBUTED.value
-            lanes_seen.add(lane_id)
-        elif lane_id == "main-checkout":
-            quality = AttributionQuality.PARTIALLY_ATTRIBUTED.value
-            lanes_seen.add(lane_id)
-        else:
-            quality = AttributionQuality.UNATTRIBUTED.value
-
-        attr = SessionAttribution(
-            session_id=sid,
-            lane_id=lane_id,
-            worktree_class=pool,
-            worktree_name=worktree_name,
-            quality=quality,
-            attribution_timestamp=session.get("start_time", now),
-            input_tokens=session.get("input_tokens") or 0,
-            output_tokens=session.get("output_tokens") or 0,
-            duration_minutes=session.get("duration_minutes") or 0,
-            lines_added=session.get("lines_added") or 0,
-            lines_removed=session.get("lines_removed") or 0,
-            git_commits=session.get("git_commits") or 0,
-        )
+        attr, lane_id = _build_attribution(session, now)
         attributions.append(attr)
+        if lane_id is not None:
+            lanes_seen.add(lane_id)
 
-    # Join to task packets (upgrades quality where match found)
     join_to_packets(attributions, task_queue_root=task_queue_root)
+    _write_attributions(attributions, resolved_output)
 
-    # Write attributions
-    attr_file = resolved_output / "session_attributions.jsonl"
-    with attr_file.open("w", encoding="utf-8") as f:
-        for attr in attributions:
-            f.write(json.dumps(asdict(attr), default=str) + "\n")
-
-    # Count by quality
-    n_attributed = sum(
-        1 for a in attributions if a.quality == AttributionQuality.ATTRIBUTED.value
-    )
-    n_partial = sum(
-        1
-        for a in attributions
-        if a.quality == AttributionQuality.PARTIALLY_ATTRIBUTED.value
-    )
-    n_unattributed = sum(
-        1 for a in attributions if a.quality == AttributionQuality.UNATTRIBUTED.value
-    )
+    n_attributed, n_partial, n_unattributed = _count_attribution_quality(attributions)
 
     return AttributionResult(
         total_sessions=len(attributions),
