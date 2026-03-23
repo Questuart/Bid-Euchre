@@ -960,6 +960,12 @@ def reset_worktree(
         if is_dirty and force:
             ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S")
             diff_path = Path(f"/tmp/{lane_id}_{ts}.diff")
+            # Disambiguate if a backup with this timestamp already exists
+            # (multiple resets within the same second)
+            seq = 1
+            while diff_path.exists():
+                diff_path = Path(f"/tmp/{lane_id}_{ts}_{seq}.diff")
+                seq += 1
             diff_result = subprocess.run(
                 ["git", "diff", "HEAD"],
                 cwd=worktree_path,
