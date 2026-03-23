@@ -45,8 +45,9 @@ logger = logging.getLogger("ops.worker_pool")
 # ---------------------------------------------------------------------------
 
 #: Maximum number of simultaneously active (non-idle) author lanes.
-#: Matches the 5 persistent author worktrees in steward-session.sh.
-MAX_ACTIVE_AUTHORS: int = 5
+#: Matches the dual-domain layout in steward-session.sh:
+#: 4 platform + 4 browser-game + 1 scratch + 3 flex = 12 worker lanes.
+MAX_ACTIVE_AUTHORS: int = 12
 
 #: Idle threshold (minutes) before a lane is eligible for parking.
 IDLE_PARK_MINUTES: int = 15
@@ -845,6 +846,8 @@ def dispatch_to_worker(
     2. Take pool snapshot, verify lane_id has capacity.
     3. If lane is parked/retired: wake_worker() first.
     4. Transition packet to "dispatched" with owner = lane_id.
+    4b. Copy dispatched packet JSON to the target worktree's task_queue
+        so the author lane can discover it via ``/start-task``.
     5. Write inbox message via message_bus (audit trail).
     6. Nudge the target pane with ``/start-task <packet_id>``.
     7. Record delivery outcome (update inbox message status).
@@ -966,6 +969,34 @@ def dispatch_to_worker(
             reason=f"Failed to transition packet: {exc}",
             executed=False,
             error="transition_failed",
+        )
+
+    # 4b. Copy dispatched packet to the target worktree's task_queue
+    #     so the author lane can discover it via /start-task.
+    worktree_path = _resolve_worktree_path(lane_id, runtime_dir)
+    if worktree_path:
+        wt_task_queue = Path(worktree_path) / ".claude" / "runtime" / "task_queue"
+        try:
+            wt_task_queue.mkdir(parents=True, exist_ok=True)
+            src_packet = task_queue_root / f"{packet_id}.json"
+            if src_packet.exists():
+                shutil.copy2(str(src_packet), str(wt_task_queue / f"{packet_id}.json"))
+                logger.info(
+                    "Copied packet %s to worktree task_queue at %s",
+                    packet_id,
+                    wt_task_queue,
+                )
+        except OSError as exc:
+            logger.warning(
+                "Failed to copy packet %s to worktree %s: %s",
+                packet_id,
+                worktree_path,
+                exc,
+            )
+    else:
+        logger.warning(
+            "Could not resolve worktree path for %s; packet not copied to worktree",
+            lane_id,
         )
 
     # 5. Write inbox message via message_bus

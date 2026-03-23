@@ -127,7 +127,7 @@ class TestConstants:
     """Test module-level constants."""
 
     def test_max_active_authors(self) -> None:
-        assert MAX_ACTIVE_AUTHORS == 5
+        assert MAX_ACTIVE_AUTHORS == 12
 
     def test_idle_park_minutes(self) -> None:
         assert IDLE_PARK_MINUTES == 15
@@ -401,9 +401,24 @@ class TestSelectWorker:
 
     def test_no_capacity(self) -> None:
         """At MAX_ACTIVE_AUTHORS, returns None."""
+        # Create 12 active workers to fill the dual-domain layout capacity
+        lane_ids = [
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            "author-scratch",
+            "brws-author-a",
+            "brws-author-b",
+            "brws-author-c",
+            "brws-author-d",
+            "flex-a",
+            "flex-b",
+            "flex-c",
+        ]
         workers = [
-            _make_worker(f"author-{c}", "active", current_task_id=f"t{i}")
-            for i, c in enumerate(["a", "b", "c", "d", "scratch"])
+            _make_worker(lid, "active", current_task_id=f"t{i}")
+            for i, lid in enumerate(lane_ids)
         ]
         pool = _make_pool(workers)
         assert pool.available_capacity == 0
@@ -1274,6 +1289,95 @@ class TestDispatchToWorker:
 
         # transition_status should receive task_queue subdir
         mock_transition.assert_called_once_with("pkt1", "dispatched", expected_tq)
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_copies_packet_to_worktree(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_resolve_wt: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+        tmp_path: Path,
+    ) -> None:
+        """After dispatch, the packet JSON is copied to the worktree task_queue."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test",
+            description="Test task",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+
+        # Simulate the dispatched packet file that transition_status would write
+        tq_dir = runtime_dir / "task_queue"
+        tq_dir.mkdir(parents=True, exist_ok=True)
+        packet_file = tq_dir / "pkt1.json"
+        packet_file.write_text(
+            json.dumps({"packet_id": "pkt1", "status": "dispatched"})
+        )
+
+        # Set up a fake worktree directory
+        worktree_dir = tmp_path / "worktree-author-a"
+        worktree_dir.mkdir()
+        mock_resolve_wt.return_value = str(worktree_dir)
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        # Verify the packet was copied to the worktree's task_queue
+        wt_packet = worktree_dir / ".claude" / "runtime" / "task_queue" / "pkt1.json"
+        assert wt_packet.exists(), "Packet JSON should be copied to worktree task_queue"
+        copied_data = json.loads(wt_packet.read_text())
+        assert copied_data["packet_id"] == "pkt1"
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_succeeds_when_worktree_path_unresolved(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_resolve_wt: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch still succeeds even when worktree path cannot be resolved."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test",
+            description="Test task",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_resolve_wt.return_value = None  # worktree path not found
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        # Dispatch should still succeed — copy is best-effort
+        assert result.executed is True
+        assert result.error is None
 
 
 # ---------------------------------------------------------------------------
