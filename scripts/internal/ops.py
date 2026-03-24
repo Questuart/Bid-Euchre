@@ -38,7 +38,7 @@ Usage:
     uv run python scripts/internal/ops.py task approve PACKET_ID [--json]
     uv run python scripts/internal/ops.py task dispatch PACKET_ID LANE_ID [--approve] [--json]
     uv run python scripts/internal/ops.py task accept PACKET_ID --lane LANE [--json]
-    uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--json]
+    uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--prioritized] [--json]
     uv run python scripts/internal/ops.py inbox stats [--json]
     uv run python scripts/internal/ops.py inbox ack MSG_ID --lane LANE [--json]
     uv run python scripts/internal/ops.py message show MSG_ID [--json]
@@ -1819,6 +1819,7 @@ def cmd_inbox(args: argparse.Namespace) -> int:
         import_native_inbox,
         inbox_stats,
         read_inbox,
+        read_inbox_prioritized,
         shared_bus_root,
     )
 
@@ -1977,6 +1978,45 @@ def cmd_inbox(args: argparse.Namespace) -> int:
                     print(f"  {ln['lane_id']:20s}  {total} msg  ({pending} unresolved)")
         return 0
 
+    # --prioritized: group messages by P0/P1/P2 tiers
+    use_prioritized = getattr(args, "prioritized", False)
+    if use_prioritized:
+        p0, p1, p2 = read_inbox_prioritized(
+            lane,
+            bus_root,
+            status=status_filter,
+        )
+        if args.json:
+            print(
+                json.dumps(
+                    {"p0": p0, "p1": p1, "p2": p2},
+                    indent=2,
+                    default=str,
+                )
+            )
+        else:
+            total = len(p0) + len(p1) + len(p2)
+            if total == 0:
+                print(f"No messages in {lane} inbox.")
+            else:
+                print(f"Inbox for {lane}: {total} message(s) (prioritized)")
+                for label, tier in [
+                    ("P0 (urgent)", p0),
+                    ("P1 (high)", p1),
+                    ("P2 (normal/low)", p2),
+                ]:
+                    print()
+                    print(f"  {label}: {len(tier)} message(s)")
+                    for msg in tier:
+                        print(
+                            f"    {msg.get('message_id', '?'):16s}  "
+                            f"[{msg.get('status', '?'):14s}]  "
+                            f"{msg.get('message_type', '?'):18s}  "
+                            f"from={msg.get('from_lane', '?'):12s}  "
+                            f"{msg.get('summary', '')[:50]}"
+                        )
+        return 0
+
     messages = read_inbox(
         lane,
         bus_root,
@@ -2024,6 +2064,7 @@ def cmd_message(args: argparse.Namespace) -> int:
             summary=args.summary,
             task_id=getattr(args, "task_id", None),
             thread_id=getattr(args, "thread_id", None),
+            priority=getattr(args, "priority", "normal"),
         )
         try:
             msg_id = send_message(msg, bus_root)
@@ -3336,6 +3377,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Import Claude native inbox messages before listing (requires --lane)",
     )
+    inbox_parser.add_argument(
+        "--prioritized",
+        action="store_true",
+        default=False,
+        help="Group messages by priority tier (P0/P1/P2). Requires --lane.",
+    )
 
     # message (Platform-3 audit trail)
     message_parser = subparsers.add_parser(
@@ -3377,6 +3424,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     message_send_parser.add_argument(
         "--thread", default=None, dest="thread_id", help="Thread ID for conversation"
+    )
+    message_send_parser.add_argument(
+        "--priority",
+        default="normal",
+        choices=["low", "normal", "high", "urgent"],
+        help="Message priority (default: normal)",
     )
 
     # supervisor (Platform-6: supervisor routines and delta summaries)
