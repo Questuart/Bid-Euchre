@@ -5,6 +5,7 @@ Uses an in-memory SQLite database for isolation and speed.
 Tests cover:
 1. Schema compliance — all required fields present and typed correctly
 2. Round-trip — create DB fixtures -> export -> parse -> verify field values
+3. Batch export — export_decisions with filters (human_only, match_uuid)
 """
 
 from __future__ import annotations
@@ -24,7 +25,12 @@ from web.db import (
     init_engine,
     make_session_factory,
 )
-from web.export import REQUIRED_FIELDS, SCHEMA_VERSION, decision_to_jsonl
+from web.export import (
+    REQUIRED_FIELDS,
+    SCHEMA_VERSION,
+    decision_to_jsonl,
+    export_decisions,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -435,3 +441,186 @@ class TestRoundTrip:
         assert parsed["game_state"] == state
         assert parsed["decision_time_ms"] == 3100
         assert isinstance(parsed["timestamp"], str)
+
+
+# ---------------------------------------------------------------------------
+# Batch export tests (export_decisions)
+# ---------------------------------------------------------------------------
+
+
+class TestExportDecisions:
+    """Test export_decisions() with filters and edge cases."""
+
+    def test_human_only_filter(self, session, tmp_path):
+        """export with human_only=True excludes AI decisions."""
+        player = _make_player(session)
+        match = _make_match(session, player)
+        hand = _make_hand(session, match)
+
+        # Create one human and one AI decision
+        _make_decision(
+            session,
+            match,
+            hand,
+            turn_number=0,
+            actor_type="human",
+            decision_source="human",
+        )
+        _make_decision(
+            session,
+            match,
+            hand,
+            turn_number=1,
+            actor_type="ai",
+            decision_source="heuristic",
+        )
+        session.commit()
+
+        output = tmp_path / "human_only.jsonl"
+        count = export_decisions(session, output, human_only=True)
+
+        assert count == 1
+        lines = output.read_text().strip().splitlines()
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+        assert record["actor_type"] == "human"
+
+    def test_match_uuid_filter(self, session, tmp_path):
+        """export with match_uuid filters to that match only."""
+        player = _make_player(session)
+        target_uuid = str(uuid.uuid4())
+        other_uuid = str(uuid.uuid4())
+        match_target = _make_match(session, player, match_uuid=target_uuid, seed=10)
+        match_other = _make_match(session, player, match_uuid=other_uuid, seed=20)
+        hand_target = _make_hand(session, match_target, hand_number=1)
+        hand_other = _make_hand(session, match_other, hand_number=1)
+
+        _make_decision(session, match_target, hand_target, turn_number=0)
+        _make_decision(session, match_other, hand_other, turn_number=0)
+        session.commit()
+
+        output = tmp_path / "single_match.jsonl"
+        count = export_decisions(session, output, match_uuid=target_uuid)
+
+        assert count == 1
+        lines = output.read_text().strip().splitlines()
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+        assert record["match_uuid"] == target_uuid
+
+    def test_empty_db_produces_empty_file(self, session, tmp_path):
+        """Export from empty DB produces empty file and returns 0."""
+        output = tmp_path / "empty.jsonl"
+        count = export_decisions(session, output)
+
+        assert count == 0
+        content = output.read_text()
+        assert content == ""
+
+    def test_multi_match_export_all(self, session, tmp_path):
+        """Export without filters includes all decisions across matches."""
+        player = _make_player(session)
+        match1 = _make_match(session, player, seed=10)
+        match2 = _make_match(session, player, seed=20)
+        hand1 = _make_hand(session, match1, hand_number=1)
+        hand2 = _make_hand(session, match2, hand_number=1)
+
+        # 2 decisions in match1, 1 in match2
+        _make_decision(session, match1, hand1, turn_number=0)
+        _make_decision(
+            session,
+            match1,
+            hand1,
+            turn_number=1,
+            actor_type="ai",
+            decision_source="heuristic",
+        )
+        _make_decision(session, match2, hand2, turn_number=0)
+        session.commit()
+
+        output = tmp_path / "all.jsonl"
+        count = export_decisions(session, output)
+
+        assert count == 3
+        lines = output.read_text().strip().splitlines()
+        assert len(lines) == 3
+
+        # Verify both match UUIDs appear
+        match_uuids = {json.loads(line)["match_uuid"] for line in lines}
+        assert match1.match_uuid in match_uuids
+        assert match2.match_uuid in match_uuids
+
+    def test_combined_filters(self, session, tmp_path):
+        """match_uuid + human_only filters combine correctly."""
+        player = _make_player(session)
+        target_uuid = str(uuid.uuid4())
+        other_uuid = str(uuid.uuid4())
+        match_target = _make_match(session, player, match_uuid=target_uuid, seed=10)
+        match_other = _make_match(session, player, match_uuid=other_uuid, seed=20)
+        hand_target = _make_hand(session, match_target, hand_number=1)
+        hand_other = _make_hand(session, match_other, hand_number=1)
+
+        # Target match: human + AI
+        _make_decision(
+            session,
+            match_target,
+            hand_target,
+            turn_number=0,
+            actor_type="human",
+            decision_source="human",
+        )
+        _make_decision(
+            session,
+            match_target,
+            hand_target,
+            turn_number=1,
+            actor_type="ai",
+            decision_source="heuristic",
+        )
+        # Other match: human
+        _make_decision(
+            session,
+            match_other,
+            hand_other,
+            turn_number=0,
+            actor_type="human",
+            decision_source="human",
+        )
+        session.commit()
+
+        output = tmp_path / "combined.jsonl"
+        count = export_decisions(
+            session, output, match_uuid=target_uuid, human_only=True
+        )
+
+        assert count == 1
+        lines = output.read_text().strip().splitlines()
+        record = json.loads(lines[0])
+        assert record["match_uuid"] == target_uuid
+        assert record["actor_type"] == "human"
+
+    def test_output_lines_are_valid_json(self, session, tmp_path):
+        """Every line in the output file is valid JSON with schema fields."""
+        player = _make_player(session)
+        match = _make_match(session, player)
+        hand = _make_hand(session, match)
+        _make_decision(session, match, hand, turn_number=0)
+        _make_decision(
+            session,
+            match,
+            hand,
+            turn_number=1,
+            actor_type="ai",
+            decision_source="heuristic",
+        )
+        session.commit()
+
+        output = tmp_path / "valid.jsonl"
+        count = export_decisions(session, output)
+        assert count == 2
+
+        lines = output.read_text().strip().splitlines()
+        for line in lines:
+            record = json.loads(line)  # Must not raise
+            missing = REQUIRED_FIELDS - set(record.keys())
+            assert not missing, f"Missing required fields: {missing}"
