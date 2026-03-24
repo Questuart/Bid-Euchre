@@ -1913,8 +1913,14 @@ def cmd_inbox(args: argparse.Namespace) -> int:
     # Default: list messages
     lane = getattr(args, "lane", None)
     status_filter = getattr(args, "status", None)
-    type_filter = getattr(args, "type", None)
+    raw_type = getattr(args, "type", None)
     thread_filter = getattr(args, "thread", None)
+
+    # Support comma-separated type filters (e.g. --type completion,escalation)
+    type_filter: str | list[str] | None = None
+    if raw_type is not None:
+        parts = [t.strip() for t in raw_type.split(",") if t.strip()]
+        type_filter = parts[0] if len(parts) == 1 else parts
 
     if lane is None:
         # Show aggregate stats across all lanes
@@ -3208,7 +3214,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--lane", default=None, help="Show inbox for a specific lane"
     )
     inbox_parser.add_argument("--status", default=None, help="Filter by message status")
-    inbox_parser.add_argument("--type", default=None, help="Filter by message type")
+    inbox_parser.add_argument(
+        "--type",
+        default=None,
+        help="Filter by message type (comma-separated for multiple, e.g. completion,escalation)",
+    )
     inbox_parser.add_argument("--thread", default=None, help="Filter by thread ID")
     inbox_parser.add_argument(
         "--include-native",

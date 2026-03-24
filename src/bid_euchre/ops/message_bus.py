@@ -35,7 +35,7 @@ import os
 import subprocess
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -431,7 +431,7 @@ def read_inbox(
     *,
     status: str | None = None,
     thread_id: str | None = None,
-    message_type: str | None = None,
+    message_type: str | Sequence[str] | None = None,
     limit: int = 50,
     auto_expire: bool = True,
     now: float | None = None,
@@ -446,6 +446,8 @@ def read_inbox(
     to ``expired`` before filtering.
 
     Args:
+        message_type: Filter by message type.  Accepts a single type string,
+            a sequence of type strings (matches any), or ``None`` (no filter).
         now: Override for current time as Unix timestamp (for testing).
             Passed through to ``_expire_stale_on_read()``.
     """
@@ -463,6 +465,14 @@ def read_inbox(
     if auto_expire:
         _expire_stale_on_read(by_id, lane_id, root, now=now)
 
+    # Normalise message_type filter to a frozenset for O(1) lookups
+    type_filter: frozenset[str] | None = None
+    if message_type is not None:
+        if isinstance(message_type, str):
+            type_filter = frozenset({message_type})
+        else:
+            type_filter = frozenset(message_type)
+
     # Apply filters
     from collections import deque
 
@@ -472,7 +482,7 @@ def read_inbox(
             continue
         if thread_id is not None and rec.get("thread_id") != thread_id:
             continue
-        if message_type is not None and rec.get("message_type") != message_type:
+        if type_filter is not None and rec.get("message_type") not in type_filter:
             continue
         matched.append(rec)
 
@@ -505,29 +515,58 @@ def query_unresolved(
 # ---------------------------------------------------------------------------
 
 
+def _content_dedup_key(msg: BusMessage) -> tuple[str, str, str, str]:
+    """Return a content-based dedup key for a message.
+
+    Two messages are considered content-duplicates when they share the same
+    ``(to_lane, from_lane, message_type, summary)`` tuple.  This prevents
+    repeated verdict notifications, test artifacts, and other noise from
+    accumulating in the recipient's inbox.
+    """
+    return (msg.to_lane, msg.from_lane, msg.message_type, msg.summary)
+
+
 def send_message(
     msg: BusMessage,
     bus_root: Path | None = None,
     *,
     events_dir: Path | None = None,
+    deduplicate: bool = False,
 ) -> str:
     """Send a message: write to audit trail + recipient inbox, emit event.
 
     Enforces duplicate suppression: if a message with the same message_id
     already exists in the audit trail, the send is rejected.
 
+    When *deduplicate* is ``True``, content-based dedup is applied: if a
+    non-terminal message with the same ``(to_lane, from_lane, message_type,
+    summary)`` already exists in the recipient's inbox, the new message is
+    silently dropped and the existing message's ID is returned.
+
     Args:
         msg: The message to send.
         bus_root: Override for bus root directory.
         events_dir: Override for events directory (for testing).
+        deduplicate: Enable content-based duplicate suppression.
 
     Returns:
-        The message_id of the sent message.
+        The message_id of the sent (or existing duplicate) message.
 
     Raises:
         ValueError: If a message with the same ID already exists.
     """
     root = shared_bus_root(bus_root)
+
+    # Content-based dedup: check recipient inbox for existing match
+    if deduplicate:
+        existing = _find_content_duplicate(msg, root)
+        if existing is not None:
+            logger.debug(
+                "Content-dedup suppressed message %s (existing: %s)",
+                msg.message_id,
+                existing,
+            )
+            return existing
 
     # Duplicate suppression: check audit trail under lock
     audit_path = root / MESSAGES_FILE
@@ -591,6 +630,38 @@ def send_message(
         msg.message_type,
     )
     return msg.message_id
+
+
+def _find_content_duplicate(msg: BusMessage, bus_root: Path) -> str | None:
+    """Check the recipient inbox for a non-terminal content-duplicate.
+
+    Returns the existing message_id if found, else ``None``.
+    """
+    raw = _read_inbox_raw(msg.to_lane, bus_root)
+
+    # Deduplicate: latest record per message_id
+    by_id: dict[str, dict[str, Any]] = {}
+    for rec in raw:
+        mid = rec.get("message_id")
+        if mid:
+            by_id[mid] = rec
+
+    terminal = {"resolved", "expired", "dead_lettered"}
+    key = _content_dedup_key(msg)
+
+    for mid, rec in by_id.items():
+        if rec.get("status") in terminal:
+            continue
+        existing_key = (
+            rec.get("to_lane", ""),
+            rec.get("from_lane", ""),
+            rec.get("message_type", ""),
+            rec.get("summary", ""),
+        )
+        if existing_key == key:
+            return mid
+
+    return None
 
 
 def _update_inbox_status(
