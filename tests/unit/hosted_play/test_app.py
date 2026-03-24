@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 
 from web.ai_manager import AIManager
@@ -61,15 +63,15 @@ class TestLifespan:
         app = _make_app(tmp_path)
         with TestClient(app):
             assert hasattr(app.state, "engine")
-            assert app.state.engine is not None
+            assert isinstance(app.state.engine, Engine)
 
     def test_state_has_session_factory(self, tmp_path):
         app = _make_app(tmp_path)
         with TestClient(app):
             assert hasattr(app.state, "session_factory")
-            # Factory should be callable
+            # Factory should be callable and produce a Session
             session = app.state.session_factory()
-            assert session is not None
+            assert isinstance(session, Session)
             session.close()
 
     def test_state_has_ai_manager(self, tmp_path):

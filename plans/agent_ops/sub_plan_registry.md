@@ -26,7 +26,7 @@
 | SP-3-08 | Monitoring cycle with session-start auto-launch | Post-Phase-3 transition: ops monitoring cycle and auto-launch | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1277) |
 | SP-4-01 | Platform-8 scope lock | Phase 4, Platform-8 scope lock and sub-plan registration | completed | author-scratch | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | 2026-03-23 | 2026-03-23 |
 | SP-4-02 | Remote-ops preflight hardening | Phase 4, Pre-Platform-8 operational hardening | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | 2026-03-23 | 2026-03-24 (~20 PRs; all 6 steps complete, all exit criteria met) |
-| SP-4-03 | Token economy observability and dashboard | Phase 4, Pre-Platform-8 token observability | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | 2026-03-23 | 2026-03-23 (baseline report at `plans/sessions/2026-03-23_token-economy-baseline.md`; live dashboard integration is partial — follow-up needed) |
+| SP-4-03 | Token economy observability and dashboard | Phase 4, Pre-Platform-8 token observability | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | 2026-03-23 | 2026-03-24 (baseline report at `plans/sessions/2026-03-23_token-economy-baseline.md`; dashboard auto-import via PR #1466) |
 | SP-4-04 | Platform-8a Telegram transport configuration | Phase 4, Platform-8a transport proving | completed | flex-a | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | 2026-03-23 | 2026-03-24 (PRs #1436, #1451, #1452; proven end-to-end) |
 
 ## Status Summary
@@ -36,7 +36,7 @@
 | proposed | 0 |
 | in_progress | 0 |
 | blocked | 0 |
-| completed | 17 |
+| completed | 18 |
 | abandoned | 0 |
 | superseded | 1 |
 
