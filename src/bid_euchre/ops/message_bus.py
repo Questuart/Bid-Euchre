@@ -1456,7 +1456,6 @@ def compact_inbox(
 
                 # Priority-aware retention:
                 # - Unresolved urgent (P0) messages are always kept
-                # - Unacked high (P1) messages get 24h retention
                 if priority == "urgent" and status != "resolved":
                     kept.append(rec)
                     continue
@@ -1474,10 +1473,7 @@ def compact_inbox(
                     kept.append(rec)
                     continue
 
-                # Unacked high-priority messages use 24h retention floor
-                if priority == "high" and status == "pending":
-                    effective_cutoff = current_time - (24 * 3600)
-                elif tiered:
+                if tiered:
                     effective_cutoff = _tiered_cutoff(
                         status, current_time, max_age_hours
                     )

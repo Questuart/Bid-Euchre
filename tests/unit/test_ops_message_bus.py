@@ -2483,10 +2483,10 @@ class TestPriorityAwareCompaction:
         result = compact_inbox("lane-a", bus_root, now=future_time, tiered=True)
         assert result["removed"] == 1
 
-    def test_unacked_high_messages_survive_compaction(
+    def test_pending_high_messages_survive_compaction(
         self, bus_root: Path, events_dir: Path
     ) -> None:
-        """Unacked high-priority (P1) messages get 24h retention during compaction."""
+        """Pending high-priority (P1) messages are always kept — pending is not purgeable."""
         msg = create_message(
             "ops",
             "lane-a",
@@ -2496,36 +2496,43 @@ class TestPriorityAwareCompaction:
         )
         send_message(msg, bus_root, events_dir=events_dir)
 
-        # Time at 5 hours — past normal handled (4h) but within high's 24h
-        future_time = time.time() + (5 * 3600)
+        # Time far in the future — well past any retention window
+        future_time = time.time() + (48 * 3600)
         result = compact_inbox("lane-a", bus_root, now=future_time, tiered=True)
-        # Pending message with high priority — always kept (not purgeable)
+        # Pending messages are not in the purgeable set, so always kept
         assert result["removed"] == 0
         assert result["after"] == 1
 
-    def test_unacked_high_pending_survives_past_default_handled_retention(
+    def test_acked_high_follows_tiered_retention(
         self, bus_root: Path, events_dir: Path
     ) -> None:
-        """Pending high-priority messages are kept even past normal handled retention.
+        """Acked high-priority messages follow normal tiered handled retention (4h).
 
-        Note: pending messages are not purgeable, so this confirms the
-        priority-aware path handles the 'pending' status correctly in the
-        'not in purgeable' branch, which fires before priority checks on
-        acked/terminal statuses.
+        After the dead-code removal (#1611), acked messages of any priority
+        use the same tiered retention path — there is no special 24h floor
+        for high-priority acked messages.
         """
         msg = create_message(
             "ops",
             "lane-a",
             "assignment",
-            "High priority pending",
+            "High priority acked",
             priority="high",
         )
         send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "lane-a", bus_root, events_dir=events_dir)
 
-        # Far future
-        future_time = time.time() + (48 * 3600)
-        result = compact_inbox("lane-a", bus_root, now=future_time, tiered=True)
+        # At 3 hours — within handled retention (4h), should survive
+        within_time = time.time() + (3 * 3600)
+        result = compact_inbox("lane-a", bus_root, now=within_time, tiered=True)
         assert result["removed"] == 0
+        assert result["after"] == 1
+
+        # At 5 hours — past handled retention (4h), should be purged
+        past_time = time.time() + (5 * 3600)
+        result = compact_inbox("lane-a", bus_root, now=past_time, tiered=True)
+        assert result["removed"] == 1
+        assert result["after"] == 0
 
 
 class TestEscalationBypassesDedup:
