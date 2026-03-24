@@ -15,7 +15,9 @@ from bid_euchre.ops.monitor import (
     SEVERITY_WARN,
     MonitorFinding,
     _default_stall_state_path,
+    _match_approval_prompt,
     _save_stall_state,
+    check_approval_stalls,
     check_auto_dispatch,
     check_lane_health,
     check_merged_dispatches,
@@ -1230,8 +1232,11 @@ class TestRunMonitoringCycle:
                 notify_orchestrator=False,
             )
 
-        # subprocess.run should NOT have been called (no gh pr list)
-        mock_run.assert_not_called()
+        # subprocess.run may be called by approval-stall check (tmux
+        # capture-pane), but NO call should contain "gh" (no PR checks).
+        for call_args in mock_run.call_args_list:
+            cmd = call_args[0][0] if call_args[0] else []
+            assert "gh" not in cmd, f"gh should not be called: {cmd}"
         categories = {f.category for f in findings}
         assert "pr_status" not in categories
 
@@ -1722,3 +1727,222 @@ class TestFormatters:
         assert data["high"] == 0
         assert len(data["findings"]) == 1
         assert data["findings"][0]["category"] == "lane_health"
+
+
+# ---------------------------------------------------------------------------
+# check_approval_stalls tests
+# ---------------------------------------------------------------------------
+
+
+class TestCheckApprovalStalls:
+    """Tests for approval-stall detection."""
+
+    def test_detects_bash_approval_prompt(self, tmp_path: Path) -> None:
+        """Detects a Bash tool-approval prompt in a lane's pane."""
+        pane_content = {
+            "author-a": (
+                "Working on implementation...\n"
+                "  Allow Bash(git status) [Y]es, always / [N]o\n"
+                ">\n"
+            ),
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        notifications: list[tuple[str, str, str]] = []
+
+        def notify_fn(lane_id: str, prompt_text: str, target: str) -> None:
+            notifications.append((lane_id, prompt_text, target))
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:platform.1",
+        ):
+            findings = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=notify_fn,
+            )
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_HIGH
+        assert findings[0].category == "approval_stall"
+        assert "author-a" in findings[0].summary
+        assert findings[0].details["lane_id"] == "author-a"
+        assert findings[0].details["tmux_target"] == "steward:platform.1"
+
+        # Notification should have been sent
+        assert len(notifications) == 1
+        assert notifications[0][0] == "author-a"
+
+    def test_detects_elicitation_dialog(self, tmp_path: Path) -> None:
+        """Detects an elicitation-style approval dialog."""
+        pane_content = {
+            "flex-a": (
+                "Analyzing code changes...\n"
+                "Permission required to write to file\n"
+                "  [A]llow this action?\n"
+            ),
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:scratch.2",
+        ):
+            findings = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=lambda *_: None,
+            )
+
+        assert len(findings) >= 1
+        approval_findings = [f for f in findings if f.category == "approval_stall"]
+        assert len(approval_findings) >= 1
+        assert "flex-a" in approval_findings[0].summary
+
+    def test_no_false_positive_on_normal_output(self, tmp_path: Path) -> None:
+        """Normal pane output does not trigger false positives."""
+        pane_content = {
+            "author-a": (
+                "Running tests...\nPASSED 42 tests in 3.2s\nAll checks green.\n"
+            ),
+            "author-b": (
+                "Editing src/bid_euchre/ops/monitor.py...\n"
+                "Changes saved successfully.\n"
+            ),
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:platform.1",
+        ):
+            findings = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=lambda *_: None,
+            )
+
+        assert len(findings) == 0
+
+    def test_dedup_prevents_repeat_notification(self, tmp_path: Path) -> None:
+        """Same prompt text on same lane is not re-reported."""
+        prompt_line = "Allow Bash(make check) [Y]es, always / [N]o"
+        pane_content = {
+            "author-c": f"Working...\n{prompt_line}\n",
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        notifications: list[tuple[str, str, str]] = []
+
+        def notify_fn(lane_id: str, prompt_text: str, target: str) -> None:
+            notifications.append((lane_id, prompt_text, target))
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:platform.3",
+        ):
+            # First check — should produce a finding
+            findings1 = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=notify_fn,
+            )
+            assert len(findings1) == 1
+            assert len(notifications) == 1
+
+            # Second check — same prompt, should be deduped
+            findings2 = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=notify_fn,
+            )
+            assert len(findings2) == 0
+            assert len(notifications) == 1  # no new notification
+
+    def test_cleared_after_unstuck(self, tmp_path: Path) -> None:
+        """A lane that gets unstuck and then re-stuck is reported again."""
+        prompt_line = "Allow Edit(file.py) [Y]es, always / [N]o"
+        stuck_content = {
+            "author-b": f"Working...\n{prompt_line}\n",
+        }
+        clear_content: dict[str, str] = {
+            "author-b": "Continuing implementation...\nDone.\n",
+        }
+        new_prompt_line = "Allow Write(new_file.py) [Y]es, always / [N]o"
+        restuck_content = {
+            "author-b": f"Working again...\n{new_prompt_line}\n",
+        }
+
+        notifications: list[tuple[str, str, str]] = []
+
+        def notify_fn(lane_id: str, prompt_text: str, target: str) -> None:
+            notifications.append((lane_id, prompt_text, target))
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:platform.2",
+        ):
+            # 1. Stuck — should report
+            findings1 = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=lambda lid: stuck_content.get(lid),
+                _notify_fn=notify_fn,
+            )
+            assert len(findings1) == 1
+
+            # 2. Unstuck — no findings, state cleared
+            findings2 = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=lambda lid: clear_content.get(lid),
+                _notify_fn=notify_fn,
+            )
+            assert len(findings2) == 0
+
+            # 3. Re-stuck on different prompt — should report again
+            findings3 = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=lambda lid: restuck_content.get(lid),
+                _notify_fn=notify_fn,
+            )
+            assert len(findings3) == 1
+            assert len(notifications) == 2  # two unique notifications
+
+
+class TestMatchApprovalPrompt:
+    """Tests for the _match_approval_prompt helper."""
+
+    def test_matches_allow_bash(self) -> None:
+        content = "some output\n  Allow Bash(git diff) to run?\n"
+        result = _match_approval_prompt(content)
+        assert result is not None
+        assert "Allow Bash" in result
+
+    def test_matches_allow_bracket(self) -> None:
+        content = "output\n[A]llow this tool?\n"
+        result = _match_approval_prompt(content)
+        assert result is not None
+
+    def test_matches_permission_required(self) -> None:
+        content = "output\nPermission required to proceed\n"
+        result = _match_approval_prompt(content)
+        assert result is not None
+        assert "Permission required" in result
+
+    def test_no_match_normal_text(self) -> None:
+        content = "Running tests...\nPASSED\nDone.\n"
+        result = _match_approval_prompt(content)
+        assert result is None
+
+    def test_matches_yes_always(self) -> None:
+        content = "prompt\n  [Y]es, always allow\n"
+        result = _match_approval_prompt(content)
+        assert result is not None

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -787,6 +788,253 @@ def check_stalled_lanes(
 
 
 # ---------------------------------------------------------------------------
+# Approval-stall detection: lanes blocked on tool-approval prompts
+# ---------------------------------------------------------------------------
+
+#: Regex patterns that match Claude Code tool-approval / elicitation prompts.
+#: Each is compiled once at import time for efficiency.
+_APPROVAL_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"Allow\s+(Bash|Edit|Write|Read|Grep|Glob|NotebookEdit)", re.IGNORECASE),
+    re.compile(r"\[A\]llow", re.IGNORECASE),
+    re.compile(r"\[Y\]es,?\s*always", re.IGNORECASE),
+    re.compile(r"Permission required", re.IGNORECASE),
+    re.compile(r"Do you want to proceed", re.IGNORECASE),
+    re.compile(r"approve.*deny", re.IGNORECASE),
+]
+
+#: Lanes to check for approval stalls.  Only author and flex lanes —
+#: not orchestrator, ops, or review.
+_CHECKABLE_LANES: tuple[str, ...] = (
+    # Platform pool
+    "author-a",
+    "author-b",
+    "author-c",
+    "author-d",
+    "author-scratch",
+    # Browser-game pool
+    "brws-author-a",
+    "brws-author-b",
+    "brws-author-c",
+    "brws-author-d",
+    # Flex pool
+    "flex-a",
+    "flex-b",
+    "flex-c",
+)
+
+
+def _capture_pane_content(
+    lane_id: str,
+    tmux_session: str = "steward",
+    runtime_dir: Path | None = None,
+    *,
+    _capture_fn: Any | None = None,
+) -> str | None:
+    """Capture the visible content of a lane's tmux pane.
+
+    Args:
+        lane_id: The lane identifier.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+        _capture_fn: Optional test callable(lane_id) -> str|None.
+
+    Returns:
+        The pane content as a string, or None if capture fails.
+    """
+    if _capture_fn is not None:
+        return _capture_fn(lane_id)
+
+    from bid_euchre.ops.worker_pool import _resolve_tmux_target
+
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", target, "-p"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def _match_approval_prompt(content: str) -> str | None:
+    """Search pane content for approval-prompt patterns.
+
+    Args:
+        content: The captured pane text.
+
+    Returns:
+        The first matching line, or None if no match found.
+    """
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for pattern in _APPROVAL_PATTERNS:
+            if pattern.search(stripped):
+                return stripped
+    return None
+
+
+def _default_approval_state_path(runtime_dir: Path | None = None) -> Path:
+    """Return the path to the approval-stall dedup state file."""
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+    return runtime_dir / "approval_stall_state.json"
+
+
+def _load_approval_state(state_path: Path) -> dict[str, Any]:
+    """Load approval-stall dedup state from disk."""
+    try:
+        return json.loads(state_path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_approval_state(state_path: Path, state: dict[str, Any]) -> None:
+    """Persist approval-stall dedup state to disk."""
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2) + "\n")
+
+
+def check_approval_stalls(
+    tmux_session: str = "steward",
+    runtime_dir: Path | None = None,
+    *,
+    _capture_fn: Any | None = None,
+    _notify_fn: Any | None = None,
+) -> list[MonitorFinding]:
+    """Detect author lanes stuck on tool-approval prompts.
+
+    Iterates through checkable lane panes, captures their content via
+    ``tmux capture-pane``, and searches for approval-prompt patterns.
+
+    Deduplication: tracks which lanes have been reported as stuck. Only sends
+    a new notification if:
+    - The lane wasn't previously reported as stuck, OR
+    - The lane was unstuck and is now stuck again on a different prompt.
+
+    Args:
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+        _capture_fn: Optional test callable(lane_id) -> str|None.
+        _notify_fn: Optional test callable(lane_id, prompt_text, target) for
+            notification side-effects.
+
+    Returns:
+        List of findings for lanes stuck on approval prompts.
+    """
+    findings: list[MonitorFinding] = []
+    state_path = _default_approval_state_path(runtime_dir)
+    state = _load_approval_state(state_path)
+    reported: dict[str, str] = state.get("reported", {})
+
+    from bid_euchre.ops.worker_pool import _resolve_tmux_target
+
+    currently_stuck: dict[str, str] = {}
+
+    for lane_id in _CHECKABLE_LANES:
+        content = _capture_pane_content(
+            lane_id,
+            tmux_session,
+            runtime_dir,
+            _capture_fn=_capture_fn,
+        )
+        if content is None:
+            continue
+
+        prompt_text = _match_approval_prompt(content)
+        if prompt_text is None:
+            continue
+
+        # Resolve tmux target for the finding details
+        try:
+            target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+        except Exception:
+            target = f"{tmux_session}:{lane_id}"
+
+        currently_stuck[lane_id] = prompt_text
+
+        # Dedup: skip if already reported with the same prompt text
+        if reported.get(lane_id) == prompt_text:
+            continue
+
+        findings.append(
+            MonitorFinding(
+                category="approval_stall",
+                severity=SEVERITY_HIGH,
+                summary=(
+                    f"Lane {lane_id!r} stuck on approval prompt: {prompt_text[:80]}"
+                ),
+                details={
+                    "lane_id": lane_id,
+                    "prompt_text": prompt_text,
+                    "tmux_target": target,
+                },
+            )
+        )
+
+        # Notify orchestrator for each new stall
+        if _notify_fn is not None:
+            _notify_fn(lane_id, prompt_text, target)
+        else:
+            _notify_approval_stall(lane_id, prompt_text, target)
+
+    # Update dedup state: only keep lanes that are currently stuck
+    new_reported: dict[str, str] = {}
+    for lane_id, prompt_text in currently_stuck.items():
+        new_reported[lane_id] = prompt_text
+
+    _save_approval_state(state_path, {"reported": new_reported})
+
+    return findings
+
+
+def _notify_approval_stall(
+    lane_id: str,
+    prompt_text: str,
+    tmux_target: str,
+) -> str | None:
+    """Send an approval-stall escalation to the orchestrator inbox.
+
+    Args:
+        lane_id: The blocked lane.
+        prompt_text: The approval prompt text.
+        tmux_target: The tmux pane target for manual navigation.
+
+    Returns:
+        The message_id if sent, or None on failure.
+    """
+    try:
+        from bid_euchre.ops.message_bus import create_message, send_message
+
+        msg = create_message(
+            from_lane="ops-monitor",
+            to_lane="orchestrator",
+            message_type="escalation",
+            summary=(f"Lane {lane_id!r} stuck on approval prompt: {prompt_text[:120]}"),
+            payload={
+                "lane_id": lane_id,
+                "prompt_text": prompt_text,
+                "tmux_target": tmux_target,
+                "action": "User must navigate to tmux pane and approve/deny",
+            },
+        )
+        return send_message(msg)
+    except Exception as exc:
+        logger.warning(
+            "Failed to notify orchestrator about approval stall for %r: %s",
+            lane_id,
+            exc,
+        )
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Auto-dispatch: assign approved packets to idle lanes (SP-4-02 Step 6)
 # ---------------------------------------------------------------------------
 
@@ -1095,8 +1343,9 @@ def run_monitoring_cycle(
     2. Open PR status (via ``gh``)
     3. Stale dispatched packet detection
     4. Stalled lane detection (acked but idle), with optional recovery
-    5. Auto-complete dispatched packets whose PRs were merged externally
-    6. Auto-dispatch approved packets to idle lanes
+    5. Approval-stall detection (lanes blocked on tool-approval prompts)
+    6. Auto-complete dispatched packets whose PRs were merged externally
+    7. Auto-dispatch approved packets to idle lanes
 
     Optionally sends a summary to the orchestrator inbox.
 
@@ -1129,15 +1378,18 @@ def run_monitoring_cycle(
     # 4. Stalled lane detection (acked dispatches with no progress)
     findings.extend(check_stalled_lanes(runtime_dir, now=now, no_recovery=no_recovery))
 
-    # 5. Auto-complete dispatched packets whose PRs were merged externally
+    # 5. Approval-stall detection (lanes blocked on approval prompts)
+    findings.extend(check_approval_stalls(runtime_dir=runtime_dir))
+
+    # 6. Auto-complete dispatched packets whose PRs were merged externally
     if not skip_pr_check:
         findings.extend(check_merged_dispatches(runtime_dir))
 
-    # 6. Auto-dispatch approved packets to idle lanes
+    # 7. Auto-dispatch approved packets to idle lanes
     if not no_auto_dispatch:
         findings.extend(check_auto_dispatch(runtime_dir, current_findings=findings))
 
-    # 7. Notify orchestrator
+    # 8. Notify orchestrator
     if notify_orchestrator:
         _send_findings_to_orchestrator(findings)
 
