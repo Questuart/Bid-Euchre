@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-24 by Codex (register SP-4-05 reactive control-loop hardening)
+**Last updated:** 2026-03-24 by flex-c (SP-4-05 Step 0 complete — cmux guard)
 
 ---
 
@@ -23,7 +23,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Step | Status | Date | Agent/Session | Notes |
 |------|--------|------|---------------|-------|
 | Step 0: Phase 4 scope lock and sub-plan registration | COMPLETE | 2026-03-23 | author-scratch | SP-4-01 created and registered. |
-| Step 1: Platform-8a preflight and Telegram transport skeleton | PENDING | -- | -- | Verify channel prerequisites, transport choice, kill switch shape, and fallback path. |
+| Step 1: Platform-8a preflight and Telegram transport skeleton | COMPLETE | 2026-03-24 | flex-b | SP-4-04 all steps proven. PRs #1436, #1451, #1452 merged. Pairing confirmed (user 8122530898), messages flow both ways, kill switch verified. |
 | Step 2: Platform-8b repo-owned remote audit trail, kill switch, and operator fallback | PENDING | -- | -- | Every inbound/outbound exchange durably logged before wider proving use. |
 | Step 3: Platform-9a idle-attention alerts and acknowledgement loop | PENDING | -- | -- | Prove one useful alert path with dedupe, rate limiting, and ack behavior. |
 | Step 4: Platform-9b away-from-desk queue-moving proving run | PENDING | -- | -- | Demonstrate status, reroute, review request, and blocker inspection through `orchestrator`. |
@@ -36,10 +36,10 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
 | SP-4-01 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | completed | Step 0 |
-| SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | in_progress | Pre-Platform-8 |
+| SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | completed | Pre-Platform-8 |
 | SP-4-03 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | completed | Pre-Platform-8 |
-| SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | in_progress | Step 1 |
-| SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | proposed | Pre-Platform-8 |
+| SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | completed | Step 1 |
+| SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | in_progress | Pre-Platform-8 |
 
 ### Shared Surface Ownership
 
@@ -61,6 +61,10 @@ implementation.
 - [x] ~~SP-3-05 dual-domain steward layout transition~~ — COMPLETE (2026-03-23).
   Dual-domain layout shipped in pre-proving hardening session (PRs #1281–#1294).
   Proving run passed 2026-03-23. Phase 4 scope lock is unblocked.
+- [x] ~~SP-4-04 Steps 3-5~~ — COMPLETE (2026-03-24). All user-side Telegram
+  preflight done. Pairing confirmed (user 8122530898), permission relay proven
+  (messages flow both ways through orchestrator), kill switch verified
+  (STEWARD_TELEGRAM_ENABLED env var override + auto-detect via `claude plugins list`).
 
 ## Session Log
 
@@ -74,5 +78,9 @@ implementation.
 | 2026-03-23 | SP-4-04 registered (flex-a). Platform-8a Telegram transport sub-plan: 6 steps covering preflight, plugin config, pairing proof, permission relay proof, kill switch proof, and registry integration. Steps 3-5 parallelizable after Step 2. Key constraint: orchestrator-only ingress, no audit trail (deferred to Platform-9c). |
 | 2026-03-23 | SP-4-03 completed (author-a). Baseline token economy report produced at `plans/sessions/2026-03-23_token-economy-baseline.md`. Key findings: 52.4% shipped-token rate, 10.9K tokens/commit, 71% zero-commit session rate. Top 3 waste patterns: abandoned-work churn (42.9% of tokens), wrong-approach retry (60 friction events), high-error session tax (16.8% of tokens). Pre-steward data only (2026-02-03 to 2026-03-14); per-lane attribution requires post-steward follow-up. |
 | 2026-03-23 | SP-4-04 Step 2 (author-a): Telegram config added to tmux launcher. `STEWARD_TELEGRAM_ENABLED` env var (default 0) controls kill switch. When enabled, appends `--channels telegram` to orchestrator pane only. `STEWARD_CHANNELS` exported for orchestrator. Author lanes remain tmux-only. |
+| 2026-03-23 | Governance reconciliation (author-scratch): Fixed sub_plan_registry.md vs checkpoints.md disagreement — SP-4-03 updated to `completed` (baseline report done; live dashboard integration partial, follow-up needed), SP-4-04 updated to `in_progress` with owner `flex-a`. SP-4-04 Steps 3-5 marked BLOCKED on user-side Telegram preflight. |
+| 2026-03-24 | SP-4-04 COMPLETE (flex-b). Telegram transport proven end-to-end. All 5 core steps done: preflight (claude >=2.1.80, plugin installed), plugin config (PRs #1436, #1451, #1452), pairing proof (user 8122530898), permission relay (messages flow both ways through orchestrator), kill switch (STEWARD_TELEGRAM_ENABLED env var override + auto-detect). Step 6 (registry integration) deferred — optional dashboard indicator, not blocking. Phase Step 1 (Platform-8a) marked COMPLETE. |
+| 2026-03-24 | SP-4-02 COMPLETE (flex-a assessment). All 6 steps materially done: lifecycle proven (#1286, #1293, #1304, #1362), backlog cleaned (#1383), stall recovery (#1340, #1368, #1434), scope enforcement (#1375, #1395, #1400), reset/clear validated (#1350, #1369, #1373, #1386, #1389, #1411, #1425), auto-dispatch (#1374, #1387). Total: ~20 PRs (vs estimated 5-9). All exit criteria met. |
 | 2026-03-24 | SP-4-05 registered. Reactive control-loop hardening reframes the observability gap as a local lifecycle-control problem, not just a bus-delivery bug. Scope covers durable packet->PR linkage, shared merge-completion helpers, typed lifecycle findings in `monitor.py`, persistent ops-loop behavior, and sender-side inbox-noise reduction. This is now the primary pre-Platform-8 control-plane slice; Telegram host/plugin preflight may continue in parallel, but remote proving should not claim local reactivity until SP-4-05 passes a proving run. |
 | 2026-03-24 | `cmux` decision recorded: no active steward dependency. Current user-level `cmux` hooks are causing tmux-pane noise (`#1485`, `#1488`) without adding control-plane value. Phase 4 treats `cmux` as an optional later UX/presentation upgrade only. Immediate action is to bypass or disable `cmux` hooks for steward sessions, not to build deeper `cmux` integration. |
+| 2026-03-24 | SP-4-05 Step 0 COMPLETE (flex-c, PR #1500). cmux hooks disabled for steward sessions via session guard in `~/.claude/hooks/cmux-notify.sh`. cmux `claude-hook` binary is unmodifiable (known limitation, documented). Closes #1485, keeps #1488 open for future revisit. |
