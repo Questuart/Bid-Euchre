@@ -205,6 +205,7 @@ All code changes MUST happen in dedicated git worktrees, never on `main` in the 
 - Run `make check` before opening
 - Include exact repro command with seed in PR description
 - Use the PR template from `.github/pull_request_template.md`
+- **Define test criteria** — every PR must include specific, verifiable pass/fail conditions (not just "tests pass"). State what observable outcome proves the feature works, with exact commands and expected results.
 - After `reviewing-changes` passes, wait for Codex pre-merge review before merging (see `docs/02_agent/CODEX_GITHUB_REVIEW.md`)
 
 ### Post-Merge Review

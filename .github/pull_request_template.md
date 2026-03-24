@@ -18,6 +18,13 @@
 **Seed (if applicable):**
 -
 
+## Test Criteria
+<!-- Define specific, verifiable conditions that prove this PR is done.
+     Not just "tests pass" — what observable outcome proves the feature works? -->
+- **Pass condition:** <!-- e.g., "grep -c audit_reply src/bid_euchre/ops/*.py returns >= 1" -->
+- **Verification command:** <!-- exact command to run -->
+- **Expected result:** <!-- what the output should look like -->
+
 ## Tests
 - [ ] `PYTHONPATH=src python -m pytest -m "not slow" tests/`
 - [ ] Integration (if engine/rules changed): `PYTHONPATH=src python -m pytest tests/integration/`
