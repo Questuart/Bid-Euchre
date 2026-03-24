@@ -28,6 +28,7 @@ Modules:
     token_economy -- Token economy observability (usage data import/rollups)
     audit_trail -- Durable audit trail for remote channel exchanges (Platform-8b)
     idle_detector -- Fleet idle detection for auto-shutoff (#1572)
+    control_plane -- Controller/reconciler for canonical actionable-state projection (SP-4-07)
 """
 
 # Shared constant: GitHub status/check context names that represent
