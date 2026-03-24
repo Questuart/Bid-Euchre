@@ -40,12 +40,14 @@ fi
 
 # Extract PR number for deduplication and messaging.
 # The first positional arg after "gh pr merge" can be a bare number (PR ID),
-# a branch name (e.g., "fix/issue-1234"), or a URL.  Only treat it as a PR
-# number when it is purely digits — otherwise fall back to stdout parsing.
+# a branch name (e.g., "fix/issue-1234"), or a URL.  Try bare digits first,
+# then /pull/<N> URL pattern, then fall back to stdout parsing.
 MERGE_ARG=$(echo "$COMMAND" | sed -n 's/.*gh pr merge[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p')
 PR_NUM=""
 if [[ "$MERGE_ARG" =~ ^[0-9]+$ ]]; then
     PR_NUM="$MERGE_ARG"
+elif [[ "$MERGE_ARG" =~ /pull/([0-9]+) ]]; then
+    PR_NUM="${BASH_REMATCH[1]}"
 fi
 
 # Fallback: extract PR number from command stdout (e.g., "Merged pull request #1453")
@@ -204,8 +206,10 @@ if [[ "$COMMAND" == *"--auto"* ]]; then
                     # Only create sentinel on success so failures can retry.
                     if run_completion "$_LANE_ID" "$_PR_NUM" "$_PROJECT_DIR" "true"; then
                         touch "/tmp/.claude-post-merge-notify-${_PR_NUM}"
+                        exit 0
                     fi
-                    exit 0
+                    # Completion failed — continue polling to retry
+                    continue
                 elif [ "$STATE" = "CLOSED" ]; then
                     # PR closed without merging — nothing to do
                     exit 0

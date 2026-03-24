@@ -150,6 +150,27 @@ class TestPRNumberExtraction:
             sentinel_real.unlink(missing_ok=True)
             sentinel_fake.unlink(missing_ok=True)
 
+    def test_pr_number_from_pull_url(self, tmp_path: Path) -> None:
+        """PR number should be extracted from /pull/<N> URL in command.
+
+        Regression test for issue #1520: `gh pr merge https://...pull/123`
+        should extract 123 via URL parsing before falling back to stdout.
+        """
+        pr_num = "6543"
+        sentinel = Path(f"/tmp/.claude-post-merge-notify-{pr_num}")
+        sentinel.unlink(missing_ok=True)
+        try:
+            result = _run_hook(
+                command=f"gh pr merge https://github.com/owner/repo/pull/{pr_num} --squash",
+                tmp_path=tmp_path,
+            )
+            assert result.returncode == 0
+            assert (
+                sentinel.exists()
+            ), "Sentinel should be created from /pull/<N> URL extraction"
+        finally:
+            sentinel.unlink(missing_ok=True)
+
     def test_pr_number_from_stdout_fallback(self, tmp_path: Path) -> None:
         """When command has no PR number, extract from stdout."""
         pr_num = "1111"
