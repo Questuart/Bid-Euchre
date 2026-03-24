@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import json
 from datetime import timezone
+from pathlib import Path
+from typing import Optional
+
+from sqlalchemy.orm import Session
 
 from web.db import Decision, Hand, Match
 
@@ -107,3 +111,60 @@ def decision_to_jsonl(
         "decision_time_ms": decision_row.decision_time_ms,
         "timestamp": timestamp,
     }
+
+
+# ---------------------------------------------------------------------------
+# Batch export
+# ---------------------------------------------------------------------------
+
+
+def export_decisions(
+    db_session: Session,
+    output_path: Path,
+    match_uuid: Optional[str] = None,
+    human_only: bool = False,
+) -> int:
+    """Export decisions from DB to JSONL.
+
+    Queries ``Decision`` rows (with ``Match`` and ``Hand`` context), applies
+    optional filters, and writes one JSON line per decision to *output_path*.
+
+    Parameters
+    ----------
+    db_session : Session
+        An active SQLAlchemy session.
+    output_path : Path
+        Destination file path. Parent directory must exist.
+    match_uuid : str, optional
+        If provided, only export decisions belonging to this match.
+    human_only : bool
+        If ``True``, only export decisions where ``actor_type == 'human'``.
+
+    Returns
+    -------
+    int
+        Number of records exported.
+    """
+    query = (
+        db_session.query(Decision, Match, Hand)
+        .join(Match, Decision.match_id == Match.id)
+        .join(Hand, Decision.hand_id == Hand.id)
+    )
+
+    if match_uuid is not None:
+        query = query.filter(Match.match_uuid == match_uuid)
+
+    if human_only:
+        query = query.filter(Decision.actor_type == "human")
+
+    # Order deterministically for reproducible exports
+    query = query.order_by(Decision.match_id, Decision.hand_id, Decision.turn_number)
+
+    count = 0
+    with open(output_path, "w") as f:
+        for decision_row, match_row, hand_row in query:
+            record = decision_to_jsonl(decision_row, match_row, hand_row)
+            f.write(json.dumps(record) + "\n")
+            count += 1
+
+    return count
