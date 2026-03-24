@@ -1478,6 +1478,105 @@ class TestAutoImport:
         # import_usage_data should NOT be called — usage data already exists
         mock_import.assert_not_called()
 
+    def test_stale_usage_with_missing_attr_does_full_reimport(
+        self, tmp_path: Path
+    ) -> None:
+        """When usage exists but is stale AND attributions are missing,
+        do a full re-import rather than rebuilding from stale data (#1514)."""
+        import os
+        from datetime import datetime, timezone
+        from unittest.mock import MagicMock, patch
+
+        output_dir = tmp_path / "token_economy"
+        output_dir.mkdir()
+
+        # Write usage data
+        usage_file = output_dir / "session_usage.jsonl"
+        usage_file.write_text(
+            json.dumps(
+                {
+                    "session_id": "s1",
+                    "input_tokens": 100,
+                    "output_tokens": 400,
+                    "duration_minutes": 10,
+                    "project_path": "/tmp/test",
+                    "imported_at": "2026-03-20T10:00:00Z",
+                    "source_hash": "abc123",
+                }
+            )
+            + "\n"
+        )
+        # Make usage file look stale (> 1 hour old)
+        old_mtime = datetime.now(timezone.utc).timestamp() - 7200  # 2 hours ago
+        os.utime(usage_file, (old_mtime, old_mtime))
+        # No attributions file — simulates crashed import on stale data
+
+        mock_result = MagicMock()
+        mock_result.sessions_imported = 1
+        mock_result.sessions_skipped = 0
+
+        with (
+            patch(
+                "bid_euchre.ops.token_economy.import_usage_data",
+                return_value=mock_result,
+            ) as mock_import,
+            patch("bid_euchre.ops.token_economy.attribute_sessions") as mock_attr,
+        ):
+            _ensure_imported(output_dir)
+
+        # Should do full re-import, not just rebuild attributions
+        mock_import.assert_called_once_with(output_dir=output_dir)
+        mock_attr.assert_called_once_with(output_dir=output_dir)
+
+    def test_stale_usage_with_missing_attr_rebuilds_even_if_no_new_sessions(
+        self, tmp_path: Path
+    ) -> None:
+        """When full re-import finds 0 new sessions but attributions were
+        missing, still rebuild attributions (#1514)."""
+        import os
+        from datetime import datetime, timezone
+        from unittest.mock import MagicMock, patch
+
+        output_dir = tmp_path / "token_economy"
+        output_dir.mkdir()
+
+        usage_file = output_dir / "session_usage.jsonl"
+        usage_file.write_text(
+            json.dumps(
+                {
+                    "session_id": "s1",
+                    "input_tokens": 100,
+                    "output_tokens": 400,
+                    "duration_minutes": 10,
+                    "project_path": "/tmp/test",
+                    "imported_at": "2026-03-20T10:00:00Z",
+                    "source_hash": "abc123",
+                }
+            )
+            + "\n"
+        )
+        old_mtime = datetime.now(timezone.utc).timestamp() - 7200
+        os.utime(usage_file, (old_mtime, old_mtime))
+
+        mock_result = MagicMock()
+        mock_result.sessions_imported = 0
+        mock_result.sessions_skipped = 0
+
+        with (
+            patch(
+                "bid_euchre.ops.token_economy.import_usage_data",
+                return_value=mock_result,
+            ) as mock_import,
+            patch("bid_euchre.ops.token_economy.attribute_sessions") as mock_attr,
+        ):
+            _ensure_imported(output_dir)
+
+        # Full re-import was attempted
+        mock_import.assert_called_once()
+        # attr_missing is True → attribute_sessions should still be called
+        # even though no new sessions were imported
+        mock_attr.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # Incomplete session exclusion tests
