@@ -516,6 +516,73 @@ class TestWindowLayout:
             assert var in content, f"Missing worktree path variable: {var}"
 
 
+class TestTelegramChannelConfig:
+    """Tests for the Telegram channel configuration (Platform-8a)."""
+
+    def test_telegram_enabled_env_var_defaults_to_zero(self) -> None:
+        """STEWARD_TELEGRAM_ENABLED must default to 0 (disabled)."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            'STEWARD_TELEGRAM_ENABLED="${STEWARD_TELEGRAM_ENABLED:-0}"' in content
+        ), "STEWARD_TELEGRAM_ENABLED must default to 0"
+
+    def test_channels_flag_only_on_orchestrator(self) -> None:
+        """--channels must only appear on the orchestrator pane launch, via ORCH_CHANNEL_FLAGS."""
+        content = STEWARD_SCRIPT.read_text()
+        # The orchestrator launch line must reference ORCH_CHANNEL_FLAGS
+        assert (
+            "--agent steward-orchestrator $ORCH_CHANNEL_FLAGS" in content
+        ), "Orchestrator pane must append $ORCH_CHANNEL_FLAGS"
+
+        # No other launch line should reference ORCH_CHANNEL_FLAGS or --channels
+        launch_lines = [
+            line.strip()
+            for line in content.split("\n")
+            if ("--name " in line or "--agent " in line) and "$CLAUDE_BIN" in line
+        ]
+        for line in launch_lines:
+            if "steward-orchestrator" in line:
+                continue
+            assert (
+                "ORCH_CHANNEL_FLAGS" not in line
+            ), f"Non-orchestrator lane must not use ORCH_CHANNEL_FLAGS: {line}"
+            assert (
+                "--channels" not in line
+            ), f"Non-orchestrator lane must not use --channels: {line}"
+
+    def test_steward_channels_exported_when_enabled(self) -> None:
+        """STEWARD_CHANNELS must be exported when STEWARD_TELEGRAM_ENABLED=1."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            'export STEWARD_CHANNELS="telegram"' in content
+        ), "STEWARD_CHANNELS must be exported as 'telegram' when enabled"
+
+    def test_channel_flags_empty_by_default(self) -> None:
+        """ORCH_CHANNEL_FLAGS must be empty string by default."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            'ORCH_CHANNEL_FLAGS=""' in content
+        ), "ORCH_CHANNEL_FLAGS must default to empty string"
+
+    def test_channel_flags_conditional_on_enabled(self) -> None:
+        """ORCH_CHANNEL_FLAGS must only be set inside the STEWARD_TELEGRAM_ENABLED=1 guard."""
+        content = STEWARD_SCRIPT.read_text()
+        lines = content.split("\n")
+        in_guard = False
+        guard_body: list[str] = []
+        for line in lines:
+            if "STEWARD_TELEGRAM_ENABLED" in line and '"1"' in line and "if" in line:
+                in_guard = True
+            if in_guard:
+                guard_body.append(line)
+                if line.strip() == "fi":
+                    break
+        guard_text = "\n".join(guard_body)
+        assert (
+            'ORCH_CHANNEL_FLAGS="--channels telegram"' in guard_text
+        ), "ORCH_CHANNEL_FLAGS assignment must be inside the STEWARD_TELEGRAM_ENABLED=1 guard"
+
+
 class TestBoundaryValidation:
     """Tests for validate_worktree_path() in steward-session.sh."""
 
