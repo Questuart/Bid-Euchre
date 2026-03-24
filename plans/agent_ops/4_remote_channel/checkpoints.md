@@ -49,10 +49,10 @@ implementation.
 
 | File | Primary Owner | Secondary Owner(s) | Serialization Rule |
 |------|---------------|---------------------|-------------------|
-| `scripts/internal/ops.py` | SP-4-05 | SP-4-03, SP-4-04 | SP-4-03 is already complete; SP-4-05 owns any new actionable lifecycle views or helper wiring; SP-4-04 may add channel status CLI only after SP-4-05 lands |
-| `src/bid_euchre/ops/dashboard.py` | SP-4-03 | SP-4-05, SP-4-04 | SP-4-03 owns token panels; SP-4-05 may add lifecycle projections but should avoid broad dashboard redesign; SP-4-04 channel status indicator remains optional |
-| `src/bid_euchre/ops/monitor.py` | SP-4-05 | SP-4-04 | SP-4-05 owns typed lifecycle findings, persistent loop behavior, and routine-state reconciliation; SP-4-04 channel health check remains deferred to Platform-9c |
-| `src/bid_euchre/ops/message_bus.py` | SP-4-05 | SP-4-04 | SP-4-05 owns sender dedupe and actionable operator read flow; SP-4-04 should not change bus semantics in Platform-8a |
+| `scripts/internal/ops.py` | SP-4-05 | SP-4-02, SP-4-03, SP-4-04 | SP-4-02 and SP-4-03 are already complete; SP-4-05 owns any new actionable lifecycle views or helper wiring; SP-4-04 may add channel status CLI only after SP-4-05 lands |
+| `src/bid_euchre/ops/dashboard.py` | SP-4-03 | SP-4-02, SP-4-05, SP-4-04 | SP-4-02 and SP-4-03 are complete; SP-4-05 may add lifecycle projections but should avoid broad dashboard redesign; SP-4-04 channel status indicator remains optional |
+| `src/bid_euchre/ops/monitor.py` | SP-4-05 | SP-4-02, SP-4-04 | SP-4-02 is complete; SP-4-05 owns typed lifecycle findings, persistent loop behavior, and routine-state reconciliation; SP-4-04 channel health check remains deferred to Platform-9c |
+| `src/bid_euchre/ops/message_bus.py` | SP-4-05 | SP-4-02, SP-4-04 | SP-4-02 is complete; SP-4-05 owns sender dedupe and actionable operator read flow; SP-4-04 should not change bus semantics in Platform-8a |
 | `.claude/hooks/post-merge-notify.sh` | SP-4-05 | — | SP-4-05 owns merge-completion helper extraction and hook parity fixes |
 | `.claude/tmux/steward-session.sh` | SP-4-04 | — | SP-4-04 adds `--channels plugin:telegram@claude-plugins-official` flag and channel env vars; no other SP modifies the launcher |
 
