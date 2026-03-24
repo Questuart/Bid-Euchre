@@ -3,7 +3,7 @@
 **Governing plan:** `plans/browser_game/governing_plan.md`
 **Phase/Rung:** `2_backend_api`
 **Sub-plan:** `SP-2-01` → `2_backend_api/sub/2026-03-14_fastapi_app.md`
-**Last updated:** 2026-03-23
+**Last updated:** 2026-03-24
 
 ---
 
@@ -12,24 +12,33 @@
 | Step | Status | Date | Agent/Session | Notes |
 |------|--------|------|---------------|-------|
 | Step 0: Read sub-plan SP-2-01 and verify Phase 1 complete | COMPLETE | 2026-03-23 | brws-author-b | Phase 1 CLOSED (PRs #1380, #1392, #1402). MatchEngine API verified against SP-2-01 route handler requirements. |
-| Step 1: Implement DB models and schema init (`db.py`, `schema.sql`) | PENDING | -- | -- | SQLAlchemy models for `players`, `matches`, `hands`, and `decisions`. No V1 database `model_registry` table. |
-| Step 2: Implement AI manager (`ai_manager.py`) | PENDING | -- | -- | Config-backed approved roster plus startup preload/caching. V1 roster is `heuristic` always and `hybrid_olsa` when configured. |
-| Step 3: Implement FastAPI app and routes (`app.py`, `routes.py`) | PENDING | -- | -- | All endpoints from SP-2-01 §Route Handlers. Idempotent submissions. |
-| Step 4: Implement decision logging in routes | PENDING | -- | -- | Log human + AI decisions to `decisions` table on each action. |
-| Step 5: Write integration tests | PENDING | -- | -- | 10 required tests listed in SP-2-01 §Required Tests. |
-| Step 6: Run validation | PENDING | -- | -- | `uv run python -m pytest tests/unit/hosted_play/test_routes.py -v` + manual curl. |
+| Step 1: Implement DB models and schema init (`db.py`, `schema.sql`) | COMPLETE | 2026-03-23 | brws-author-b | PR #1430. SQLAlchemy models + config + schema. |
+| Step 2: Implement AI manager (`ai_manager.py`) | COMPLETE | 2026-03-23 | brws-author-b | PR #1430. Config-backed heuristic + hybrid_olsa roster. |
+| Step 3: Implement FastAPI app and routes (`app.py`, `routes.py`) | IN_PROGRESS | 2026-03-24 | brws-author-b | 8 route handlers with idempotent submissions. |
+| Step 4: Implement decision logging in routes | IN_PROGRESS | 2026-03-24 | brws-author-b | Human decisions logged with full detail; AI decisions with placeholders (V1 limitation). |
+| Step 5: Write integration tests | IN_PROGRESS | 2026-03-24 | brws-author-b | 17 tests covering all 10 required scenarios + edge cases. |
+| Step 6: Run validation | IN_PROGRESS | 2026-03-24 | brws-author-b | 17/17 tests passing, `make check-quiet` green. |
 
 ## Active Sub-Plans
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
-| SP-2-01 | `2_backend_api/sub/2026-03-14_fastapi_app.md` | proposed | Step 1 |
+| SP-2-01 | `2_backend_api/sub/2026-03-14_fastapi_app.md` | in_progress | Steps 3-6 |
 
 ## Blockers
 
 - [x] ~~Phase 1 not complete.~~ Phase 1 CLOSED 2026-03-23 (PRs #1380, #1392, #1402).
 
 ## Session Log
+
+### 2026-03-24 — brws-author-b
+- Completed: Steps 3-6 — Route handlers, decision logging, integration tests, validation.
+- Files created: `web/routes.py` (8 route handlers), `web/templates/base.html`, `tests/unit/hosted_play/test_routes.py` (17 tests).
+- Files updated: `web/app.py` (router registration).
+- All 10 required test scenarios from SP-2-01 covered plus 7 additional edge case tests.
+- Known V1 limitation: AI decision logging uses placeholders for legal_actions/game_state since the engine doesn't expose per-step callbacks.
+- Validation: 17/17 tests passing, `make check-quiet` green.
+- Next: PR for merge.
 
 ### 2026-03-23 — brws-author-b
 - Completed: Step 0 — verified Phase 1 prerequisites against SP-2-01.

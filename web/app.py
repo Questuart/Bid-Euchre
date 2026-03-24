@@ -6,7 +6,7 @@ Handles startup/shutdown lifecycle:
 3. Preload approved V1 AI models via :class:`AIManager`
 4. Store manager and session factory in ``app.state``
 
-Routes are NOT defined here — they will be added in Phase 2 Step 2.
+Routes are defined in :mod:`web.routes` and registered via ``include_router``.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .ai_manager import AIManager
 from .config import HostedPlayConfig, get_config, override_config
 from .db import create_tables, init_engine, make_session_factory
+from .routes import router as game_router
 
 
 @asynccontextmanager
@@ -67,5 +68,8 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Register game routes
+    app.include_router(game_router)
 
     return app
