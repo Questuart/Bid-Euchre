@@ -87,6 +87,7 @@ FLEX_C="${PARENT_DIR}/${REPO_NAME}-steward-flex-c"
 
 # Control plane
 REVIEW="${PARENT_DIR}/${REPO_NAME}-steward-review"
+OPS="${PARENT_DIR}/${REPO_NAME}-steward-ops"
 MAIN_DIR="$(git -C "$MAIN_DIR" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
 
 # ---------------------------------------------------------------------------
@@ -137,12 +138,13 @@ ensure_worktree() {
     git -C "$MAIN_DIR" worktree add -b "$branch" "$path" main
 }
 
-ensure_review_worktree() {
-    validate_worktree_path "$REVIEW" || exit 1
-    if [ -d "$REVIEW" ]; then
+ensure_detached_worktree() {
+    local path="$1"
+    validate_worktree_path "$path" || exit 1
+    if [ -d "$path" ]; then
         return
     fi
-    git -C "$MAIN_DIR" worktree add --detach "$REVIEW" main
+    git -C "$MAIN_DIR" worktree add --detach "$path" main
 }
 
 update_last_active() {
@@ -290,7 +292,8 @@ ensure_worktree "$FLEX_B" "codex/steward-flex-b"
 ensure_worktree "$FLEX_C" "codex/steward-flex-c"
 
 # Control plane
-ensure_review_worktree
+ensure_detached_worktree "$REVIEW"
+ensure_detached_worktree "$OPS"
 
 # Write v2 registry metadata for each lane.
 # tmux_window = group name, tmux_pane = 1-based pane index within the window.
@@ -300,7 +303,7 @@ ensure_review_worktree
 # Central ops  (window: central-ops, panes 1-3, main-vertical layout)
 # Note: pane indices are 1-based to match tmux pane-base-index=1.
 write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "central-ops" "1" "foreground" "Orchestrator"
-write_lane_metadata "ops"            "ops"          "$MAIN_DIR"       "--"                              "central-ops" "2" "foreground" "Ops"
+write_lane_metadata "ops"            "ops"          "$OPS"            "detached"                        "central-ops" "2" "foreground" "Ops"
 write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "3" "foreground" "Review"
 
 # Platform workers  (window: platform, panes 1-4)
@@ -354,7 +357,7 @@ if [ -n "$STEWARD_CHANNELS" ]; then
 fi
 tmux set-environment -t "$SESSION" STEWARD_TELEGRAM_ENABLED "$STEWARD_TELEGRAM_ENABLED"
 
-tmux split-window -t "${SESSION}:central-ops" -c "$MAIN_DIR" \
+tmux split-window -t "${SESSION}:central-ops" -c "$OPS" \
     "$CLAUDE_BIN" --name ops --agent steward-ops
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
     "$CLAUDE_BIN" --name review --agent steward-review

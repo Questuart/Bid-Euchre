@@ -503,6 +503,54 @@ class TestWindowLayout:
             "to trigger the agent's startup behavior"
         )
 
+    def test_ops_lane_has_own_worktree(self) -> None:
+        """Ops lane must launch in its own detached worktree, not $MAIN_DIR.
+
+        When ops runs in the same directory as the orchestrator, competing
+        bun MCP server instances race on Telegram getUpdates, silently
+        consuming inbound messages. See #1615.
+        """
+        content = STEWARD_SCRIPT.read_text()
+        # OPS variable must be defined in the control plane section
+        assert 'OPS="' in content, "OPS worktree variable must be defined"
+        assert "steward-ops" in content, "OPS path must reference steward-ops"
+
+        # The ops tmux pane must launch in $OPS, not $MAIN_DIR
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
+            if "--name ops" in line or "--agent steward-ops" in line:
+                # Check this line and the preceding line for the working dir
+                context = "\n".join(lines[max(0, i - 1) : i + 1])
+                assert (
+                    '"$OPS"' in context
+                ), f"Ops pane must launch in $OPS, not $MAIN_DIR: {context}"
+                break
+
+    def test_ops_metadata_uses_detached_branch(self) -> None:
+        """Ops lane metadata must specify 'detached' branch, not '--'."""
+        content = STEWARD_SCRIPT.read_text()
+        metadata_lines = [
+            line
+            for line in content.split("\n")
+            if line.strip().startswith('write_lane_metadata "ops"')
+        ]
+        assert len(metadata_lines) == 1, "Expected exactly one ops metadata line"
+        line = metadata_lines[0]
+        assert '"$OPS"' in line, f"Ops metadata must use $OPS path: {line.strip()}"
+        assert (
+            '"detached"' in line
+        ), f"Ops metadata must use 'detached' branch: {line.strip()}"
+
+    def test_ensure_detached_worktree_used_for_control_plane(self) -> None:
+        """Both review and ops worktrees must use ensure_detached_worktree."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            'ensure_detached_worktree "$REVIEW"' in content
+        ), "Review worktree must use ensure_detached_worktree"
+        assert (
+            'ensure_detached_worktree "$OPS"' in content
+        ), "Ops worktree must use ensure_detached_worktree"
+
     def test_browser_game_worktree_paths(self) -> None:
         """Script must define BRWS_A through BRWS_D worktree paths."""
         content = STEWARD_SCRIPT.read_text()
