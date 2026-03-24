@@ -50,10 +50,13 @@ class TestSessionSyncSilentSuccess:
             len(reset_lines) == 1
         ), f"Expected 1 git reset line, found {len(reset_lines)}"
         reset_line = reset_lines[0]
-        # Must redirect stdout (>/dev/null) — not just stderr (2>/dev/null)
+        # Must redirect both stdout AND stderr (>/dev/null 2>&1),
+        # not just stderr alone (2>/dev/null).  The old pattern
+        # "2>/dev/null" is a substring of the correct redirect, so we
+        # check for the full pattern to avoid a false-positive.
         assert (
-            ">/dev/null" in reset_line
-        ), f"git reset must redirect stdout to /dev/null: {reset_line}"
+            ">/dev/null 2>&1" in reset_line
+        ), f"git reset must redirect stdout+stderr (>/dev/null 2>&1): {reset_line}"
 
     def test_non_steward_dir_exits_silently(self) -> None:
         """Hook exits 0 with no output when PROJECT_DIR is not a steward dir."""
