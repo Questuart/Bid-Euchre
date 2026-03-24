@@ -19,13 +19,22 @@ mergeable throughput across all defined tracks.
 Before entering the main dispatch loop:
 
 1. Recover context (`/recovering-context` or read MEMORY.md)
-2. Check dashboard health: `uv run python scripts/internal/ops.py dashboard --json`
-3. Bulk-refresh idle lanes:
+2. **Set up inbox polling cron** — ensures inbox is read even if the
+   orchestrator gets absorbed in a long task and skips check-in cycles:
+   ```
+   CronCreate: every 2 minutes, run:
+     uv run python scripts/internal/ops.py inbox --lane orchestrator --status pending
+     If P0 messages found, surface them immediately.
+   ```
+   This is the backup mechanism. The primary mechanism is step 0 of every
+   dispatch cycle (see Dispatch Discipline below).
+3. Check dashboard health: `uv run python scripts/internal/ops.py dashboard --json`
+4. Bulk-refresh idle lanes:
    ```bash
    uv run python scripts/internal/ops.py lane refresh --all-idle
    ```
-4. Triage inbox and open issues
-5. Define Wave 1 candidates
+5. Triage inbox and open issues
+6. Define Wave 1 candidates
 
 ## Primary Goal
 
@@ -60,6 +69,24 @@ Maximize safe, mergeable throughput across all defined tracks.
 ## Dispatch Discipline
 
 Before each dispatch cycle:
+
+0. **MANDATORY: Poll inbox for P0/P1 messages**
+   ```bash
+   uv run python scripts/internal/ops.py inbox --lane orchestrator --status pending
+   ```
+   Scan pending messages and classify by priority:
+   - **P0 (urgent):** `supervisor_alert`, `recovery` — **STOP. Process these
+     before dispatching any new work.** These represent active incidents that
+     may invalidate planned dispatches.
+   - **P1 (high):** `completion`, `escalation`, `blocker` — process completions
+     (to free lanes) and escalations (to unblock lanes) before evaluating new
+     dispatch candidates.
+   - **P2 (normal/low):** `ack`, `progress` — note and continue.
+
+   If you skip this step, you risk dispatching into broken lanes, missing
+   merge-conflict alerts, or duplicating work that another lane already
+   completed. The overnight run of 2026-03-24 proved this: 25+ HIGH alerts
+   went unread for 7 hours because the orchestrator never polled its inbox.
 
 1. Check lane health, dirty worktrees, stale packets, inbox backlog, open
    PRs, newly opened or updated GitHub issues, current task lists, and
