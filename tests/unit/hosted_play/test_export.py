@@ -504,6 +504,63 @@ class TestExportDecisions:
         assert record["match_uuid"] == target_uuid
         assert record["actor_type"] == "human"
 
+    def test_export_orders_by_hand_number(self, db_session, tmp_path):
+        """Records are ordered by hand_number regardless of DB insertion order.
+
+        Regression test for #1575 / #1577: export_decisions must ORDER BY
+        Hand.hand_number (logical order), not Hand.id (insertion order).
+        We insert hand_number=2 before hand_number=1 so the DB auto-increment
+        ids are reversed relative to logical hand order.
+        """
+        player = create_test_player(db_session)
+        match = create_test_match(db_session, player_id=player.id)
+
+        # Insert hand_number=2 first (gets lower hand.id)
+        hand_2 = create_test_hand(db_session, match, hand_number=2)
+        # Insert hand_number=1 second (gets higher hand.id)
+        hand_1 = create_test_hand(db_session, match, hand_number=1)
+
+        # One decision per hand
+        create_test_decision(db_session, match, hand_2, turn_number=0)
+        create_test_decision(db_session, match, hand_1, turn_number=0)
+        db_session.commit()
+
+        output = tmp_path / "ordered.jsonl"
+        count = export_decisions(db_session, output)
+
+        assert count == 2
+        lines = output.read_text().strip().splitlines()
+        records = [json.loads(line) for line in lines]
+
+        # hand_number=1 must come before hand_number=2
+        assert records[0]["hand_number"] == 1
+        assert records[1]["hand_number"] == 2
+
+    def test_export_orders_by_turn_within_hand(self, db_session, tmp_path):
+        """Within the same hand, records are ordered by turn_number.
+
+        Companion to test_export_orders_by_hand_number — verifies the
+        secondary sort key (turn_number) within a hand.
+        """
+        player = create_test_player(db_session)
+        match = create_test_match(db_session, player_id=player.id)
+        hand = create_test_hand(db_session, match, hand_number=1)
+
+        # Insert turn_number=2 before turn_number=0
+        create_test_decision(db_session, match, hand, turn_number=2, seat=2)
+        create_test_decision(db_session, match, hand, turn_number=0, seat=0)
+        create_test_decision(db_session, match, hand, turn_number=1, seat=1)
+        db_session.commit()
+
+        output = tmp_path / "turn_ordered.jsonl"
+        count = export_decisions(db_session, output)
+
+        assert count == 3
+        lines = output.read_text().strip().splitlines()
+        records = [json.loads(line) for line in lines]
+
+        assert [r["turn_number"] for r in records] == [0, 1, 2]
+
     def test_output_lines_are_valid_json(self, db_session, tmp_path):
         """Every line in the output file is valid JSON with schema fields."""
         player = create_test_player(db_session)

@@ -168,6 +168,12 @@ def export_decisions(
 
     # Order by logical hand number (not internal hand_id FK) for
     # deterministic, semantically meaningful output (#1537).
+    #
+    # The ORDER BY is evaluated by the database engine before cursor
+    # iteration begins; yield_per() still batches cursor reads without
+    # materializing all rows into Python memory.  For the expected data
+    # volumes (hundreds to low-thousands of decisions per export) the
+    # sort is negligible.  See #1578.
     query = query.order_by(Decision.match_id, Hand.hand_number, Decision.turn_number)
 
     count = 0
