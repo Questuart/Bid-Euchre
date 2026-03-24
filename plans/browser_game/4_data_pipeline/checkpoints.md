@@ -16,7 +16,7 @@
 | Step 2: Implement export CLI (`scripts/internal/export_hosted_decisions.py`) | COMPLETE | 2026-03-24 | brws-author-a | PR #1538. --db, --output, --match-uuid, --human-only flags. |
 | Step 3: Implement replay validation | COMPLETE | 2026-03-24 | brws-author-a | PR #1545. `validate_replay` JSONL correctness verifier. |
 | Step 4: Write tests | COMPLETE | 2026-03-24 | brws-author-a | PR #1533 (fixture helpers) + tests in PRs #1529, #1535, #1545. All 6 required tests covered. |
-| Step 5: Run validation | COMPLETE | 2026-03-24 | brws-author-a | 233 tests pass (`tests/unit/hosted_play/`). Full `make check-quiet` green. |
+| Step 5: Run validation | COMPLETE | 2026-03-24 | brws-author-a | All hosted_play tests pass (`tests/unit/hosted_play/`). Full `make check-quiet` green. |
 
 ## Active Sub-Plans
 
@@ -36,7 +36,7 @@ Phase 4 depends on Phase 2 (not Phase 3). Can run in parallel with Phase 3.
 
 ### 2026-03-24 — brws-author-a (SP-4-01 closeout)
 - All 5 steps COMPLETE. PRs: #1529, #1533, #1535, #1538, #1545.
-- Validation pass: 233/233 tests pass in `tests/unit/hosted_play/`.
+- Validation pass: all hosted_play tests pass in `tests/unit/hosted_play/`.
 - SP-4-01 status: active → completed.
 - Phase 4 data pipeline is fully delivered.
 
