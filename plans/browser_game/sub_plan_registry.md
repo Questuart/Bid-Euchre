@@ -14,16 +14,16 @@
 | SP-2-01 | FastAPI App & Persistence | Phase 2 — Backend API | completed | brws-author-b | `2_backend_api/sub/2026-03-14_fastapi_app.md` | 2026-03-14 | 2026-03-24 |
 | SP-3-01 | HTMX Game UI (design reference) | Phase 3 — Frontend Product | superseded | -- | `3_frontend_product/sub/2026-03-14_htmx_game_ui.md` | 2026-03-14 | -- |
 | SP-3-02 | Browser UI Implementation | Phase 3 — Frontend Product | completed | brws-author-a | `3_frontend_product/sub/2026-03-24_browser-ui.md` | 2026-03-24 | 2026-03-24 |
-| SP-4-01 | Export & Replay Validation | Phase 4 — Data Pipeline | active | -- | `4_data_pipeline/sub/2026-03-14_export_replay.md` | 2026-03-14 | -- |
+| SP-4-01 | Export & Replay Validation | Phase 4 — Data Pipeline | completed | brws-author-a | `4_data_pipeline/sub/2026-03-14_export_replay.md` | 2026-03-14 | 2026-03-24 |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
 | proposed | 0 |
-| active | 1 |
+| active | 0 |
 | blocked | 0 |
-| completed | 4 |
+| completed | 5 |
 | abandoned | 0 |
 | superseded | 1 |
 

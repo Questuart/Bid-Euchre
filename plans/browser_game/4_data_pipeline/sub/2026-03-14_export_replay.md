@@ -2,7 +2,7 @@
 
 **ID:** SP-4-01
 **Parent:** Phase 4 — Data Pipeline
-**Status:** proposed
+**Status:** completed
 **Governing plan:** `plans/browser_game/governing_plan.md`
 **Created:** 2026-03-14
 
@@ -154,4 +154,14 @@ These are noted for context but explicitly deferred:
 
 ## Outcome
 
-_To be filled after implementation._
+**Completed 2026-03-24.** All deliverables shipped across 5 PRs:
+
+| PR | Deliverable |
+|----|-------------|
+| #1529 | `decision_to_jsonl` export function + schema tests |
+| #1533 | Fixture factory helpers for hosted_play export tests |
+| #1535 | `export_decisions` batch export with filter support |
+| #1538 | `export_hosted_decisions` CLI script |
+| #1545 | `validate_replay` JSONL correctness verifier |
+
+Validation: 233/233 tests pass in `tests/unit/hosted_play/`.
