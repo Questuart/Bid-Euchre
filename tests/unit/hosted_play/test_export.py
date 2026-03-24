@@ -631,17 +631,8 @@ class TestExportDecisions:
 # Replay validation tests (validate_replay)
 # ---------------------------------------------------------------------------
 
-# Test fixtures use seed=42, deal_id=7 which produces:
-#   Seat 0: DK DT SQ CA HQ CT CQ HA DA SK
-#   Seat 1: HJ HJ SA ST HT SK HK CK DA SJ
-#   Seat 2: DK DJ SQ CK CT DT CJ CQ HT SA
-#   Seat 3: DQ HK CJ HQ SJ DQ CA HA DJ ST
-#
-# Contract: Hearts trump (contract_type="suit", trump="H")
-# Bid: Seat 1 bids 5 hearts.
-#
-# Trick 0: Seat 0 leads DK → Seat 1 plays DA → Seat 2 plays DK → Seat 3 plays DQ
-#   Winner: Seat 1 (DA is highest diamond)
+# Fixtures use seed=42, deal_id=7 with Hearts trump.  Seat 1 bids 5H.
+# Trick 0: seat 0 DK → seat 1 DA → seat 2 DK → seat 3 DQ → winner seat 1.
 
 _MATCH_UUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 _MATCH_SEED = 42
