@@ -1,0 +1,800 @@
+/* ==========================================================================
+   Bid Euchre Browser Game — Stylesheet
+   CSS-only card rendering, table layout, responsive basics, phase views.
+   No build tooling — served as a static file.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   0. Variables & Reset
+   -------------------------------------------------------------------------- */
+
+:root {
+    --color-red: #d32f2f;
+    --color-black: #212121;
+    --color-bg: #1b5e20;
+    --color-bg-dark: #0d3d0f;
+    --color-felt: #2e7d32;
+    --color-legal-border: #2e7d32;
+    --color-legal-glow: #4caf50;
+    --color-positive: #2e7d32;
+    --color-negative: #c62828;
+    --color-text: #fafafa;
+    --color-text-muted: #bdbdbd;
+    --color-surface: #263238;
+    --color-surface-light: #37474f;
+    --card-width: 60px;
+    --card-height: 90px;
+    --card-radius: 8px;
+    --card-overlap: -10px;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+    background: var(--color-bg-dark);
+    color: var(--color-text);
+    min-height: 100vh;
+}
+
+/* --------------------------------------------------------------------------
+   1. Header
+   -------------------------------------------------------------------------- */
+
+header {
+    background: var(--color-surface);
+    padding: 0.5rem 1rem;
+    text-align: center;
+    border-bottom: 2px solid var(--color-felt);
+}
+
+header h1 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+header h1 a {
+    color: var(--color-text);
+    text-decoration: none;
+}
+
+header h1 a:hover {
+    text-decoration: underline;
+}
+
+/* --------------------------------------------------------------------------
+   2. Main / Game Board Container
+   -------------------------------------------------------------------------- */
+
+main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+#game-board {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+/* --------------------------------------------------------------------------
+   3. Cards — Core
+   -------------------------------------------------------------------------- */
+
+.card {
+    width: var(--card-width);
+    height: var(--card-height);
+    border: 2px solid #555;
+    border-radius: var(--card-radius);
+    background: #fff;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1;
+    position: relative;
+    user-select: none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card__rank {
+    font-size: 1.3rem;
+}
+
+.card__suit {
+    font-size: 1.1rem;
+    margin-top: 2px;
+}
+
+/* Suit colors */
+.card--hearts,
+.card--diamonds {
+    color: var(--color-red);
+}
+
+.card--spades,
+.card--clubs {
+    color: var(--color-black);
+}
+
+/* Legal card — green glow + pointer */
+.card--legal {
+    border-color: var(--color-legal-border);
+    box-shadow: 0 0 6px var(--color-legal-glow);
+    cursor: pointer;
+}
+
+.card--legal:hover {
+    transform: translateY(-12px);
+    box-shadow: 0 0 12px var(--color-legal-glow);
+}
+
+/* Illegal card — dimmed, no interaction */
+.card--illegal {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Played card in trick area — slightly smaller, no hover */
+.card--played {
+    width: 54px;
+    height: 80px;
+    font-size: 1rem;
+    cursor: default;
+}
+
+.card--played .card__rank {
+    font-size: 1.1rem;
+}
+
+.card--played .card__suit {
+    font-size: 0.95rem;
+}
+
+/* --------------------------------------------------------------------------
+   4. Card Fan (Human Hand)
+   -------------------------------------------------------------------------- */
+
+.hand h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    text-align: center;
+}
+
+.card-fan {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    padding: 0.5rem 0;
+    min-height: calc(var(--card-height) + 20px);
+}
+
+.card-fan .card {
+    margin: 0 var(--card-overlap);
+    z-index: 1;
+}
+
+.card-fan .card:hover {
+    z-index: 10;
+}
+
+/* Card form wrapping each legal card — inline so fan layout works */
+.card-form {
+    display: inline;
+    margin: 0 var(--card-overlap);
+}
+
+.card-form .card {
+    margin: 0;
+}
+
+/* Reset button styling for card buttons */
+.card-form button.card {
+    padding: 0;
+    font-family: inherit;
+    font-weight: 700;
+    border: 2px solid var(--color-legal-border);
+}
+
+/* --------------------------------------------------------------------------
+   5. AI Hands (Face-Down Backs)
+   -------------------------------------------------------------------------- */
+
+.ai-hand {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.card-back {
+    width: 36px;
+    height: 52px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #1565c0 25%, #0d47a1 75%);
+    border: 1px solid #0d47a1;
+    margin: 0 -4px;
+}
+
+.ai-card-count {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin-left: 0.5rem;
+}
+
+/* --------------------------------------------------------------------------
+   6. Trick Area
+   -------------------------------------------------------------------------- */
+
+.trick-area h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    text-align: center;
+}
+
+.trick-table {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 1rem;
+    background: var(--color-felt);
+    border-radius: 12px;
+    border: 3px solid var(--color-bg);
+    min-height: 260px;
+}
+
+.trick-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 70px;
+    min-height: 90px;
+}
+
+/* Top (partner) */
+.trick-slot--top {
+    margin-bottom: 0.25rem;
+}
+
+/* Middle row: left — center — right */
+.trick-row-middle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    width: 100%;
+}
+
+.trick-slot--left,
+.trick-slot--right {
+    flex: 0 0 auto;
+}
+
+.trick-center {
+    flex: 0 0 auto;
+    min-width: 60px;
+    text-align: center;
+}
+
+.trick-count {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+/* Bottom (human) */
+.trick-slot--bottom {
+    margin-top: 0.25rem;
+}
+
+/* Empty card slot placeholder */
+.card-slot {
+    width: var(--card-width);
+    height: var(--card-height);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card-slot--empty {
+    border: 2px dashed rgba(255, 255, 255, 0.3);
+    border-radius: var(--card-radius);
+}
+
+.seat-label {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   7. Score Bar
+   -------------------------------------------------------------------------- */
+
+.score-bar {
+    background: var(--color-surface);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.score-section {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 700;
+}
+
+.score-label {
+    color: var(--color-text-muted);
+}
+
+.score-value {
+    font-size: 1.1rem;
+}
+
+.score--positive {
+    color: var(--color-positive);
+}
+
+.score--negative {
+    color: var(--color-negative);
+}
+
+.score-separator {
+    color: var(--color-text-muted);
+    margin: 0 0.25rem;
+}
+
+.hand-info {
+    color: var(--color-text-muted);
+}
+
+.info-separator {
+    margin: 0 0.35rem;
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.contract-info {
+    color: var(--color-text);
+}
+
+.match-target {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+/* --------------------------------------------------------------------------
+   8. Bid Panel
+   -------------------------------------------------------------------------- */
+
+#bid-panel {
+    background: var(--color-surface);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+#bid-panel h3 {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+}
+
+.auction-transcript {
+    margin-bottom: 1rem;
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.auction-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.auction-table th,
+.auction-table td {
+    padding: 0.25rem 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.auction-table th {
+    color: var(--color-text-muted);
+    font-weight: 600;
+}
+
+.bid-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bid-controls label {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+
+.bid-controls select {
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid #555;
+    background: var(--color-surface-light);
+    color: var(--color-text);
+    font-size: 0.9rem;
+}
+
+.bid-controls button {
+    padding: 0.5rem 1.25rem;
+    border: none;
+    border-radius: 4px;
+    background: var(--color-felt);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.15s;
+}
+
+.bid-controls button:hover {
+    background: var(--color-legal-glow);
+}
+
+.bid-info {
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   9. Hand Result Banner
+   -------------------------------------------------------------------------- */
+
+.hand-result {
+    text-align: center;
+    padding: 1.5rem;
+    border-radius: 8px;
+    background: var(--color-surface);
+}
+
+.hand-result.result--made {
+    border-left: 4px solid var(--color-positive);
+}
+
+.hand-result.result--set {
+    border-left: 4px solid var(--color-negative);
+}
+
+.result-banner .result-title {
+    font-size: 1.5rem;
+    margin: 0 0 0.5rem;
+}
+
+.result--made .result-title {
+    color: var(--color-positive);
+}
+
+.result--set .result-title {
+    color: var(--color-negative);
+}
+
+.result-detail {
+    font-size: 0.95rem;
+    color: var(--color-text-muted);
+    margin: 0 0 1rem;
+}
+
+.result-scoring {
+    margin: 0.75rem 0;
+}
+
+.result-table {
+    margin: 0 auto;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.result-table td {
+    padding: 0.25rem 0.75rem;
+}
+
+.points--positive {
+    color: var(--color-positive);
+    font-weight: 700;
+}
+
+.points--negative {
+    color: var(--color-negative);
+    font-weight: 700;
+}
+
+.result-match-score {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+}
+
+.hands-count {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin: 0.25rem 0 0;
+}
+
+/* --------------------------------------------------------------------------
+   10. Match Result (Win / Loss Screen)
+   -------------------------------------------------------------------------- */
+
+.match-result {
+    text-align: center;
+    padding: 2rem;
+    border-radius: 12px;
+    background: var(--color-surface);
+}
+
+.match-result.result--win {
+    border: 2px solid var(--color-positive);
+}
+
+.match-result.result--loss {
+    border: 2px solid var(--color-negative);
+}
+
+.match-result .result-title {
+    font-size: 2rem;
+    margin: 0 0 1rem;
+}
+
+.result--win .result-title {
+    color: var(--color-positive);
+}
+
+.result--loss .result-title {
+    color: var(--color-negative);
+}
+
+.final-score {
+    margin: 1rem 0 1.5rem;
+}
+
+.score-table {
+    margin: 0 auto;
+    border-collapse: collapse;
+    font-size: 1.1rem;
+}
+
+.score-table td {
+    padding: 0.35rem 1rem;
+}
+
+.score-final {
+    font-weight: 700;
+    font-size: 1.25rem;
+}
+
+/* --------------------------------------------------------------------------
+   11. Buttons
+   -------------------------------------------------------------------------- */
+
+.btn {
+    display: inline-block;
+    padding: 0.6rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn--play-again {
+    background: var(--color-felt);
+    color: #fff;
+    font-size: 1.1rem;
+    padding: 0.75rem 2rem;
+}
+
+.btn--play-again:hover {
+    background: var(--color-legal-glow);
+}
+
+/* --------------------------------------------------------------------------
+   12. Nickname Form & Model Select (Setup Phases)
+   -------------------------------------------------------------------------- */
+
+#nickname-form,
+#model-select {
+    max-width: 400px;
+    margin: 2rem auto;
+    text-align: center;
+    background: var(--color-surface);
+    padding: 2rem;
+    border-radius: 12px;
+}
+
+#nickname-form h2,
+#model-select h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.3rem;
+}
+
+#model-select p {
+    color: var(--color-text-muted);
+    margin: 0 0 1rem;
+}
+
+#nickname-form form,
+#model-select form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+#nickname-form label {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+}
+
+#nickname-form input[type="text"] {
+    width: 100%;
+    max-width: 250px;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: var(--color-surface-light);
+    color: var(--color-text);
+    font-size: 1rem;
+    text-align: center;
+}
+
+#nickname-form input[type="text"]:focus,
+#model-select select:focus {
+    outline: 2px solid var(--color-legal-glow);
+    outline-offset: 1px;
+}
+
+#model-select select {
+    width: 100%;
+    max-width: 320px;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: var(--color-surface-light);
+    color: var(--color-text);
+    font-size: 0.95rem;
+}
+
+#nickname-form button,
+#model-select button {
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    background: var(--color-felt);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.15s;
+}
+
+#nickname-form button:hover,
+#model-select button:hover {
+    background: var(--color-legal-glow);
+}
+
+/* --------------------------------------------------------------------------
+   13. Responsive Basics
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 600px) {
+    :root {
+        --card-width: 48px;
+        --card-height: 72px;
+        --card-overlap: -8px;
+    }
+
+    .card__rank {
+        font-size: 1rem;
+    }
+
+    .card__suit {
+        font-size: 0.9rem;
+    }
+
+    .card--played {
+        width: 42px;
+        height: 62px;
+    }
+
+    .card--played .card__rank {
+        font-size: 0.9rem;
+    }
+
+    .card--played .card__suit {
+        font-size: 0.8rem;
+    }
+
+    .trick-row-middle {
+        gap: 1rem;
+    }
+
+    .score-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        font-size: 0.8rem;
+    }
+
+    .bid-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .match-result .result-title {
+        font-size: 1.5rem;
+    }
+
+    #nickname-form,
+    #model-select {
+        margin: 1rem;
+        padding: 1.25rem;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   14. HTMX Loading Indicator
+   -------------------------------------------------------------------------- */
+
+.htmx-request .card--legal {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.htmx-request .bid-controls button,
+.htmx-request .btn {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* --------------------------------------------------------------------------
+   15. Utilities
+   -------------------------------------------------------------------------- */
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
