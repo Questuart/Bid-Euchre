@@ -1,4 +1,4 @@
-"""Unit tests for the remote exchange audit trail (Platform-8b, SP-4-06 PR 1)."""
+"""Unit tests for the remote exchange audit trail (Platform-8b, SP-4-06)."""
 
 from __future__ import annotations
 
@@ -15,11 +15,13 @@ from bid_euchre.ops.audit_trail import (
     AuditRecord,
     append_record,
     audit_edit,
+    audit_inbound,
     audit_react,
     audit_reply,
     content_hash,
     content_preview,
     create_record,
+    parse_channel_tag,
     read_records,
 )
 
@@ -690,3 +692,218 @@ class TestOutboundWrapperIntegration:
         outbound = read_records(audit_dir=tmp_path, direction="outbound")
         assert len(outbound) == 2
         assert all(r.direction == "outbound" for r in outbound)
+
+
+# ---------------------------------------------------------------------------
+# parse_channel_tag (SP-4-06 PR 3)
+# ---------------------------------------------------------------------------
+
+
+class TestParseChannelTag:
+    def test_valid_tag(self) -> None:
+        tag = '<channel source="telegram" chat_id="123" message_id="42" user="alice" ts="2026-03-24T06:00:00Z">'
+        result = parse_channel_tag(tag)
+        assert result == {
+            "source": "telegram",
+            "chat_id": "123",
+            "message_id": "42",
+            "user": "alice",
+            "ts": "2026-03-24T06:00:00Z",
+        }
+
+    def test_self_closing_tag(self) -> None:
+        tag = '<channel source="telegram" chat_id="999" />'
+        result = parse_channel_tag(tag)
+        assert result["source"] == "telegram"
+        assert result["chat_id"] == "999"
+
+    def test_minimal_tag(self) -> None:
+        """Tag with only source attribute."""
+        tag = '<channel source="telegram">'
+        result = parse_channel_tag(tag)
+        assert result == {"source": "telegram"}
+
+    def test_missing_attributes_handled_gracefully(self) -> None:
+        """Tag with fewer attributes than expected returns only what's present."""
+        tag = '<channel source="telegram" chat_id="123">'
+        result = parse_channel_tag(tag)
+        assert result == {"source": "telegram", "chat_id": "123"}
+        # Missing keys are simply absent, not errored
+        assert "message_id" not in result
+        assert "user" not in result
+        assert "ts" not in result
+
+    def test_not_a_channel_tag(self) -> None:
+        """Non-channel tag returns empty dict."""
+        assert parse_channel_tag("<div>hello</div>") == {}
+        assert parse_channel_tag("plain text") == {}
+        assert parse_channel_tag("") == {}
+
+    def test_whitespace_handling(self) -> None:
+        """Leading/trailing whitespace is stripped before parsing."""
+        tag = '  <channel source="telegram" chat_id="42">  '
+        result = parse_channel_tag(tag)
+        assert result["source"] == "telegram"
+        assert result["chat_id"] == "42"
+
+    def test_multiline_tag(self) -> None:
+        """Tag split across multiple lines."""
+        tag = (
+            '<channel source="telegram"\n'
+            '         chat_id="123"\n'
+            '         message_id="42"\n'
+            '         user="bob"\n'
+            '         ts="2026-03-24T12:00:00Z">'
+        )
+        result = parse_channel_tag(tag)
+        assert result["source"] == "telegram"
+        assert result["chat_id"] == "123"
+        assert result["message_id"] == "42"
+        assert result["user"] == "bob"
+
+    def test_extra_attributes(self) -> None:
+        """Unknown attributes are still extracted."""
+        tag = '<channel source="telegram" chat_id="123" image_path="/tmp/photo.jpg">'
+        result = parse_channel_tag(tag)
+        assert result["image_path"] == "/tmp/photo.jpg"
+
+
+# ---------------------------------------------------------------------------
+# audit_inbound (SP-4-06 PR 3)
+# ---------------------------------------------------------------------------
+
+
+class TestAuditInbound:
+    def test_basic_inbound(self, tmp_path: Path) -> None:
+        record = audit_inbound(
+            chat_id="8122530898",
+            message_id="42",
+            user="operator_user",
+            content="Hello bot, what's the status?",
+            audit_dir=tmp_path,
+        )
+        assert record.direction == "inbound"
+        assert record.exchange_type == "message"
+        assert record.channel_source == "telegram"
+        assert record.sender_identity == "operator_user"
+        assert record.chat_id == "8122530898"
+        assert record.message_id == "42"
+        assert record.metadata == {}
+
+    def test_content_hash_matches_sha256(self, tmp_path: Path) -> None:
+        """Verify content_hash is the SHA-256 of the content text."""
+        msg = "Check deployment status"
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content=msg,
+            audit_dir=tmp_path,
+        )
+        assert record.content_hash == content_hash(msg)
+
+    def test_content_preview(self, tmp_path: Path) -> None:
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="short message",
+            audit_dir=tmp_path,
+        )
+        assert record.content_preview == "short message"
+
+    def test_long_content_preview_truncated(self, tmp_path: Path) -> None:
+        long_msg = "z" * 500
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content=long_msg,
+            audit_dir=tmp_path,
+        )
+        assert record.content_preview == "z" * 200 + "…"
+        assert record.content_hash == content_hash(long_msg)
+
+    def test_custom_channel_source(self, tmp_path: Path) -> None:
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="test",
+            channel_source="discord",
+            audit_dir=tmp_path,
+        )
+        assert record.channel_source == "discord"
+
+    def test_custom_timestamp(self, tmp_path: Path) -> None:
+        ts = "2026-03-24T10:30:00+00:00"
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="test",
+            ts=ts,
+            audit_dir=tmp_path,
+        )
+        assert record.timestamp == ts
+
+    def test_with_metadata(self, tmp_path: Path) -> None:
+        meta = {"attachment_file_id": "abc123", "image_path": "/tmp/photo.jpg"}
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="see photo",
+            metadata=meta,
+            audit_dir=tmp_path,
+        )
+        assert record.metadata == meta
+
+    def test_persisted_to_jsonl(self, tmp_path: Path) -> None:
+        """Verify the record is actually appended to the JSONL file."""
+        audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="test",
+            audit_dir=tmp_path,
+        )
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+        assert records[0].direction == "inbound"
+        assert records[0].exchange_type == "message"
+
+    def test_returns_persisted_record(self, tmp_path: Path) -> None:
+        """audit_inbound returns the same record that was persisted."""
+        returned = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="check",
+            audit_dir=tmp_path,
+        )
+        persisted = read_records(audit_dir=tmp_path)
+        assert len(persisted) == 1
+        assert returned == persisted[0]
+
+    def test_inbound_outbound_coexist(self, tmp_path: Path) -> None:
+        """Inbound and outbound records coexist in the same log."""
+        audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="operator",
+            content="What's the status?",
+            audit_dir=tmp_path,
+        )
+        audit_reply(chat_id="123", body="All good!", audit_dir=tmp_path)
+
+        all_records = read_records(audit_dir=tmp_path)
+        assert len(all_records) == 2
+
+        inbound = read_records(audit_dir=tmp_path, direction="inbound")
+        assert len(inbound) == 1
+        assert inbound[0].sender_identity == "operator"
+
+        outbound = read_records(audit_dir=tmp_path, direction="outbound")
+        assert len(outbound) == 1
+        assert outbound[0].exchange_type == "reply"

@@ -25,6 +25,7 @@ import fcntl
 import hashlib
 import json
 import logging
+import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -85,6 +86,34 @@ def content_preview(text: str, max_len: int = 200) -> str:
 def _now_iso() -> str:
     """Return current UTC time as ISO 8601 string."""
     return datetime.now(timezone.utc).isoformat()
+
+
+# Regex for extracting attributes from a <channel ...> XML-style tag.
+# Matches key="value" pairs (double-quoted only, no nested quotes).
+_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+def parse_channel_tag(tag_text: str) -> dict[str, str]:
+    """Parse a ``<channel source="..." ...>`` XML tag and extract attributes.
+
+    Accepts the tag format injected by the Telegram plugin::
+
+        <channel source="telegram" chat_id="123" message_id="42"
+                 user="alice" ts="2026-03-24T06:00:00Z">
+
+    The closing ``>`` is optional (self-closing ``/>`` is also accepted).
+
+    Args:
+        tag_text: Raw tag text, e.g. from a system-reminder message.
+
+    Returns:
+        Dict mapping attribute names to their string values.
+        Returns an empty dict if *tag_text* does not look like a channel tag.
+    """
+    tag_text = tag_text.strip()
+    if not tag_text.startswith("<channel"):
+        return {}
+    return dict(_ATTR_RE.findall(tag_text))
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +346,59 @@ def audit_edit(
     )
     append_record(record, audit_dir=audit_dir)
     return record
+
+
+# ---------------------------------------------------------------------------
+# Inbound audit wrappers
+# ---------------------------------------------------------------------------
+
+
+def audit_inbound(
+    chat_id: str,
+    message_id: str,
+    user: str,
+    content: str,
+    channel_source: str = "telegram",
+    ts: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    audit_dir: Path | None = None,
+) -> AuditRecord:
+    """Log an inbound message to the audit trail.
+
+    Creates an :class:`AuditRecord` with ``direction="inbound"`` and
+    ``exchange_type="message"``, appends it, and returns it.
+
+    Args:
+        chat_id: Telegram chat ID the message came from.
+        message_id: Telegram message ID.
+        user: Sender identity (Telegram user ID or username).
+        content: The message text content.
+        channel_source: Channel source identifier (default ``"telegram"``).
+        ts: Optional timestamp override (ISO 8601). Defaults to current UTC time.
+        metadata: Optional extra metadata dict.
+        audit_dir: Override for audit trail directory.
+
+    Returns:
+        The persisted :class:`AuditRecord`.
+    """
+    record = create_record(
+        direction="inbound",
+        channel_source=channel_source,
+        sender_identity=user,
+        exchange_type="message",
+        content=content,
+        chat_id=chat_id,
+        message_id=message_id,
+        metadata=metadata,
+        timestamp=ts,
+    )
+    append_record(record, audit_dir=audit_dir)
+    return record
+
+
+# ---------------------------------------------------------------------------
+# Query
+# ---------------------------------------------------------------------------
 
 
 def read_records(
