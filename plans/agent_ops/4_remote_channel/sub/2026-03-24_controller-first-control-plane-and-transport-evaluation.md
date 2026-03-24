@@ -3,7 +3,7 @@
 **ID:** SP-4-07
 **Date:** 2026-03-24
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Pre-Platform-9 / transport-consolidation follow-up
-**Status:** proposed
+**Status:** in_progress
 **Owner:** orchestrator
 
 ---
@@ -182,7 +182,7 @@ Criteria:
 
 ## PR Roadmap
 
-### PR 1 -- Stabilization gate and lifecycle test baseline
+### PR 1 -- Stabilization gate and lifecycle test baseline ✅ SHIPPED (#1618)
 
 **Goal:** Remove obvious substrate bugs and add the missing end-to-end
 orchestration lifecycle test.
@@ -211,7 +211,7 @@ orchestration lifecycle test.
 - `#1597`
 - `#1573`
 
-### PR 2 -- Controller projection
+### PR 2 -- Controller projection ✅ SHIPPED (#1633)
 
 **Goal:** Publish one canonical actionable-state projection.
 
@@ -236,7 +236,7 @@ orchestration lifecycle test.
 - `#1571`
 - `#1569`
 
-### PR 3 -- Hook surfacing and local guardrails
+### PR 3 -- Hook surfacing and local guardrails (PENDING)
 
 **Goal:** Make unresolved urgent state mechanically visible and block unsafe
 local actions where appropriate.
@@ -260,7 +260,7 @@ local actions where appropriate.
 - `#1608`
 - `#1581`
 
-### PR 4 -- Platform-8b runtime wiring and controller-backed remote path
+### PR 4 -- Platform-8b runtime wiring and controller-backed remote path ⏳ OPEN (#1643)
 
 **Goal:** Move Platform-8b from library-complete to runtime-complete.
 
@@ -283,7 +283,7 @@ local actions where appropriate.
 - `#1573`
 - `#1521`
 
-### PR 5 -- Comparative transport proving and `#1289` decision
+### PR 5 -- Comparative transport proving and `#1289` decision ✅ SHIPPED (#1650)
 
 **Goal:** Decide the long-term role of native inboxes with proving data.
 
@@ -413,14 +413,24 @@ Run one real remote exchange through the chosen channel path.
 
 This sub-plan is complete only when:
 
-- one repo-owned controller surface exists and is the documented actionable
-  truth for urgent/routine operator state
-- one automated integration test proves `detect -> surface -> ack -> clear`
-- unresolved urgent state can no longer be silently ignored at normal
-  orchestrator interaction boundaries
-- Platform-8b is runtime-wired, not library-only
-- one real channel-backed remote loop is proven end to end
-- `#1289` has a decision note backed by the transport comparison matrix
+- [x] one repo-owned controller surface exists and is the documented actionable
+  truth for urgent/routine operator state — **DONE** (`src/bid_euchre/ops/control_plane.py`, PR #1633)
+- [ ] one automated integration test proves `detect -> surface -> ack -> clear`
+  — **PENDING** (controller unit tests exist; full integration test needs hook surfacing from PR 3)
+- [ ] unresolved urgent state can no longer be silently ignored at normal
+  orchestrator interaction boundaries — **PENDING** (requires PR 3: hook surfacing)
+- [ ] Platform-8b is runtime-wired, not library-only — **IN PROGRESS** (PR #1643 open)
+- [ ] one real channel-backed remote loop is proven end to end
+  — **PENDING** (Telegram inbound proven via PR #1616; outbound + full loop needs PR #1643)
+- [x] `#1289` has a decision note backed by the transport comparison matrix
+  — **DONE** (`plans/sessions/2026-03-24_transport-comparison-adr.md`, PR #1650)
+
+## Session Log
+
+| Date | Summary |
+|------|---------|
+| 2026-03-24 | SP-4-07 drafted as proposed. 5-PR roadmap covering controller, hooks, audit wiring, and transport ADR. |
+| 2026-03-24 | Status updated to in_progress. 3 of 5 PRs shipped: PR #1618 (stabilization gate — TTL expiry, escalation dedup, stall guard fixes), PR #1633 (controller projection module with `reconcile()`, `derive_items()`, `load_fleet_status()`), PR #1650 (transport comparison ADR — closes #1289 with Option B). PR #1643 (audit runtime wiring) is open. PR 3 (hook surfacing) remains pending. 2 of 6 exit criteria met. |
 
 ## Notes
 
