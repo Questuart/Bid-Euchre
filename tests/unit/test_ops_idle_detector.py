@@ -317,14 +317,19 @@ class TestMeaningfulEventTypes:
     """Verify the set of meaningful event types is well-defined."""
 
     def test_meaningful_types_are_subset_of_valid(self) -> None:
-        """All meaningful types must be valid event types."""
+        """Every meaningful type must be a valid event type.
+
+        This ensures the idle detector never references event types that
+        cannot be emitted via ``append_event()``.  See issue #1588.
+        """
         from bid_euchre.ops.events import VALID_EVENT_TYPES
 
-        # Some meaningful types (like pr_opened, pr_merged) may not be in
-        # VALID_EVENT_TYPES yet — that's fine, they're aspirational.
-        # But the ones that are should be valid.
-        shared = MEANINGFUL_EVENT_TYPES & VALID_EVENT_TYPES
-        assert len(shared) > 0, "No overlap between meaningful and valid types"
+        extra = MEANINGFUL_EVENT_TYPES - VALID_EVENT_TYPES
+        assert extra == set(), (
+            f"MEANINGFUL_EVENT_TYPES contains types not in VALID_EVENT_TYPES: "
+            f"{sorted(extra)}.  Either add them to VALID_EVENT_TYPES or remove "
+            f"them from MEANINGFUL_EVENT_TYPES."
+        )
 
     def test_infrastructure_events_excluded(self) -> None:
         """Infrastructure events should not be in the meaningful set."""
@@ -335,6 +340,16 @@ class TestMeaningfulEventTypes:
             "fs_boundary_violation",
         }
         assert MEANINGFUL_EVENT_TYPES & infra_types == set()
+
+    def test_meaningful_types_count(self) -> None:
+        """Guard against silent removal of meaningful types.
+
+        If you intentionally add/remove a type, update this count.
+        """
+        assert len(MEANINGFUL_EVENT_TYPES) == 9, (
+            f"Expected 9 meaningful event types, got {len(MEANINGFUL_EVENT_TYPES)}.  "
+            f"If you added or removed a type intentionally, update this test."
+        )
 
     def test_default_threshold_is_90(self) -> None:
         assert DEFAULT_THRESHOLD_MINUTES == 90

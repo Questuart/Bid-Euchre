@@ -35,6 +35,20 @@ DEFAULT_THRESHOLD_MINUTES = 90
 
 # Event types that reset the idle timer.  These represent genuine fleet-level
 # progress, not infrastructure bookkeeping.
+#
+# Every type listed here MUST be in ``VALID_EVENT_TYPES`` (events.py) AND must
+# be emitted by at least one production code path.  The subset-containment
+# test enforces the first invariant; the second is verified by inspection:
+#
+#   task_started     → ops.py CLI ``task accept``
+#   task_completed   → post-task-event.sh hook / task queue
+#   task_failed      → ops.py CLI ``task complete --status failed``
+#   task_rerouted    → worker_pool.py reroute logic
+#   ci_success       → post-merge-ci-check.sh hook
+#   ci_failure       → post-merge-ci-check.sh hook
+#   review_outcome   → review_queue.py
+#   review_verdict   → review_queue.py ``write_verdict``
+#   skill_promoted   → skill_promotion.py ``promote_skill``
 MEANINGFUL_EVENT_TYPES = frozenset(
     {
         # Task lifecycle
@@ -48,9 +62,7 @@ MEANINGFUL_EVENT_TYPES = frozenset(
         # Review & PR signals
         "review_outcome",
         "review_verdict",
-        # Session lifecycle
-        "session_started",
-        # Skill / snapshot events that represent deliberate work
+        # Skill events that represent deliberate work
         "skill_promoted",
     }
 )
