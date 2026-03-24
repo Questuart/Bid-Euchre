@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-24 by Codex (SP-4-07 drafted; Step 2 reopened for runtime wiring)
+**Last updated:** 2026-03-24 by author-b (SP-4-07 in_progress; Step 3 IN_PROGRESS with PRs #1618, #1633, #1643)
 
 ---
 
@@ -25,7 +25,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Step 0: Phase 4 scope lock and sub-plan registration | COMPLETE | 2026-03-23 | author-scratch | SP-4-01 created and registered. |
 | Step 1: Platform-8a preflight and Telegram transport skeleton | COMPLETE | 2026-03-24 | flex-b | SP-4-04 all steps proven. PRs #1436, #1451, #1452 merged. Pairing confirmed (user 8122530898), messages flow both ways, kill switch verified. |
 | Step 2: Platform-8b repo-owned remote audit trail and runtime wiring | IN_PROGRESS | 2026-03-24 | author-a + orchestrator | SP-4-06 shipped the audit library, but issue #1573 correctly reopens the slice: runtime callers, controller integration, and real inbound/outbound proving are still pending. PR #1616 fixed Telegram inbound (#1615) — ops lane moved to detached worktree to stop competing bun processes from consuming `getUpdates`. Inbound now proven working (test message confirmed 2026-03-24). |
-| Step 3: SP-4-07 controller-first control plane and transport evaluation | PENDING | -- | -- | Add controller projection, hook-fed local enforcement, and the comparative transport/proving matrix before Platform-9 scope lock. |
+| Step 3: SP-4-07 controller-first control plane and transport evaluation | IN_PROGRESS | 2026-03-24 | author-a + author-b | PRs: #1618 (stabilization gate), #1633 (controller projection), #1643 (audit runtime wiring, open). SP-4-07 active — controller projection landed, audit wiring in review. |
 | Step 4: Platform-9a idle-attention alerts and acknowledgement loop | BLOCKED | -- | -- | Blocked on Step 2 runtime wiring and Step 3 controller-backed actionable state. |
 | Step 5: Platform-9b away-from-desk queue-moving proving run | BLOCKED | -- | -- | Blocked on Platform-9a plus controller-backed remote delivery. |
 | Step 6: Platform-9c first hardening pass and Phase 4 handoff | BLOCKED | -- | -- | Fix real proving-run issues, update docs, and record known gaps. |
@@ -42,7 +42,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | completed | Step 1 |
 | SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | completed | Pre-Platform-8 |
 | SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | completed (library only) | Step 2 |
-| SP-4-07 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | proposed | Step 3 |
+| SP-4-07 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | in_progress | Step 3 |
 
 ### Shared Surface Ownership
 
@@ -93,3 +93,4 @@ implementation.
 | 2026-03-24 | SP-4-06 COMPLETE (author-a). All 4 PRs shipped: PR 1 core writer (#1532), PR 2 outbound wrappers (#1536), PR 3 inbound helper + channel tag parser (#1541), PR 4 integration tests. Integration test suite covers: full round-trip conversations (4 tests), concurrent writers with flock safety (3 tests), large-volume 1000+ record throughput (4 tests), mixed direction filtering (9 tests). 20 integration tests total, all passing. Step 2 marked COMPLETE. |
 | 2026-03-24 | Phase 4 reconciled after control-plane / transport review. Issue #1573 is accepted: SP-4-06 completed the Platform-8b audit library, but runtime callers and real controller-backed proving are still missing. Step 2 reopened as IN_PROGRESS. New SP-4-07 drafted to add a repo-owned controller projection, hook-fed local enforcement, Platform-8b runtime wiring, and a comparative decision matrix for custom bus vs native `SendMessage` vs Claude Channels (`#1289`). |
 | 2026-03-24 | Telegram inbound fix: PR #1616 moved ops lane to detached worktree (`Bid-Euchre-steward-ops`), mirroring the review lane pattern. Root cause: ops lane and orchestrator both ran in `$MAIN_DIR`, spawning competing bun MCP server instances that raced on `getUpdates`. Ops bun consumed inbound messages before they reached the orchestrator. Fix confirmed — test message delivered successfully. Closes #1615, unblocks real inbound proving for Platform-8b runtime wiring. |
+| 2026-03-24 | SP-4-07 IN_PROGRESS (author-a + author-b). Three PRs shipped or in-flight: PR #1618 stabilization gate (merged — TTL expiry, escalation dedup, stall guard), PR #1633 controller projection module (merged — SP-4-07 PR 2), PR #1643 audit runtime wiring (open — SP-4-07 PR 4, wires audit trail into runtime paths and controller). Step 3 moved from PENDING to IN_PROGRESS. |
