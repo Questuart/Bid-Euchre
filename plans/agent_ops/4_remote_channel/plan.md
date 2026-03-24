@@ -3,7 +3,7 @@
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase:** `4_remote_channel`
 **Status:** IN_PROGRESS
-**Last updated:** 2026-03-24 by brws-author-d (SP-4-05 COMPLETE, Platform-8a COMPLETE)
+**Last updated:** 2026-03-24 by Codex (SP-4-07 drafted; Platform-8b runtime wiring reopened)
 
 ---
 
@@ -32,6 +32,10 @@ treats the remote channel as a thin transport into `orchestrator`.
   reactivity before Platform-8 proving. Telegram host/plugin preflight may
   proceed in parallel, but remote proving should not rely on a weak local
   completion/stall loop.
+- SP-4-07 (controller-first control plane and transport evaluation) must scope
+  lock before Platform-8b runtime completion or Platform-9 proving. The
+  platform now treats controller state as the prerequisite for reliable remote
+  delivery, not just bus/channel transport.
 
 ## Phase Constraints
 
@@ -46,6 +50,8 @@ treats the remote channel as a thin transport into `orchestrator`.
 - Every inbound and outbound remote exchange must be durably recorded in
   repo-owned state
 - The remote layer must not become a second control plane
+- Controller/reconciler outputs remain the canonical actionable state for
+  alerts, next actions, and acknowledgements. Raw transport surfaces do not.
 - `cmux` is not a required dependency for Phase 4 v1.
   - If present, it is optional presentation/transport metadata only and must not
     inject noise or lifecycle coupling into steward tmux sessions
@@ -55,10 +61,10 @@ treats the remote channel as a thin transport into `orchestrator`.
 | Slice | Goal | Status | Batch | Depends On |
 |-------|------|--------|-------|------------|
 | `Platform-8a` | Channel preflight, Telegram transport skeleton, kill/mute/fallback hooks | COMPLETE | E | Phase 3, Amendment A5, SP-4-05 |
-| `Platform-8b` | Repo-owned audit trail for inbound/outbound remote exchanges | READY FOR SCOPE LOCK | E | Platform-3, Platform-8a |
-| `Platform-9a` | Idle-attention alerts and remote acknowledgement loop | READY FOR SCOPE LOCK | E | Platform-6, Platform-8b |
-| `Platform-9b` | Away-from-desk queue-moving supervision through `orchestrator` | READY FOR SCOPE LOCK | E | Platform-2, Platform-8b, Platform-9a |
-| `Platform-9c` | First hardening pass from real remote use | READY FOR SCOPE LOCK | E | Platform-9b |
+| `Platform-8b` | Repo-owned audit trail for inbound/outbound remote exchanges | IN_PROGRESS (library complete, runtime wiring pending) | E | Platform-3, Platform-8a, SP-4-07 |
+| `Platform-9a` | Idle-attention alerts and remote acknowledgement loop | BLOCKED | E | Platform-6, Platform-8b, SP-4-07 |
+| `Platform-9b` | Away-from-desk queue-moving supervision through `orchestrator` | BLOCKED | E | Platform-2, Platform-8b, Platform-9a, SP-4-07 |
+| `Platform-9c` | First hardening pass from real remote use | BLOCKED | E | Platform-9b |
 
 ## Batch E Pass Gate
 
@@ -66,6 +72,8 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 
 - [ ] Telegram proving run works end-to-end for one remote operator
 - [ ] Every inbound and outbound remote exchange is recorded in repo-owned state
+- [ ] One controller-backed actionable-state surface exists and is the source
+  for alerts / next actions / acknowledgement state
 - [ ] Kill switch and mute path work without needing desktop intervention
 - [ ] At least one alert path is proven with acknowledgement, dedupe, and
   backoff behavior
@@ -79,11 +87,14 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 
 1. Scope lock plus local control-loop preflight
 2. Telegram host/plugin preflight and token baseline
-3. Telegram transport plus repo-owned logging
-4. Kill switch, mute, and operator fallback
-5. Alert / acknowledgement loop
-6. Queue-moving remote workflows through `orchestrator`
-7. First hardening pass from real use
+3. Stabilization gate plus lifecycle integration coverage
+4. Controller / actionable-state projection
+5. Hook surfacing and local guardrails
+6. Platform-8b runtime wiring against repo-owned state
+7. Alert / acknowledgement loop
+8. Queue-moving remote workflows through `orchestrator`
+9. First hardening pass from real use
+10. Transport consolidation reassessment (`#1289`)
 
 ## High-Value Workflows To Prove
 
@@ -111,6 +122,8 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 | SP-4-03 | Token economy observability and dashboard | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` |
 | SP-4-04 | Platform-8a Telegram transport configuration | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` |
 | SP-4-05 | Reactive control-loop hardening | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` |
+| SP-4-06 | Platform-8b audit-trail library | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` |
+| SP-4-07 | Controller-first control plane and transport evaluation | proposed | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` |
 
 ## Step Sequence
 

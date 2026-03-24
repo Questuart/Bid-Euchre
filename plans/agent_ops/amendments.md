@@ -1,7 +1,7 @@
 # Agentic Orchestration Platform — Amendments
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-23 (A8 remote-ops v1 shaping)
+**Last updated:** 2026-03-24 (A9 controller-first control plane and transport evaluation)
 
 ---
 
@@ -233,3 +233,35 @@ future sessions from having to reconstruct intent from chat history.
 multiplier because it reduces idle time while the operator is away from the
 desk. The cheapest reliable first version is a dumb transport into the
 existing orchestrator workflow, not a smarter remote-only control surface.
+
+---
+
+## A9 — Controller-first control plane and transport evaluation (2026-03-24)
+
+**PR:** pending follow-up
+
+**What changed:**
+1. **Controller-first truth made explicit** — The governing plan now states
+   that routine operator state should be materialized as a compact repo-owned
+   projection (for example `fleet_status.json` / `next_actions.json`) with
+   stable IDs, severity, state, and recommended action. This projection is the
+   preferred feed for hooks, dashboard views, and remote delivery.
+2. **Channels elevated as the preferred push adapter** — The delivery-adapter
+   roadmap now names Claude Channels as the preferred `v2` push mechanism for
+   live-session delivery once proving supports it. This keeps Channels in the
+   target architecture without making them canonical truth.
+3. **Native `SendMessage` kept as optional imported signal** — The governing
+   plan now records that Claude native inboxes may remain imported signal
+   sources, but should not replace repo-owned task/review/control state unless
+   a later proving matrix demonstrates semantic parity and lower operational
+   cost.
+4. **Transport consolidation explicitly deferred to evidence** — The plan now
+   says the choice among custom bus, native `SendMessage`, and Channels remains
+   open until comparative proving is complete. This prevents current-system
+   bias from locking in transport prematurely.
+
+**Rationale:** The platform has multiple viable transport surfaces, but the
+observed failures are control-loop failures, not storage failures. The most
+effective architecture is to settle canonical actionable state first, then
+choose transports based on measured fit rather than on whichever mechanism was
+implemented earliest.
