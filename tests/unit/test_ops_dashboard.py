@@ -835,3 +835,67 @@ class TestDashboardWatchFlag:
         output = stdout.decode()
         assert "Steward Dashboard" in output
         assert "Refreshing every 1s" in output
+
+    def test_single_shot_json_is_valid(self) -> None:
+        """Single-shot --json emits indented, parseable JSON."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--json",
+                "dashboard",
+                "--no-probe",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert "summary" in data
+        # Indented output contains newlines
+        assert "\n" in result.stdout
+
+    def test_watch_json_emits_ndjson(self) -> None:
+        """--watch --json emits compact NDJSON (no ANSI escapes, no footer)."""
+        import signal
+        import subprocess
+        import time as time_mod
+
+        proc = subprocess.Popen(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--json",
+                "dashboard",
+                "--no-probe",
+                "--watch",
+                "--interval",
+                "1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        # Give it time to emit at least one line
+        time_mod.sleep(2)
+        proc.send_signal(signal.SIGINT)
+        stdout, stderr = proc.communicate(timeout=5)
+        output = stdout.decode()
+        # Should NOT contain ANSI escape sequences
+        assert "\033[2J" not in output
+        # Should NOT contain text-mode footer
+        assert "Refreshing every" not in output
+        # Each non-empty line should be valid JSON
+        lines = [ln for ln in output.strip().split("\n") if ln.strip()]
+        assert len(lines) >= 1
+        for line in lines:
+            data = json.loads(line)
+            assert "summary" in data
+        # "Watch stopped." should go to stderr, not stdout
+        assert "Watch stopped." not in output

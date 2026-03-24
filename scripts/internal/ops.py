@@ -175,24 +175,31 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                 check_worktree=not getattr(args, "no_probe", False),
             )
 
-            if watch:
-                # Clear screen for clean refresh
-                print("\033[2J\033[H", end="", flush=True)
-
             if args.json:
-                print(json.dumps(format_dashboard_json(view), indent=2))
+                # In watch mode, emit compact NDJSON (one JSON object per line)
+                # so the output stream stays machine-parseable.
+                # In single-shot mode, emit indented JSON for readability.
+                if watch:
+                    print(json.dumps(format_dashboard_json(view)))
+                else:
+                    print(json.dumps(format_dashboard_json(view), indent=2))
             else:
+                if watch:
+                    # Clear screen for clean refresh (text mode only —
+                    # ANSI escapes would corrupt JSON output)
+                    print("\033[2J\033[H", end="", flush=True)
                 print(format_dashboard_text(view))
 
             if not watch:
                 break
 
-            print(f"\n--- Refreshing every {interval}s (Ctrl+C to stop) ---")
+            if not args.json:
+                print(f"\n--- Refreshing every {interval}s (Ctrl+C to stop) ---")
             sys.stdout.flush()
             time.sleep(interval)
     except KeyboardInterrupt:
         if watch:
-            print("\nWatch stopped.")
+            print("\nWatch stopped.", file=sys.stderr)
         return 0
 
     return 0
@@ -2450,7 +2457,16 @@ def cmd_lane(args: argparse.Namespace) -> int:
                 err = result.stderr.strip()
                 print(f"Error: tmux capture-pane failed: {err}", file=sys.stderr)
                 return 1
-            print(result.stdout, end="")
+            content = result.stdout
+            if args.json:
+                print(
+                    json.dumps(
+                        {"lane": lane_id, "content": content},
+                        indent=2,
+                    )
+                )
+            else:
+                print(content, end="")
             return 0
         except FileNotFoundError:
             print("Error: tmux is not installed or not on PATH", file=sys.stderr)
