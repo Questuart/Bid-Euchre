@@ -170,6 +170,27 @@ class TestMainCLI:
         assert code == 0
         assert output.exists()
 
+    def test_samefile_guard(self, tmp_path):
+        """--output that resolves to --db should return exit code 1."""
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"")  # create empty file
+
+        # Exact same path
+        code = main(["--db", str(db_path), "--output", str(db_path)])
+        assert code == 1
+
+    def test_samefile_guard_via_hardlink(self, tmp_path):
+        """--output pointing to a hard link of --db should be caught."""
+        import os
+
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"")
+        link_path = tmp_path / "alias.db"
+        os.link(db_path, link_path)
+
+        code = main(["--db", str(db_path), "--output", str(link_path)])
+        assert code == 1
+
     def test_help_flag(self):
         """--help should exit with code 0."""
         with pytest.raises(SystemExit) as exc_info:

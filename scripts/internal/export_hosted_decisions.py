@@ -30,11 +30,20 @@ Export only human decisions::
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
-from web.db import init_engine, make_session_factory
-from web.export import export_decisions
+try:
+    from web.db import init_engine, make_session_factory
+    from web.export import export_decisions
+except ImportError:
+    print(
+        "Error: web package not found. Install the hosted extras:\n"
+        "  uv sync --extra hosted",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -74,6 +83,15 @@ def main(argv: list[str] | None = None) -> int:
     db_path: Path = args.db
     if not db_path.exists():
         print(f"Error: database not found: {db_path}", file=sys.stderr)
+        return 1
+
+    output_path: Path = args.output
+    if output_path.exists() and os.path.samefile(db_path, output_path):
+        print(
+            "Error: --output resolves to the same file as --db. "
+            "This would overwrite the database.",
+            file=sys.stderr,
+        )
         return 1
 
     database_url = f"sqlite:///{db_path.resolve()}"
