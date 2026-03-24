@@ -21,6 +21,7 @@ from bid_euchre.ops.audit_trail import (
     content_hash,
     content_preview,
     create_record,
+    normalize_timestamp,
     parse_channel_tag,
     read_records,
 )
@@ -767,6 +768,76 @@ class TestParseChannelTag:
         result = parse_channel_tag(tag)
         assert result["image_path"] == "/tmp/photo.jpg"
 
+    def test_body_text_not_parsed_as_attributes(self) -> None:
+        """Quoted key=value patterns in body text must not be extracted as tag attrs."""
+        tag = (
+            '<channel source="telegram" chat_id="123">'
+            'Body with some="value" and key="other" inside'
+            "</channel>"
+        )
+        result = parse_channel_tag(tag)
+        assert result == {"source": "telegram", "chat_id": "123"}
+        assert "some" not in result
+        assert "key" not in result
+
+    def test_body_with_angle_brackets(self) -> None:
+        """Body text containing angle brackets should not confuse the parser."""
+        tag = (
+            '<channel source="telegram" chat_id="42">'
+            'User says: 2 > 1 and foo="bar" is valid'
+            "</channel>"
+        )
+        result = parse_channel_tag(tag)
+        assert result == {"source": "telegram", "chat_id": "42"}
+
+    def test_tag_without_body(self) -> None:
+        """A tag with no body and closing > still parses correctly."""
+        tag = '<channel source="telegram" chat_id="100" user="bob">'
+        result = parse_channel_tag(tag)
+        assert result == {"source": "telegram", "chat_id": "100", "user": "bob"}
+
+
+# ---------------------------------------------------------------------------
+# normalize_timestamp
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeTimestamp:
+    def test_z_suffix_to_offset(self) -> None:
+        assert (
+            normalize_timestamp("2026-03-24T06:00:00Z") == "2026-03-24T06:00:00+00:00"
+        )
+
+    def test_offset_unchanged(self) -> None:
+        assert (
+            normalize_timestamp("2026-03-24T06:00:00+00:00")
+            == "2026-03-24T06:00:00+00:00"
+        )
+
+    def test_non_utc_offset_converted(self) -> None:
+        """Timestamps with non-UTC offsets are converted to UTC."""
+        # +05:00 means 06:00 local = 01:00 UTC
+        result = normalize_timestamp("2026-03-24T06:00:00+05:00")
+        assert result == "2026-03-24T01:00:00+00:00"
+
+    def test_naive_treated_as_utc(self) -> None:
+        """Naive timestamps (no tz) are treated as UTC."""
+        result = normalize_timestamp("2026-03-24T06:00:00")
+        assert result == "2026-03-24T06:00:00+00:00"
+
+    def test_with_microseconds(self) -> None:
+        result = normalize_timestamp("2026-03-24T06:00:00.123456Z")
+        assert result == "2026-03-24T06:00:00.123456+00:00"
+
+    def test_invalid_string_passthrough(self) -> None:
+        """Invalid timestamps are returned unchanged."""
+        assert normalize_timestamp("not-a-date") == "not-a-date"
+        assert normalize_timestamp("") == ""
+
+    def test_non_string_passthrough(self) -> None:
+        """Non-string values don't crash."""
+        assert normalize_timestamp(None) is None  # type: ignore[arg-type]
+
 
 # ---------------------------------------------------------------------------
 # audit_inbound (SP-4-06 PR 3)
@@ -885,6 +956,44 @@ class TestAuditInbound:
         persisted = read_records(audit_dir=tmp_path)
         assert len(persisted) == 1
         assert returned == persisted[0]
+
+    def test_z_suffix_normalized_to_offset(self, tmp_path: Path) -> None:
+        """Inbound ts with Z suffix is normalized to +00:00."""
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="test",
+            ts="2026-03-24T06:00:00Z",
+            audit_dir=tmp_path,
+        )
+        assert record.timestamp == "2026-03-24T06:00:00+00:00"
+
+    def test_offset_timestamp_unchanged(self, tmp_path: Path) -> None:
+        """Inbound ts already in +00:00 form is unchanged."""
+        ts = "2026-03-24T10:30:00+00:00"
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="test",
+            ts=ts,
+            audit_dir=tmp_path,
+        )
+        assert record.timestamp == ts
+
+    def test_no_ts_uses_auto_timestamp(self, tmp_path: Path) -> None:
+        """When ts is None, auto-generated timestamp is used."""
+        record = audit_inbound(
+            chat_id="123",
+            message_id="1",
+            user="user1",
+            content="test",
+            audit_dir=tmp_path,
+        )
+        # Auto-generated timestamp should be parseable and in UTC
+        dt = datetime.fromisoformat(record.timestamp)
+        assert dt.tzinfo is not None
 
     def test_inbound_outbound_coexist(self, tmp_path: Path) -> None:
         """Inbound and outbound records coexist in the same log."""
