@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from web.config import HostedPlayConfig, get_config, override_config
+from web.config import (
+    HostedPlayConfig,
+    _parse_origins,
+    get_config,
+    override_config,
+)
 
 # ---------------------------------------------------------------------------
 # HostedPlayConfig defaults
@@ -30,10 +35,64 @@ class TestHostedPlayConfigDefaults:
         cfg = HostedPlayConfig()
         assert cfg.debug is False
 
+    def test_default_secret_key_generated(self):
+        cfg = HostedPlayConfig()
+        # Dev fallback starts with "dev-insecure-" and is non-empty
+        assert cfg.secret_key.startswith("dev-insecure-")
+        assert len(cfg.secret_key) > len("dev-insecure-")
+
+    def test_default_secret_key_unique_per_instance(self):
+        # Each default construction should produce a different key
+        cfg1 = HostedPlayConfig()
+        cfg2 = HostedPlayConfig()
+        assert cfg1.secret_key != cfg2.secret_key
+
+    def test_default_allowed_origins(self):
+        cfg = HostedPlayConfig()
+        assert cfg.allowed_origins == ["*"]
+
+    def test_default_app_url(self):
+        cfg = HostedPlayConfig()
+        assert cfg.app_url == "http://localhost:8000"
+
+    def test_default_models_dir(self):
+        cfg = HostedPlayConfig()
+        assert cfg.models_dir is None
+
     def test_frozen(self):
         cfg = HostedPlayConfig()
         with pytest.raises(AttributeError):
             cfg.debug = True  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# _parse_origins helper
+# ---------------------------------------------------------------------------
+
+
+class TestParseOrigins:
+    """Verify comma-separated origin parsing."""
+
+    def test_single_origin(self):
+        assert _parse_origins("https://example.com") == ["https://example.com"]
+
+    def test_multiple_origins(self):
+        result = _parse_origins("https://a.com,https://b.com,https://c.com")
+        assert result == ["https://a.com", "https://b.com", "https://c.com"]
+
+    def test_strips_whitespace(self):
+        result = _parse_origins(" https://a.com , https://b.com ")
+        assert result == ["https://a.com", "https://b.com"]
+
+    def test_drops_empty_entries(self):
+        result = _parse_origins("https://a.com,,https://b.com,")
+        assert result == ["https://a.com", "https://b.com"]
+
+    def test_wildcard(self):
+        assert _parse_origins("*") == ["*"]
+
+    def test_empty_string(self):
+        assert _parse_origins("") == []
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +102,20 @@ class TestHostedPlayConfigDefaults:
 
 class TestFromEnv:
     """Verify from_env() reads environment variables correctly."""
+
+    def _clear_all_config_env(self, monkeypatch):
+        """Helper to unset all config-related env vars."""
+        for key in (
+            "DATABASE_URL",
+            "SECRET_KEY",
+            "ALLOWED_ORIGINS",
+            "APP_URL",
+            "DEFAULT_MODEL_ID",
+            "HYBRID_OLSA_ARTIFACT",
+            "MODELS_DIR",
+            "DEBUG",
+        ):
+            monkeypatch.delenv(key, raising=False)
 
     def test_reads_database_url(self, monkeypatch):
         monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
@@ -71,19 +144,64 @@ class TestFromEnv:
             cfg = HostedPlayConfig.from_env()
             assert cfg.debug is False, f"Expected False for DEBUG={val!r}"
 
+    # -- New production fields ------------------------------------------
+
+    def test_reads_secret_key(self, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "super-secret-prod-key")
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.secret_key == "super-secret-prod-key"
+
+    def test_secret_key_fallback_is_dev_insecure(self, monkeypatch):
+        self._clear_all_config_env(monkeypatch)
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.secret_key.startswith("dev-insecure-")
+
+    def test_reads_allowed_origins(self, monkeypatch):
+        monkeypatch.setenv(
+            "ALLOWED_ORIGINS", "https://app.example.com,https://staging.example.com"
+        )
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.allowed_origins == [
+            "https://app.example.com",
+            "https://staging.example.com",
+        ]
+
+    def test_allowed_origins_default_wildcard(self, monkeypatch):
+        self._clear_all_config_env(monkeypatch)
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.allowed_origins == ["*"]
+
+    def test_reads_app_url(self, monkeypatch):
+        monkeypatch.setenv("APP_URL", "https://bideuchre.example.com")
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.app_url == "https://bideuchre.example.com"
+
+    def test_app_url_default(self, monkeypatch):
+        self._clear_all_config_env(monkeypatch)
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.app_url == "http://localhost:8000"
+
+    def test_reads_models_dir(self, monkeypatch):
+        monkeypatch.setenv("MODELS_DIR", "/opt/models")
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.models_dir == "/opt/models"
+
+    def test_models_dir_default_none(self, monkeypatch):
+        self._clear_all_config_env(monkeypatch)
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.models_dir is None
+
     def test_missing_env_vars_use_defaults(self, monkeypatch):
         # Clear relevant env vars
-        for key in (
-            "DATABASE_URL",
-            "DEFAULT_MODEL_ID",
-            "HYBRID_OLSA_ARTIFACT",
-            "DEBUG",
-        ):
-            monkeypatch.delenv(key, raising=False)
+        self._clear_all_config_env(monkeypatch)
         cfg = HostedPlayConfig.from_env()
         assert cfg.database_url == "sqlite:///hosted_play.db"
+        assert cfg.secret_key.startswith("dev-insecure-")
+        assert cfg.allowed_origins == ["*"]
+        assert cfg.app_url == "http://localhost:8000"
         assert cfg.default_model_id == "heuristic"
         assert cfg.hybrid_olsa_artifact is None
+        assert cfg.models_dir is None
         assert cfg.debug is False
 
 
@@ -95,16 +213,24 @@ class TestFromEnv:
 class TestOverrideGetConfig:
     """Verify the module-level config override mechanism."""
 
-    def test_get_config_returns_env_by_default(self, monkeypatch):
-        # Ensure no override is active
-        override_config(None)
+    def _clear_all_config_env(self, monkeypatch):
+        """Helper to unset all config-related env vars."""
         for key in (
             "DATABASE_URL",
+            "SECRET_KEY",
+            "ALLOWED_ORIGINS",
+            "APP_URL",
             "DEFAULT_MODEL_ID",
             "HYBRID_OLSA_ARTIFACT",
+            "MODELS_DIR",
             "DEBUG",
         ):
             monkeypatch.delenv(key, raising=False)
+
+    def test_get_config_returns_env_by_default(self, monkeypatch):
+        # Ensure no override is active
+        override_config(None)
+        self._clear_all_config_env(monkeypatch)
         cfg = get_config()
         assert cfg.database_url == "sqlite:///hosted_play.db"
 
@@ -140,5 +266,23 @@ class TestOverrideGetConfig:
             assert retrieved.database_url == "sqlite:///test.db"
             assert retrieved.default_model_id == "hybrid_olsa"
             assert retrieved.debug is True
+        finally:
+            override_config(None)
+
+    def test_round_trip_new_fields(self):
+        """Verify new production fields survive override round-trip."""
+        original = HostedPlayConfig(
+            secret_key="test-key-123",
+            allowed_origins=["https://test.example.com"],
+            app_url="https://test.example.com",
+            models_dir="/tmp/models",
+        )
+        override_config(original)
+        try:
+            retrieved = get_config()
+            assert retrieved.secret_key == "test-key-123"
+            assert retrieved.allowed_origins == ["https://test.example.com"]
+            assert retrieved.app_url == "https://test.example.com"
+            assert retrieved.models_dir == "/tmp/models"
         finally:
             override_config(None)
