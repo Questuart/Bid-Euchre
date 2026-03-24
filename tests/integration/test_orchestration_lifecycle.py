@@ -47,43 +47,6 @@ def events_dir(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-# Priority tiers for inbox triage (mirrors the planned
-# read_inbox_prioritized contract from the messaging-redesign plan).
-_PRIORITY_TIERS = {
-    "P0": {"urgent"},
-    "P1": {"high"},
-    "P2": {"normal", "low"},
-}
-
-
-def _prioritized_inbox(
-    lane_id: str,
-    bus_root: Path,
-) -> tuple[list[dict], list[dict], list[dict]]:
-    """Triage a lane's pending inbox into P0/P1/P2 buckets.
-
-    This is a test-local shim for the planned ``read_inbox_prioritized()``
-    convenience wrapper.  Once that function ships in Phase 1b, this helper
-    can be replaced by a direct call.
-    """
-    msgs = read_inbox(
-        lane_id,
-        bus_root=bus_root,
-        status="pending",
-        auto_expire=False,
-        auto_compact=False,
-        limit=200,
-    )
-    p0 = [m for m in msgs if m.get("priority") in _PRIORITY_TIERS["P0"]]
-    p1 = [m for m in msgs if m.get("priority") in _PRIORITY_TIERS["P1"]]
-    p2 = [m for m in msgs if m.get("priority") in _PRIORITY_TIERS["P2"]]
-    return p0, p1, p2
-
-
-# ---------------------------------------------------------------------------
 # Test: Full orchestration lifecycle
 # ---------------------------------------------------------------------------
 
@@ -149,7 +112,9 @@ class TestOrchestrationLifecycle:
         complete_id = send_message(complete, bus_root=bus_root, events_dir=events_dir)
 
         # 7. Orchestrator reads prioritized inbox — completion should be P1
-        p0, p1, p2 = _prioritized_inbox("orchestrator", bus_root=bus_root)
+        p0, p1, p2 = read_inbox_prioritized(
+            "orchestrator", bus_root=bus_root, auto_expire=False, auto_compact=False
+        )
         assert any(m["message_id"] == complete_id for m in p1), (
             f"Completion {complete_id} should be in P1 (high). "
             f"P0={[m['message_id'] for m in p0]}, "
