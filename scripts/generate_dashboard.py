@@ -22,7 +22,9 @@ import logging
 import os
 import subprocess
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -37,20 +39,28 @@ from matplotlib.lines import Line2D  # noqa: E402
 WINDOW = 10  # 10 active days (any day with commits)
 NUM_STD = 2  # Standard 2σ bands
 
+# ── Timezone ─────────────────────────────────────────────────────────────
+# Day boundaries use America/Los_Angeles so the dashboard aligns with PT.
+DASHBOARD_TZ = ZoneInfo("America/Los_Angeles")
 
-def _git(args: list[str], repo: str) -> str:
+
+def _git(args: list[str], repo: str, *, env_extra: dict[str, str] | None = None) -> str:
     """Run a git command and return stdout."""
+    env = None
+    if env_extra:
+        env = {**os.environ, **env_extra}
     result = subprocess.run(
         ["git", *args],
         capture_output=True,
         text=True,
         cwd=repo,
         check=True,
+        env=env,
     )
     return result.stdout
 
 
-_GH_PR_LIMIT = 10_000
+_GH_PR_LIMIT = 2_000
 
 
 def _gather_pr_counts(
@@ -98,7 +108,9 @@ def _gather_pr_counts(
         merged_at = pr.get("mergedAt", "")
         if not merged_at:
             continue
-        date = merged_at[:10]  # YYYY-MM-DD
+        # Convert UTC timestamp to dashboard timezone for day bucketing
+        dt = datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+        date = dt.astimezone(DASHBOARD_TZ).strftime("%Y-%m-%d")
         pr_counts[date] += 1
         pr_additions[date] += pr.get("additions", 0)
         pr_deletions[date] += pr.get("deletions", 0)
@@ -107,8 +119,13 @@ def _gather_pr_counts(
 
 
 def _gather_line_stats(repo: str) -> tuple[dict[str, int], dict[str, int]]:
-    """Return per-day insertions and deletions from git numstat (commit date)."""
-    output = _git(["log", "--format=COMMIT %cd", "--date=short", "--numstat"], repo)
+    """Return per-day insertions and deletions from git numstat (commit date in PT)."""
+    tz_env = {"TZ": str(DASHBOARD_TZ)}
+    output = _git(
+        ["log", "--format=COMMIT %cd", "--date=format-local:%Y-%m-%d", "--numstat"],
+        repo,
+        env_extra=tz_env,
+    )
 
     day_ins: dict[str, int] = defaultdict(int)
     day_del: dict[str, int] = defaultdict(int)
@@ -127,8 +144,13 @@ def _gather_line_stats(repo: str) -> tuple[dict[str, int], dict[str, int]]:
 
 
 def _gather_file_churn(repo: str) -> tuple[dict[str, int], dict[str, int]]:
-    """Return per-day unique files and files touched more than once (commit date)."""
-    output = _git(["log", "--format=COMMIT %cd", "--date=short", "--numstat"], repo)
+    """Return per-day unique files and files touched more than once (commit date in PT)."""
+    tz_env = {"TZ": str(DASHBOARD_TZ)}
+    output = _git(
+        ["log", "--format=COMMIT %cd", "--date=format-local:%Y-%m-%d", "--numstat"],
+        repo,
+        env_extra=tz_env,
+    )
 
     file_touches: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
