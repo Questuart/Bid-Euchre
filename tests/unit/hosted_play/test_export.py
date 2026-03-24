@@ -14,16 +14,11 @@ import json
 import uuid
 from datetime import datetime
 
-import pytest
-
-from web.db import (
-    Decision,
-    Hand,
-    Match,
-    Player,
-    create_tables,
-    init_engine,
-    make_session_factory,
+from tests.unit.hosted_play.conftest import (
+    create_test_decision,
+    create_test_hand,
+    create_test_match,
+    create_test_player,
 )
 from web.export import (
     REQUIRED_FIELDS,
@@ -34,105 +29,6 @@ from web.export import (
 )
 
 # ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def engine():
-    """In-memory SQLite engine with tables created."""
-    eng = init_engine("sqlite:///:memory:")
-    create_tables(eng)
-    return eng
-
-
-@pytest.fixture()
-def session(engine):
-    """Scoped session that rolls back after each test."""
-    factory = make_session_factory(engine)
-    sess = factory()
-    yield sess
-    sess.rollback()
-    sess.close()
-
-
-def _make_player(session) -> Player:
-    player = Player(link_uuid=str(uuid.uuid4()), nickname="TestPlayer")
-    session.add(player)
-    session.flush()
-    return player
-
-
-def _make_match(session, player: Player, **overrides) -> Match:
-    defaults = {
-        "match_uuid": str(uuid.uuid4()),
-        "player_id": player.id,
-        "ai_model": "heuristic",
-        "status": "active",
-        "seed": 42,
-        "match_state_json": "{}",
-    }
-    defaults.update(overrides)
-    match = Match(**defaults)
-    session.add(match)
-    session.flush()
-    return match
-
-
-def _make_hand(session, match: Match, **overrides) -> Hand:
-    defaults = {
-        "match_id": match.id,
-        "hand_number": 1,
-        "deal_id": 7,
-        "dealer_seat": 2,
-        "status": "in_progress",
-        "hand_state_json": "{}",
-    }
-    defaults.update(overrides)
-    hand = Hand(**defaults)
-    session.add(hand)
-    session.flush()
-    return hand
-
-
-SAMPLE_LEGAL_ACTIONS = [
-    {"n": 0},
-    {"n": 1, "contract": "S"},
-    {"n": 1, "contract": "H"},
-]
-
-SAMPLE_CHOSEN_ACTION = {"n": 1, "contract": "S"}
-
-SAMPLE_GAME_STATE = {
-    "phase": "auction",
-    "hand": [["S", "A"], ["S", "K"], ["H", "J"]],
-    "auction_transcript": [{"seat": 3, "action": "pass", "n": 0}],
-    "current_high_bid": 0,
-}
-
-
-def _make_decision(session, match: Match, hand: Hand, **overrides) -> Decision:
-    defaults = {
-        "match_id": match.id,
-        "hand_id": hand.id,
-        "turn_number": 0,
-        "seat": 0,
-        "phase": "bid",
-        "actor_type": "human",
-        "decision_source": "human",
-        "legal_actions_json": json.dumps(SAMPLE_LEGAL_ACTIONS),
-        "chosen_action_json": json.dumps(SAMPLE_CHOSEN_ACTION),
-        "game_state_json": json.dumps(SAMPLE_GAME_STATE),
-        "decision_time_ms": 4200,
-    }
-    defaults.update(overrides)
-    decision = Decision(**defaults)
-    session.add(decision)
-    session.flush()
-    return decision
-
-
-# ---------------------------------------------------------------------------
 # Schema compliance tests
 # ---------------------------------------------------------------------------
 
@@ -140,54 +36,49 @@ def _make_decision(session, match: Match, hand: Hand, **overrides) -> Decision:
 class TestSchemaCompliance:
     """Verify exported dict matches the SP-4-01 JSONL schema."""
 
-    def test_all_required_fields_present(self, session):
+    def test_all_required_fields_present(self, db_session):
         """Every field in REQUIRED_FIELDS must appear in the output."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         missing = REQUIRED_FIELDS - set(result.keys())
         assert not missing, f"Missing required fields: {missing}"
 
-    def test_no_extra_fields(self, session):
+    def test_no_extra_fields(self, db_session):
         """Output should contain exactly the required fields (no extras)."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         extra = set(result.keys()) - REQUIRED_FIELDS
         assert not extra, f"Unexpected extra fields: {extra}"
 
-    def test_schema_version_is_integer(self, session):
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+    def test_schema_version_is_integer(self, db_session):
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         assert isinstance(result["schema_version"], int)
         assert result["schema_version"] == SCHEMA_VERSION
 
-    def test_event_is_string(self, session):
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+    def test_event_is_string(self, db_session):
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         assert isinstance(result["event"], str)
         assert result["event"] == "hosted_decision"
 
-    def test_integer_fields_are_integers(self, session):
+    def test_integer_fields_are_integers(self, db_session):
         """Numeric fields must be ints (not strings or floats)."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         int_fields = [
@@ -203,24 +94,28 @@ class TestSchemaCompliance:
                 result[field], int
             ), f"{field} should be int, got {type(result[field])}"
 
-    def test_parsed_json_fields_are_not_strings(self, session):
+    def test_parsed_json_fields_are_not_strings(self, db_session):
         """legal_actions, chosen_action, game_state must be parsed objects."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        # Use explicit dict-valued chosen_action to verify type parsing
+        decision = create_test_decision(
+            db_session,
+            match,
+            hand,
+            chosen_action_json=json.dumps({"n": 1, "contract": "S"}),
+        )
 
         result = decision_to_jsonl(decision, match, hand)
         assert isinstance(result["legal_actions"], list)
         assert isinstance(result["chosen_action"], dict)
         assert isinstance(result["game_state"], dict)
 
-    def test_output_is_json_serializable(self, session):
+    def test_output_is_json_serializable(self, db_session):
         """The output dict must be JSON-serializable (no date objects, etc.)."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         # Should not raise
@@ -238,50 +133,48 @@ class TestSchemaCompliance:
 class TestRoundTrip:
     """Create DB fixtures -> export -> verify field values match."""
 
-    def test_match_fields(self, session):
+    def test_match_fields(self, db_session):
         """match_uuid, match_seed, ai_model come from the Match row."""
-        player = _make_player(session)
+        player = create_test_player(db_session)
         match_uuid = str(uuid.uuid4())
-        match = _make_match(
-            session,
-            player,
+        match = create_test_match(
+            db_session,
+            player_id=player.id,
             match_uuid=match_uuid,
             seed=123,
             ai_model="neural_v2",
         )
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         assert result["match_uuid"] == match_uuid
         assert result["match_seed"] == 123
         assert result["ai_model"] == "neural_v2"
 
-    def test_hand_fields(self, session):
+    def test_hand_fields(self, db_session):
         """hand_number, deal_id, dealer_seat come from the Hand row."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(
-            session,
+        match = create_test_match(db_session)
+        hand = create_test_hand(
+            db_session,
             match,
             hand_number=3,
             deal_id=42,
             dealer_seat=1,
         )
-        decision = _make_decision(session, match, hand)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         assert result["hand_number"] == 3
         assert result["deal_id"] == 42
         assert result["dealer_seat"] == 1
 
-    def test_decision_fields(self, session):
+    def test_decision_fields(self, db_session):
         """Core decision fields come from the Decision row."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(
-            session,
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(
+            db_session,
             match,
             hand,
             turn_number=5,
@@ -300,14 +193,13 @@ class TestRoundTrip:
         assert result["decision_source"] == "heuristic"
         assert result["decision_time_ms"] == 1500
 
-    def test_legal_actions_parsed(self, session):
+    def test_legal_actions_parsed(self, db_session):
         """legal_actions_json is parsed into a Python list."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
         actions = [{"n": 0}, {"n": 3, "contract": "H"}]
-        decision = _make_decision(
-            session,
+        decision = create_test_decision(
+            db_session,
             match,
             hand,
             legal_actions_json=json.dumps(actions),
@@ -316,14 +208,13 @@ class TestRoundTrip:
         result = decision_to_jsonl(decision, match, hand)
         assert result["legal_actions"] == actions
 
-    def test_chosen_action_parsed(self, session):
+    def test_chosen_action_parsed(self, db_session):
         """chosen_action_json is parsed into a Python dict."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
         action = {"n": 5, "contract": "S"}
-        decision = _make_decision(
-            session,
+        decision = create_test_decision(
+            db_session,
             match,
             hand,
             chosen_action_json=json.dumps(action),
@@ -332,18 +223,17 @@ class TestRoundTrip:
         result = decision_to_jsonl(decision, match, hand)
         assert result["chosen_action"] == action
 
-    def test_game_state_parsed(self, session):
+    def test_game_state_parsed(self, db_session):
         """game_state_json is parsed into a Python dict."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
         state = {
             "phase": "auction",
             "hand": [["S", "A"], ["H", "K"]],
             "current_high_bid": 3,
         }
-        decision = _make_decision(
-            session,
+        decision = create_test_decision(
+            db_session,
             match,
             hand,
             game_state_json=json.dumps(state),
@@ -352,12 +242,11 @@ class TestRoundTrip:
         result = decision_to_jsonl(decision, match, hand)
         assert result["game_state"] == state
 
-    def test_timestamp_iso_format(self, session):
+    def test_timestamp_iso_format(self, db_session):
         """created_at is exported as an ISO 8601 UTC string."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(session, match, hand)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
         ts = result["timestamp"]
@@ -366,13 +255,12 @@ class TestRoundTrip:
         parsed = datetime.fromisoformat(ts)
         assert parsed.tzinfo is not None, "Timestamp must include timezone"
 
-    def test_decision_time_ms_nullable(self, session):
+    def test_decision_time_ms_nullable(self, db_session):
         """decision_time_ms can be None (nullable in DB)."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        decision = _make_decision(
-            session,
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(
+            db_session,
             match,
             hand,
             decision_time_ms=None,
@@ -381,19 +269,19 @@ class TestRoundTrip:
         result = decision_to_jsonl(decision, match, hand)
         assert result["decision_time_ms"] is None
 
-    def test_full_round_trip_json_serialization(self, session):
+    def test_full_round_trip_json_serialization(self, db_session):
         """Full round-trip: DB -> export -> JSON string -> parse -> verify."""
-        player = _make_player(session)
+        player = create_test_player(db_session)
         match_uuid = str(uuid.uuid4())
-        match = _make_match(
-            session,
-            player,
+        match = create_test_match(
+            db_session,
+            player_id=player.id,
             match_uuid=match_uuid,
             seed=99,
             ai_model="heuristic",
         )
-        hand = _make_hand(
-            session,
+        hand = create_test_hand(
+            db_session,
             match,
             hand_number=2,
             deal_id=14,
@@ -402,8 +290,8 @@ class TestRoundTrip:
         legal = [{"n": 0}, {"n": 2, "contract": "D"}]
         chosen = {"n": 2, "contract": "D"}
         state = {"phase": "auction", "bids": []}
-        decision = _make_decision(
-            session,
+        decision = create_test_decision(
+            db_session,
             match,
             hand,
             turn_number=1,
@@ -452,33 +340,32 @@ class TestRoundTrip:
 class TestExportDecisions:
     """Test export_decisions() with filters and edge cases."""
 
-    def test_human_only_filter(self, session, tmp_path):
+    def test_human_only_filter(self, db_session, tmp_path):
         """export with human_only=True excludes AI decisions."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
 
         # Create one human and one AI decision
-        _make_decision(
-            session,
+        create_test_decision(
+            db_session,
             match,
             hand,
             turn_number=0,
             actor_type="human",
             decision_source="human",
         )
-        _make_decision(
-            session,
+        create_test_decision(
+            db_session,
             match,
             hand,
             turn_number=1,
             actor_type="ai",
             decision_source="heuristic",
         )
-        session.commit()
+        db_session.commit()
 
         output = tmp_path / "human_only.jsonl"
-        count = export_decisions(session, output, human_only=True)
+        count = export_decisions(db_session, output, human_only=True)
 
         assert count == 1
         lines = output.read_text().strip().splitlines()
@@ -486,22 +373,26 @@ class TestExportDecisions:
         record = json.loads(lines[0])
         assert record["actor_type"] == "human"
 
-    def test_match_uuid_filter(self, session, tmp_path):
+    def test_match_uuid_filter(self, db_session, tmp_path):
         """export with match_uuid filters to that match only."""
-        player = _make_player(session)
+        player = create_test_player(db_session)
         target_uuid = str(uuid.uuid4())
         other_uuid = str(uuid.uuid4())
-        match_target = _make_match(session, player, match_uuid=target_uuid, seed=10)
-        match_other = _make_match(session, player, match_uuid=other_uuid, seed=20)
-        hand_target = _make_hand(session, match_target, hand_number=1)
-        hand_other = _make_hand(session, match_other, hand_number=1)
+        match_target = create_test_match(
+            db_session, player_id=player.id, match_uuid=target_uuid, seed=10
+        )
+        match_other = create_test_match(
+            db_session, player_id=player.id, match_uuid=other_uuid, seed=20
+        )
+        hand_target = create_test_hand(db_session, match_target, hand_number=1)
+        hand_other = create_test_hand(db_session, match_other, hand_number=1)
 
-        _make_decision(session, match_target, hand_target, turn_number=0)
-        _make_decision(session, match_other, hand_other, turn_number=0)
-        session.commit()
+        create_test_decision(db_session, match_target, hand_target, turn_number=0)
+        create_test_decision(db_session, match_other, hand_other, turn_number=0)
+        db_session.commit()
 
         output = tmp_path / "single_match.jsonl"
-        count = export_decisions(session, output, match_uuid=target_uuid)
+        count = export_decisions(db_session, output, match_uuid=target_uuid)
 
         assert count == 1
         lines = output.read_text().strip().splitlines()
@@ -509,38 +400,38 @@ class TestExportDecisions:
         record = json.loads(lines[0])
         assert record["match_uuid"] == target_uuid
 
-    def test_empty_db_produces_empty_file(self, session, tmp_path):
+    def test_empty_db_produces_empty_file(self, db_session, tmp_path):
         """Export from empty DB produces empty file and returns 0."""
         output = tmp_path / "empty.jsonl"
-        count = export_decisions(session, output)
+        count = export_decisions(db_session, output)
 
         assert count == 0
         content = output.read_text()
         assert content == ""
 
-    def test_multi_match_export_all(self, session, tmp_path):
+    def test_multi_match_export_all(self, db_session, tmp_path):
         """Export without filters includes all decisions across matches."""
-        player = _make_player(session)
-        match1 = _make_match(session, player, seed=10)
-        match2 = _make_match(session, player, seed=20)
-        hand1 = _make_hand(session, match1, hand_number=1)
-        hand2 = _make_hand(session, match2, hand_number=1)
+        player = create_test_player(db_session)
+        match1 = create_test_match(db_session, player_id=player.id, seed=10)
+        match2 = create_test_match(db_session, player_id=player.id, seed=20)
+        hand1 = create_test_hand(db_session, match1, hand_number=1)
+        hand2 = create_test_hand(db_session, match2, hand_number=1)
 
         # 2 decisions in match1, 1 in match2
-        _make_decision(session, match1, hand1, turn_number=0)
-        _make_decision(
-            session,
+        create_test_decision(db_session, match1, hand1, turn_number=0)
+        create_test_decision(
+            db_session,
             match1,
             hand1,
             turn_number=1,
             actor_type="ai",
             decision_source="heuristic",
         )
-        _make_decision(session, match2, hand2, turn_number=0)
-        session.commit()
+        create_test_decision(db_session, match2, hand2, turn_number=0)
+        db_session.commit()
 
         output = tmp_path / "all.jsonl"
-        count = export_decisions(session, output)
+        count = export_decisions(db_session, output)
 
         assert count == 3
         lines = output.read_text().strip().splitlines()
@@ -551,27 +442,31 @@ class TestExportDecisions:
         assert match1.match_uuid in match_uuids
         assert match2.match_uuid in match_uuids
 
-    def test_combined_filters(self, session, tmp_path):
+    def test_combined_filters(self, db_session, tmp_path):
         """match_uuid + human_only filters combine correctly."""
-        player = _make_player(session)
+        player = create_test_player(db_session)
         target_uuid = str(uuid.uuid4())
         other_uuid = str(uuid.uuid4())
-        match_target = _make_match(session, player, match_uuid=target_uuid, seed=10)
-        match_other = _make_match(session, player, match_uuid=other_uuid, seed=20)
-        hand_target = _make_hand(session, match_target, hand_number=1)
-        hand_other = _make_hand(session, match_other, hand_number=1)
+        match_target = create_test_match(
+            db_session, player_id=player.id, match_uuid=target_uuid, seed=10
+        )
+        match_other = create_test_match(
+            db_session, player_id=player.id, match_uuid=other_uuid, seed=20
+        )
+        hand_target = create_test_hand(db_session, match_target, hand_number=1)
+        hand_other = create_test_hand(db_session, match_other, hand_number=1)
 
         # Target match: human + AI
-        _make_decision(
-            session,
+        create_test_decision(
+            db_session,
             match_target,
             hand_target,
             turn_number=0,
             actor_type="human",
             decision_source="human",
         )
-        _make_decision(
-            session,
+        create_test_decision(
+            db_session,
             match_target,
             hand_target,
             turn_number=1,
@@ -579,19 +474,19 @@ class TestExportDecisions:
             decision_source="heuristic",
         )
         # Other match: human
-        _make_decision(
-            session,
+        create_test_decision(
+            db_session,
             match_other,
             hand_other,
             turn_number=0,
             actor_type="human",
             decision_source="human",
         )
-        session.commit()
+        db_session.commit()
 
         output = tmp_path / "combined.jsonl"
         count = export_decisions(
-            session, output, match_uuid=target_uuid, human_only=True
+            db_session, output, match_uuid=target_uuid, human_only=True
         )
 
         assert count == 1
@@ -600,24 +495,23 @@ class TestExportDecisions:
         assert record["match_uuid"] == target_uuid
         assert record["actor_type"] == "human"
 
-    def test_output_lines_are_valid_json(self, session, tmp_path):
+    def test_output_lines_are_valid_json(self, db_session, tmp_path):
         """Every line in the output file is valid JSON with schema fields."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        _make_decision(session, match, hand, turn_number=0)
-        _make_decision(
-            session,
+        match = create_test_match(db_session)
+        hand = create_test_hand(db_session, match)
+        create_test_decision(db_session, match, hand, turn_number=0)
+        create_test_decision(
+            db_session,
             match,
             hand,
             turn_number=1,
             actor_type="ai",
             decision_source="heuristic",
         )
-        session.commit()
+        db_session.commit()
 
         output = tmp_path / "valid.jsonl"
-        count = export_decisions(session, output)
+        count = export_decisions(db_session, output)
         assert count == 2
 
         lines = output.read_text().strip().splitlines()
