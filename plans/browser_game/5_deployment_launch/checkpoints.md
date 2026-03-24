@@ -11,9 +11,9 @@
 | Step | Status | Date | Agent/Session | Notes |
 |------|--------|------|---------------|-------|
 | Step 0: Verify Phases 3 and 4 are complete | COMPLETE | 2026-03-24 | brws-author-a | Phase 3 COMPLETE (PRs #1475, #1489, #1495, #1498, #1501). Phase 4 COMPLETE (PRs #1529, #1533, #1535, #1538, #1545). |
-| Step 1: Write Dockerfile | PENDING | -- | -- | Python 3.12, copy src/ + web/, uvicorn entrypoint. |
-| Step 2: Write deployment config | PENDING | -- | -- | Render web service config plus managed Postgres wiring. |
-| Step 3: Configure environment variables | PENDING | -- | -- | DATABASE_URL, MODELS_DIR or explicit artifact paths, SECRET_KEY (for cookies). |
+| Step 1: Write Dockerfile | COMPLETE | 2026-03-24 | brws-author-d, brws-author-a | Dockerfile (PR #1638) + .dockerignore (PR #1627). |
+| Step 2: Write deployment config | COMPLETE | 2026-03-24 | brws-author-a, flex-a | render.yaml (PR #1636) + health/readiness endpoints (PR #1634). |
+| Step 3: Configure environment variables | COMPLETE | 2026-03-24 | brws-author-c, brws-author-a | Production config contract (PR #1625) + .env.example (PR #1629). |
 | Step 4: Test local Docker build | PENDING | -- | -- | `docker build -t bideuchre-web .` + `docker run` + play one hand. |
 | Step 5: Deploy to hosting service | PENDING | -- | -- | Deploy, verify persistent storage, create first private link. |
 | Step 6: Smoke validation | PENDING | -- | -- | Create match → play one full hand → verify decision rows in DB → verify JSONL export. |
@@ -44,3 +44,11 @@
 - Created: SP-5-01 sub-plan for Steps 1-7 (Dockerfile, Render config, env vars, Docker test, deploy, smoke, share link).
 - Registered: SP-5-01 in sub_plan_registry.md.
 - Next: Step 1 — Write Dockerfile.
+
+### 2026-03-24 — brws-author-d (Steps 1-3 shipped)
+- Completed: Steps 1-3 all merged to main across multiple lanes.
+  - Step 1: Dockerfile (PR #1638) + .dockerignore (PR #1627).
+  - Step 2: render.yaml (PR #1636) + health/readiness endpoints (PR #1634).
+  - Step 3: Production config contract (PR #1625) + .env.example (PR #1629).
+- Evidence: All 6 PRs merged to main, commits visible in `git log origin/main`.
+- Next: Step 4 — Test local Docker build.
