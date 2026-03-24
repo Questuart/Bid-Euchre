@@ -1081,6 +1081,19 @@ def escalate_unacked(
     unacked_statuses = {"pending", "delivered"}
     escalation_ids: list[str] = []
 
+    # Build set of message IDs that already have a non-terminal escalation
+    # in the recipient's inbox (#1610 — prevent escalation flood).
+    already_escalated: set[str] = set()
+    for rec in by_id.values():
+        if rec.get("message_type") == "escalation":
+            parent = rec.get("parent_message_id")
+            if parent and rec.get("status") not in {
+                "resolved",
+                "expired",
+                "dead_lettered",
+            }:
+                already_escalated.add(parent)
+
     for mid, rec in by_id.items():
         # Only look at messages from the sender to the recipient
         if rec.get("from_lane") != sender_lane:
@@ -1089,6 +1102,9 @@ def escalate_unacked(
             continue
         # Don't escalate escalation messages (avoid infinite chains)
         if rec.get("message_type") == "escalation":
+            continue
+        # Skip if an active escalation already exists for this message (#1610)
+        if mid in already_escalated:
             continue
 
         created = rec.get("created_at", "")
@@ -1165,7 +1181,9 @@ def check_expired(
 
         for mid, rec in by_id.items():
             status = rec.get("status", "pending")
-            if status in ("resolved", "expired", "dead_lettered"):
+            # Skip terminal states AND acked — only pending/delivered can expire.
+            # acked → expired is not a valid transition (#1596).
+            if status in ("acked", "resolved", "expired", "dead_lettered"):
                 continue
 
             ttl = rec.get("payload", {}).get("ttl_seconds")

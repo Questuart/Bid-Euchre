@@ -87,6 +87,12 @@ tmux send-keys -t <pane> '/clear' Enter
 
 ## Related
 
-- #1580 — `/clear` does not kill cron jobs
+- #1580 — `/clear` does not kill cron jobs (this skill is the fix)
 - #1572 — idle auto-shutoff (should include cron cleanup)
 - `/start-task` — the inverse: bootstraps a lane for new work
+
+## Closes
+
+Closes #1580 by providing an explicit lane shutdown procedure that cleans
+up cron jobs before `/clear`. The operator must use `/park` (not bare
+`/clear`) when shutting down a lane to prevent orphaned cron jobs.
