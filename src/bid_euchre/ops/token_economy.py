@@ -1406,9 +1406,7 @@ def dashboard_token_economy(*, output_dir: Path | None = None) -> dict[str, Any]
             "total_tokens": ls.total_tokens,
             "session_count": ls.session_count,
             "git_commits": ls.git_commits,
-            "tokens_per_commit": round(ls.tokens_per_commit, 0)
-            if ls.tokens_per_commit
-            else None,
+            "tokens_per_commit": round(ls.tokens_per_commit, 0),
             "net_lines": ls.net_lines,
         }
         for ls in lanes[:5]  # top 5 most expensive
@@ -1417,7 +1415,9 @@ def dashboard_token_economy(*, output_dir: Path | None = None) -> dict[str, Any]
     # Cheapest productive lanes (have commits, sorted by tokens_per_commit asc)
     productive = [ls for ls in lanes if ls.git_commits > 0]
     productive.sort(
-        key=lambda x: x.tokens_per_commit if x.tokens_per_commit else float("inf")
+        key=lambda x: (
+            x.tokens_per_commit if x.tokens_per_commit is not None else float("inf")
+        )
     )
     efficient_lanes = [
         {
@@ -1425,9 +1425,7 @@ def dashboard_token_economy(*, output_dir: Path | None = None) -> dict[str, Any]
             "pool": ls.pool,
             "total_tokens": ls.total_tokens,
             "git_commits": ls.git_commits,
-            "tokens_per_commit": round(ls.tokens_per_commit, 0)
-            if ls.tokens_per_commit
-            else None,
+            "tokens_per_commit": round(ls.tokens_per_commit, 0),
             "net_lines": ls.net_lines,
         }
         for ls in productive[:5]  # top 5 most efficient

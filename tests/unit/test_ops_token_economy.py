@@ -1293,6 +1293,73 @@ class TestDashboardTokenEconomy:
         assert len(result["anti_patterns"]) > 0
         assert result["anti_patterns"][0]["pattern_id"] == "verbosity_waste"
 
+    def test_dashboard_preserves_zero_tokens_per_commit(self, output_dir: Path) -> None:
+        """Zero-valued tokens_per_commit is preserved, not filtered to None.
+
+        Regression test for issue #1420: lanes with zero commits should show
+        tokens_per_commit=0.0 rather than None in the dashboard output.
+        """
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=0,
+                output_tokens=0,
+                git_commits=0,
+                lines_added=0,
+                lines_removed=0,
+                project_path="/Users/foo/Bid-Euchre-steward-author",
+            ),
+            _make_session_record(
+                "s2",
+                input_tokens=100,
+                output_tokens=400,
+                git_commits=2,
+                lines_added=20,
+                lines_removed=5,
+                project_path="/Users/foo/Bid-Euchre-steward-flex-a",
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+
+        attributions = [
+            {
+                "session_id": "s1",
+                "lane_id": "author-a",
+                "worktree_class": "platform",
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "git_commits": 0,
+                "lines_added": 0,
+                "lines_removed": 0,
+                "duration_minutes": 10,
+            },
+            {
+                "session_id": "s2",
+                "lane_id": "flex-a",
+                "worktree_class": "flex",
+                "input_tokens": 100,
+                "output_tokens": 400,
+                "git_commits": 2,
+                "lines_added": 20,
+                "lines_removed": 5,
+                "duration_minutes": 30,
+            },
+        ]
+        _write_attributions(output_dir, attributions)
+
+        result = dashboard_token_economy(output_dir=output_dir)
+
+        # The zero-commit lane should appear in top_lanes with
+        # tokens_per_commit=0.0, NOT None
+        zero_lane = next(
+            (l for l in result["top_lanes"] if l["lane_id"] == "author-a"), None
+        )
+        assert zero_lane is not None, "Zero-commit lane missing from top_lanes"
+        assert zero_lane["tokens_per_commit"] == 0.0, (
+            f"Expected 0.0, got {zero_lane['tokens_per_commit']!r} — "
+            "zero values must not be filtered to None (issue #1420)"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Incomplete session exclusion tests
