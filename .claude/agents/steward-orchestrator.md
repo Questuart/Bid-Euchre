@@ -169,9 +169,16 @@ context but leaves cron jobs running — they will continue firing on a
 lane the orchestrator considers stopped.
 
 Shutdown sequence:
-1. Send `/park` to the lane's tmux pane
-2. Wait for confirmation that all cron jobs are deleted
-3. Send `/clear` to reset conversation context
+1. Complete or reassign any active task packet for the lane:
+   ```bash
+   # If the lane has finished its work:
+   uv run python scripts/internal/ops.py task complete <PACKET_ID>
+   # If reassigning unfinished work:
+   uv run python scripts/internal/ops.py task update <PACKET_ID> --status pending --owner ""
+   ```
+2. Send `/park` to the lane's tmux pane (cleans up cron jobs)
+3. Wait for confirmation that all cron jobs are deleted
+4. Send `/clear` to reset conversation context
 
 ## Named Skills
 
