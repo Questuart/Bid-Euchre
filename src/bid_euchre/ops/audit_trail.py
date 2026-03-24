@@ -429,6 +429,122 @@ def audit_inbound(
 
 
 # ---------------------------------------------------------------------------
+# Runtime wiring — hook-callable entry points
+# ---------------------------------------------------------------------------
+
+# Map MCP tool names to their audit wrapper and argument extraction.
+_MCP_TOOL_MAP: dict[str, str] = {
+    "mcp__plugin_telegram_telegram__reply": "reply",
+    "mcp__plugin_telegram_telegram__react": "react",
+    "mcp__plugin_telegram_telegram__edit": "edit",
+}
+
+
+def audit_mcp_outbound(
+    tool_name: str,
+    tool_args: dict[str, Any],
+    audit_dir: Path | None = None,
+) -> AuditRecord | None:
+    """Audit an outbound MCP tool call if it is an auditable Telegram exchange.
+
+    Designed to be called from a PostToolUse hook or wrapper. Maps recognised
+    Telegram MCP tool names to their audit wrapper functions.
+
+    Args:
+        tool_name: The MCP tool name (e.g. ``"mcp__plugin_telegram_telegram__reply"``).
+        tool_args: The arguments dict passed to the MCP tool.
+        audit_dir: Override for audit trail directory.
+
+    Returns:
+        The :class:`AuditRecord` if an audit entry was written, or ``None``
+        if the tool is not auditable.
+    """
+    exchange_type = _MCP_TOOL_MAP.get(tool_name)
+    if exchange_type is None:
+        return None
+
+    chat_id = str(tool_args.get("chat_id", tool_args.get("chatId", "")))
+    if not chat_id:
+        logger.warning("audit_mcp_outbound: no chat_id in args for %s", tool_name)
+        return None
+
+    if exchange_type == "reply":
+        body = tool_args.get("body", tool_args.get("text", ""))
+        reply_to = tool_args.get("reply_to", tool_args.get("replyTo"))
+        files = tool_args.get("files")
+        return audit_reply(
+            chat_id=chat_id,
+            body=str(body),
+            reply_to=str(reply_to) if reply_to is not None else None,
+            files=files,
+            audit_dir=audit_dir,
+        )
+
+    if exchange_type == "react":
+        message_id = str(tool_args.get("message_id", tool_args.get("messageId", "")))
+        emoji = str(tool_args.get("emoji", ""))
+        return audit_react(
+            chat_id=chat_id,
+            message_id=message_id,
+            emoji=emoji,
+            audit_dir=audit_dir,
+        )
+
+    if exchange_type == "edit":
+        message_id = str(tool_args.get("message_id", tool_args.get("messageId", "")))
+        body = tool_args.get("body", tool_args.get("text", ""))
+        return audit_edit(
+            chat_id=chat_id,
+            message_id=message_id,
+            body=str(body),
+            audit_dir=audit_dir,
+        )
+
+    return None  # pragma: no cover
+
+
+def audit_channel_tag(
+    tag_text: str,
+    content: str,
+    audit_dir: Path | None = None,
+) -> AuditRecord | None:
+    """Audit an inbound message identified by a ``<channel>`` tag.
+
+    Designed to be called when the orchestrator processes inbound messages
+    that contain ``<channel source="telegram" ...>`` metadata tags injected
+    by the Telegram plugin.
+
+    Args:
+        tag_text: The raw ``<channel ...>`` tag text.
+        content: The message content (body text after the tag).
+        audit_dir: Override for audit trail directory.
+
+    Returns:
+        The :class:`AuditRecord` if an audit entry was written, or ``None``
+        if the tag could not be parsed.
+    """
+    attrs = parse_channel_tag(tag_text)
+    if not attrs:
+        logger.warning("audit_channel_tag: could not parse tag: %s", tag_text[:100])
+        return None
+
+    chat_id = attrs.get("chat_id", "")
+    if not chat_id:
+        logger.warning("audit_channel_tag: no chat_id in tag attributes")
+        return None
+
+    return audit_inbound(
+        chat_id=chat_id,
+        message_id=attrs.get("message_id", ""),
+        user=attrs.get("user", "unknown"),
+        content=content,
+        channel_source=attrs.get("source", "telegram"),
+        ts=attrs.get("ts"),
+        audit_dir=audit_dir,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Query
 # ---------------------------------------------------------------------------
 
