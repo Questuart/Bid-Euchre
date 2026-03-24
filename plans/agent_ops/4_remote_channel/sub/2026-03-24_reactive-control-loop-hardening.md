@@ -328,7 +328,7 @@ tmux launcher, which re-launches the auto-start sequence.
 
 ### Step 6 -- Prove the control loop
 
-**Status:** COMPLETE (proven through fleet operation)
+**Status:** COMPLETE (proven through fleet operation + formal 3-scenario proving run)
 
 **Goal:** Demonstrate that the local platform reacts without user polling.
 
@@ -364,7 +364,10 @@ Specific lifecycle paths exercised:
 A formal test plan for isolated scenario execution exists at
 `plans/agent_ops/4_remote_channel/sp4-05-step6-proving-run-test-plan.md`
 (PR #1512). The fleet's operational use provides equivalent coverage of all
-three scenarios.
+three scenarios. A formal 3-scenario proving run was also executed (flex-b,
+2026-03-24) with results at
+`plans/agent_ops/4_remote_channel/sp4-05-step6-proving-run-results.md`
+— all three scenarios passed (local merge hook, monitor fallback, stall ladder).
 
 ## Validation
 
