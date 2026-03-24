@@ -157,7 +157,7 @@ render logs --service bideuchre-web --tail
 - `INFO: Application startup complete` — successful boot
 - `sqlalchemy.exc.*` — database connection/schema errors
 - `KeyError` / `AttributeError` in route handlers — application bugs
-- `uvicorn.error` — server-level errors
+- Uvicorn error logger messages — server-level errors
 
 ### 3.4 Database Access
 
