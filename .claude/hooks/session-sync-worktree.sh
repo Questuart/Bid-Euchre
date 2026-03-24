@@ -75,7 +75,7 @@ fi
 # Switch to tracking origin/main. We can't checkout 'main' directly because
 # it's used by the primary worktree — instead reset the current branch to
 # origin/main, giving us the same effect.
-git -C "$PROJECT_DIR" reset --hard origin/main 2>/dev/null || {
+git -C "$PROJECT_DIR" reset --hard origin/main >/dev/null 2>&1 || {
   echo >&2 "${LOG_PREFIX} WARNING: Failed to reset to origin/main — skipping."
   exit 0
 }
