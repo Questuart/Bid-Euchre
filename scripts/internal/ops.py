@@ -2396,10 +2396,52 @@ def cmd_lane(args: argparse.Namespace) -> int:
                 print("No lanes stuck on approval prompts.")
         return 1 if findings else 0
 
+    elif action == "peek":
+        import subprocess
+
+        from bid_euchre.ops.worker_pool import _resolve_tmux_target
+
+        lane_id = args.lane_id
+        lines = args.lines
+        tmux_session = getattr(args, "tmux_session", "steward")
+
+        target = _resolve_tmux_target(lane_id, tmux_session, args.runtime_dir)
+        try:
+            result = subprocess.run(
+                [
+                    "tmux",
+                    "capture-pane",
+                    "-t",
+                    target,
+                    "-p",
+                    "-S",
+                    str(-lines),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                print(
+                    f"Error: tmux capture-pane failed for {lane_id} "
+                    f"(target={target}): {result.stderr.strip()}",
+                    file=sys.stderr,
+                )
+                return 1
+            print(result.stdout, end="")
+            return 0
+        except FileNotFoundError:
+            print("Error: tmux not found", file=sys.stderr)
+            return 1
+        except subprocess.TimeoutExpired:
+            print("Error: tmux capture-pane timed out", file=sys.stderr)
+            return 1
+
     else:
         print(
             "Usage: ops.py lane refresh <lane-id> | --all-idle\n"
-            "       ops.py lane check-approvals"
+            "       ops.py lane check-approvals\n"
+            "       ops.py lane peek <lane-id> [--lines N]"
         )
         return 1
 
@@ -3378,6 +3420,26 @@ def build_parser() -> argparse.ArgumentParser:
     lane_sub.add_parser(
         "check-approvals",
         help="Check for lanes stuck on tool-approval prompts",
+    )
+
+    lane_peek_parser = lane_sub.add_parser(
+        "peek",
+        help="Capture tmux pane content for a lane (large buffer)",
+    )
+    lane_peek_parser.add_argument(
+        "lane_id",
+        help="Lane ID to peek (e.g. author-a, flex-a)",
+    )
+    lane_peek_parser.add_argument(
+        "--lines",
+        type=int,
+        default=80,
+        help="Number of scrollback lines to capture (default: 80)",
+    )
+    lane_peek_parser.add_argument(
+        "--tmux-session",
+        default="steward",
+        help="tmux session name (default: steward)",
     )
 
     # workers (Platform-7: worker pool lifecycle management)
