@@ -1,9 +1,11 @@
 # SP-4-05 Step 6: Reactive Control-Loop Proving Run Test Plan
 
 **Parent:** `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md`
-**Status:** EXECUTING — proving run in progress
+**Status:** PASSED — all 3 scenarios verified
 **Date:** 2026-03-24
 **Proving run started:** 2026-03-24T04:30Z
+**Proving run completed:** 2026-03-24T04:40Z
+**Results:** [sp4-05-step6-proving-run-results.md](sp4-05-step6-proving-run-results.md)
 
 ---
 
