@@ -30,81 +30,11 @@ Export only human decisions::
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from web.db import Decision, Hand, Match, init_engine, make_session_factory
-from web.export import decision_to_jsonl
-
-
-def _build_query(
-    *,
-    match_uuid: str | None = None,
-    human_only: bool = False,
-):
-    """Build a SQLAlchemy select for decisions with match and hand context.
-
-    Returns a select() that yields (Decision, Match, Hand) tuples,
-    ordered by match_id, hand turn_number for deterministic output.
-    """
-    stmt = (
-        select(Decision, Match, Hand)
-        .join(Match, Decision.match_id == Match.id)
-        .join(Hand, Decision.hand_id == Hand.id)
-        .order_by(Decision.match_id, Decision.hand_id, Decision.turn_number)
-    )
-
-    if match_uuid is not None:
-        stmt = stmt.where(Match.match_uuid == match_uuid)
-
-    if human_only:
-        stmt = stmt.where(Decision.actor_type == "human")
-
-    return stmt
-
-
-def export_decisions(
-    session: Session,
-    output_path: Path,
-    *,
-    match_uuid: str | None = None,
-    human_only: bool = False,
-) -> int:
-    """Query decisions and write JSONL to *output_path*.
-
-    Parameters
-    ----------
-    session:
-        Active SQLAlchemy session.
-    output_path:
-        Destination file path. Parent directories are created if needed.
-    match_uuid:
-        If provided, restrict export to this match UUID.
-    human_only:
-        If True, restrict export to human decisions only.
-
-    Returns
-    -------
-    int
-        Number of records written.
-    """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    stmt = _build_query(match_uuid=match_uuid, human_only=human_only)
-    rows = session.execute(stmt).all()
-
-    count = 0
-    with open(output_path, "w") as fh:
-        for decision_row, match_row, hand_row in rows:
-            record = decision_to_jsonl(decision_row, match_row, hand_row)
-            fh.write(json.dumps(record) + "\n")
-            count += 1
-
-    return count
+from web.db import init_engine, make_session_factory
+from web.export import export_decisions
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -152,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     session = factory()
 
     try:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         count = export_decisions(
             session,
             args.output,
