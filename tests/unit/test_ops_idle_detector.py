@@ -13,9 +13,11 @@ from bid_euchre.ops.idle_detector import (
     DEFAULT_THRESHOLD_MINUTES,
     MEANINGFUL_EVENT_TYPES,
     IdleStatus,
+    ShutoffRecommendation,
     _find_last_meaningful_event,
     _get_active_lane_ids,
     is_fleet_idle,
+    recommend_shutoff,
 )
 
 # ---------------------------------------------------------------------------
@@ -353,3 +355,86 @@ class TestMeaningfulEventTypes:
 
     def test_default_threshold_is_90(self) -> None:
         assert DEFAULT_THRESHOLD_MINUTES == 90
+
+
+# ---------------------------------------------------------------------------
+# Tests: recommend_shutoff
+# ---------------------------------------------------------------------------
+
+
+class TestRecommendShutoff:
+    """Tests for the recommend_shutoff() wrapper."""
+
+    def test_recommends_shutoff_when_fleet_idle(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Should recommend shutoff when fleet has been idle past threshold."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts)
+
+        rec = recommend_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert isinstance(rec, ShutoffRecommendation)
+        assert rec.should_shutoff is True
+        assert rec.idle_status.idle is True
+        assert len(rec.recommended_actions) > 0
+        # Actions should include cron cancellation and session handoff
+        actions_text = " ".join(rec.recommended_actions)
+        assert "cron" in actions_text.lower()
+        assert "handoff" in actions_text.lower()
+
+    def test_does_not_recommend_when_active(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Should not recommend shutoff when fleet is active."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        recent_ts = now - timedelta(minutes=10)
+        _write_event(events_dir, "task_completed", recent_ts)
+
+        rec = recommend_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert rec.should_shutoff is False
+        assert rec.idle_status.idle is False
+        assert rec.recommended_actions == []
+
+    def test_does_not_recommend_when_lanes_active(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Active lanes prevent shutoff even with old events."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts)
+        _register_lane(runtime_dir, "author-a", session_id="sess-live")
+
+        rec = recommend_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert rec.should_shutoff is False
+        assert "author-a" in rec.idle_status.active_lanes
+
+    def test_shutoff_recommendation_fields(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """ShutoffRecommendation has expected fields."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        rec = recommend_shutoff(
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert isinstance(rec, ShutoffRecommendation)
+        assert isinstance(rec.should_shutoff, bool)
+        assert isinstance(rec.idle_status, IdleStatus)
+        assert isinstance(rec.recommended_actions, list)

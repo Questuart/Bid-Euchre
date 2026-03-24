@@ -215,3 +215,81 @@ def is_fleet_idle(
             f"(threshold: {threshold_minutes:.0f}m)"
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Shutoff recommendation
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ShutoffRecommendation:
+    """Structured recommendation from the fleet idle check.
+
+    When ``should_shutoff`` is True, the caller should act on the
+    recommended actions (cancel cron jobs, notify user, produce handoff).
+
+    Attributes:
+        should_shutoff: Whether the fleet should shut off autonomous operation.
+        idle_status: The underlying :class:`IdleStatus` determination.
+        recommended_actions: Human-readable list of actions to take.
+    """
+
+    should_shutoff: bool
+    idle_status: IdleStatus
+    recommended_actions: list[str]
+
+
+def recommend_shutoff(
+    threshold_minutes: float = DEFAULT_THRESHOLD_MINUTES,
+    *,
+    events_dir: Path | None = None,
+    runtime_dir: Path | None = None,
+    now: datetime | None = None,
+) -> ShutoffRecommendation:
+    """Check fleet idle status and produce a shutoff recommendation.
+
+    Wraps :func:`is_fleet_idle` and translates the result into a structured
+    recommendation with concrete action items for the caller to execute.
+
+    Args:
+        threshold_minutes: Minutes threshold for idle detection.
+        events_dir: Override for the events directory.
+        runtime_dir: Override for the runtime directory.
+        now: Override for current time (for testing).
+
+    Returns:
+        A :class:`ShutoffRecommendation` with actions if shutoff is warranted.
+    """
+    status = is_fleet_idle(
+        threshold_minutes=threshold_minutes,
+        events_dir=events_dir,
+        runtime_dir=runtime_dir,
+        now=now,
+    )
+
+    if not status.idle:
+        return ShutoffRecommendation(
+            should_shutoff=False,
+            idle_status=status,
+            recommended_actions=[],
+        )
+
+    actions = [
+        "Cancel all active cron jobs to stop burning tokens",
+        "Produce a session handoff summary (what shipped, what's stuck, next steps)",
+        "Log the shutoff event for operational traceability",
+    ]
+
+    # Include the idle duration for context
+    logger.warning(
+        "Fleet idle shutoff recommended: %s (idle %.0fm)",
+        status.reason,
+        status.idle_minutes,
+    )
+
+    return ShutoffRecommendation(
+        should_shutoff=True,
+        idle_status=status,
+        recommended_actions=actions,
+    )
