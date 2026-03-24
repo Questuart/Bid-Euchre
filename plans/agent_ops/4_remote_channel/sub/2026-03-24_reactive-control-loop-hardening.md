@@ -3,7 +3,7 @@
 **ID:** SP-4-05
 **Date:** 2026-03-24
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Pre-Platform-8
-**Status:** proposed
+**Status:** in_progress
 **Owner:** orchestrator
 
 ---
@@ -132,6 +132,8 @@ To reduce interpretation error, this sub-plan is locked to the following:
 
 ### PR 0 -- Steward guardrails for non-governed `cmux` hook behavior
 
+**Status:** COMPLETE (flex-c, PR #1500)
+
 **Goal:** Stop `cmux` user-hook noise from polluting or destabilizing steward panes.
 
 **Scope:**
@@ -145,6 +147,13 @@ To reduce interpretation error, this sub-plan is locked to the following:
 - repo plan/docs only for the steward-side policy decision
 
 **Issues addressed:** `#1485`; partially resolves the practical part of `#1488`
+
+**Resolution:** Steward session guard (`tmux display-message -p '#S'` == steward
+→ exit 0) applied to `~/.claude/hooks/cmux-notify.sh` (local config fix, not in
+PR). CWD-based guard also present as defense-in-depth. The `cmux claude-hook`
+binary cannot be modified (known limitation — it's inside
+`/Applications/cmux.app/`), but the wrapper script is the sole entry point for
+cmux calls from Claude hooks, so the guard is sufficient.
 
 ### PR 1 -- Lifecycle source of truth and completion helper unification
 
@@ -219,6 +228,8 @@ To reduce interpretation error, this sub-plan is locked to the following:
 ## Execution Steps
 
 ### Step 0 -- Make steward sessions `cmux`-agnostic by default
+
+**Status:** COMPLETE
 
 **Goal:** Remove non-governed `cmux` hook noise from the steward control loop.
 
