@@ -1,0 +1,216 @@
+"""Fleet idle detection for auto-shutoff (#1572).
+
+Determines whether the entire steward fleet has been idle for a configurable
+threshold.  "Idle" means no meaningful operational change has occurred across
+any lane — no PRs merged/opened, no tasks dispatched/completed, and no lane
+has transitioned to active state.
+
+The detector reads the durable event log to find the most recent meaningful
+event and compares its timestamp against the threshold.  It also checks for
+any currently-active lanes (via the status module) to avoid false positives
+when a lane is actively working but hasn't emitted an event recently.
+
+Usage::
+
+    from bid_euchre.ops.idle_detector import is_fleet_idle
+
+    result = is_fleet_idle(threshold_minutes=90)
+    if result.idle:
+        print(f"Fleet idle for {result.idle_minutes:.0f}m — consider shutoff")
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from bid_euchre.ops.events import read_events
+
+logger = logging.getLogger("ops.idle_detector")
+
+# Default idle threshold in minutes.
+DEFAULT_THRESHOLD_MINUTES = 90
+
+# Event types that reset the idle timer.  These represent genuine fleet-level
+# progress, not infrastructure bookkeeping.
+MEANINGFUL_EVENT_TYPES = frozenset(
+    {
+        # Task lifecycle
+        "task_started",
+        "task_completed",
+        "task_failed",
+        "task_rerouted",
+        # CI outcomes
+        "ci_success",
+        "ci_failure",
+        # Review & PR signals
+        "review_outcome",
+        "review_verdict",
+        # Session lifecycle
+        "session_started",
+        # Skill / snapshot events that represent deliberate work
+        "skill_promoted",
+    }
+)
+
+
+@dataclass(frozen=True)
+class IdleStatus:
+    """Result of a fleet idle check.
+
+    Attributes:
+        idle: True if the fleet is considered idle (no meaningful activity
+            within the threshold and no lanes currently active).
+        idle_minutes: Minutes since the last meaningful event.  ``0.0`` when
+            the fleet is active or no events exist.
+        last_meaningful_event: Timestamp of the most recent meaningful event,
+            or None if no events were found.
+        active_lanes: List of lane IDs that are currently in an active state.
+            Non-empty means the fleet is NOT idle regardless of event age.
+        reason: Human-readable explanation of the determination.
+    """
+
+    idle: bool
+    idle_minutes: float
+    last_meaningful_event: datetime | None
+    active_lanes: list[str]
+    reason: str
+
+
+def _find_last_meaningful_event(
+    events_dir: Path | None = None,
+) -> datetime | None:
+    """Scan the event log for the most recent meaningful event timestamp.
+
+    Returns None if no meaningful events are found.
+    """
+    # Read a generous number of recent events (meaningful ones may be
+    # interspersed with infrastructure noise).
+    events = read_events(events_dir, limit=500)
+
+    for event in events:  # Already sorted most-recent-first
+        etype = event.get("event_type", "")
+        if etype in MEANINGFUL_EVENT_TYPES:
+            try:
+                return datetime.fromisoformat(event["timestamp"])
+            except (KeyError, ValueError):
+                continue
+    return None
+
+
+def _get_active_lane_ids(
+    runtime_dir: Path | None = None,
+) -> list[str]:
+    """Return lane IDs that are currently active.
+
+    Uses a lightweight check: reads the worktree registry for lanes with
+    an active session_id.  This avoids importing the full status module's
+    heavy aggregation machinery.
+    """
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+
+    registry_dir = runtime_dir / "worktree_registry"
+    if not registry_dir.exists():
+        return []
+
+    active: list[str] = []
+    import json as _json
+
+    for entry_file in sorted(registry_dir.glob("*.json")):
+        try:
+            data = _json.loads(entry_file.read_text())
+        except (OSError, ValueError):
+            continue
+        lane_id = data.get("lane_id", "")
+        session_id = data.get("session_id")
+        if session_id and lane_id:
+            active.append(lane_id)
+
+    return active
+
+
+def is_fleet_idle(
+    threshold_minutes: float = DEFAULT_THRESHOLD_MINUTES,
+    *,
+    events_dir: Path | None = None,
+    runtime_dir: Path | None = None,
+    now: datetime | None = None,
+) -> IdleStatus:
+    """Determine whether the steward fleet is idle.
+
+    The fleet is considered idle when **both** conditions are met:
+    1. No meaningful event has occurred within ``threshold_minutes``.
+    2. No lane is currently in an active state (has a live session_id).
+
+    Args:
+        threshold_minutes: Number of minutes with no meaningful activity
+            before the fleet is considered idle.  Defaults to 90.
+        events_dir: Override for the events directory.
+        runtime_dir: Override for the runtime directory (used for lane
+            activity checks).
+        now: Override for current time (for testing).
+
+    Returns:
+        An :class:`IdleStatus` describing the determination.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    # 1. Find the last meaningful event
+    last_event_ts = _find_last_meaningful_event(events_dir)
+
+    # 2. Check for currently active lanes
+    active_lanes = _get_active_lane_ids(runtime_dir)
+
+    # If any lane is actively running, the fleet is not idle
+    if active_lanes:
+        idle_minutes = (
+            (now - last_event_ts).total_seconds() / 60.0 if last_event_ts else 0.0
+        )
+        return IdleStatus(
+            idle=False,
+            idle_minutes=idle_minutes,
+            last_meaningful_event=last_event_ts,
+            active_lanes=active_lanes,
+            reason=f"Active lanes: {', '.join(sorted(active_lanes))}",
+        )
+
+    # No active lanes — check event recency
+    if last_event_ts is None:
+        # No events at all — if no lanes are active, we're idle
+        return IdleStatus(
+            idle=True,
+            idle_minutes=float(threshold_minutes),  # Conservative: at least threshold
+            last_meaningful_event=None,
+            active_lanes=[],
+            reason="No meaningful events found and no active lanes",
+        )
+
+    elapsed = now - last_event_ts
+    idle_minutes = elapsed.total_seconds() / 60.0
+
+    if idle_minutes >= threshold_minutes:
+        return IdleStatus(
+            idle=True,
+            idle_minutes=idle_minutes,
+            last_meaningful_event=last_event_ts,
+            active_lanes=[],
+            reason=(
+                f"No meaningful activity for {idle_minutes:.0f}m "
+                f"(threshold: {threshold_minutes:.0f}m)"
+            ),
+        )
+
+    return IdleStatus(
+        idle=False,
+        idle_minutes=idle_minutes,
+        last_meaningful_event=last_event_ts,
+        active_lanes=[],
+        reason=(
+            f"Last meaningful event {idle_minutes:.0f}m ago "
+            f"(threshold: {threshold_minutes:.0f}m)"
+        ),
+    )
