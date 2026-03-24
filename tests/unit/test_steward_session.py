@@ -579,7 +579,8 @@ class TestTelegramChannelConfig:
                     break
         guard_text = "\n".join(guard_body)
         assert (
-            'ORCH_CHANNEL_FLAGS="--channels telegram"' in guard_text
+            'ORCH_CHANNEL_FLAGS="--channels plugin:telegram@claude-plugins-official"'
+            in guard_text
         ), "ORCH_CHANNEL_FLAGS assignment must be inside the STEWARD_TELEGRAM_ENABLED=1 guard"
 
 
