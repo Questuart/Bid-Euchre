@@ -58,6 +58,18 @@ intake-to-dispatch flow into a reusable workflow.
 5. For trivial tasks (single-file fix, typo, previously approved pattern):
    - Skip preview and proceed directly to dispatch
 
+### Phase 2.5 — Refresh Lane
+
+5b. **Refresh the target lane** before dispatching to ensure a clean worktree:
+   ```bash
+   uv run python scripts/internal/ops.py lane refresh <lane>
+   ```
+   This rebases the lane's worktree onto `origin/main` and clears stale
+   session state. Task dispatch (`task dispatch`) auto-refreshes the lane,
+   so this step is optional for the normal dispatch path — but it is useful
+   for manual workflows or when you want to verify lane health before
+   committing to a dispatch.
+
 ### Phase 3 — Dispatch
 
 6. **Create the task packet** (if not already created during preview):
