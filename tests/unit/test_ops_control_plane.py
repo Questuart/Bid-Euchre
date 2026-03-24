@@ -19,6 +19,7 @@ from bid_euchre.ops.control_plane import (
     STATE_SUPPRESSED,
     ActionableItem,
     FleetStatus,
+    _finding_stable_id,
     ack_item,
     clear_item,
     derive_items,
@@ -29,10 +30,12 @@ from bid_euchre.ops.control_plane import (
     items_from_unacked_messages,
     load_fleet_status,
     merge_with_previous,
+    monitor_findings_to_dicts,
     reconcile,
     save_fleet_status,
     suppress_item,
 )
+from bid_euchre.ops.monitor import MonitorFinding
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1061,3 +1064,295 @@ class TestEdgeCases:
         items = items_from_monitor_findings(findings, now_iso=NOW_ISO)
         assert len(items) == 2
         assert items[0].item_id != items[1].item_id
+
+
+# ---------------------------------------------------------------------------
+# MonitorFinding → dict bridge
+# ---------------------------------------------------------------------------
+
+
+class TestMonitorFindingsToDicts:
+    def test_converts_single_finding(self):
+        finding = MonitorFinding(
+            category="lane_health",
+            severity="high",
+            summary="Lane dead",
+            details={"lane_id": "author-a"},
+        )
+        result = monitor_findings_to_dicts([finding])
+        assert len(result) == 1
+        assert result[0]["category"] == "lane_health"
+        assert result[0]["severity"] == "high"
+        assert result[0]["summary"] == "Lane dead"
+        assert result[0]["details"]["lane_id"] == "author-a"
+
+    def test_converts_multiple_findings(self):
+        findings = [
+            MonitorFinding(
+                category="lane_health",
+                severity="high",
+                summary="Lane A dead",
+                details={"lane_id": "author-a"},
+            ),
+            MonitorFinding(
+                category="pr_status",
+                severity="warn",
+                summary="PR #42 failing",
+                details={"number": 42},
+            ),
+        ]
+        result = monitor_findings_to_dicts(findings)
+        assert len(result) == 2
+        assert result[0]["category"] == "lane_health"
+        assert result[1]["category"] == "pr_status"
+
+    def test_empty_list(self):
+        result = monitor_findings_to_dicts([])
+        assert result == []
+
+    def test_roundtrip_through_items_from_monitor_findings(self):
+        """MonitorFinding → dict → ActionableItem works end-to-end."""
+        finding = MonitorFinding(
+            category="stale_dispatch",
+            severity="warn",
+            summary="Stale dispatch for author-a",
+            details={"lane_id": "author-a", "task_id": "pkt001"},
+        )
+        dicts = monitor_findings_to_dicts([finding])
+        items = items_from_monitor_findings(dicts, now_iso=NOW_ISO)
+        assert len(items) == 1
+        assert items[0].category == "stale_dispatch"
+        assert items[0].severity == "warn"
+        assert items[0].lane_id == "author-a"
+        assert items[0].task_id == "pkt001"
+        assert items[0].source == "monitor"
+
+
+# ---------------------------------------------------------------------------
+# Stable ID robustness (dedup across cycles with changing details)
+# ---------------------------------------------------------------------------
+
+
+class TestFindingStableIdDedup:
+    def test_same_lane_different_summary_same_id(self):
+        """Same logical condition with changing summary text → same item_id."""
+        details = {"lane_id": "author-a"}
+        id1 = _finding_stable_id("lane_health", details)
+        id2 = _finding_stable_id("lane_health", details)
+        assert id1 == id2
+
+    def test_same_pr_different_check_count_same_id(self):
+        """PR findings with changing check counts → same item_id."""
+        details1 = {"number": 42, "failing_checks": 2}
+        details2 = {"number": 42, "failing_checks": 5}
+        id1 = _finding_stable_id("pr_status", details1)
+        id2 = _finding_stable_id("pr_status", details2)
+        assert id1 == id2
+
+    def test_different_lanes_different_ids(self):
+        d1 = {"lane_id": "author-a"}
+        d2 = {"lane_id": "author-b"}
+        assert _finding_stable_id("lane_health", d1) != _finding_stable_id(
+            "lane_health", d2
+        )
+
+    def test_different_categories_same_details_different_ids(self):
+        details = {"lane_id": "author-a"}
+        assert _finding_stable_id("lane_health", details) != _finding_stable_id(
+            "stalled_lane", details
+        )
+
+    def test_no_identifiers_uses_summary_fallback(self):
+        """Findings with no lane/PR/task keys fall back to summary-based id."""
+        d1 = {"summary": "Fleet idle for 90 minutes"}
+        d2 = {"summary": "Something completely different"}
+        id1 = _finding_stable_id("idle_lane", d1)
+        id2 = _finding_stable_id("idle_lane", d2)
+        assert id1 != id2
+
+    def test_finding_dedup_across_cycles_preserves_first_seen(self, tmp_path):
+        """Same logical finding across 2 cycles keeps first_seen_at."""
+        # Cycle 1: PR #50 has 2 failing checks.
+        findings_c1 = [
+            _monitor_finding(
+                category="pr_status",
+                severity="warn",
+                summary="PR #50 has 2 failing checks",
+                details={"number": 50, "failing_checks": 2},
+            )
+        ]
+        status1 = reconcile(
+            runtime_dir=tmp_path, monitor_findings=findings_c1, now_iso=NOW_ISO
+        )
+        assert len(status1.open_items) == 1
+        item_id_c1 = status1.items[0].item_id
+
+        # Cycle 2: Same PR, different check count text.
+        later = "2026-03-24T23:00:00+00:00"
+        findings_c2 = [
+            _monitor_finding(
+                category="pr_status",
+                severity="warn",
+                summary="PR #50 has 5 failing checks",
+                details={"number": 50, "failing_checks": 5},
+            )
+        ]
+        status2 = reconcile(
+            runtime_dir=tmp_path, monitor_findings=findings_c2, now_iso=later
+        )
+        # Same logical finding — should keep the same item_id.
+        item_id_c2 = [i for i in status2.items if i.state == STATE_OPEN][0].item_id
+        assert item_id_c1 == item_id_c2
+        # first_seen_at should be from cycle 1, not cycle 2.
+        open_items = [i for i in status2.items if i.state == STATE_OPEN]
+        assert open_items[0].first_seen_at == NOW_ISO
+
+
+# ---------------------------------------------------------------------------
+# derive_items / reconcile with MonitorFinding objects
+# ---------------------------------------------------------------------------
+
+
+class TestDeriveItemsWithMonitorObjects:
+    def test_accepts_monitor_finding_objects(self):
+        findings = [
+            MonitorFinding(
+                category="stale_dispatch",
+                severity="warn",
+                summary="Stale dispatch",
+                details={"lane_id": "author-a"},
+            )
+        ]
+        items = derive_items(monitor_finding_objects=findings, now_iso=NOW_ISO)
+        assert len(items) == 1
+        assert items[0].source == "monitor"
+        assert items[0].category == "stale_dispatch"
+
+    def test_combines_dict_and_object_findings(self):
+        dict_findings = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane A dead",
+                details={"lane_id": "author-a"},
+            )
+        ]
+        obj_findings = [
+            MonitorFinding(
+                category="pr_status",
+                severity="warn",
+                summary="PR #99 failing",
+                details={"number": 99},
+            )
+        ]
+        items = derive_items(
+            monitor_findings=dict_findings,
+            monitor_finding_objects=obj_findings,
+            now_iso=NOW_ISO,
+        )
+        categories = {i.category for i in items}
+        assert "lane_health" in categories
+        assert "pr_status" in categories
+        assert len(items) == 2
+
+    def test_none_objects_ignored(self):
+        items = derive_items(
+            monitor_finding_objects=None,
+            now_iso=NOW_ISO,
+        )
+        assert items == []
+
+
+class TestReconcileWithMonitorObjects:
+    def test_reconcile_with_monitor_finding_objects(self, tmp_path):
+        findings = [
+            MonitorFinding(
+                category="lane_health",
+                severity="high",
+                summary="Lane dead",
+                details={"lane_id": "author-b"},
+            )
+        ]
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_finding_objects=findings,
+            now_iso=NOW_ISO,
+        )
+        assert status.cycle_count == 1
+        assert len(status.open_items) == 1
+        assert status.items[0].lane_id == "author-b"
+
+    def test_reconcile_combines_dict_and_object(self, tmp_path):
+        dict_findings = [
+            _monitor_finding(
+                severity="warn",
+                summary="Stale dispatch",
+                category="stale_dispatch",
+                details={"lane_id": "flex-a"},
+            )
+        ]
+        obj_findings = [
+            MonitorFinding(
+                category="approval_stall",
+                severity="high",
+                summary="Lane blocked on approval",
+                details={"lane_id": "author-c"},
+            )
+        ]
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=dict_findings,
+            monitor_finding_objects=obj_findings,
+            now_iso=NOW_ISO,
+        )
+        assert len(status.open_items) == 2
+        categories = {i.category for i in status.open_items}
+        assert "stale_dispatch" in categories
+        assert "approval_stall" in categories
+
+    def test_monitor_objects_auto_clear_across_cycles(self, tmp_path):
+        """MonitorFinding objects correctly participate in auto-clear lifecycle."""
+        findings_c1 = [
+            MonitorFinding(
+                category="lane_health",
+                severity="high",
+                summary="Lane dead",
+                details={"lane_id": "author-d"},
+            )
+        ]
+        reconcile(
+            runtime_dir=tmp_path,
+            monitor_finding_objects=findings_c1,
+            now_iso=NOW_ISO,
+        )
+        # Second cycle: finding gone → auto-cleared.
+        status2 = reconcile(runtime_dir=tmp_path, now_iso=NOW_ISO)
+        cleared = [i for i in status2.items if i.state == STATE_CLEARED]
+        assert len(cleared) == 1
+        assert cleared[0].lane_id == "author-d"
+
+    def test_monitor_objects_ack_preserved_across_cycles(self, tmp_path):
+        """Acked item from MonitorFinding stays acked when re-detected."""
+        findings = [
+            MonitorFinding(
+                category="stalled_lane",
+                severity="warn",
+                summary="Author-a stalled",
+                details={"lane_id": "author-a"},
+            )
+        ]
+        status1 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_finding_objects=findings,
+            now_iso=NOW_ISO,
+        )
+        ack_item(status1, status1.items[0].item_id)
+        save_fleet_status(status1, tmp_path)
+
+        # Re-detect same finding.
+        status2 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_finding_objects=findings,
+            now_iso=NOW_ISO,
+        )
+        target = [i for i in status2.items if i.lane_id == "author-a"]
+        assert target[0].state == STATE_ACKED

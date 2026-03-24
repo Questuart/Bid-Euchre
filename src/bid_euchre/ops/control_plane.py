@@ -205,8 +205,65 @@ def _now_iso() -> str:
 
 
 # ---------------------------------------------------------------------------
+# MonitorFinding → dict bridge
+# ---------------------------------------------------------------------------
+
+
+def monitor_findings_to_dicts(
+    findings: list[Any],
+) -> list[dict[str, Any]]:
+    """Convert ``MonitorFinding`` dataclass instances to plain dicts.
+
+    Accepts a list of ``MonitorFinding`` frozen dataclasses (from
+    ``bid_euchre.ops.monitor``) and converts each to a plain dict
+    using ``dataclasses.asdict()``.
+
+    This bridges the monitor module's output type to the dict interface
+    used by the controller's derivation functions, avoiding a hard
+    import-time dependency on the monitor module.
+
+    Example::
+
+        from bid_euchre.ops.monitor import run_monitoring_cycle
+        from bid_euchre.ops.control_plane import (
+            monitor_findings_to_dicts, reconcile,
+        )
+
+        findings = run_monitoring_cycle(skip_pr_check=True)
+        status = reconcile(monitor_findings=monitor_findings_to_dicts(findings))
+    """
+    return [asdict(f) for f in findings]
+
+
+# ---------------------------------------------------------------------------
 # Derivation: monitor findings → actionable items
 # ---------------------------------------------------------------------------
+
+
+def _finding_stable_id(
+    category: str,
+    details: dict[str, Any],
+) -> str:
+    """Generate a deterministic item_id from a monitor finding.
+
+    Uses **category + key identifiers** (lane_id, pr_number, task_id)
+    rather than volatile text (summary) so that the same logical condition
+    maps to the same item_id even when details like check counts change.
+
+    Falls back to including a summary prefix only when no identifying key
+    is available, to avoid collapsing unrelated findings into one id.
+    """
+    lane_id = str(details.get("lane_id", ""))
+    pr_number = str(details.get("pr_number", details.get("number", "")))
+    task_id = str(details.get("task_id", ""))
+
+    # If we have at least one identifying key, use it for dedup.
+    if lane_id or pr_number or task_id:
+        return _stable_id(category, lane_id, pr_number, task_id)
+
+    # Fallback: include summary prefix for findings with no identifiers.
+    summary = str(details.get("summary", ""))
+    return _stable_id(category, summary[:60])
 
 
 def items_from_monitor_findings(
@@ -215,6 +272,9 @@ def items_from_monitor_findings(
     now_iso: str | None = None,
 ) -> list[ActionableItem]:
     """Convert monitor findings into actionable items.
+
+    Accepts findings as plain dicts (the output of
+    :func:`monitor_findings_to_dicts` or ``dataclasses.asdict``).
 
     Skips pure-info capacity summaries (routine noise).
     Maps monitor severities to control-plane severities.
@@ -233,12 +293,7 @@ def items_from_monitor_findings(
         if severity == SEVERITY_INFO and category == CAT_LANE_HEALTH:
             continue
 
-        item_id = _stable_id(
-            category,
-            str(details.get("lane_id", "")),
-            str(details.get("pr_number", details.get("number", ""))),
-            summary[:60],
-        )
+        item_id = _finding_stable_id(category, details)
 
         lane_id = details.get("lane_id")
         pr_number = details.get("pr_number") or details.get("number")
@@ -587,6 +642,7 @@ def save_fleet_status(
 def derive_items(
     *,
     monitor_findings: list[dict[str, Any]] | None = None,
+    monitor_finding_objects: list[Any] | None = None,
     task_packets: list[dict[str, Any]] | None = None,
     unacked_messages: list[dict[str, Any]] | None = None,
     now_iso: str | None = None,
@@ -596,14 +652,34 @@ def derive_items(
 
     This is a **pure function** — it takes pre-loaded data and returns items.
     No I/O, no side effects.
+
+    Args:
+        monitor_findings: Pre-converted dicts (legacy interface).
+        monitor_finding_objects: ``MonitorFinding`` dataclass instances
+            from the monitor module.  Automatically converted to dicts via
+            :func:`monitor_findings_to_dicts`.  If both ``monitor_findings``
+            and ``monitor_finding_objects`` are provided, they are combined.
+        task_packets: Task packet dicts.
+        unacked_messages: Bus message dicts.
+        now_iso: Override for current time (ISO 8601).
+        unacked_message_age_minutes: Age threshold for unacked messages.
     """
     if now_iso is None:
         now_iso = _now_iso()
 
     all_items: list[ActionableItem] = []
 
+    # Combine dict-based and object-based monitor findings.
+    combined_findings: list[dict[str, Any]] = []
     if monitor_findings:
-        all_items.extend(items_from_monitor_findings(monitor_findings, now_iso=now_iso))
+        combined_findings.extend(monitor_findings)
+    if monitor_finding_objects:
+        combined_findings.extend(monitor_findings_to_dicts(monitor_finding_objects))
+
+    if combined_findings:
+        all_items.extend(
+            items_from_monitor_findings(combined_findings, now_iso=now_iso)
+        )
 
     if task_packets:
         all_items.extend(items_from_task_packets(task_packets, now_iso=now_iso))
@@ -629,6 +705,7 @@ def reconcile(
     *,
     runtime_dir: Path | None = None,
     monitor_findings: list[dict[str, Any]] | None = None,
+    monitor_finding_objects: list[Any] | None = None,
     task_packets: list[dict[str, Any]] | None = None,
     unacked_messages: list[dict[str, Any]] | None = None,
     now_iso: str | None = None,
@@ -641,7 +718,11 @@ def reconcile(
     4. Persist the result.
     5. Return the new fleet status.
 
-    If ``monitor_findings`` etc. are not provided, the caller is responsible
+    Accepts monitor findings as either pre-converted dicts
+    (``monitor_findings``) or ``MonitorFinding`` dataclass instances
+    (``monitor_finding_objects``).  Both may be provided and are combined.
+
+    If neither monitor input is provided, the caller is responsible
     for running the monitor cycle first and passing the results.
     """
     if now_iso is None:
@@ -652,6 +733,7 @@ def reconcile(
 
     new_items = derive_items(
         monitor_findings=monitor_findings,
+        monitor_finding_objects=monitor_finding_objects,
         task_packets=task_packets,
         unacked_messages=unacked_messages,
         now_iso=now_iso,
