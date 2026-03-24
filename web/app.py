@@ -12,14 +12,19 @@ Routes are defined in :mod:`web.routes` and registered via ``include_router``.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.templating import Jinja2Templates
 
 from .ai_manager import AIManager
 from .config import HostedPlayConfig, get_config, override_config
 from .db import create_tables, init_engine, make_session_factory
 from .routes import router as game_router
+
+# Template directory lives at web/templates/ relative to this file
+_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 
 @asynccontextmanager
@@ -34,11 +39,15 @@ async def lifespan(app: FastAPI):
     # 2. AI models
     ai_manager = AIManager(config)
 
-    # 3. Stash on app.state for route access
+    # 3. Templates
+    templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+    # 4. Stash on app.state for route access
     app.state.config = config
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
     app.state.ai_manager = ai_manager
+    app.state.templates = templates
 
     yield
 

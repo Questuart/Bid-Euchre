@@ -10,7 +10,6 @@ no rule/scoring logic lives here.
 
 from __future__ import annotations
 
-import html
 import json
 import random
 import uuid
@@ -19,6 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.templating import Jinja2Templates
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
 from bid_euchre.strategy.bidding import BidAction
@@ -31,6 +31,11 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _get_templates(request: Request) -> Jinja2Templates:
+    """Retrieve the Jinja2Templates stashed on ``app.state`` during startup."""
+    return request.app.state.templates
 
 
 def _get_ai_manager(request: Request) -> AIManager:
@@ -170,6 +175,93 @@ def _log_decision(
     session.add(decision)
 
 
+def _game_phase(state) -> str:
+    """Map engine state to the template ``phase`` variable.
+
+    The ``game.html`` template dispatches on this value to select which
+    partials to include.
+    """
+    if state.status == "complete":
+        return "match_result"
+    hand = state.current_hand
+    if hand is None:
+        return "model_select"
+    if hand.phase == "complete":
+        return "hand_result"
+    # "auction", "trick_play", or "redeal" pass through directly
+    return hand.phase
+
+
+def _build_game_context(
+    engine: MatchEngine,
+    state,
+    link_uuid: str,
+) -> dict[str, Any]:
+    """Build the Jinja2 template context for the game board.
+
+    Combines visible state (from ``engine.get_visible_state``) with additional
+    fields needed by the partials (winning_bid, bidder_seat, current_high_bid,
+    points, legal plays, AI hand counts).
+    """
+    visible = engine.get_visible_state(state)
+    hand = state.current_hand
+
+    ctx: dict[str, Any] = {
+        "link_uuid": link_uuid,
+        "match_status": state.status,
+        "phase": _game_phase(state),
+        **visible,
+    }
+
+    # Fields only available from hand state (not in visible dict)
+    if hand is not None:
+        ctx["winning_bid"] = hand.winning_bid
+        ctx["bidder_seat"] = hand.bidder_seat
+        ctx["current_high_bid"] = hand.current_high_bid
+        ctx["points_team0"] = hand.points_team0
+        ctx["points_team1"] = hand.points_team1
+
+        # Legal plays for the hand partial
+        if hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+            ctx["legal_plays"] = engine.get_legal_plays(state)
+        else:
+            ctx["legal_plays"] = None
+
+        # AI hand card counts (face-down display)
+        ctx["opp_left_count"] = len(hand.hands[1]) if len(hand.hands) > 1 else 0
+        ctx["partner_count"] = len(hand.hands[2]) if len(hand.hands) > 2 else 0
+        ctx["opp_right_count"] = len(hand.hands[3]) if len(hand.hands) > 3 else 0
+    else:
+        ctx["winning_bid"] = None
+        ctx["bidder_seat"] = None
+        ctx["current_high_bid"] = 0
+        ctx["points_team0"] = 0
+        ctx["points_team1"] = 0
+        ctx["legal_plays"] = None
+        ctx["opp_left_count"] = 0
+        ctx["partner_count"] = 0
+        ctx["opp_right_count"] = 0
+
+    return ctx
+
+
+def _render_game_board(
+    request: Request,
+    engine: MatchEngine,
+    state,
+    link_uuid: str,
+) -> str:
+    """Render the game board composite partial as an HTML string.
+
+    Returns the inner HTML for the ``#game-board`` div — used by HTMX
+    partial POST responses.
+    """
+    templates = _get_templates(request)
+    ctx = _build_game_context(engine, state, link_uuid)
+    ctx["request"] = request
+    return templates.get_template("partials/game_board.html").render(ctx)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -178,14 +270,8 @@ def _log_decision(
 @router.get("/", response_class=HTMLResponse)
 async def landing(request: Request):
     """Landing page — create game form."""
-    return HTMLResponse(
-        "<html><body>"
-        "<h1>Bid Euchre</h1>"
-        '<form method="post" action="/new">'
-        '<button type="submit">New Game</button>'
-        "</form>"
-        "</body></html>"
-    )
+    templates = _get_templates(request)
+    return templates.TemplateResponse("landing.html", {"request": request})
 
 
 @router.post("/new")
@@ -205,6 +291,7 @@ async def create_game(request: Request):
 @router.get("/play/{link_uuid}", response_class=HTMLResponse)
 async def game_page(request: Request, link_uuid: str):
     """Game page — shows nickname prompt or game board."""
+    templates = _get_templates(request)
     session = _get_session(request)
     try:
         player = session.query(Player).filter_by(link_uuid=link_uuid).first()
@@ -213,15 +300,13 @@ async def game_page(request: Request, link_uuid: str):
 
         # No nickname yet — show nickname prompt
         if not player.nickname:
-            return HTMLResponse(
-                "<html><body>"
-                "<h2>Enter your nickname</h2>"
-                f'<form method="post" action="/play/{link_uuid}/nickname"'
-                f' hx-post="/play/{link_uuid}/nickname" hx-target="#main">'
-                '<input name="nickname" required>'
-                '<button type="submit">Set Nickname</button>'
-                "</form>"
-                "</body></html>"
+            return templates.TemplateResponse(
+                "game.html",
+                {
+                    "request": request,
+                    "phase": "nickname",
+                    "link_uuid": link_uuid,
+                },
             )
 
         # Check for an active match
@@ -236,31 +321,24 @@ async def game_page(request: Request, link_uuid: str):
             # No active match — show model selection
             ai_manager = _get_ai_manager(request)
             models = ai_manager.list_available()
-            options = "".join(
-                f'<option value="{m.id}">{m.name} — {m.description}</option>'
-                for m in models
-            )
-            return HTMLResponse(
-                "<html><body>"
-                f"<h2>Welcome, {html.escape(player.nickname)}!</h2>"
-                f'<form method="post" action="/play/{link_uuid}/select-ai">'
-                f'<select name="model_id">{options}</select>'
-                '<button type="submit">Start Match</button>'
-                "</form>"
-                "</body></html>"
+            return templates.TemplateResponse(
+                "game.html",
+                {
+                    "request": request,
+                    "phase": "model_select",
+                    "link_uuid": link_uuid,
+                    "nickname": player.nickname,
+                    "models": models,
+                },
             )
 
         # Active match — show game board
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
         state = _deserialize_state(engine, match_row.match_state_json)
-        visible = engine.get_visible_state(state)
-        return HTMLResponse(
-            "<html><body>"
-            f"<h2>Game Board — {html.escape(player.nickname)}</h2>"
-            f"<pre>{json.dumps(visible, indent=2)}</pre>"
-            "</body></html>"
-        )
+        ctx = _build_game_context(engine, state, link_uuid)
+        ctx["request"] = request
+        return templates.TemplateResponse("game.html", ctx)
     finally:
         session.close()
 
@@ -272,6 +350,7 @@ async def set_nickname(
     nickname: str = Form(...),
 ):
     """Set the player's nickname."""
+    templates = _get_templates(request)
     session = _get_session(request)
     try:
         player = session.query(Player).filter_by(link_uuid=link_uuid).first()
@@ -281,19 +360,18 @@ async def set_nickname(
         player.nickname = nickname
         session.commit()
 
-        # Return model selection form
+        # Return model selection form (HTMX partial)
         ai_manager = _get_ai_manager(request)
         models = ai_manager.list_available()
-        options = "".join(
-            f'<option value="{m.id}">{m.name} — {m.description}</option>'
-            for m in models
-        )
         return HTMLResponse(
-            f"<h2>Welcome, {html.escape(nickname)}!</h2>"
-            f'<form method="post" action="/play/{link_uuid}/select-ai">'
-            f'<select name="model_id">{options}</select>'
-            '<button type="submit">Start Match</button>'
-            "</form>"
+            templates.get_template("partials/model_select.html").render(
+                {
+                    "request": request,
+                    "link_uuid": link_uuid,
+                    "nickname": nickname,
+                    "models": models,
+                }
+            )
         )
     finally:
         session.close()
@@ -343,10 +421,8 @@ async def select_ai(
 
         session.commit()
 
-        visible = engine.get_visible_state(state)
-        return HTMLResponse(
-            f"<h2>Match started!</h2><pre>{json.dumps(visible, indent=2)}</pre>"
-        )
+        # Return game board (HTMX partial)
+        return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
         session.close()
 
@@ -382,8 +458,7 @@ async def submit_bid(
         # Idempotency check
         hand = state.current_hand
         if hand is None or turn_number < hand.turn_number:
-            visible = engine.get_visible_state(state)
-            return HTMLResponse(f"<pre>{json.dumps(visible, indent=2)}</pre>")
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         # Validate phase
         if hand.phase != "auction":
@@ -465,8 +540,7 @@ async def submit_bid(
         _update_match_row(match_row, state)
         session.commit()
 
-        visible = engine.get_visible_state(state)
-        return HTMLResponse(f"<pre>{json.dumps(visible, indent=2)}</pre>")
+        return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
         session.close()
 
@@ -501,8 +575,7 @@ async def submit_card(
         # Idempotency check
         hand = state.current_hand
         if hand is None or turn_number < hand.turn_number:
-            visible = engine.get_visible_state(state)
-            return HTMLResponse(f"<pre>{json.dumps(visible, indent=2)}</pre>")
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         # Validate phase
         if hand.phase != "trick_play":
@@ -563,8 +636,7 @@ async def submit_card(
         _update_match_row(match_row, state)
         session.commit()
 
-        visible = engine.get_visible_state(state)
-        return HTMLResponse(f"<pre>{json.dumps(visible, indent=2)}</pre>")
+        return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
         session.close()
 
@@ -575,26 +647,25 @@ async def new_match(
     link_uuid: str,
 ):
     """Start a new match (after a previous one completed)."""
+    templates = _get_templates(request)
     session = _get_session(request)
     try:
         player = session.query(Player).filter_by(link_uuid=link_uuid).first()
         if player is None:
             raise HTTPException(status_code=404, detail="Game not found")
 
-        # Return model selection form
-        safe_nick = html.escape(player.nickname or "Player")
+        # Return model selection form (HTMX partial)
         ai_manager = _get_ai_manager(request)
         models = ai_manager.list_available()
-        options = "".join(
-            f'<option value="{m.id}">{m.name} — {m.description}</option>'
-            for m in models
-        )
         return HTMLResponse(
-            f"<h2>New Match — {safe_nick}</h2>"
-            f'<form method="post" action="/play/{link_uuid}/select-ai">'
-            f'<select name="model_id">{options}</select>'
-            '<button type="submit">Start Match</button>'
-            "</form>"
+            templates.get_template("partials/model_select.html").render(
+                {
+                    "request": request,
+                    "link_uuid": link_uuid,
+                    "nickname": player.nickname or "Player",
+                    "models": models,
+                }
+            )
         )
     finally:
         session.close()
