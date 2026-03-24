@@ -1,0 +1,1063 @@
+"""Unit tests for the controller / reconciler module (SP-4-07 PR 2).
+
+Tests the pure-function derivation core and the side-effecting reconcile loop.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+from bid_euchre.ops.control_plane import (
+    STATE_ACKED,
+    STATE_CLEARED,
+    STATE_OPEN,
+    STATE_SUPPRESSED,
+    ActionableItem,
+    FleetStatus,
+    ack_item,
+    clear_item,
+    derive_items,
+    format_status_json,
+    format_status_text,
+    items_from_monitor_findings,
+    items_from_task_packets,
+    items_from_unacked_messages,
+    load_fleet_status,
+    merge_with_previous,
+    reconcile,
+    save_fleet_status,
+    suppress_item,
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+NOW_ISO = "2026-03-24T22:00:00+00:00"
+
+
+def _monitor_finding(
+    category: str = "lane_health",
+    severity: str = "high",
+    summary: str = "Lane dead",
+    details: dict | None = None,
+) -> dict:
+    return {
+        "category": category,
+        "severity": severity,
+        "summary": summary,
+        "details": details or {},
+    }
+
+
+def _task_packet(
+    packet_id: str = "pkt001",
+    status: str = "approved",
+    title: str = "Test task",
+    owner: str | None = None,
+    priority: str = "normal",
+) -> dict:
+    return {
+        "packet_id": packet_id,
+        "status": status,
+        "title": title,
+        "owner": owner,
+        "priority": priority,
+    }
+
+
+def _bus_message(
+    message_id: str = "msg001",
+    priority: str = "high",
+    status: str = "delivered",
+    from_lane: str = "ops",
+    to_lane: str = "orchestrator",
+    summary: str = "Alert: lane dead",
+    created_at: str | None = None,
+) -> dict:
+    if created_at is None:
+        # 30 minutes ago by default (well past the default 10-min threshold).
+        ts = time.time() - 1800
+        created_at = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    return {
+        "id": message_id,
+        "priority": priority,
+        "status": status,
+        "from_lane": from_lane,
+        "to_lane": to_lane,
+        "summary": summary,
+        "created_at": created_at,
+    }
+
+
+# ---------------------------------------------------------------------------
+# ActionableItem construction
+# ---------------------------------------------------------------------------
+
+
+class TestActionableItem:
+    def test_valid_construction(self):
+        item = ActionableItem(
+            item_id="abc123",
+            severity="high",
+            category="lane_health",
+            source="monitor",
+            summary="Lane dead",
+            first_seen_at=NOW_ISO,
+            last_seen_at=NOW_ISO,
+        )
+        assert item.item_id == "abc123"
+        assert item.state == STATE_OPEN
+
+    def test_invalid_severity_raises(self):
+        with pytest.raises(ValueError, match="Invalid severity"):
+            ActionableItem(
+                item_id="x",
+                severity="critical",
+                category="test",
+                source="test",
+                summary="bad",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+            )
+
+    def test_invalid_state_raises(self):
+        with pytest.raises(ValueError, match="Invalid state"):
+            ActionableItem(
+                item_id="x",
+                severity="high",
+                category="test",
+                source="test",
+                summary="bad",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                state="invalid",
+            )
+
+    def test_optional_fields_default_to_none(self):
+        item = ActionableItem(
+            item_id="x",
+            severity="info",
+            category="test",
+            source="test",
+            summary="test",
+            first_seen_at=NOW_ISO,
+            last_seen_at=NOW_ISO,
+        )
+        assert item.lane_id is None
+        assert item.task_id is None
+        assert item.pr_number is None
+        assert item.recommended_action is None
+        assert item.details == {}
+
+
+# ---------------------------------------------------------------------------
+# FleetStatus model
+# ---------------------------------------------------------------------------
+
+
+class TestFleetStatus:
+    def test_empty_status(self):
+        s = FleetStatus(generated_at=NOW_ISO)
+        assert s.items == []
+        assert s.open_items == []
+        assert s.urgent_items == []
+        assert s.high_items == []
+
+    def test_property_filters(self):
+        items = [
+            ActionableItem(
+                item_id="a",
+                severity="urgent",
+                category="test",
+                source="test",
+                summary="urgent open",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                state=STATE_OPEN,
+            ),
+            ActionableItem(
+                item_id="b",
+                severity="high",
+                category="test",
+                source="test",
+                summary="high open",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                state=STATE_OPEN,
+            ),
+            ActionableItem(
+                item_id="c",
+                severity="warn",
+                category="test",
+                source="test",
+                summary="warn acked",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                state=STATE_ACKED,
+            ),
+            ActionableItem(
+                item_id="d",
+                severity="info",
+                category="test",
+                source="test",
+                summary="info cleared",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                state=STATE_CLEARED,
+            ),
+        ]
+        s = FleetStatus(items=items, generated_at=NOW_ISO)
+        assert len(s.open_items) == 2
+        assert len(s.urgent_items) == 1
+        assert len(s.high_items) == 2  # urgent + high
+
+    def test_to_dict_and_from_dict_roundtrip(self):
+        items = [
+            ActionableItem(
+                item_id="x",
+                severity="warn",
+                category="pr_status",
+                source="monitor",
+                summary="PR failing",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                pr_number=42,
+            )
+        ]
+        original = FleetStatus(items=items, generated_at=NOW_ISO, cycle_count=5)
+        data = original.to_dict()
+        restored = FleetStatus.from_dict(data)
+        assert len(restored.items) == 1
+        assert restored.items[0].item_id == "x"
+        assert restored.items[0].pr_number == 42
+        assert restored.cycle_count == 5
+        assert data["summary"]["total"] == 1
+        assert data["summary"]["open"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Derivation: monitor findings
+# ---------------------------------------------------------------------------
+
+
+class TestItemsFromMonitorFindings:
+    def test_high_severity_finding_produces_item(self):
+        findings = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane 'author-a' is active but tmux pane is dead",
+                details={"lane_id": "author-a"},
+            )
+        ]
+        items = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        assert len(items) == 1
+        assert items[0].severity == "high"
+        assert items[0].category == "lane_health"
+        assert items[0].source == "monitor"
+        assert items[0].lane_id == "author-a"
+        assert items[0].recommended_action is not None
+
+    def test_info_capacity_summary_is_filtered_out(self):
+        findings = [
+            _monitor_finding(
+                severity="info",
+                category="lane_health",
+                summary="Pool: 3 active, 5 idle",
+            )
+        ]
+        items = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        assert len(items) == 0
+
+    def test_info_non_capacity_is_preserved(self):
+        findings = [
+            _monitor_finding(
+                severity="info",
+                category="merged_pr",
+                summary="PR #1234 merged",
+                details={"pr_number": 1234},
+            )
+        ]
+        items = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        assert len(items) == 1
+        assert items[0].pr_number == 1234
+
+    def test_stable_ids_across_calls(self):
+        findings = [
+            _monitor_finding(
+                severity="warn",
+                summary="PR #100 failing checks",
+                details={"number": 100},
+            )
+        ]
+        items1 = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        items2 = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        assert items1[0].item_id == items2[0].item_id
+
+    def test_different_findings_get_different_ids(self):
+        f1 = [_monitor_finding(summary="Lane A dead", details={"lane_id": "a"})]
+        f2 = [_monitor_finding(summary="Lane B dead", details={"lane_id": "b"})]
+        items1 = items_from_monitor_findings(f1, now_iso=NOW_ISO)
+        items2 = items_from_monitor_findings(f2, now_iso=NOW_ISO)
+        assert items1[0].item_id != items2[0].item_id
+
+    def test_pr_status_recommendation(self):
+        findings = [
+            _monitor_finding(
+                category="pr_status",
+                severity="warn",
+                summary="PR #50 has merge conflicts",
+                details={"number": 50, "mergeable": "CONFLICTING"},
+            )
+        ]
+        items = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        assert "Rebase" in items[0].recommended_action
+
+    def test_stale_dispatch_recommendation(self):
+        findings = [
+            _monitor_finding(
+                category="stale_dispatch",
+                severity="warn",
+                summary="Stale dispatch",
+            )
+        ]
+        items = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        assert "nudge" in items[0].recommended_action
+
+    def test_approval_stall_recommendation(self):
+        findings = [
+            _monitor_finding(
+                category="approval_stall",
+                severity="high",
+                summary="Lane blocked on approval",
+            )
+        ]
+        items = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        assert "Approve" in items[0].recommended_action
+
+    def test_empty_findings(self):
+        items = items_from_monitor_findings([], now_iso=NOW_ISO)
+        assert items == []
+
+
+# ---------------------------------------------------------------------------
+# Derivation: task packets
+# ---------------------------------------------------------------------------
+
+
+class TestItemsFromTaskPackets:
+    def test_approved_packet_produces_item(self):
+        packets = [_task_packet(status="approved", title="Deploy fix")]
+        items = items_from_task_packets(packets, now_iso=NOW_ISO)
+        assert len(items) == 1
+        assert "Deploy fix" in items[0].summary
+        assert items[0].category == "task_lifecycle"
+        assert items[0].source == "task_queue"
+        assert items[0].recommended_action is not None
+
+    def test_dispatched_packet_does_not_produce_item(self):
+        packets = [_task_packet(status="dispatched")]
+        items = items_from_task_packets(packets, now_iso=NOW_ISO)
+        assert len(items) == 0
+
+    def test_completed_packet_does_not_produce_item(self):
+        packets = [_task_packet(status="completed")]
+        items = items_from_task_packets(packets, now_iso=NOW_ISO)
+        assert len(items) == 0
+
+    def test_high_priority_approved_is_warn(self):
+        packets = [_task_packet(status="approved", priority="high")]
+        items = items_from_task_packets(packets, now_iso=NOW_ISO)
+        assert items[0].severity == "warn"
+
+    def test_normal_priority_approved_is_info(self):
+        packets = [_task_packet(status="approved", priority="normal")]
+        items = items_from_task_packets(packets, now_iso=NOW_ISO)
+        assert items[0].severity == "info"
+
+    def test_empty_packets(self):
+        items = items_from_task_packets([], now_iso=NOW_ISO)
+        assert items == []
+
+
+# ---------------------------------------------------------------------------
+# Derivation: unacked bus messages
+# ---------------------------------------------------------------------------
+
+
+class TestItemsFromUnackedMessages:
+    def test_old_high_message_produces_item(self):
+        msgs = [_bus_message(priority="high")]
+        items = items_from_unacked_messages(msgs, now_iso=NOW_ISO)
+        assert len(items) == 1
+        assert items[0].severity == "high"
+        assert items[0].category == "unacked_message"
+
+    def test_old_urgent_message_produces_urgent_item(self):
+        msgs = [_bus_message(priority="urgent")]
+        items = items_from_unacked_messages(msgs, now_iso=NOW_ISO)
+        assert len(items) == 1
+        assert items[0].severity == "urgent"
+
+    def test_recent_message_is_filtered_out(self):
+        recent = datetime.now(timezone.utc).isoformat()
+        msgs = [_bus_message(priority="high", created_at=recent)]
+        items = items_from_unacked_messages(msgs, now_iso=NOW_ISO, max_age_minutes=10)
+        assert len(items) == 0
+
+    def test_normal_priority_is_filtered_out(self):
+        msgs = [_bus_message(priority="normal")]
+        items = items_from_unacked_messages(msgs, now_iso=NOW_ISO)
+        assert len(items) == 0
+
+    def test_acked_message_is_filtered_out(self):
+        msgs = [_bus_message(priority="high", status="acked")]
+        items = items_from_unacked_messages(msgs, now_iso=NOW_ISO)
+        assert len(items) == 0
+
+    def test_resolved_message_is_filtered_out(self):
+        msgs = [_bus_message(priority="high", status="resolved")]
+        items = items_from_unacked_messages(msgs, now_iso=NOW_ISO)
+        assert len(items) == 0
+
+    def test_custom_age_threshold(self):
+        # Message is 30 min old, threshold is 60 min.
+        msgs = [_bus_message(priority="high")]
+        items = items_from_unacked_messages(msgs, now_iso=NOW_ISO, max_age_minutes=60)
+        assert len(items) == 0
+
+    def test_empty_messages(self):
+        items = items_from_unacked_messages([], now_iso=NOW_ISO)
+        assert items == []
+
+    def test_malformed_timestamp_skipped(self):
+        msgs = [_bus_message(priority="urgent", created_at="not-a-date")]
+        items = items_from_unacked_messages(msgs, now_iso=NOW_ISO)
+        assert len(items) == 0
+
+
+# ---------------------------------------------------------------------------
+# derive_items (combined)
+# ---------------------------------------------------------------------------
+
+
+class TestDeriveItems:
+    def test_combines_all_sources(self):
+        findings = [
+            _monitor_finding(
+                severity="high", summary="Lane dead", details={"lane_id": "a"}
+            )
+        ]
+        packets = [_task_packet(status="approved")]
+        msgs = [_bus_message(priority="urgent")]
+
+        items = derive_items(
+            monitor_findings=findings,
+            task_packets=packets,
+            unacked_messages=msgs,
+            now_iso=NOW_ISO,
+        )
+        sources = {i.source for i in items}
+        assert "monitor" in sources
+        assert "task_queue" in sources
+        assert "message_bus" in sources
+
+    def test_none_inputs_produce_empty(self):
+        items = derive_items(now_iso=NOW_ISO)
+        assert items == []
+
+
+# ---------------------------------------------------------------------------
+# Merge with previous state
+# ---------------------------------------------------------------------------
+
+
+class TestMergeWithPrevious:
+    def test_no_previous_returns_new(self):
+        items = [
+            ActionableItem(
+                item_id="a",
+                severity="high",
+                category="test",
+                source="test",
+                summary="new",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+            )
+        ]
+        merged = merge_with_previous(items, None)
+        assert len(merged) == 1
+        assert merged[0].item_id == "a"
+
+    def test_preserves_first_seen_at(self):
+        old_time = "2026-03-24T20:00:00+00:00"
+        new_time = "2026-03-24T22:00:00+00:00"
+
+        previous = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="a",
+                    severity="high",
+                    category="test",
+                    source="test",
+                    summary="found",
+                    first_seen_at=old_time,
+                    last_seen_at=old_time,
+                )
+            ]
+        )
+        new_items = [
+            ActionableItem(
+                item_id="a",
+                severity="high",
+                category="test",
+                source="test",
+                summary="found",
+                first_seen_at=new_time,
+                last_seen_at=new_time,
+            )
+        ]
+        merged = merge_with_previous(new_items, previous)
+        assert merged[0].first_seen_at == old_time
+        assert merged[0].last_seen_at == new_time
+
+    def test_carries_forward_acked_state(self):
+        previous = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="a",
+                    severity="high",
+                    category="test",
+                    source="test",
+                    summary="found",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                    state=STATE_ACKED,
+                )
+            ]
+        )
+        new_items = [
+            ActionableItem(
+                item_id="a",
+                severity="high",
+                category="test",
+                source="test",
+                summary="found",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                state=STATE_OPEN,  # new derivation says open
+            )
+        ]
+        merged = merge_with_previous(new_items, previous)
+        assert merged[0].state == STATE_ACKED  # acked is preserved
+
+    def test_carries_forward_suppressed_state(self):
+        previous = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="a",
+                    severity="warn",
+                    category="test",
+                    source="test",
+                    summary="suppressed",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                    state=STATE_SUPPRESSED,
+                )
+            ]
+        )
+        new_items = [
+            ActionableItem(
+                item_id="a",
+                severity="warn",
+                category="test",
+                source="test",
+                summary="suppressed",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                state=STATE_OPEN,
+            )
+        ]
+        merged = merge_with_previous(new_items, previous)
+        assert merged[0].state == STATE_SUPPRESSED
+
+    def test_auto_clears_vanished_open_items(self):
+        previous = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="gone",
+                    severity="high",
+                    category="test",
+                    source="test",
+                    summary="was here",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                    state=STATE_OPEN,
+                )
+            ]
+        )
+        merged = merge_with_previous([], previous)
+        assert len(merged) == 1
+        assert merged[0].item_id == "gone"
+        assert merged[0].state == STATE_CLEARED
+
+    def test_drops_vanished_cleared_items(self):
+        previous = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="old",
+                    severity="info",
+                    category="test",
+                    source="test",
+                    summary="already cleared",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                    state=STATE_CLEARED,
+                )
+            ]
+        )
+        merged = merge_with_previous([], previous)
+        assert len(merged) == 0  # fully dropped
+
+    def test_drops_vanished_suppressed_items(self):
+        previous = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="sup",
+                    severity="info",
+                    category="test",
+                    source="test",
+                    summary="suppressed",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                    state=STATE_SUPPRESSED,
+                )
+            ]
+        )
+        merged = merge_with_previous([], previous)
+        assert len(merged) == 0
+
+    def test_new_items_added(self):
+        previous = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="old",
+                    severity="info",
+                    category="test",
+                    source="test",
+                    summary="old item",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                )
+            ]
+        )
+        new_items = [
+            ActionableItem(
+                item_id="new",
+                severity="high",
+                category="test",
+                source="test",
+                summary="new item",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+            )
+        ]
+        merged = merge_with_previous(new_items, previous)
+        ids = {i.item_id for i in merged}
+        assert "new" in ids
+        assert "old" in ids  # auto-cleared but still present
+
+
+# ---------------------------------------------------------------------------
+# Ack / clear / suppress
+# ---------------------------------------------------------------------------
+
+
+class TestAckClearSuppress:
+    def _make_status(self, state: str = STATE_OPEN) -> FleetStatus:
+        return FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="item1",
+                    severity="high",
+                    category="test",
+                    source="test",
+                    summary="test",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                    state=state,
+                )
+            ]
+        )
+
+    def test_ack_open_item(self):
+        s = self._make_status(STATE_OPEN)
+        assert ack_item(s, "item1") is True
+        assert s.items[0].state == STATE_ACKED
+
+    def test_ack_non_open_item_returns_false(self):
+        s = self._make_status(STATE_ACKED)
+        assert ack_item(s, "item1") is False
+
+    def test_ack_nonexistent_returns_false(self):
+        s = self._make_status()
+        assert ack_item(s, "nonexistent") is False
+
+    def test_clear_open_item(self):
+        s = self._make_status(STATE_OPEN)
+        assert clear_item(s, "item1") is True
+        assert s.items[0].state == STATE_CLEARED
+
+    def test_clear_acked_item(self):
+        s = self._make_status(STATE_ACKED)
+        assert clear_item(s, "item1") is True
+        assert s.items[0].state == STATE_CLEARED
+
+    def test_clear_already_cleared_returns_false(self):
+        s = self._make_status(STATE_CLEARED)
+        assert clear_item(s, "item1") is False
+
+    def test_suppress_open_item(self):
+        s = self._make_status(STATE_OPEN)
+        assert suppress_item(s, "item1") is True
+        assert s.items[0].state == STATE_SUPPRESSED
+
+    def test_suppress_cleared_returns_false(self):
+        s = self._make_status(STATE_CLEARED)
+        assert suppress_item(s, "item1") is False
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+
+class TestPersistence:
+    def test_save_and_load_roundtrip(self, tmp_path: Path):
+        items = [
+            ActionableItem(
+                item_id="p1",
+                severity="warn",
+                category="pr_status",
+                source="monitor",
+                summary="PR #42 failing",
+                first_seen_at=NOW_ISO,
+                last_seen_at=NOW_ISO,
+                pr_number=42,
+            )
+        ]
+        status = FleetStatus(items=items, generated_at=NOW_ISO, cycle_count=3)
+        path = save_fleet_status(status, tmp_path)
+        assert path.exists()
+
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None
+        assert len(loaded.items) == 1
+        assert loaded.items[0].item_id == "p1"
+        assert loaded.items[0].pr_number == 42
+        assert loaded.cycle_count == 3
+
+    def test_load_missing_returns_none(self, tmp_path: Path):
+        assert load_fleet_status(tmp_path) is None
+
+    def test_load_corrupt_file_returns_none(self, tmp_path: Path):
+        path = tmp_path / "fleet_status.json"
+        path.write_text("not json!!!")
+        assert load_fleet_status(tmp_path) is None
+
+    def test_save_creates_directory(self, tmp_path: Path):
+        nested = tmp_path / "deep" / "dir"
+        status = FleetStatus(generated_at=NOW_ISO)
+        save_fleet_status(status, nested)
+        assert (nested / "fleet_status.json").exists()
+
+    def test_atomic_write_valid_json(self, tmp_path: Path):
+        status = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="x",
+                    severity="info",
+                    category="test",
+                    source="test",
+                    summary="test",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                )
+            ],
+            generated_at=NOW_ISO,
+        )
+        save_fleet_status(status, tmp_path)
+        data = json.loads((tmp_path / "fleet_status.json").read_text())
+        assert "items" in data
+        assert "summary" in data
+        assert data["summary"]["total"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Full reconcile cycle
+# ---------------------------------------------------------------------------
+
+
+class TestReconcile:
+    def test_first_cycle(self, tmp_path: Path):
+        findings = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane dead",
+                details={"lane_id": "author-a"},
+            )
+        ]
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=findings,
+            now_iso=NOW_ISO,
+        )
+        assert status.cycle_count == 1
+        assert len(status.open_items) == 1
+
+    def test_second_cycle_increments_count(self, tmp_path: Path):
+        findings = [
+            _monitor_finding(
+                severity="warn",
+                summary="Stale dispatch",
+                category="stale_dispatch",
+            )
+        ]
+        reconcile(runtime_dir=tmp_path, monitor_findings=findings, now_iso=NOW_ISO)
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=findings,
+            now_iso=NOW_ISO,
+        )
+        assert status.cycle_count == 2
+
+    def test_preserves_ack_across_cycles(self, tmp_path: Path):
+        findings = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane dead",
+                details={"lane_id": "author-a"},
+            )
+        ]
+        status1 = reconcile(
+            runtime_dir=tmp_path, monitor_findings=findings, now_iso=NOW_ISO
+        )
+        # Ack the item.
+        ack_item(status1, status1.items[0].item_id)
+        save_fleet_status(status1, tmp_path)
+
+        # Next cycle — same finding present.
+        status2 = reconcile(
+            runtime_dir=tmp_path, monitor_findings=findings, now_iso=NOW_ISO
+        )
+        target = [i for i in status2.items if i.lane_id == "author-a"]
+        assert target[0].state == STATE_ACKED
+
+    def test_auto_clears_resolved_findings(self, tmp_path: Path):
+        findings = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane dead",
+                details={"lane_id": "author-a"},
+            )
+        ]
+        reconcile(runtime_dir=tmp_path, monitor_findings=findings, now_iso=NOW_ISO)
+
+        # Next cycle — finding gone.
+        status2 = reconcile(runtime_dir=tmp_path, now_iso=NOW_ISO)
+        cleared = [i for i in status2.items if i.state == STATE_CLEARED]
+        assert len(cleared) == 1
+
+    def test_persists_to_disk(self, tmp_path: Path):
+        reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[_monitor_finding(severity="warn", summary="test")],
+            now_iso=NOW_ISO,
+        )
+        assert (tmp_path / "fleet_status.json").exists()
+        data = json.loads((tmp_path / "fleet_status.json").read_text())
+        assert data["cycle_count"] == 1
+
+    def test_empty_cycle(self, tmp_path: Path):
+        status = reconcile(runtime_dir=tmp_path, now_iso=NOW_ISO)
+        assert status.cycle_count == 1
+        assert len(status.items) == 0
+
+
+# ---------------------------------------------------------------------------
+# Formatters
+# ---------------------------------------------------------------------------
+
+
+class TestFormatters:
+    def test_format_text_empty(self):
+        s = FleetStatus(generated_at=NOW_ISO)
+        text = format_status_text(s)
+        assert "all clear" in text
+
+    def test_format_text_with_items(self):
+        s = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="abc12345",
+                    severity="high",
+                    category="lane_health",
+                    source="monitor",
+                    summary="Lane author-a dead",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                    recommended_action="Check tmux pane",
+                )
+            ],
+            generated_at=NOW_ISO,
+            cycle_count=5,
+        )
+        text = format_status_text(s)
+        assert "HIGH" in text
+        assert "abc12345" in text
+        assert "Lane author-a dead" in text
+        assert "Check tmux pane" in text
+
+    def test_format_text_groups_by_severity(self):
+        s = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="u1",
+                    severity="urgent",
+                    category="test",
+                    source="test",
+                    summary="Urgent item",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                ),
+                ActionableItem(
+                    item_id="w1",
+                    severity="warn",
+                    category="test",
+                    source="test",
+                    summary="Warn item",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                ),
+            ],
+            generated_at=NOW_ISO,
+            cycle_count=1,
+        )
+        text = format_status_text(s)
+        urgent_pos = text.index("URGENT")
+        warn_pos = text.index("WARN")
+        assert urgent_pos < warn_pos
+
+    def test_format_json_valid(self):
+        s = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="j1",
+                    severity="info",
+                    category="test",
+                    source="test",
+                    summary="json test",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                )
+            ],
+            generated_at=NOW_ISO,
+        )
+        data = json.loads(format_status_json(s))
+        assert len(data["items"]) == 1
+        assert "summary" in data
+
+    def test_format_text_shows_acked_count(self):
+        s = FleetStatus(
+            items=[
+                ActionableItem(
+                    item_id="a1",
+                    severity="high",
+                    category="test",
+                    source="test",
+                    summary="acked",
+                    first_seen_at=NOW_ISO,
+                    last_seen_at=NOW_ISO,
+                    state=STATE_ACKED,
+                ),
+            ],
+            generated_at=NOW_ISO,
+            cycle_count=1,
+        )
+        text = format_status_text(s)
+        assert "acked: 1" in text
+
+
+# ---------------------------------------------------------------------------
+# Stable ID determinism
+# ---------------------------------------------------------------------------
+
+
+class TestStableIds:
+    def test_same_inputs_same_id(self):
+        f1 = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane dead",
+                details={"lane_id": "author-a"},
+            )
+        ]
+        items1 = items_from_monitor_findings(f1, now_iso=NOW_ISO)
+        items2 = items_from_monitor_findings(f1, now_iso=NOW_ISO)
+        assert items1[0].item_id == items2[0].item_id
+
+    def test_different_lanes_different_ids(self):
+        f1 = [_monitor_finding(details={"lane_id": "a"})]
+        f2 = [_monitor_finding(details={"lane_id": "b"})]
+        i1 = items_from_monitor_findings(f1, now_iso=NOW_ISO)
+        i2 = items_from_monitor_findings(f2, now_iso=NOW_ISO)
+        assert i1[0].item_id != i2[0].item_id
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestEdgeCases:
+    def test_derive_with_all_none(self):
+        items = derive_items(
+            monitor_findings=None,
+            task_packets=None,
+            unacked_messages=None,
+            now_iso=NOW_ISO,
+        )
+        assert items == []
+
+    def test_reconcile_corrupt_previous(self, tmp_path: Path):
+        # Write corrupt data.
+        (tmp_path / "fleet_status.json").write_text("{bad json")
+        # Should still work — treats as no previous.
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[_monitor_finding(severity="warn", summary="test")],
+            now_iso=NOW_ISO,
+        )
+        assert status.cycle_count == 1  # starts fresh
+
+    def test_multiple_items_same_source(self):
+        findings = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane A dead",
+                details={"lane_id": "author-a"},
+            ),
+            _monitor_finding(
+                severity="high",
+                summary="Lane B dead",
+                details={"lane_id": "author-b"},
+            ),
+        ]
+        items = items_from_monitor_findings(findings, now_iso=NOW_ISO)
+        assert len(items) == 2
+        assert items[0].item_id != items[1].item_id

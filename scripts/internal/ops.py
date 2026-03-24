@@ -2219,6 +2219,68 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     return 1 if has_high else 0
 
 
+def cmd_fleet(args: argparse.Namespace) -> int:
+    """Fleet status — read-only view of the controller projection (SP-4-07)."""
+    from bid_euchre.ops.control_plane import (
+        ack_item,
+        clear_item,
+        format_status_json,
+        format_status_text,
+        load_fleet_status,
+        save_fleet_status,
+        suppress_item,
+    )
+
+    status = load_fleet_status(args.runtime_dir)
+    if status is None:
+        if args.json:
+            print(json.dumps({"items": [], "summary": {"total": 0, "open": 0}}))
+        else:
+            print("No fleet status file found. Run a reconcile cycle first.")
+        return 0
+
+    # Handle ack/clear/suppress mutations.
+    mutated = False
+    for action_name, action_fn, arg_name in [
+        ("ack", ack_item, "ack"),
+        ("clear", clear_item, "clear"),
+        ("suppress", suppress_item, "suppress"),
+    ]:
+        item_prefix = getattr(args, arg_name, None)
+        if item_prefix:
+            # Prefix match on item_id.
+            matches = [i for i in status.items if i.item_id.startswith(item_prefix)]
+            if not matches:
+                print(f"No item matching prefix {item_prefix!r}")
+                return 1
+            if len(matches) > 1:
+                print(
+                    f"Ambiguous prefix {item_prefix!r} — matches {len(matches)} items:"
+                )
+                for m in matches:
+                    print(f"  {m.item_id}  {m.summary}")
+                return 1
+            ok = action_fn(status, matches[0].item_id)
+            if ok:
+                print(f"{action_name.title()}ed item {matches[0].item_id[:8]}")
+                mutated = True
+            else:
+                print(
+                    f"Cannot {action_name} item {matches[0].item_id[:8]} (state: {matches[0].state})"
+                )
+                return 1
+
+    if mutated:
+        save_fleet_status(status, args.runtime_dir)
+
+    if args.json:
+        print(format_status_json(status))
+    else:
+        print(format_status_text(status))
+
+    return 0
+
+
 def cmd_review_check(args: argparse.Namespace) -> int:
     """Check recently merged PRs for diff stats and contract issues.
 
@@ -3475,6 +3537,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable auto-dispatch of approved packets to idle lanes",
     )
 
+    # fleet (SP-4-07: controller projection read-only view)
+    fleet_parser = subparsers.add_parser(
+        "fleet", help="Fleet status — controller projection (read-only view)"
+    )
+    fleet_parser.add_argument(
+        "--ack",
+        metavar="ITEM_ID",
+        help="Acknowledge an item by ID (prefix match)",
+    )
+    fleet_parser.add_argument(
+        "--clear",
+        metavar="ITEM_ID",
+        help="Clear an item by ID (prefix match)",
+    )
+    fleet_parser.add_argument(
+        "--suppress",
+        metavar="ITEM_ID",
+        help="Suppress an item by ID (prefix match)",
+    )
+
     # review-check (merged PR review scanning)
     rc_parser = subparsers.add_parser(
         "review-check",
@@ -3717,6 +3799,7 @@ def main(argv: list[str] | None = None) -> int:
         "message": cmd_message,
         "supervisor": cmd_supervisor,
         "monitor": cmd_monitor,
+        "fleet": cmd_fleet,
         "review-check": cmd_review_check,
         "lane": cmd_lane,
         "workers": cmd_workers,
