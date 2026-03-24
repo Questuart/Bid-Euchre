@@ -426,6 +426,9 @@ def _expire_stale_on_read(
     for mid, rec in list(by_id.items()):
         if rec.get("status") in skip:
             continue
+        # P0 (urgent) messages never auto-expire via TTL
+        if rec.get("priority") == "urgent":
+            continue
         ttl = rec.get("payload", {}).get("ttl_seconds")
         if ttl is None:
             continue
@@ -656,7 +659,8 @@ def send_message(
     root = shared_bus_root(bus_root)
 
     # Content-based dedup: check recipient inbox for existing match
-    if deduplicate:
+    # Escalation messages bypass content dedup — each escalation must be delivered
+    if deduplicate and msg.message_type != "escalation":
         existing = _find_content_duplicate(msg, root)
         if existing is not None:
             logger.debug(
@@ -1430,6 +1434,15 @@ def compact_inbox(
             removed_count = 0
             for mid, rec in by_id.items():
                 status = rec.get("status", "pending")
+                priority = rec.get("priority")
+
+                # Priority-aware retention:
+                # - Unresolved urgent (P0) messages are always kept
+                # - Unacked high (P1) messages get 24h retention
+                if priority == "urgent" and status != "resolved":
+                    kept.append(rec)
+                    continue
+
                 if status not in purgeable:
                     kept.append(rec)
                     continue
@@ -1443,12 +1456,17 @@ def compact_inbox(
                     kept.append(rec)
                     continue
 
-                if tiered:
-                    cutoff_ts = _tiered_cutoff(status, current_time, max_age_hours)
+                # Unacked high-priority messages use 24h retention floor
+                if priority == "high" and status == "pending":
+                    effective_cutoff = current_time - (24 * 3600)
+                elif tiered:
+                    effective_cutoff = _tiered_cutoff(
+                        status, current_time, max_age_hours
+                    )
                 else:
-                    cutoff_ts = current_time - (max_age_hours * 3600)
+                    effective_cutoff = current_time - (max_age_hours * 3600)
 
-                if created_ts < cutoff_ts:
+                if created_ts < effective_cutoff:
                     removed_count += 1
                 else:
                     kept.append(rec)
