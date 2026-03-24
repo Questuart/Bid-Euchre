@@ -156,7 +156,7 @@ The user normally interacts with only:
 - `orchestrator`
 - `ops`
 - `review`
-- `issues`
+- optional `analyst`
 - a remote operator channel (Telegram and/or Discord)
 
 ### Background execution
@@ -183,7 +183,8 @@ The system manages a worker pool of:
 2. **Delegation alignment:** For non-trivial tasks, `orchestrator` shows the
    proposed author-lane prompt/task packet to the user before dispatch.
 3. **Background workers:** Authors are execution workers, not primary human-facing interfaces.
-4. **Clear role boundaries:** `orchestrator`, `ops`, `review`, `issues`, and `author-*` retain distinct responsibilities.
+4. **Clear role boundaries:** `orchestrator`, `ops`, `review`, `analyst`,
+   and `author-*` retain distinct responsibilities.
 5. **Prompt-first:** The primary interface is prompts, skills, and workflows, not raw CLI choreography.
 6. **Durable coordination:** Important messages and decisions must be logged in repo-owned state.
 7. **High-signal notifications:** Remote alerts are summarized, deduplicated, and bounded.
@@ -214,7 +215,7 @@ framework.
 - **watchdog**
   - for file-system driven automatic state updates and touched-file tracking
 - **APScheduler**
-  - for recurring in-process supervisor, issues, and idle-attention jobs
+  - for recurring in-process supervisor, analyst, and idle-attention jobs
 - **libtmux**
   - for tmux-aware introspection, session checks, and safer lane/session handling
 - **SQLite + JSONL**
@@ -273,10 +274,11 @@ for the first version.
   - bounded review and validation lane
   - handles `/review-plan`, PR/code review, local repro, and validation
 
-- **`issues`**
-  - scheduled triage lane
-  - runs every 30-60 minutes
-  - dedupes and updates issues
+- **`analyst`**
+  - service lane for planning, handoffs, and issue packaging
+  - investigates ambiguous work and flagged issues
+  - drafts sub-plans, execution briefs, and restart handoffs
+  - may file or update issues when durable tracking is needed
   - never implements fixes directly
 
 - **`author-*`**
@@ -293,7 +295,7 @@ The visible steward session should become dashboard-first:
 - `orchestrator`
 - `ops`
 - `review`
-- optional `issues`
+- optional `analyst`
 
 Author workers should be hidden or closed by default in the visible steward
 layout and opened or resumed on demand when the orchestrator delegates work or
@@ -389,8 +391,8 @@ The platform must not rely on best-effort message passing between lanes.
   - supervisor alerts, retry/reroute recommendations
 - `review -> orchestrator`
   - plan review outcome, PR findings, validation status
-- `issues -> orchestrator`
-  - issue created/updated, threshold crossed
+- `analyst -> orchestrator`
+  - issue package ready, plan refreshed, handoff updated, threshold crossed
 - remote channel -> `orchestrator`
   - remote operator messages, acknowledgements, reroute/inspect requests, and
     queue-moving supervision requests
@@ -405,7 +407,7 @@ The platform should define reusable lane prompts for:
 - `ops`
 - `review`
 - `author-*`
-- `issues`
+- `analyst`
 
 ### Named skills / workflow wrappers
 
@@ -701,7 +703,7 @@ The architecture should be designed from the start to serve at least three
 consumers:
 
 1. **This repo's infrastructure work**
-   - the current steward / ops / review / issues workflow
+   - the current steward / ops / review / analyst workflow
 2. **This repo's browser-game application work**
    - same orchestration core, but with repo-specific browser-game task and CI
      policy in the adapter layer
@@ -1072,7 +1074,7 @@ At this point, the normal visible lanes should be:
 - `orchestrator`
 - `ops`
 - `review`
-- optional `issues`
+- optional `analyst`
 
 Gate:
 
@@ -1185,7 +1187,7 @@ These are the short names future handoffs should use.
 ### `Platform-4` — Dashboard-First Steward
 
 - rework visible steward layout
-- foreground `dashboard`, `orchestrator`, `ops`, `review`, optional `issues`
+- foreground `dashboard`, `orchestrator`, `ops`, `review`, optional `analyst`
 - background authors summarized rather than foregrounded
 - done when:
   - the default visible steward layout no longer requires author panes to stay
@@ -1195,7 +1197,7 @@ These are the short names future handoffs should use.
 
 ### `Platform-5` — Canonical Prompts And Skills
 
-- lane prompts for `orchestrator`, `ops`, `review`, `author`, `issues`
+- lane prompts for `orchestrator`, `ops`, `review`, `author`, `analyst`
 - first named workflow skills
 - prompt-first user interaction docs
 - done when:
@@ -1624,7 +1626,7 @@ Additional platform-specific validation:
 - The user gives normal work only to `orchestrator`.
 - `author-*` lanes run as a background worker pool.
 - `ops` reports deltas and attention, not raw command output.
-- `review` and `issues` act as service lanes, not user-facing intake points.
+- `review` and `analyst` act as service lanes, not user-facing intake points.
 - Telegram/Discord can notify the user after 5 minutes of unattended required attention.
 - The remote operator channel is a normal part of the workflow rather than an optional side path.
 - Important lane-to-lane communication is durable and queryable.

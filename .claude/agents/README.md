@@ -20,6 +20,11 @@ Each `.md` file defines an agent that can be launched via the Agent tool.
 - `steward-review` — independent reviewer; structured findings with
   BLOCK/WARN/INFO severity
 
+### Service Lanes
+
+- `steward-analyst` — investigates complex work, drafts plans and issue
+  packages, and maintains restart-ready handoffs for orchestrator dispatch
+
 ### Author (implementation workers)
 
 - `steward-author-a` — primary implementation lane
@@ -30,7 +35,6 @@ Each `.md` file defines an agent that can be launched via the Agent tool.
 
 ### Specialist Agents
 
-- `issues` — bounded issue triage; files issues, never implements fixes (standalone, not session-launched)
 - `repair` — bounded post-merge repair; fixes shipped mistakes via follow-up PRs
 - `plan-reviewer` — independent plan review with tiered rubrics
 - `coverage-reviewer` — post-merge test coverage gap detection
@@ -52,7 +56,7 @@ outside the lane's intended role.
 |------|-------------|-----------|
 | `steward-review` | `allowedTools` (Read, Grep, Glob, Bash, ToolSearch, Skill) | Read-only review; cannot Edit/Write code |
 | `steward-ops` | `disallowedTools` (Edit, Write, Agent) | Monitoring-only; cannot modify files or spawn agents |
-| `issues` | `allowedTools` (Read, Grep, Glob, Bash, ToolSearch, Skill) | Triage-only; files issues via Bash/gh, cannot Edit/Write code (standalone, not session-launched) |
+| `steward-analyst` | `disallowedTools` (Agent) | Planning/handoff lane; may edit plans and handoffs, but must not recurse into hidden sub-agents |
 
 ### Lanes Without Enforced Boundaries (by design)
 
@@ -72,7 +76,7 @@ boundary.
 | Model | Agents |
 |-------|--------|
 | `sonnet` | All specialist reviewers, blind-comparator, steward-ops |
-| `inherit` (default) | All author lanes, orchestrator, steward-review, repair |
+| `inherit` (default) | All author lanes, orchestrator, steward-review, steward-analyst, repair |
 
 ## Prompt-First Workflow
 
@@ -84,5 +88,6 @@ steward dashboard using the orchestrator, dashboard, and named skills.
 These agents are launched by `steward-session.sh` via `--agent <name>` flags,
 which writes v2 registry metadata and establishes stable role identity per
 tmux pane. The session launches 15 lanes across 4 windows (central-ops,
-platform, browser, scratch). Standalone agents like `issues` can be invoked
-manually but are not part of the session layout.
+platform, browser, scratch). Standalone service agents like
+`steward-analyst` can be invoked manually and may later occupy the optional
+service-lane slot in the visible steward layout.

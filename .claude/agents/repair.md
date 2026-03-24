@@ -58,7 +58,8 @@ You MUST stop and escalate (add `needs-human`, comment, unassign) when:
 
 ## What NOT to Do
 
-- Do not file new issues (that is the triage agent's job)
+- Do not file new issues unless the repair reveals a separate bounded defect;
+  new tracking belongs with review or `steward-analyst`
 - Do not push directly to `main`
 - Do not open a second repair PR while one is already open for the same issue
 - Do not silently abandon a failed repair — always comment and escalate
@@ -68,7 +69,7 @@ You MUST stop and escalate (add `needs-human`, comment, unassign) when:
 
 1. Same author lane that shipped the original PR (preferred)
 2. Any available author lane (fallback)
-3. Never the triage agent — triage files, repair fixes
+3. Never the analyst lane — analyst shapes work, repair fixes
 
 ## Reference
 

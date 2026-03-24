@@ -154,9 +154,10 @@ when **all** of the following are true:
 - An agent that discovers a qualified finding should **create the issue**
   and **stop**. It should not also start fixing it in the same session
   unless the finding is already `agent-ready` and assigned.
-- **Role boundary:** The `issues` agent profile (`.claude/agents/issues.md`)
-  is strictly triage-only. It never implements fixes. When an issue becomes
-  `agent-ready`, it must be handed off to an author lane for implementation.
+- **Role boundary:** The `steward-analyst` profile
+  (`.claude/agents/steward-analyst.md`) may investigate and package issues,
+  but it never implements fixes. When an issue becomes `agent-ready`, it must
+  be handed off to an author or repair lane for implementation.
 
 ### Escalation
 
@@ -221,7 +222,7 @@ Once an issue passes the eligibility contract:
 |----------|-------|------|
 | 1st | **Same author lane** that shipped the original PR | Traceable, context-rich |
 | 2nd | **Any available author lane** | Original lane busy or unavailable |
-| — | **Triage agent** | Never — triage files issues, does not fix them |
+| — | **Analyst service lane** | Never — analyst shapes/files issues, does not fix them |
 
 ### Stop Rules
 
@@ -258,11 +259,11 @@ When repair is blocked or fails:
 
 | Role | Creates issues? | Fixes issues? | Profile |
 |------|----------------|---------------|---------|
-| **Triage agent** | Yes | No | `.claude/agents/issues.md` |
+| **Analyst service lane** | Yes | No | `.claude/agents/steward-analyst.md` |
 | **Repair agent** | No (may file sub-issues) | Yes | `.claude/agents/repair.md` |
 
-Triage and repair are separate roles even when the same steward
-coordinates both. The triage agent files; the repair agent fixes.
+Analyst and repair are separate roles even when the same steward
+coordinates both. The analyst shapes and files; the repair agent fixes.
 
 ### Operator Visibility
 
@@ -292,7 +293,7 @@ for the full operator repair UX.
 ### Budget Enforcement
 
 These thresholds are conventions enforced by agent discipline and the
-`.claude/agents/issues.md` profile, not by code. If a programmatic
+`.claude/agents/steward-analyst.md` profile, not by code. If a programmatic
 issue-creation helper is added in the future (e.g., under `src/bid_euchre/ops/`),
 it should enforce these limits at the API level.
 
@@ -377,9 +378,9 @@ no code enforcement and no hooks. To disable or roll back:
 
 | Action | How | Impact |
 |--------|-----|--------|
-| Disable triage guidance | Delete `.claude/agents/issues.md` | Agents lose triage guidance; no other workflow affected |
+| Disable triage guidance | Delete `.claude/agents/steward-analyst.md` | Agents lose analyst guidance; no other workflow affected |
 | Tighten qualification rules | Edit this doc's thresholds | Single-file change, no downstream breakage |
-| Remove workflow entirely | Delete this doc + `.claude/agents/issues.md` | Returns to pre-slice-2 state |
+| Remove workflow entirely | Delete this doc + `.claude/agents/steward-analyst.md` | Returns to pre-slice-2 state |
 | Remove new labels | Delete `triage`, `agent-ready`, `needs-human` from GitHub | No effect on existing issues using other labels |
 
 ---
@@ -391,6 +392,6 @@ no code enforcement and no hooks. To disable or roll back:
 - `scripts/internal/review_driver.py` — existing review-loop issue creation
 - `.github/workflows/infra_incident_dedupe.yml` — existing infra-incident dedupe
 - `.claude/rules/deferred/60_review_gate.md` — follow-up issue labels and severity
-- `.claude/agents/issues.md` — agent profile for triage work
+- `.claude/agents/steward-analyst.md` — agent profile for planning and issue packaging
 - `.claude/agents/repair.md` — agent profile for repair execution
 - `src/bid_euchre/ops/repairs.py` — repair eligibility helper and queue visibility
