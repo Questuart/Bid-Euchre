@@ -3,8 +3,8 @@
 **ID:** SP-4-06
 **Date:** 2026-03-24
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Platform-8b
-**Status:** proposed
-**Owner:** (unassigned)
+**Status:** ready
+**Owner:** author-a
 
 ---
 
@@ -64,6 +64,36 @@ into one of these categories:
 | **Outbound** | Permission relay prompt | Framework-managed (tool approval forwarded to Telegram); operator responds in-channel | Framework-managed, no repo-owned record |
 | **Outbound** | Reaction | `mcp__plugin_telegram_telegram__react` tool call (chat_id, message_id, emoji) | Telegram server-side only |
 | **Outbound** | Edit | `mcp__plugin_telegram_telegram__edit_message` tool call | Telegram server-side only |
+| **Inbound** | Attachment fetch | `mcp__plugin_telegram_telegram__download_attachment` tool call (file_id → local path) | Ephemeral local file only |
+
+### Code verification (2026-03-24)
+
+The following code paths were read to verify the seam analysis:
+
+1. **`src/bid_euchre/ops/message_bus.py`** — `_append_jsonl()` (line 283):
+   confirmed flock+JSONL pattern is `fcntl.flock(LOCK_EX)` → append → `flock(LOCK_UN)`.
+   Uses a dedicated `.lock` file (not the data file) for safe concurrent writes.
+   This is the pattern to reuse for `audit_trail.py`.
+
+2. **`src/bid_euchre/ops/events.py`** — `append_event()` (line 77): same
+   flock+JSONL pattern with dedicated lock file. Validates event types against
+   a frozen set. Audit trail should follow this validation pattern.
+
+3. **`src/bid_euchre/ops/__init__.py`** — no Telegram references anywhere in
+   `src/bid_euchre/ops/`. The audit trail module will be the first ops module
+   with remote-channel awareness. Module docstring listing confirms the export
+   pattern: one line in the module docstring, no eager imports.
+
+4. **`.claude/tmux/steward-session.sh`** — line 335 confirms orchestrator-only
+   channel flag: `--channels plugin:telegram@claude-plugins-official`. Author
+   lanes never receive `--channels`, confirming SP-4-01 assumption.
+
+5. **Telegram MCP tool surface** — verified from system prompt that 4 tools
+   exist: `reply`, `react`, `edit_message`, `download_attachment`. All 4 are
+   now captured in the seam table above.
+
+**Verification conclusion:** All assumptions confirmed. No additional seams
+discovered. The interception strategy is sound.
 
 ### Interception strategy
 
@@ -80,6 +110,10 @@ of every Telegram-sourced turn.
 `audit_react()`, `audit_edit()` functions. The orchestrator calls these
 instead of raw MCP tool calls. Each wrapper logs the exchange, then delegates
 to the underlying MCP tool.
+
+**Attachment fetch interception:** `download_attachment` returns a local file
+path. The audit trail should log the fetch event (file_id, resulting path) but
+does not need to hash the file content in v1 (already noted in Known Gaps).
 
 **Permission relay:** Framework-managed and opaque. The sub-plan acknowledges
 this gap and defers structured capture to a future hardening pass. The audit
@@ -105,7 +139,7 @@ detects that a permission prompt was forwarded.
 | `direction` | `str` | `"inbound"` or `"outbound"` |
 | `channel_source` | `str` | `"telegram"` (extensible to `"discord"` later) |
 | `sender_identity` | `str` | User ID for inbound; `"orchestrator"` for outbound |
-| `exchange_type` | `str` | `"message"`, `"reply"`, `"react"`, `"edit"`, `"permission_relay_observed"` |
+| `exchange_type` | `str` | `"message"`, `"reply"`, `"react"`, `"edit"`, `"download_attachment"`, `"permission_relay_observed"` |
 | `content_hash` | `str` | SHA-256 hex digest of message content |
 | `content_preview` | `str` | First 200 chars of content (truncated, no secrets) |
 | `chat_id` | `str` | Telegram chat ID |
