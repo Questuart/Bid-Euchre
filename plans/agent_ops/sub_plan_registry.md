@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-24 by flex-c (SP-4-05 Step 0 complete, reconcile statuses)
+**Last updated:** 2026-03-24 by brws-author-d (SP-4-05 COMPLETE)
 
 ---
 
@@ -28,16 +28,16 @@
 | SP-4-02 | Remote-ops preflight hardening | Phase 4, Pre-Platform-8 operational hardening | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | 2026-03-23 | 2026-03-24 (~20 PRs; all 6 steps complete, all exit criteria met) |
 | SP-4-03 | Token economy observability and dashboard | Phase 4, Pre-Platform-8 token observability | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | 2026-03-23 | 2026-03-24 (baseline report at `plans/sessions/2026-03-23_token-economy-baseline.md`; dashboard auto-import via PR #1466) |
 | SP-4-04 | Platform-8a Telegram transport configuration | Phase 4, Platform-8a transport proving | completed | flex-a | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | 2026-03-23 | 2026-03-24 (PRs #1436, #1451, #1452; proven end-to-end) |
-| SP-4-05 | Reactive control-loop hardening | Phase 4, Pre-Platform-8 lifecycle reactivity and control-plane hardening | in_progress | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | 2026-03-24 | — |
+| SP-4-05 | Reactive control-loop hardening | Phase 4, Pre-Platform-8 lifecycle reactivity and control-plane hardening | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | 2026-03-24 | 2026-03-24 (PRs #1500, #1491, #1474, #1490, #1507, #1486; lifecycle proven through fleet operation) |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
 | proposed | 0 |
-| in_progress | 1 |
+| in_progress | 0 |
 | blocked | 0 |
-| completed | 18 |
+| completed | 19 |
 | abandoned | 0 |
 | superseded | 1 |
 
