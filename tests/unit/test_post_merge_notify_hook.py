@@ -119,6 +119,37 @@ class TestPRNumberExtraction:
         finally:
             sentinel.unlink(missing_ok=True)
 
+    def test_branch_name_digits_not_extracted(self, tmp_path: Path) -> None:
+        """Branch names with digits should NOT be treated as PR numbers.
+
+        Regression test for issue #1479: `gh pr merge fix/issue-5678 --squash`
+        should NOT extract 5678 as the PR number — it should fall back to
+        stdout parsing instead.
+        """
+        # The branch has digits but the actual PR number is in stdout
+        real_pr = "7777"
+        fake_pr = "5678"
+        sentinel_real = Path(f"/tmp/.claude-post-merge-notify-{real_pr}")
+        sentinel_fake = Path(f"/tmp/.claude-post-merge-notify-{fake_pr}")
+        sentinel_real.unlink(missing_ok=True)
+        sentinel_fake.unlink(missing_ok=True)
+        try:
+            result = _run_hook(
+                command=f"gh pr merge fix/issue-{fake_pr} --squash",
+                stdout=f"✓ Squashed and merged pull request #{real_pr}",
+                tmp_path=tmp_path,
+            )
+            assert result.returncode == 0
+            assert (
+                sentinel_real.exists()
+            ), "Sentinel should use the real PR number from stdout"
+            assert (
+                not sentinel_fake.exists()
+            ), "Sentinel should NOT use digits from the branch name"
+        finally:
+            sentinel_real.unlink(missing_ok=True)
+            sentinel_fake.unlink(missing_ok=True)
+
     def test_pr_number_from_stdout_fallback(self, tmp_path: Path) -> None:
         """When command has no PR number, extract from stdout."""
         pr_num = "1111"
