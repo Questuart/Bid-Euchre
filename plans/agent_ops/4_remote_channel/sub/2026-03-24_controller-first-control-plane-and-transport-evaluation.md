@@ -109,10 +109,8 @@ This sub-plan does **not** cover:
 
 ### 1. Controller / reconciler module
 
-Add a repo-owned module, likely one of:
-
-- `src/bid_euchre/ops/control_plane.py`
-- `src/bid_euchre/ops/attention_state.py`
+Add a repo-owned module. **Resolved:** shipped as `src/bid_euchre/ops/control_plane.py`
+(PR #1633). The alternative name (attention\_state) was not used.
 
 It should read:
 
@@ -124,10 +122,10 @@ It should read:
 - native inbox imports when enabled
 - remote audit records when relevant
 
-It should write:
+It should write (runtime-generated, not committed):
 
-- `.claude/runtime/fleet_status.json`
-- optional `.claude/runtime/next_actions.json`
+- fleet\_status.json under `.claude/runtime/`
+- optional next\_actions.json under `.claude/runtime/`
 
 Minimum fields per item:
 
@@ -219,12 +217,12 @@ orchestration lifecycle test.
 
 - add controller/reconciler module
 - derive controller state from monitor/task/review/lane surfaces
-- write `fleet_status.json` / `next_actions.json`
+- write fleet\_status.json / next\_actions.json (runtime-generated)
 - expose read-only CLI/debug surface if useful
 
 **Likely files:**
 
-- `src/bid_euchre/ops/control_plane.py` or `attention_state.py`
+- `src/bid_euchre/ops/control_plane.py`
 - `src/bid_euchre/ops/monitor.py`
 - `src/bid_euchre/ops/status.py`
 - `src/bid_euchre/ops/dashboard.py`
@@ -250,7 +248,7 @@ local actions where appropriate.
 **Likely files:**
 
 - `.claude/settings.json`
-- `.claude/settings.local.json` or repo-shared equivalent if promoted
+- settings.local.json or repo-shared equivalent if promoted (prospective)
 - new hook scripts under `.claude/hooks/`
 - `tests/unit/test_hook_dispatchers.py`
 - `tests/unit/test_daemon_notify.py`
@@ -335,7 +333,7 @@ Controller smoke:
 
 - seed one urgent finding
 - run the controller once
-- verify `fleet_status.json` contains one actionable item
+- verify fleet\_status.json (runtime-generated) contains one actionable item
 
 Hook smoke:
 
