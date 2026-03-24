@@ -196,3 +196,37 @@ class TestMainCLI:
         with pytest.raises(SystemExit) as exc_info:
             main(["--help"])
         assert exc_info.value.code == 0
+
+
+class TestImportGuard:
+    """Verify the import guard catches only ModuleNotFoundError (#1566)."""
+
+    def test_guard_uses_module_not_found_error(self):
+        """The import guard should be ModuleNotFoundError, not broad ImportError."""
+        import ast
+        from pathlib import Path
+
+        src = Path("scripts/internal/export_hosted_decisions.py").read_text()
+        tree = ast.parse(src)
+
+        # Find the module-level try/except that guards the web imports
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Try):
+                # Check if this try block imports from web.*
+                has_web_import = any(
+                    isinstance(stmt, (ast.Import, ast.ImportFrom))
+                    and getattr(stmt, "module", "") is not None
+                    and "web" in (getattr(stmt, "module", "") or "")
+                    for stmt in node.body
+                )
+                if has_web_import:
+                    for handler in node.handlers:
+                        assert handler.type is not None
+                        assert isinstance(handler.type, ast.Name)
+                        assert handler.type.id == "ModuleNotFoundError", (
+                            f"Import guard should catch ModuleNotFoundError, "
+                            f"not {handler.type.id}"
+                        )
+                    return
+
+        pytest.fail("Could not find the web import try/except block")

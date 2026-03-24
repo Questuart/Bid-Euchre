@@ -37,7 +37,7 @@ from pathlib import Path
 try:
     from web.db import init_engine, make_session_factory
     from web.export import export_decisions
-except ImportError:
+except ModuleNotFoundError:
     print(
         "Error: web package not found. Install the hosted extras:\n"
         "  uv sync --extra hosted",
