@@ -3,8 +3,8 @@
 **ID:** SP-4-04
 **Date:** 2026-03-23
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Platform-8a
-**Status:** proposed
-**Owner:** unassigned
+**Status:** completed
+**Owner:** flex-b (closure); flex-a (implementation)
 
 ---
 
@@ -267,8 +267,21 @@ Step 1 (preflight) -> Step 2 (configure) -> Step 3 (pairing)  -\
 
 ## Observed Outputs
 
-_(to be filled after implementation)_
+- PR #1436: Telegram channel config added to tmux launcher (`STEWARD_TELEGRAM_ENABLED` env var, `--channels telegram` flag)
+- PR #1451: Corrected `--channels plugin:telegram@claude-plugins-official` flag syntax
+- PR #1452: Auto-detect Telegram plugin via `claude plugins list` (replaces static env var default)
+- Pairing: User ID 8122530898 in allowlist, confirmed bidirectional message flow
+- Kill switch: `STEWARD_TELEGRAM_ENABLED` env var override still works alongside auto-detect
+- Steward restart completed successfully with Telegram auto-detection (no env var needed)
 
 ## Outcome
 
-_(to be filled after implementation)_
+**COMPLETE (2026-03-24).** All 5 core steps proven end-to-end:
+
+1. **Preflight** — Claude >=2.1.80 confirmed, Telegram plugin installed and resolvable
+2. **Plugin config** — PRs #1436, #1451, #1452 merged; orchestrator launches with `--channels plugin:telegram@claude-plugins-official`
+3. **Pairing proof** — User 8122530898 paired, messages arrive in orchestrator session
+4. **Permission relay** — Messages flow both ways through orchestrator (free-form, no command grammar)
+5. **Kill switch** — `STEWARD_TELEGRAM_ENABLED=0` disables channel; auto-detect defaults to enabled when plugin is installed
+
+Step 6 (registry integration) deferred — optional dashboard/monitor indicator, not blocking for Platform-8a completion. Can be picked up in Platform-9c hardening.
