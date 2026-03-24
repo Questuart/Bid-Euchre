@@ -98,7 +98,7 @@ coordination, and operational audit.
 **Evidence:**
 - Handled 100+ messages across 12 lanes in the overnight run with zero data loss
 - JSONL + flock pattern proven reliable under concurrent writes (SP-4-06 integration tests)
-- Full ack lifecycle prevents the "write-only pipeline" failure (#1571)
+- Full ack lifecycle (pending→delivered→acked→resolved→expired) enables receipt tracking; the write-only gap (#1571) is addressed by the controller projection + hook surfacing layer (see § Answering #1571)
 - Content-hash dedup prevents duplicates across imports
 - Cross-worktree visibility via `shared_bus_root()` works across all 16 panes
 
@@ -136,7 +136,7 @@ tool-use boundaries.
 **Evidence:**
 - `pre-merge-review-guard.sh` blocks unsafe merges without any transport
   dependency
-- `post-merge-notify.sh` fires task-completion lifecycle reliably
+- `post-merge-notify.sh` fires task-completion lifecycle on a best-effort basis (env-var lookup may miss lane identity)
 - `session-sync-worktree.sh` keeps worktrees fresh on session start
 - Hook latency is zero (in-process); no polling, no queue
 
