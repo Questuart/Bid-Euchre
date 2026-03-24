@@ -77,6 +77,9 @@ class AIManager:
 
         # 2. hybrid_olsa — available when artifact path is set and exists
         artifact_path = config.hybrid_olsa_artifact
+        # Resolve relative artifact paths against models_dir when configured
+        if artifact_path and config.models_dir and not os.path.isabs(artifact_path):
+            artifact_path = os.path.join(config.models_dir, artifact_path)
         if artifact_path and os.path.isfile(artifact_path):
             try:
                 from bid_euchre.strategy.bidding import HybridOLSaBidder

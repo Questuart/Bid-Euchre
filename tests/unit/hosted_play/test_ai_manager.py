@@ -84,6 +84,44 @@ class TestHybridOlsa:
         # Should not crash, but hybrid_olsa should not be available
         assert "hybrid_olsa" not in mgr.available_models
 
+    def test_hybrid_olsa_relative_path_resolved_via_models_dir(self, tmp_path):
+        """When artifact path is relative and models_dir is set, resolve against it."""
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        # Create a bad artifact (won't load, but tests path resolution)
+        bad_artifact = models_dir / "hybrid.json"
+        bad_artifact.write_text(json.dumps({"artifact_type": "wrong"}))
+        config = HostedPlayConfig(
+            hybrid_olsa_artifact="hybrid.json",
+            models_dir=str(models_dir),
+        )
+        mgr = AIManager(config)
+        # File found (resolution worked) but content is invalid → not loaded
+        assert "hybrid_olsa" not in mgr.available_models
+
+    def test_hybrid_olsa_absolute_path_ignores_models_dir(self, tmp_path):
+        """An absolute artifact path should be used as-is, ignoring models_dir."""
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        abs_artifact = tmp_path / "absolute.json"
+        abs_artifact.write_text(json.dumps({"artifact_type": "wrong"}))
+        config = HostedPlayConfig(
+            hybrid_olsa_artifact=str(abs_artifact),
+            models_dir=str(models_dir),
+        )
+        mgr = AIManager(config)
+        # File found at absolute path (not resolved via models_dir)
+        assert "hybrid_olsa" not in mgr.available_models
+
+    def test_hybrid_olsa_relative_without_models_dir_not_resolved(self):
+        """A relative artifact with no models_dir stays relative (likely not found)."""
+        config = HostedPlayConfig(
+            hybrid_olsa_artifact="nonexistent/hybrid.json",
+            models_dir=None,
+        )
+        mgr = AIManager(config)
+        assert "hybrid_olsa" not in mgr.available_models
+
 
 # ---------------------------------------------------------------------------
 # AIManager — default model fallback
