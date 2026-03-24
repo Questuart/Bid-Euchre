@@ -30,6 +30,12 @@ COPY web/ web/
 # Install the project itself (editable not needed in production)
 RUN uv sync --frozen --no-dev --extra hosted
 
+# --- Non-root user for runtime security (CIS Docker Benchmark 5.7) ---
+RUN addgroup --system app && adduser --system --ingroup app app \
+    && chown -R app:app /app
+
+USER app
+
 EXPOSE 8000
 
 # Uvicorn entrypoint — create_app() is a factory function
