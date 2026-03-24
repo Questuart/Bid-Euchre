@@ -538,6 +538,57 @@ def read_inbox(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Priority-grouped inbox read
+# ---------------------------------------------------------------------------
+
+# Mapping from priority field values to tier indices (P0/P1/P2).
+_PRIORITY_TO_TIER: dict[str, int] = {
+    "urgent": 0,  # P0 — interrupt-worthy
+    "high": 1,  # P1 — next-cycle processing
+    "normal": 2,  # P2 — batch processing
+    "low": 2,  # P2 — batch processing
+}
+
+
+def read_inbox_prioritized(
+    lane_id: str,
+    bus_root: Path | None = None,
+    *,
+    status: str | None = "pending",
+    auto_expire: bool = True,
+    auto_compact: bool = True,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Read inbox grouped by priority tier.
+
+    Returns ``(p0, p1, p2)`` where:
+
+    - **p0** = ``urgent`` priority messages (interrupt-worthy)
+    - **p1** = ``high`` priority messages (next-cycle processing)
+    - **p2** = ``normal`` / ``low`` priority messages (batch processing)
+
+    Each tier list is ordered most-recent-first, matching ``read_inbox()``.
+    """
+    messages = read_inbox(
+        lane_id,
+        bus_root,
+        status=status,
+        auto_expire=auto_expire,
+        auto_compact=auto_compact,
+    )
+
+    p0: list[dict[str, Any]] = []
+    p1: list[dict[str, Any]] = []
+    p2: list[dict[str, Any]] = []
+    buckets = (p0, p1, p2)
+
+    for msg in messages:
+        tier = _PRIORITY_TO_TIER.get(msg.get("priority", "normal"), 2)
+        buckets[tier].append(msg)
+
+    return p0, p1, p2
+
+
 def query_unresolved(
     lane_id: str,
     bus_root: Path | None = None,

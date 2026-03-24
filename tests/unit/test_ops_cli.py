@@ -3899,6 +3899,135 @@ class TestInboxAck:
         assert "Acknowledged" in out
         assert msg_id in out
 
+    def test_inbox_prioritized_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--prioritized --json returns P0/P1/P2 structure."""
+        import ops
+
+        # Isolate bus root to temp dir to avoid real project bus data
+        bus_dir = runtime_dir / "message_bus"
+        bus_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("BID_EUCHRE_BUS_DIR", str(bus_dir))
+
+        # Send messages at different priorities
+        for prio, msg_type, summary in [
+            ("urgent", "blocker", "Lane crash"),
+            ("high", "completion", "PR merged"),
+            ("normal", "progress", "Tests running"),
+        ]:
+            rc = ops.main(
+                [
+                    "--json",
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "message",
+                    "send",
+                    "--from",
+                    "ops",
+                    "--to",
+                    "orchestrator",
+                    "--type",
+                    msg_type,
+                    "--summary",
+                    summary,
+                    "--priority",
+                    prio,
+                ]
+            )
+            # Capture and discard send output
+            capsys.readouterr()
+
+        # Now read with --prioritized --json (status=None to get all, since
+        # messages are in "pending" status after send)
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "--lane",
+                "orchestrator",
+                "--prioritized",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert "p0" in data
+        assert "p1" in data
+        assert "p2" in data
+        assert len(data["p0"]) == 1
+        assert len(data["p1"]) == 1
+        assert len(data["p2"]) == 1
+        assert data["p0"][0]["priority"] == "urgent"
+
+    def test_inbox_prioritized_text(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--prioritized text output shows tier headers."""
+        import ops
+
+        # Isolate bus root to temp dir
+        bus_dir = runtime_dir / "message_bus"
+        bus_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("BID_EUCHRE_BUS_DIR", str(bus_dir))
+
+        # Send one urgent message
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "message",
+                "send",
+                "--from",
+                "ops",
+                "--to",
+                "test-lane",
+                "--type",
+                "blocker",
+                "--summary",
+                "Urgent test",
+                "--priority",
+                "urgent",
+            ]
+        )
+        capsys.readouterr()
+
+        # Read in text mode
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "--lane",
+                "test-lane",
+                "--prioritized",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "prioritized" in out
+        assert "P0 (urgent)" in out
+        assert "P1 (high)" in out
+        assert "P2 (normal/low)" in out
+
 
 # ---------------------------------------------------------------------------
 # review-check

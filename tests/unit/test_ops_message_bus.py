@@ -46,6 +46,7 @@ from bid_euchre.ops.message_bus import (
     mark_delivered,
     query_unresolved,
     read_inbox,
+    read_inbox_prioritized,
     read_messages,
     resolve_message,
     send_message,
@@ -2141,3 +2142,186 @@ class TestEscalateUnacked:
         inbox = read_inbox("orch", bus_root, auto_expire=False, limit=100)
         esc = [m for m in inbox if m["message_id"] == escalation_ids[0]]
         assert esc[0]["parent_message_id"] == msg2.message_id
+
+
+# ---------------------------------------------------------------------------
+# Priority-grouped inbox read (read_inbox_prioritized)
+# ---------------------------------------------------------------------------
+
+
+class TestReadInboxPrioritized:
+    """Test read_inbox_prioritized() priority tier grouping."""
+
+    def test_groups_all_four_priorities(self, bus_root: Path, events_dir: Path) -> None:
+        """Messages at all four priority levels land in the correct tiers."""
+        lane = "orchestrator"
+        # Send one message at each priority level
+        for prio in ("urgent", "high", "normal", "low"):
+            msg = create_message(
+                "ops",
+                lane,
+                "supervisor_alert",
+                f"Alert at {prio}",
+                priority=prio,
+            )
+            send_message(msg, bus_root, events_dir=events_dir)
+
+        p0, p1, p2 = read_inbox_prioritized(
+            lane,
+            bus_root,
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert len(p0) == 1, "urgent → P0"
+        assert len(p1) == 1, "high → P1"
+        assert len(p2) == 2, "normal + low → P2"
+
+        assert p0[0]["priority"] == "urgent"
+        assert p1[0]["priority"] == "high"
+        p2_priorities = {m["priority"] for m in p2}
+        assert p2_priorities == {"normal", "low"}
+
+    def test_empty_tiers(self, bus_root: Path, events_dir: Path) -> None:
+        """When only one priority is present, the other tiers are empty."""
+        lane = "orchestrator"
+        msg = create_message(
+            "ops",
+            lane,
+            "completion",
+            "Done",
+            priority="high",
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        p0, p1, p2 = read_inbox_prioritized(
+            lane,
+            bus_root,
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert len(p0) == 0
+        assert len(p1) == 1
+        assert len(p2) == 0
+
+    def test_all_tiers_empty_when_no_messages(self, bus_root: Path) -> None:
+        """A lane with no messages returns three empty lists."""
+        p0, p1, p2 = read_inbox_prioritized(
+            "empty-lane",
+            bus_root,
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert p0 == []
+        assert p1 == []
+        assert p2 == []
+
+    def test_status_filter_respected(self, bus_root: Path, events_dir: Path) -> None:
+        """The status filter is passed through to read_inbox."""
+        lane = "orchestrator"
+        # One pending, one acked (both urgent)
+        msg1 = create_message(
+            "ops",
+            lane,
+            "blocker",
+            "Blocker 1",
+            priority="urgent",
+        )
+        send_message(msg1, bus_root, events_dir=events_dir)
+
+        msg2 = create_message(
+            "ops",
+            lane,
+            "blocker",
+            "Blocker 2",
+            priority="urgent",
+        )
+        send_message(msg2, bus_root, events_dir=events_dir)
+        ack_message(msg2.message_id, lane, bus_root, events_dir=events_dir)
+
+        # Default status="pending" — only msg1 should appear
+        p0, p1, p2 = read_inbox_prioritized(
+            lane,
+            bus_root,
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert len(p0) == 1
+        assert p0[0]["message_id"] == msg1.message_id
+
+        # status=None — both should appear
+        p0_all, _, _ = read_inbox_prioritized(
+            lane,
+            bus_root,
+            status=None,
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert len(p0_all) == 2
+
+    def test_unknown_priority_falls_to_p2(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """A message with an unrecognised priority value lands in P2."""
+        lane = "test-lane"
+        # Manually write a record with a non-standard priority
+        inbox_path = bus_root / "inbox" / f"{lane}.jsonl"
+        inbox_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "message_id": "custom001",
+            "thread_id": None,
+            "task_id": None,
+            "from_lane": "ops",
+            "to_lane": lane,
+            "message_type": "progress",
+            "priority": "critical",  # not in VALID_MESSAGE_PRIORITIES
+            "status": "pending",
+            "created_at": "2026-03-24T00:00:00Z",
+            "acked_at": None,
+            "resolved_at": None,
+            "requires_human": False,
+            "summary": "Custom priority message",
+            "payload": {"ttl_seconds": 86400, "max_retries": 3, "retry_count": 0},
+            "source_transport": "bus",
+            "parent_message_id": None,
+        }
+        with open(inbox_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+        p0, p1, p2 = read_inbox_prioritized(
+            lane,
+            bus_root,
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert len(p0) == 0
+        assert len(p1) == 0
+        assert len(p2) == 1
+        assert p2[0]["priority"] == "critical"
+
+    def test_multiple_messages_per_tier_ordered(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Multiple messages in the same tier preserve read_inbox ordering."""
+        lane = "orchestrator"
+        ids = []
+        for i in range(3):
+            msg = create_message(
+                "ops",
+                lane,
+                "supervisor_alert",
+                f"Alert {i}",
+                priority="high",
+            )
+            send_message(msg, bus_root, events_dir=events_dir)
+            ids.append(msg.message_id)
+
+        _, p1, _ = read_inbox_prioritized(
+            lane,
+            bus_root,
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert len(p1) == 3
+        # read_inbox returns most-recent first; our function preserves that order
+        returned_ids = [m["message_id"] for m in p1]
+        assert returned_ids == list(reversed(ids))
