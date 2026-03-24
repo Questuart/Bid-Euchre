@@ -572,6 +572,7 @@ async def new_match(
             raise HTTPException(status_code=404, detail="Game not found")
 
         # Return model selection form
+        safe_nick = html.escape(player.nickname or "Player")
         ai_manager = _get_ai_manager(request)
         models = ai_manager.list_available()
         options = "".join(
@@ -579,7 +580,7 @@ async def new_match(
             for m in models
         )
         return HTMLResponse(
-            f"<h2>New Match — {html.escape(player.nickname)}</h2>"
+            f"<h2>New Match — {safe_nick}</h2>"
             f'<form method="post" action="/play/{link_uuid}/select-ai">'
             f'<select name="model_id">{options}</select>'
             '<button type="submit">Start Match</button>'

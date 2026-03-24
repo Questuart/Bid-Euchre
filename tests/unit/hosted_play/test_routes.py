@@ -689,6 +689,15 @@ class TestXSSPrevention:
         assert "<b>bold</b>" not in resp.text
         assert "&lt;b&gt;" in resp.text
 
+    def test_new_match_none_nickname_does_not_crash(self, client):
+        """new_match() must not crash when player.nickname is None (#1464)."""
+        link_uuid = _create_game(client)
+        # Do NOT set a nickname — player.nickname remains None
+        resp = client.post(f"/play/{link_uuid}/new-match")
+        assert resp.status_code == 200
+        assert "New Match" in resp.text
+        assert "Player" in resp.text
+
 
 # ---------------------------------------------------------------------------
 # hx-post URL interpolation (issue #1439)
