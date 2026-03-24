@@ -7,109 +7,16 @@ in tests/unit/hosted_play/test_export.py.
 
 from __future__ import annotations
 
-import json
-import uuid
-
 import pytest
 
 from scripts.internal.export_hosted_decisions import main
-from web.db import (
-    Decision,
-    Hand,
-    Match,
-    Player,
-    create_tables,
-    init_engine,
-    make_session_factory,
+from tests.unit.hosted_play.conftest import (
+    create_test_decision,
+    create_test_hand,
+    create_test_match,
+    create_test_player,
 )
-
-# ---------------------------------------------------------------------------
-# Fixtures (reused pattern from test_export.py)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def engine():
-    """In-memory SQLite engine with tables created."""
-    eng = init_engine("sqlite:///:memory:")
-    create_tables(eng)
-    return eng
-
-
-@pytest.fixture()
-def session(engine):
-    """Scoped session that rolls back after each test."""
-    factory = make_session_factory(engine)
-    sess = factory()
-    yield sess
-    sess.rollback()
-    sess.close()
-
-
-def _make_player(session) -> Player:
-    player = Player(link_uuid=str(uuid.uuid4()), nickname="TestPlayer")
-    session.add(player)
-    session.flush()
-    return player
-
-
-def _make_match(session, player: Player, **overrides) -> Match:
-    defaults = {
-        "match_uuid": str(uuid.uuid4()),
-        "player_id": player.id,
-        "ai_model": "heuristic",
-        "status": "active",
-        "seed": 42,
-        "match_state_json": "{}",
-    }
-    defaults.update(overrides)
-    match = Match(**defaults)
-    session.add(match)
-    session.flush()
-    return match
-
-
-def _make_hand(session, match: Match, **overrides) -> Hand:
-    defaults = {
-        "match_id": match.id,
-        "hand_number": 1,
-        "deal_id": 7,
-        "dealer_seat": 2,
-        "status": "in_progress",
-        "hand_state_json": "{}",
-    }
-    defaults.update(overrides)
-    hand = Hand(**defaults)
-    session.add(hand)
-    session.flush()
-    return hand
-
-
-SAMPLE_LEGAL_ACTIONS = [{"n": 0}, {"n": 1, "contract": "S"}]
-SAMPLE_CHOSEN_ACTION = {"n": 1, "contract": "S"}
-SAMPLE_GAME_STATE = {"phase": "auction", "hand": [["S", "A"]]}
-
-
-def _make_decision(session, match: Match, hand: Hand, **overrides) -> Decision:
-    defaults = {
-        "match_id": match.id,
-        "hand_id": hand.id,
-        "turn_number": 0,
-        "seat": 0,
-        "phase": "bid",
-        "actor_type": "human",
-        "decision_source": "human",
-        "legal_actions_json": json.dumps(SAMPLE_LEGAL_ACTIONS),
-        "chosen_action_json": json.dumps(SAMPLE_CHOSEN_ACTION),
-        "game_state_json": json.dumps(SAMPLE_GAME_STATE),
-        "decision_time_ms": 4200,
-    }
-    defaults.update(overrides)
-    decision = Decision(**defaults)
-    session.add(decision)
-    session.flush()
-    return decision
-
+from web.db import create_tables, init_engine, make_session_factory
 
 # ---------------------------------------------------------------------------
 # CLI main() tests
@@ -134,11 +41,11 @@ class TestMainCLI:
         factory = make_session_factory(engine)
         sess = factory()
 
-        player = _make_player(sess)
-        match = _make_match(sess, player)
-        hand = _make_hand(sess, match)
-        _make_decision(sess, match, hand, turn_number=0)
-        _make_decision(sess, match, hand, turn_number=1, actor_type="ai")
+        player = create_test_player(sess)
+        match = create_test_match(sess, player_id=player.id)
+        hand = create_test_hand(sess, match)
+        create_test_decision(sess, match, hand, turn_number=0)
+        create_test_decision(sess, match, hand, turn_number=1, actor_type="ai")
         sess.commit()
         sess.close()
 
@@ -158,10 +65,10 @@ class TestMainCLI:
         factory = make_session_factory(engine)
         sess = factory()
 
-        player = _make_player(sess)
-        match = _make_match(sess, player)
-        hand = _make_hand(sess, match)
-        _make_decision(sess, match, hand)
+        player = create_test_player(sess)
+        match = create_test_match(sess, player_id=player.id)
+        hand = create_test_hand(sess, match)
+        create_test_decision(sess, match, hand)
         sess.commit()
         sess.close()
 

@@ -172,9 +172,10 @@ def create_test_decision(
         "phase": "bid",
         "actor_type": "human",
         "decision_source": "human",
-        "legal_actions_json": json.dumps(["pass", "bid_5_H"]),
-        "chosen_action_json": json.dumps("pass"),
-        "game_state_json": json.dumps({"phase": "auction"}),
+        "legal_actions_json": json.dumps([{"n": 0}, {"n": 1, "contract": "S"}]),
+        "chosen_action_json": json.dumps({"n": 1, "contract": "S"}),
+        "game_state_json": json.dumps({"phase": "auction", "hand": [["S", "A"]]}),
+        "decision_time_ms": 4200,
     }
     defaults.update(overrides)
     decision = Decision(**defaults)
