@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-24 by author-a (SP-4-06 proposed — Platform-8b audit trail sub-plan)
+**Last updated:** 2026-03-24 by Codex (SP-4-07 drafted; Step 2 reopened for runtime wiring)
 
 ---
 
@@ -24,10 +24,11 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 |------|--------|------|---------------|-------|
 | Step 0: Phase 4 scope lock and sub-plan registration | COMPLETE | 2026-03-23 | author-scratch | SP-4-01 created and registered. |
 | Step 1: Platform-8a preflight and Telegram transport skeleton | COMPLETE | 2026-03-24 | flex-b | SP-4-04 all steps proven. PRs #1436, #1451, #1452 merged. Pairing confirmed (user 8122530898), messages flow both ways, kill switch verified. |
-| Step 2: Platform-8b repo-owned remote audit trail, kill switch, and operator fallback | COMPLETE | 2026-03-24 | author-a | SP-4-06 all 4 PRs shipped: core writer (#1532), outbound wrappers (#1536), inbound helper (#1541), integration tests (#1549). |
-| Step 3: Platform-9a idle-attention alerts and acknowledgement loop | PENDING | -- | -- | Prove one useful alert path with dedupe, rate limiting, and ack behavior. |
-| Step 4: Platform-9b away-from-desk queue-moving proving run | PENDING | -- | -- | Demonstrate status, reroute, review request, and blocker inspection through `orchestrator`. |
-| Step 5: Platform-9c first hardening pass and Phase 4 handoff | PENDING | -- | -- | Fix real proving-run issues, update docs, and record known gaps. |
+| Step 2: Platform-8b repo-owned remote audit trail and runtime wiring | IN_PROGRESS | 2026-03-24 | author-a + orchestrator | SP-4-06 shipped the audit library, but issue #1573 correctly reopens the slice: runtime callers, controller integration, and real inbound/outbound proving are still pending. |
+| Step 3: SP-4-07 controller-first control plane and transport evaluation | PENDING | -- | -- | Add controller projection, hook-fed local enforcement, and the comparative transport/proving matrix before Platform-9 scope lock. |
+| Step 4: Platform-9a idle-attention alerts and acknowledgement loop | BLOCKED | -- | -- | Blocked on Step 2 runtime wiring and Step 3 controller-backed actionable state. |
+| Step 5: Platform-9b away-from-desk queue-moving proving run | BLOCKED | -- | -- | Blocked on Platform-9a plus controller-backed remote delivery. |
+| Step 6: Platform-9c first hardening pass and Phase 4 handoff | BLOCKED | -- | -- | Fix real proving-run issues, update docs, and record known gaps. |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
 
@@ -40,7 +41,8 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-03 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | completed | Pre-Platform-8 |
 | SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | completed | Step 1 |
 | SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | completed | Pre-Platform-8 |
-| SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | completed | Step 2 |
+| SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | completed (library only) | Step 2 |
+| SP-4-07 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | proposed | Step 3 |
 
 ### Shared Surface Ownership
 
@@ -89,3 +91,4 @@ implementation.
 | 2026-03-24 | SP-4-05 Step 6 formal proving run PASSED (flex-b). Executed 3 isolated scenarios from the test plan (PR #1512): (1) Local merge hook fast path — PR #1515, packet 107ce27f717c auto-completed by hook, sentinel + bus message confirmed; (2) Monitor fallback — packet 08a24f95c8b0 auto-completed by `check_merged_dispatches()` on next monitor cycle; (3) Stall detection — 5-cycle test with mock probes, re-nudge at cycle 3 (WARN), escalation at cycle 4+ (HIGH). Cross-cycle state persistence verified. Results at `sp4-05-step6-proving-run-results.md`. |
 | 2026-03-24 | SP-4-06 proposed (author-a). Platform-8b audit trail sub-plan created at `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md`. Seam analysis: inbound via `<channel>` tags, outbound via MCP tool calls (`reply`/`react`/`edit`). Interception at application layer (wrappers + helpers), not transport layer. 4-PR decomposition: core writer + unit tests, outbound wrappers, inbound helper, integration tests. File scope: `src/bid_euchre/ops/audit_trail.py` (new), `tests/unit/test_audit_trail.py` (new). Step 2 marked IN_PROGRESS. |
 | 2026-03-24 | SP-4-06 COMPLETE (author-a). All 4 PRs shipped: PR 1 core writer (#1532), PR 2 outbound wrappers (#1536), PR 3 inbound helper + channel tag parser (#1541), PR 4 integration tests. Integration test suite covers: full round-trip conversations (4 tests), concurrent writers with flock safety (3 tests), large-volume 1000+ record throughput (4 tests), mixed direction filtering (9 tests). 20 integration tests total, all passing. Step 2 marked COMPLETE. |
+| 2026-03-24 | Phase 4 reconciled after control-plane / transport review. Issue #1573 is accepted: SP-4-06 completed the Platform-8b audit library, but runtime callers and real controller-backed proving are still missing. Step 2 reopened as IN_PROGRESS. New SP-4-07 drafted to add a repo-owned controller projection, hook-fed local enforcement, Platform-8b runtime wiring, and a comparative decision matrix for custom bus vs native `SendMessage` vs Claude Channels (`#1289`). |

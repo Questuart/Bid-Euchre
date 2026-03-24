@@ -601,6 +601,13 @@ Hooks may provide low-latency hints, but routine lifecycle truth should come
 from a repo-owned reconciler/monitor path. Inboxes, dashboards, and remote
 channels are operator projections of that state, not the primary controller.
 
+The reconciled surface should be materialized as a compact repo-owned
+projection, for example `fleet_status.json` and/or `next_actions.json`, with
+stable item IDs, severity, first/last seen timestamps, current state
+(`open`, `acked`, `cleared`, `suppressed`), related lane/task/PR identifiers,
+and recommended action. This projection is the preferred feed for hooks,
+dashboard summaries, and remote delivery adapters.
+
 ## Remote Operator Channels
 
 The platform should support an official Claude Code plugin path for:
@@ -1325,11 +1332,15 @@ These are the short names future handoffs should use.
 - delivery-adapter upgrade path:
   - the Platform-7 tmux nudge remains the compatibility baseline until a
     channel-backed adapter proves stable
-  - a local channel sidecar may replace the pane-nudge adapter once the steward
-    session is launched with the required Claude Channels support and the
+  - a local Claude Channels sidecar is the preferred `v2` adapter once the
+    steward session is launched with the required Channels support and the
     repo-owned task/message contract remains canonical
   - any channel-backed lane delivery path must be treated as an adapter on top
     of repo-owned state, not as a second source of task truth
+  - Claude native `SendMessage` / team inboxes may remain imported signal
+    sources, but they should not replace repo-owned task, review, or control
+    state unless a later proving matrix shows semantic parity and lower
+    operational cost
 - local control-loop prerequisite:
   - before Platform-8 proving claims away-from-desk supervision is ready, the
     local platform must already reconcile routine lifecycle transitions without
@@ -1343,6 +1354,10 @@ These are the short names future handoffs should use.
     first place the system discovers them
   - optional presentation/transport integrations such as `cmux` must not be
     required for this control loop and must not degrade steward tmux sessions
+  - transport consolidation between the custom bus, native `SendMessage`, and
+    Claude Channels remains an explicit follow-up decision after comparative
+    proving; the platform should not assume the current transport layout is the
+    final one until that evaluation is complete
 - done when:
   - one remote channel can deliver summarized alerts and accept bounded replies
   - the implementation path is validated against either an official plugin or a
