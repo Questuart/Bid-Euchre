@@ -3,7 +3,7 @@
 **ID:** SP-4-06
 **Date:** 2026-03-24
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Platform-8b
-**Status:** ready
+**Status:** completed
 **Owner:** author-a
 
 ---
@@ -252,14 +252,14 @@ make check-quiet
 
 ## Exit Criteria
 
-- [ ] `AuditRecord` dataclass and JSONL writer/reader are implemented and tested
-- [ ] Outbound wrappers (`audit_reply`, `audit_react`, `audit_edit`) are implemented and tested
-- [ ] Inbound helper (`audit_inbound`, `parse_channel_tag`) is implemented and tested
-- [ ] Integration tests verify full round-trip and concurrent-write safety
-- [ ] All tests pass (`make check-quiet` green)
-- [ ] No changes to existing bus, monitor, or dashboard modules
-- [ ] Seam wiring documentation describes how orchestrator uses the audit trail
-- [ ] Phase 4 checkpoints updated (Step 2 progressed toward COMPLETE)
+- [x] `AuditRecord` dataclass and JSONL writer/reader are implemented and tested
+- [x] Outbound wrappers (`audit_reply`, `audit_react`, `audit_edit`) are implemented and tested
+- [x] Inbound helper (`audit_inbound`, `parse_channel_tag`) is implemented and tested
+- [x] Integration tests verify full round-trip and concurrent-write safety
+- [x] All tests pass (`make check-quiet` green)
+- [x] No changes to existing bus, monitor, or dashboard modules
+- [x] Seam wiring documentation describes how orchestrator uses the audit trail
+- [x] Phase 4 checkpoints updated (Step 2 progressed toward COMPLETE)
 
 ## Known Gaps (deferred to Platform-9c hardening)
 
@@ -272,10 +272,10 @@ make check-quiet
 
 ## Validation
 
-- [ ] Sub-plan follows template structure
-- [ ] Registered in sub-plan registry
-- [ ] Checkpoints updated with Step 2 IN_PROGRESS
-- [ ] `git diff --stat` shows only declared scope files
+- [x] Sub-plan follows template structure
+- [x] Registered in sub-plan registry
+- [x] Checkpoints updated with Step 2 COMPLETE
+- [x] `git diff --stat` shows only declared scope files
 
 ## Planned Outputs
 
@@ -285,8 +285,17 @@ make check-quiet
 
 ## Observed Outputs
 
-_(To be filled after implementation)_
+- `src/bid_euchre/ops/audit_trail.py` — Core module: `AuditRecord` dataclass, `create_record()`, `append_record()`, `read_records()`, `content_hash()`, `content_preview()`, `parse_channel_tag()`, outbound wrappers (`audit_reply`, `audit_react`, `audit_edit`), inbound helper (`audit_inbound`)
+- `tests/unit/test_audit_trail.py` — Unit tests for serialization, append/read, filtering, content hashing, tag parsing, concurrent-write safety
+- `tests/integration/test_audit_trail_integration.py` — 20 integration tests across 4 categories: full round-trip (4), concurrent writers (3), large volume (4), mixed direction filtering (9)
+- `src/bid_euchre/ops/__init__.py` — Updated to export `audit_trail` module
 
 ## Outcome
 
-_(To be filled after implementation)_
+All 4 PRs shipped on 2026-03-24:
+- PR 1: Core writer + unit tests (#1533)
+- PR 2: Outbound wrappers (#1536)
+- PR 3: Inbound helper + channel tag parser (#1541)
+- PR 4: Integration tests + checkpoints update (#1549)
+
+All exit criteria met. 20 integration tests + unit test suite passing. `make check-quiet` green. No changes to existing bus, monitor, or dashboard modules.
