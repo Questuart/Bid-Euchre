@@ -2024,6 +2024,56 @@ class TestCheckAckStatus:
         status = check_ack_status(msg.message_id, "author-a", bus_root)
         assert status is None
 
+    def test_ttl_expired_reports_expired(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """A pending message past its TTL should report 'expired' (#1601)."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Advance time past the default TTL
+        future = time.time() + DEFAULT_TTL_SECONDS + 1
+        status = check_ack_status(msg.message_id, "orch", bus_root, now=future)
+        assert status == "expired"
+
+    def test_ttl_not_expired_reports_pending(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """A pending message within its TTL should still report 'pending'."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Time within the TTL window
+        status = check_ack_status(
+            msg.message_id, "orch", bus_root, now=time.time() + 10
+        )
+        assert status == "pending"
+
+    def test_acked_message_not_affected_by_ttl(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """An acked message should remain 'acked' even past TTL (#1601)."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "orch", bus_root, events_dir=events_dir)
+
+        # Advance time past TTL — acked status should be preserved
+        future = time.time() + DEFAULT_TTL_SECONDS + 1
+        status = check_ack_status(msg.message_id, "orch", bus_root, now=future)
+        assert status == "acked"
+
+    def test_delivered_ttl_expired_reports_expired(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """A delivered (but not acked) message past TTL reports 'expired' (#1601)."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+        mark_delivered(msg.message_id, "orch", bus_root, events_dir=events_dir)
+
+        future = time.time() + DEFAULT_TTL_SECONDS + 1
+        status = check_ack_status(msg.message_id, "orch", bus_root, now=future)
+        assert status == "expired"
+
 
 # ---------------------------------------------------------------------------
 # escalate_unacked
@@ -2182,6 +2232,41 @@ class TestEscalateUnacked:
         inbox = read_inbox("orch", bus_root, auto_expire=False, limit=100)
         esc = [m for m in inbox if m["message_id"] == escalation_ids[0]]
         assert esc[0]["parent_message_id"] == msg2.message_id
+
+    def test_skips_ttl_expired_messages(self, bus_root: Path, events_dir: Path) -> None:
+        """Messages past their TTL should not be escalated (#1601)."""
+        msg = create_message("ops", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Advance time past the default TTL — message is expired even though
+        # its status hasn't been formally updated yet.
+        future = time.time() + DEFAULT_TTL_SECONDS + 1
+        escalation_ids = escalate_unacked(
+            "ops",
+            "orch",
+            max_age_minutes=0,
+            bus_root=bus_root,
+            events_dir=events_dir,
+            now=future,
+        )
+        assert len(escalation_ids) == 0
+
+    def test_escalates_within_ttl(self, bus_root: Path, events_dir: Path) -> None:
+        """Messages within their TTL should still be escalated normally."""
+        msg = create_message("ops", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Time within the TTL window — should still escalate
+        soon = time.time() + 10
+        escalation_ids = escalate_unacked(
+            "ops",
+            "orch",
+            max_age_minutes=0,
+            bus_root=bus_root,
+            events_dir=events_dir,
+            now=soon,
+        )
+        assert len(escalation_ids) == 1
 
 
 # ---------------------------------------------------------------------------

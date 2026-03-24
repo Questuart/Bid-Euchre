@@ -23,7 +23,7 @@ Closes #1570.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -1351,9 +1351,10 @@ class TestEscalation:
         self, bus_root: Path, events_dir: Path
     ) -> None:
         """An unacked message older than threshold triggers escalation."""
-        # Send a message with an old created_at timestamp
-        old_time = (
-            datetime.now(timezone.utc).replace(year=2025).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Send a message with a created_at 30 minutes in the past — old enough
+        # to trigger escalation but within the default 24-hour TTL (#1601).
+        old_time = (datetime.now(timezone.utc) - timedelta(minutes=30)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
         )
         msg = BusMessage(
             message_id="old_msg_001",

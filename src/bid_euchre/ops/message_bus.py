@@ -1006,12 +1006,18 @@ def check_ack_status(
     message_id: str,
     recipient_lane: str,
     bus_root: Path | None = None,
+    *,
+    now: float | None = None,
 ) -> str | None:
     """Check if a message was acked by the recipient.
 
     Looks up the latest record for *message_id* in *recipient_lane*'s inbox
     and returns the current status string (``'pending'``, ``'acked'``,
     ``'resolved'``, etc.) or ``None`` if the message is not found.
+
+    If the message is still in a non-terminal status (``pending`` or
+    ``delivered``) but its ``payload.ttl_seconds`` has elapsed, returns
+    ``'expired'`` instead of the raw status (#1601).
 
     This lets a sender verify that the recipient has acknowledged a message
     without reading the full inbox.
@@ -1020,6 +1026,7 @@ def check_ack_status(
         message_id: The ID of the message to check.
         recipient_lane: The lane whose inbox to look in.
         bus_root: Override for bus root directory.
+        now: Override for current time as Unix timestamp (for testing).
 
     Returns:
         The current status string, or ``None`` if the message is not found.
@@ -1036,7 +1043,23 @@ def check_ack_status(
     if latest is None:
         return None
 
-    return latest.get("status", "pending")
+    status = latest.get("status", "pending")
+
+    # Honor TTL expiry: if the message is non-terminal and its TTL has
+    # elapsed, report "expired" rather than the stale status (#1601).
+    if status in ("pending", "delivered"):
+        ttl = latest.get("payload", {}).get("ttl_seconds")
+        if ttl is not None:
+            created = latest.get("created_at", "")
+            try:
+                created_ts = datetime.fromisoformat(created).timestamp()
+                current_time = now if now is not None else time.time()
+                if current_time - created_ts > ttl:
+                    return "expired"
+            except (ValueError, TypeError):
+                pass
+
+    return status
 
 
 def escalate_unacked(
@@ -1046,6 +1069,7 @@ def escalate_unacked(
     bus_root: Path | None = None,
     *,
     events_dir: Path | None = None,
+    now: float | None = None,
 ) -> list[str]:
     """Find unacked outbound messages older than *max_age_minutes* and escalate.
 
@@ -1057,12 +1081,16 @@ def escalate_unacked(
     type ``escalation``) referencing the original via ``parent_message_id``,
     and sent to the recipient.
 
+    Messages whose ``payload.ttl_seconds`` has already elapsed are skipped —
+    expired messages should not trigger escalation (#1601).
+
     Args:
         sender_lane: The lane that sent the original messages.
         recipient_lane: The lane whose inbox to scan for unacked messages.
         max_age_minutes: Age threshold in minutes before escalation fires.
         bus_root: Override for bus root directory.
         events_dir: Override for events directory (for testing).
+        now: Override for current time as Unix timestamp (for testing).
 
     Returns:
         List of escalation message IDs sent.
@@ -1077,7 +1105,8 @@ def escalate_unacked(
         if mid:
             by_id[mid] = rec
 
-    cutoff_ts = time.time() - (max_age_minutes * 60)
+    current_time = now if now is not None else time.time()
+    cutoff_ts = current_time - (max_age_minutes * 60)
     unacked_statuses = {"pending", "delivered"}
     escalation_ids: list[str] = []
 
@@ -1115,6 +1144,12 @@ def escalate_unacked(
 
         if created_ts > cutoff_ts:
             continue  # Not old enough yet
+
+        # Skip messages whose TTL has already elapsed (#1601) — expired
+        # messages should not trigger escalation.
+        ttl = rec.get("payload", {}).get("ttl_seconds")
+        if ttl is not None and current_time - created_ts > ttl:
+            continue
 
         # Create and send an escalation message
         esc_msg = create_message(
