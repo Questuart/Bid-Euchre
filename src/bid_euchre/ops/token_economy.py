@@ -1381,9 +1381,13 @@ def _ensure_imported(output_dir: Path) -> None:
 
     Runs ``import_usage_data`` followed by ``attribute_sessions`` so that
     both ``session_usage.jsonl`` and ``session_attributions.jsonl`` are
-    populated.  When usage data already exists but only attributions are
-    missing (e.g. a previous import crashed mid-way), rebuilds attributions
-    without re-importing host usage.
+    populated.  When usage data already exists *and is fresh* but only
+    attributions are missing (e.g. a previous import crashed mid-way),
+    rebuilds attributions without re-importing host usage (#1505).
+
+    When attributions are missing *and* usage data is stale, a full
+    re-import is performed instead — the missing attributions must not
+    hide a genuinely stale store (#1514).
 
     This is best-effort — failures are logged and swallowed so the dashboard
     never crashes due to import issues.
@@ -1398,14 +1402,24 @@ def _ensure_imported(output_dir: Path) -> None:
         attr_missing = not attr_file.exists() or attr_file.stat().st_size == 0
 
         if usage_exists and attr_missing:
-            # Usage data is present but attributions are absent — rebuild
-            # attributions from existing data without re-scanning host usage.
-            attribute_sessions(output_dir=output_dir)
-            logger.info("Rebuilt missing attributions from existing usage data")
-            return
+            # Usage data is present but attributions are absent.  Only
+            # rebuild attributions in-place when the usage data itself is
+            # still fresh — otherwise the missing attributions may be
+            # hiding a genuinely stale store (#1514).
+            usage_age = (
+                datetime.now(timezone.utc).timestamp() - usage_file.stat().st_mtime
+            )
+            if usage_age <= _STALE_THRESHOLD_SECONDS:
+                # Fresh usage, missing attr — rebuild without re-import (#1505)
+                attribute_sessions(output_dir=output_dir)
+                logger.info("Rebuilt missing attributions from existing usage data")
+                return
+            # Usage data is also stale — fall through to full re-import
 
         result = import_usage_data(output_dir=output_dir)
-        if result.sessions_imported > 0 or result.sessions_skipped > 0:
+        # Always attribute when attributions were missing, even if the
+        # re-import found no new sessions (data may already be present).
+        if result.sessions_imported > 0 or result.sessions_skipped > 0 or attr_missing:
             attribute_sessions(output_dir=output_dir)
         logger.info(
             "Auto-imported token economy data: %d new, %d skipped",
