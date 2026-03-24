@@ -1,0 +1,64 @@
+{# Match score + hand info + contract display partial.
+   Context variables:
+     - score_human: int — human team's total match score
+     - score_ai: int — AI team's total match score
+     - hands_played: int — number of completed hands
+     - contract_type: str | None — "suit", "HIGH", or "LOW" (None if auction in progress)
+     - trump: str | None — trump suit letter if contract_type == "suit"
+     - winning_bid: int | None — winning bid amount (None if auction in progress)
+     - bidder_seat: int | None — seat of the declarer (None if auction in progress)
+     - tricks_team0: int — current hand tricks for human team
+     - tricks_team1: int — current hand tricks for AI team
+     - dealer_seat: int — seat number of the dealer
+     - phase: str — current hand phase
+#}
+{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+
+<div id="score-bar" class="score-bar">
+    <div class="score-section">
+        <span class="score-label">You:</span>
+        <span class="score-value{% if score_human >= 0 %} score--positive{% else %} score--negative{% endif %}">
+            {{ score_human }}
+        </span>
+        <span class="score-separator">|</span>
+        <span class="score-label">AI:</span>
+        <span class="score-value{% if score_ai >= 0 %} score--positive{% else %} score--negative{% endif %}">
+            {{ score_ai }}
+        </span>
+    </div>
+
+    <div class="hand-info">
+        <span>Hand {{ hands_played + 1 }}</span>
+        <span class="info-separator">&middot;</span>
+        <span>Dealer: {{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>
+    </div>
+
+    {% if contract_type is not none and winning_bid is not none %}
+    <div class="contract-info">
+        <span>Contract: {{ winning_bid }}
+            {% if contract_type == "suit" and trump %}
+                {{ suit_symbols.get(trump, trump) }}
+            {% elif contract_type == "HIGH" %}
+                High
+            {% elif contract_type == "LOW" %}
+                Low
+            {% endif %}
+        </span>
+        <span class="info-separator">&middot;</span>
+        <span>Declarer: {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>
+        {% if phase == "trick_play" %}
+        <span class="info-separator">&middot;</span>
+        <span>Tricks: {{ tricks_team0 }}&ndash;{{ tricks_team1 }}</span>
+        {% endif %}
+    </div>
+    {% elif phase == "auction" %}
+    <div class="contract-info">
+        <span>Auction in progress</span>
+    </div>
+    {% endif %}
+
+    <div class="match-target">
+        First to &plusmn;52 wins
+    </div>
+</div>

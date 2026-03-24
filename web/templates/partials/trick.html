@@ -1,0 +1,93 @@
+{# Current trick area partial — 4 card slots arranged by seat position.
+   Context variables:
+     - current_trick: dict | None — {leader: int, plays: list[[seat, [suit, rank]]]}
+     - completed_tricks: list[dict] — completed tricks for reference count
+     - tricks_team0: int — tricks won by human's team (seats 0, 2)
+     - tricks_team1: int — tricks won by AI team (seats 1, 3)
+#}
+{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "Partner", 3: "AI Right"} %}
+
+{# Build a dict mapping seat -> card for the current trick.
+   Uses namespace to work around Jinja2 for-loop scoping. #}
+{% set ns = namespace(cards={}) %}
+{% if current_trick %}
+    {% for play in current_trick.plays %}
+        {% set _ = ns.cards.update({play[0]: play[1]}) %}
+    {% endfor %}
+{% endif %}
+
+<div id="trick-area" class="trick-area">
+    <h3>Trick {{ (completed_tricks | length) + 1 }} of 10</h3>
+    <div class="trick-table">
+        {# Top — seat 2 (partner) #}
+        <div class="trick-slot trick-slot--top">
+            {% if 2 in ns.cards %}
+                {% set card = ns.cards[2] %}
+                {% set suit = card[0] %}
+                <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played">
+                    <span class="card__rank">{{ card[1] }}</span>
+                    <span class="card__suit">{{ suit_symbols.get(suit, suit) }}</span>
+                </div>
+            {% else %}
+                <div class="card-slot card-slot--empty">
+                    <span class="seat-label">{{ seat_labels[2] }}</span>
+                </div>
+            {% endif %}
+        </div>
+
+        {# Middle row: Left (seat 1), Center spacer, Right (seat 3) #}
+        <div class="trick-row-middle">
+            <div class="trick-slot trick-slot--left">
+                {% if 1 in ns.cards %}
+                    {% set card = ns.cards[1] %}
+                    {% set suit = card[0] %}
+                    <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played">
+                        <span class="card__rank">{{ card[1] }}</span>
+                        <span class="card__suit">{{ suit_symbols.get(suit, suit) }}</span>
+                    </div>
+                {% else %}
+                    <div class="card-slot card-slot--empty">
+                        <span class="seat-label">{{ seat_labels[1] }}</span>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="trick-center">
+                <span class="trick-count">{{ tricks_team0 }}&ndash;{{ tricks_team1 }}</span>
+            </div>
+
+            <div class="trick-slot trick-slot--right">
+                {% if 3 in ns.cards %}
+                    {% set card = ns.cards[3] %}
+                    {% set suit = card[0] %}
+                    <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played">
+                        <span class="card__rank">{{ card[1] }}</span>
+                        <span class="card__suit">{{ suit_symbols.get(suit, suit) }}</span>
+                    </div>
+                {% else %}
+                    <div class="card-slot card-slot--empty">
+                        <span class="seat-label">{{ seat_labels[3] }}</span>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {# Bottom — seat 0 (human) #}
+        <div class="trick-slot trick-slot--bottom">
+            {% if 0 in ns.cards %}
+                {% set card = ns.cards[0] %}
+                {% set suit = card[0] %}
+                <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played">
+                    <span class="card__rank">{{ card[1] }}</span>
+                    <span class="card__suit">{{ suit_symbols.get(suit, suit) }}</span>
+                </div>
+            {% else %}
+                <div class="card-slot card-slot--empty">
+                    <span class="seat-label">{{ seat_labels[0] }}</span>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>

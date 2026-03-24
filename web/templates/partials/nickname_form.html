@@ -1,0 +1,22 @@
+{# Nickname input form partial.
+   Context variables:
+     - link_uuid: str — player's game link UUID
+#}
+<div id="nickname-form">
+    <h2>Enter your nickname</h2>
+    <form method="post"
+          action="/play/{{ link_uuid }}/nickname"
+          hx-post="/play/{{ link_uuid }}/nickname"
+          hx-target="#game-board"
+          hx-swap="innerHTML">
+        <label for="nickname-input">Nickname:</label>
+        <input id="nickname-input"
+               name="nickname"
+               type="text"
+               maxlength="30"
+               required
+               autofocus
+               placeholder="Your name">
+        <button type="submit">Set Nickname</button>
+    </form>
+</div>

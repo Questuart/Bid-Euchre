@@ -1,0 +1,86 @@
+{# Bid amount + contract type selector partial.
+   Context variables:
+     - link_uuid: str — player's game link UUID
+     - turn_number: int — current turn for idempotency
+     - auction: list[dict] — auction transcript entries
+       Each entry: {seat, n, action, contract? (if action == "bid")}
+     - current_high_bid: int — highest bid so far (0 if no bids yet)
+     - dealer_seat: int — seat number of the dealer
+#}
+{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+
+<div id="bid-panel">
+    <h3>Auction</h3>
+
+    {# Show auction transcript so far #}
+    {% if auction %}
+    <div class="auction-transcript">
+        <table class="auction-table">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Bid</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in auction %}
+                <tr>
+                    <td>{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}</td>
+                    <td>
+                        {% if entry.action == "pass" %}
+                            Pass
+                        {% else %}
+                            {{ entry.n }}
+                            {% if entry.contract in suit_symbols %}
+                                {{ suit_symbols[entry.contract] }}
+                            {% elif entry.contract == "HIGH" %}
+                                High
+                            {% elif entry.contract == "LOW" %}
+                                Low
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {# Bid form — only shown when it's the human's turn #}
+    <form method="post"
+          action="/play/{{ link_uuid }}/bid"
+          hx-post="/play/{{ link_uuid }}/bid"
+          hx-target="#game-board"
+          hx-swap="innerHTML">
+        <input type="hidden" name="turn_number" value="{{ turn_number }}">
+
+        <div class="bid-controls">
+            <label for="bid-level">Bid:</label>
+            <select id="bid-level" name="bid_n">
+                <option value="0">Pass</option>
+                {% for n in range(current_high_bid + 1, 11) %}
+                <option value="{{ n }}">{{ n }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="bid-contract">Contract:</label>
+            <select id="bid-contract" name="bid_contract">
+                <option value="S">♠ Spades</option>
+                <option value="H">♥ Hearts</option>
+                <option value="D">♦ Diamonds</option>
+                <option value="C">♣ Clubs</option>
+                <option value="HIGH">High (no trump)</option>
+                <option value="LOW">Low (no trump)</option>
+            </select>
+
+            <button type="submit">Submit Bid</button>
+        </div>
+    </form>
+
+    {% if current_high_bid > 0 %}
+    <p class="bid-info">Current high bid: {{ current_high_bid }}</p>
+    {% endif %}
+    <p class="bid-info">Dealer: {{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</p>
+</div>

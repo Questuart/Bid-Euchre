@@ -1,0 +1,76 @@
+{# Hand result banner partial — shown between hands after scoring.
+   Context variables:
+     - winning_bid: int — the winning bid amount
+     - bidder_seat: int — seat of the declarer
+     - contract_type: str — "suit", "HIGH", or "LOW"
+     - trump: str | None — trump suit letter (if suit contract)
+     - tricks_team0: int — tricks won by human team (seats 0, 2)
+     - tricks_team1: int — tricks won by AI team (seats 1, 3)
+     - points_team0: int — points scored by human team this hand
+     - points_team1: int — points scored by AI team this hand
+     - score_human: int — running match score for human team
+     - score_ai: int — running match score for AI team
+     - hands_played: int — total hands completed
+#}
+{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+
+{# Determine if the declaring team made their bid #}
+{% set declarer_team = 0 if bidder_seat in [0, 2] else 1 %}
+{% set declarer_tricks = tricks_team0 if declarer_team == 0 else tricks_team1 %}
+{% set made = declarer_tricks >= winning_bid %}
+{% set human_declared = bidder_seat in [0, 2] %}
+
+<div id="hand-result" class="hand-result {% if made and human_declared %}result--made{% elif not made and not human_declared %}result--made{% else %}result--set{% endif %}">
+    <div class="result-banner">
+        {% if made %}
+            <h2 class="result-title">Made it!</h2>
+            <p class="result-detail">
+                {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }} bid {{ winning_bid }}
+                {% if contract_type == "suit" and trump %}
+                    {{ suit_symbols.get(trump, trump) }}
+                {% elif contract_type == "HIGH" %}
+                    High
+                {% elif contract_type == "LOW" %}
+                    Low
+                {% endif %}
+                and took {{ declarer_tricks }} tricks.
+            </p>
+        {% else %}
+            <h2 class="result-title">Set!</h2>
+            <p class="result-detail">
+                {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }} bid {{ winning_bid }}
+                {% if contract_type == "suit" and trump %}
+                    {{ suit_symbols.get(trump, trump) }}
+                {% elif contract_type == "HIGH" %}
+                    High
+                {% elif contract_type == "LOW" %}
+                    Low
+                {% endif %}
+                but only took {{ declarer_tricks }} tricks.
+            </p>
+        {% endif %}
+    </div>
+
+    <div class="result-scoring">
+        <table class="result-table">
+            <tr>
+                <td>Your team:</td>
+                <td class="{% if points_team0 > 0 %}points--positive{% elif points_team0 < 0 %}points--negative{% endif %}">
+                    {{ "+" if points_team0 > 0 }}{{ points_team0 }}
+                </td>
+            </tr>
+            <tr>
+                <td>AI team:</td>
+                <td class="{% if points_team1 > 0 %}points--positive{% elif points_team1 < 0 %}points--negative{% endif %}">
+                    {{ "+" if points_team1 > 0 }}{{ points_team1 }}
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="result-match-score">
+        <p>Match score: You {{ score_human }} &mdash; AI {{ score_ai }}</p>
+        <p class="hands-count">Hands played: {{ hands_played }}</p>
+    </div>
+</div>
