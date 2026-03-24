@@ -1986,6 +1986,26 @@ def cmd_inbox(args: argparse.Namespace) -> int:
             bus_root,
             status=status_filter,
         )
+
+        # Forward --type and --thread filters (read_inbox_prioritized does
+        # not accept these natively, so post-filter each tier).
+        if type_filter is not None or thread_filter is not None:
+            allowed_types = (
+                ({type_filter} if isinstance(type_filter, str) else set(type_filter))
+                if type_filter is not None
+                else None
+            )
+
+            def _match(msg: dict) -> bool:
+                if allowed_types and msg.get("message_type") not in allowed_types:
+                    return False
+                if thread_filter and msg.get("thread_id") != thread_filter:
+                    return False
+                return True
+
+            p0 = [m for m in p0 if _match(m)]
+            p1 = [m for m in p1 if _match(m)]
+            p2 = [m for m in p2 if _match(m)]
         if args.json:
             print(
                 json.dumps(
