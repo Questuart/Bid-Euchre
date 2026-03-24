@@ -3,8 +3,9 @@
 **ID:** SP-4-02
 **Date:** 2026-03-23
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Pre-Platform-8
-**Status:** in_progress
+**Status:** completed
 **Owner:** orchestrator
+**Completed:** 2026-03-24 (assessed by flex-a)
 
 ---
 
@@ -293,3 +294,47 @@ Before starting Platform-8 Telegram transport implementation:
 | Step 5 | Validation only (0-1 PRs) | 1 lane |
 | Step 6 | 1-2 PRs | 1 lane |
 | **Total** | **5-9 PRs** | **Can parallelize Steps 3+4 after Steps 1-2** |
+
+## Completion Assessment (2026-03-24)
+
+All 6 steps are materially complete. Assessment performed by flex-a lane.
+
+### Step-by-Step Evidence
+
+| Step | Status | Key PRs | Evidence |
+|------|--------|---------|----------|
+| Step 1: Prove lifecycle | COMPLETE | #1286 (post-merge-notify), #1293 (verdict bridge + task accept), #1304 (task complete CLI), #1362 (lifecycle hook gaps) | `post-merge-notify.sh` hook exists and fires on merge; `task accept` CLI works; lifecycle gap fixes merged |
+| Step 2: Clean backlog | COMPLETE | #1383 (dashboard CI PR-based) | Dashboard CI switched to PR-based pushes; inbox purge operational; runtime cleanup performed during proving runs |
+| Step 3: Stall recovery | COMPLETE | #1340 (stall detection), #1368 (bounded stall recovery), #1434 (approval-stall detector) | `check_stalled_lanes()` detects + recovers; re-nudge on first cycle, escalate on second; `--no-recovery` kill switch exists |
+| Step 4: Scope enforcement | COMPLETE | #1375 (scope drift enforcement), #1395 (LANE_ID fix), #1400 (test tightening) | `scope-drift-guard.sh` hook exists; `check_scope_drift()` in `scope.py`; commit-time enforcement active |
+| Step 5: Reset/clear validation | COMPLETE | #1350 (dirty-worktree guard), #1369 (timestamped backup), #1373 (redispatch cycles), #1386 (test coverage), #1389 (filename collisions), #1411 (atomic backup), #1425 (lane refresh CLI) | `reset_worktree()`, `clear_session()`, `dispatch_to_worker()` all in `worker_pool.py`; dirty-worktree guard saves diff before reset; consecutive redispatch cycles tested |
+| Step 6: Auto-dispatch | COMPLETE | #1374 (auto-dispatch), #1387 (extract complexity) | `check_auto_dispatch()` in `monitor.py`; domain affinity routing; `--no-auto-dispatch` kill switch; rate limit (MAX_AUTO_DISPATCH_PER_CYCLE) |
+
+### Exit Criteria Status
+
+- [x] One full dispatch-merge-auto-complete cycle runs without manual intervention
+- [x] Stall recovery re-nudges and escalates correctly
+- [x] Scope drift blocks out-of-scope commits
+- [x] Lane reset/clear works across consecutive dispatch cycles
+- [x] `ops.py dashboard` shows accurate, clean state
+- [x] Dashboard CI runs and auto-updates successfully (PR-based, #1383)
+- [x] Monitor cycle surfaces inbox messages as findings
+- [x] No diagnostic packet from Step 1 remains unexplained before cleanup
+- [x] No stale terminal/test-noise inbox backlog remains after cleanup
+- [x] Auto-dispatch handles only approved packets and obeys kill switches
+
+### Actual Effort
+
+| Step | Actual PRs |
+|------|-----------|
+| Step 1 | 4 PRs (#1286, #1293, #1304, #1362) |
+| Step 2 | 1 PR (#1383) + runtime cleanup |
+| Step 3 | 3 PRs (#1340, #1368, #1434) |
+| Step 4 | 3 PRs (#1375, #1395, #1400) |
+| Step 5 | 7 PRs (#1350, #1369, #1373, #1386, #1389, #1411, #1425) |
+| Step 6 | 2 PRs (#1374, #1387) |
+| **Total** | **20 PRs** (vs estimated 5-9) |
+
+The actual effort exceeded the estimate by ~2x due to bug fixes and hardening
+follow-ups discovered during implementation, particularly in Step 5 (reset/clear)
+which needed multiple atomic backup and filename collision fixes.
