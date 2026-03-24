@@ -24,6 +24,8 @@ from bid_euchre.ops.message_bus import (
     VALID_MESSAGE_TRANSITIONS,
     VALID_MESSAGE_TYPES,
     BusMessage,
+    _content_dedup_key,
+    _find_content_duplicate,
     _native_content_hash,
     ack_message,
     append_message,
@@ -1620,3 +1622,147 @@ class TestCompactInbox:
         inbox = read_inbox("author-a", bus_root)
         assert len(inbox) == 1
         assert inbox[0]["summary"] == "Active"
+
+
+# ---------------------------------------------------------------------------
+# Multi-type inbox filter
+# ---------------------------------------------------------------------------
+
+
+class TestMultiTypeInboxFilter:
+    """Test read_inbox with multi-type message_type filter."""
+
+    def test_single_type_string_still_works(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Backward compat: single string filter still matches."""
+        msg_a = create_message("a", "b", "assignment", "A")
+        msg_b = create_message("a", "b", "completion", "B")
+        send_message(msg_a, bus_root, events_dir=events_dir)
+        send_message(msg_b, bus_root, events_dir=events_dir)
+
+        result = read_inbox("b", bus_root, message_type="completion")
+        assert len(result) == 1
+        assert result[0]["summary"] == "B"
+
+    def test_multi_type_list_matches_any(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """A list of types matches messages of any listed type."""
+        msg_a = create_message("a", "b", "assignment", "A")
+        msg_b = create_message("a", "b", "completion", "B")
+        msg_c = create_message("a", "b", "blocker", "C")
+        for m in (msg_a, msg_b, msg_c):
+            send_message(m, bus_root, events_dir=events_dir)
+
+        result = read_inbox("b", bus_root, message_type=["completion", "blocker"])
+        assert len(result) == 2
+        summaries = {r["summary"] for r in result}
+        assert summaries == {"B", "C"}
+
+    def test_multi_type_no_match_returns_empty(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Multi-type filter returns empty when no types match."""
+        msg = create_message("a", "b", "assignment", "A")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        result = read_inbox("b", bus_root, message_type=["completion", "blocker"])
+        assert result == []
+
+    def test_none_type_returns_all(self, bus_root: Path, events_dir: Path) -> None:
+        """message_type=None returns all messages (no filter)."""
+        msg_a = create_message("a", "b", "assignment", "A")
+        msg_b = create_message("a", "b", "completion", "B")
+        send_message(msg_a, bus_root, events_dir=events_dir)
+        send_message(msg_b, bus_root, events_dir=events_dir)
+
+        result = read_inbox("b", bus_root, message_type=None)
+        assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# Content-based dedup
+# ---------------------------------------------------------------------------
+
+
+class TestContentDedup:
+    """Test content-based duplicate suppression in send_message."""
+
+    def test_dedup_key_deterministic(self) -> None:
+        """Same message fields produce the same dedup key."""
+        msg1 = create_message("review", "orchestrator", "progress", "Verdict X")
+        msg2 = create_message("review", "orchestrator", "progress", "Verdict X")
+        assert _content_dedup_key(msg1) == _content_dedup_key(msg2)
+
+    def test_dedup_key_differs_on_summary(self) -> None:
+        """Different summaries produce different dedup keys."""
+        msg1 = create_message("review", "orchestrator", "progress", "Verdict A")
+        msg2 = create_message("review", "orchestrator", "progress", "Verdict B")
+        assert _content_dedup_key(msg1) != _content_dedup_key(msg2)
+
+    def test_dedup_suppresses_duplicate_send(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Second send with deduplicate=True returns existing ID, no new message."""
+        msg1 = create_message("review", "orchestrator", "progress", "Verdict PR #42")
+        send_message(msg1, bus_root, events_dir=events_dir)
+
+        msg2 = create_message("review", "orchestrator", "progress", "Verdict PR #42")
+        result_id = send_message(
+            msg2, bus_root, events_dir=events_dir, deduplicate=True
+        )
+
+        assert result_id == msg1.message_id
+        inbox = read_inbox("orchestrator", bus_root)
+        assert len(inbox) == 1
+
+    def test_dedup_false_allows_duplicates(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """With deduplicate=False (default), duplicates are sent normally."""
+        msg1 = create_message("review", "orchestrator", "progress", "Verdict PR #42")
+        send_message(msg1, bus_root, events_dir=events_dir)
+
+        msg2 = create_message("review", "orchestrator", "progress", "Verdict PR #42")
+        result_id = send_message(
+            msg2, bus_root, events_dir=events_dir, deduplicate=False
+        )
+
+        assert result_id == msg2.message_id
+        inbox = read_inbox("orchestrator", bus_root)
+        assert len(inbox) == 2
+
+    def test_dedup_allows_after_terminal(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """After resolving the original, a new content-duplicate can be sent."""
+        msg1 = create_message("review", "orchestrator", "progress", "Verdict PR #42")
+        send_message(msg1, bus_root, events_dir=events_dir)
+        ack_message(msg1.message_id, "orchestrator", bus_root, events_dir=events_dir)
+        resolve_message(
+            msg1.message_id, "orchestrator", bus_root, events_dir=events_dir
+        )
+
+        msg2 = create_message("review", "orchestrator", "progress", "Verdict PR #42")
+        result_id = send_message(
+            msg2, bus_root, events_dir=events_dir, deduplicate=True
+        )
+
+        # New message sent because old one is resolved (terminal)
+        assert result_id == msg2.message_id
+
+    def test_find_content_duplicate_returns_none_on_empty(self, bus_root: Path) -> None:
+        """No duplicate found in empty inbox."""
+        msg = create_message("review", "orchestrator", "progress", "Test")
+        assert _find_content_duplicate(msg, bus_root) is None
+
+    def test_find_content_duplicate_ignores_different_summary(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Messages with different summaries are not duplicates."""
+        msg1 = create_message("review", "orchestrator", "progress", "Verdict A")
+        send_message(msg1, bus_root, events_dir=events_dir)
+
+        msg2 = create_message("review", "orchestrator", "progress", "Verdict B")
+        assert _find_content_duplicate(msg2, bus_root) is None

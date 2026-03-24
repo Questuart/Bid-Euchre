@@ -419,9 +419,10 @@ def _emit_verdict_bus_message(
                 "verdict_status": verdict.status,
                 "n_findings": len(verdict.findings),
                 "reason": verdict.reason,
+                "ttl_seconds": 3600,  # 1h — verdicts are ephemeral signals
             },
         )
-        send_message(msg, bus_root=root)
+        send_message(msg, bus_root=root, deduplicate=True)
         logger.info(
             "Bus message sent to orchestrator: PR #%d verdict=%s",
             verdict.pr_number,
