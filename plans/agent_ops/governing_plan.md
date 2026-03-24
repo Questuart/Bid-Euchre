@@ -602,7 +602,7 @@ from a repo-owned reconciler/monitor path. Inboxes, dashboards, and remote
 channels are operator projections of that state, not the primary controller.
 
 The reconciled surface should be materialized as a compact repo-owned
-projection, for example `fleet_status.json` and/or `next_actions.json`, with
+projection, for example fleet_status.json and/or next_actions.json, with
 stable item IDs, severity, first/last seen timestamps, current state
 (`open`, `acked`, `cleared`, `suppressed`), related lane/task/PR identifiers,
 and recommended action. This projection is the preferred feed for hooks,
