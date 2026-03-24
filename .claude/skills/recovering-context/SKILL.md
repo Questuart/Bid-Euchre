@@ -13,9 +13,11 @@ Start every session by recovering project context from MEMORY.md before beginnin
    - Load the complete project memory file
    - Parse current project state and recent completions
 
-2. **Scan inbox for carry-forward alerts** (orchestrator lanes only):
+2. **Scan inbox for carry-forward alerts** (all lanes):
    ```bash
-   uv run python scripts/internal/ops.py inbox --lane orchestrator --status pending
+   # Detect current lane from CLAUDE_AGENT_NAME or worktree directory name
+   LANE="${CLAUDE_AGENT_NAME:-$(basename "$PWD" | sed 's/^Bid-Euchre-steward-//')}"
+   uv run python scripts/internal/ops.py inbox --lane "$LANE" --status pending
    ```
    If unacked P0/P1 messages exist from a previous session, surface them
    **before any other work**. These represent conditions the previous session
