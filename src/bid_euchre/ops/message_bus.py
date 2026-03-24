@@ -947,6 +947,129 @@ def resolve_message(
     return updated
 
 
+def check_ack_status(
+    message_id: str,
+    recipient_lane: str,
+    bus_root: Path | None = None,
+) -> str | None:
+    """Check if a message was acked by the recipient.
+
+    Looks up the latest record for *message_id* in *recipient_lane*'s inbox
+    and returns the current status string (``'pending'``, ``'acked'``,
+    ``'resolved'``, etc.) or ``None`` if the message is not found.
+
+    This lets a sender verify that the recipient has acknowledged a message
+    without reading the full inbox.
+
+    Args:
+        message_id: The ID of the message to check.
+        recipient_lane: The lane whose inbox to look in.
+        bus_root: Override for bus root directory.
+
+    Returns:
+        The current status string, or ``None`` if the message is not found.
+    """
+    root = shared_bus_root(bus_root)
+    raw = _read_inbox_raw(recipient_lane, root)
+
+    # Deduplicate: latest record per message_id wins
+    latest: dict[str, Any] | None = None
+    for rec in raw:
+        if rec.get("message_id") == message_id:
+            latest = rec
+
+    if latest is None:
+        return None
+
+    return latest.get("status", "pending")
+
+
+def escalate_unacked(
+    sender_lane: str,
+    recipient_lane: str,
+    max_age_minutes: int = 10,
+    bus_root: Path | None = None,
+    *,
+    events_dir: Path | None = None,
+) -> list[str]:
+    """Find unacked outbound messages older than *max_age_minutes* and escalate.
+
+    Scans the *recipient_lane*'s inbox for messages sent by *sender_lane*
+    that are still in ``pending`` or ``delivered`` status and whose
+    ``created_at`` timestamp is older than *max_age_minutes*.
+
+    For each such message an escalation message is created (priority ``urgent``,
+    type ``escalation``) referencing the original via ``parent_message_id``,
+    and sent to the recipient.
+
+    Args:
+        sender_lane: The lane that sent the original messages.
+        recipient_lane: The lane whose inbox to scan for unacked messages.
+        max_age_minutes: Age threshold in minutes before escalation fires.
+        bus_root: Override for bus root directory.
+        events_dir: Override for events directory (for testing).
+
+    Returns:
+        List of escalation message IDs sent.
+    """
+    root = shared_bus_root(bus_root)
+    raw = _read_inbox_raw(recipient_lane, root)
+
+    # Deduplicate: latest record per message_id wins
+    by_id: dict[str, dict[str, Any]] = {}
+    for rec in raw:
+        mid = rec.get("message_id")
+        if mid:
+            by_id[mid] = rec
+
+    cutoff_ts = time.time() - (max_age_minutes * 60)
+    unacked_statuses = {"pending", "delivered"}
+    escalation_ids: list[str] = []
+
+    for mid, rec in by_id.items():
+        # Only look at messages from the sender to the recipient
+        if rec.get("from_lane") != sender_lane:
+            continue
+        if rec.get("status") not in unacked_statuses:
+            continue
+        # Don't escalate escalation messages (avoid infinite chains)
+        if rec.get("message_type") == "escalation":
+            continue
+
+        created = rec.get("created_at", "")
+        try:
+            created_ts = datetime.fromisoformat(created).timestamp()
+        except (ValueError, TypeError):
+            continue
+
+        if created_ts > cutoff_ts:
+            continue  # Not old enough yet
+
+        # Create and send an escalation message
+        esc_msg = create_message(
+            from_lane=sender_lane,
+            to_lane=recipient_lane,
+            message_type="escalation",
+            summary=f"ESCALATION: unacked message {mid} (original: {rec.get('summary', '?')})",
+            priority="urgent",
+            parent_message_id=mid,
+            payload={
+                "original_message_id": mid,
+                "original_summary": rec.get("summary", ""),
+            },
+        )
+        esc_id = send_message(esc_msg, root, events_dir=events_dir)
+        escalation_ids.append(esc_id)
+        logger.info(
+            "Escalated unacked message %s from %s to %s",
+            mid,
+            sender_lane,
+            recipient_lane,
+        )
+
+    return escalation_ids
+
+
 def check_expired(
     bus_root: Path | None = None,
     *,
