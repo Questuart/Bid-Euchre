@@ -7,6 +7,7 @@ turns.  Delegates **all** rule evaluation to existing ``core/``, ``sim/``,
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from bid_euchre.core.rules import get_legal_indices, trick_winner
@@ -34,6 +35,47 @@ def _bid_order(dealer_seat: int) -> list[int]:
     return [(dealer_seat + i + 1) % _NUM_PLAYERS for i in range(_NUM_PLAYERS)]
 
 
+@dataclass
+class AIActionEvent:
+    """Exact data captured from a single AI decision during auto-advance.
+
+    Populated by ``_advance_ai()`` so that callers (route handlers) can log
+    deterministic-replay-grade decision rows without approximation.
+    """
+
+    turn_number: int
+    seat: int
+    phase: str  # "bid" or "play"
+    legal_actions: Any  # list[dict] for bids, list[int] for plays
+    chosen_action: Any  # dict for bids, int for plays
+    game_state: dict[str, Any]
+
+
+def _build_game_snapshot(hand: Any, seat: int) -> dict[str, Any]:
+    """Build a game-state snapshot dict for decision logging."""
+    snapshot: dict[str, Any] = {
+        "phase": hand.phase,
+        "seat": seat,
+        "turn_number": hand.turn_number,
+        "dealer_seat": hand.dealer_seat,
+        "current_high_bid": hand.current_high_bid,
+        "auction": list(hand.auction),
+        "contract_type": hand.contract_type,
+        "trump": hand.trump,
+        "tricks_team0": hand.tricks_team0,
+        "tricks_team1": hand.tricks_team1,
+        "hand_size": len(hand.hands[seat]),
+    }
+    if hand.current_trick is not None:
+        snapshot["current_trick"] = {
+            "leader": hand.current_trick.leader,
+            "plays": [
+                [s, [card.suit, card.rank]] for s, card in hand.current_trick.plays
+            ],
+        }
+    return snapshot
+
+
 # ---------------------------------------------------------------------------
 # MatchEngine
 # ---------------------------------------------------------------------------
@@ -54,6 +96,7 @@ class MatchEngine:
     ) -> None:
         self.bidding_policy = bidding_policy
         self.play_strategy = play_strategy
+        self.last_ai_events: list[AIActionEvent] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -61,6 +104,7 @@ class MatchEngine:
 
     def start_match(self, seed: int, ai_model: str) -> MatchState:
         """Create a new match, deal the first hand, and advance AI."""
+        self.last_ai_events = []
         state = MatchState(seed=seed, ai_model=ai_model)
         state = self._deal_new_hand(state)
         state = self._advance_ai(state)
@@ -68,6 +112,7 @@ class MatchEngine:
 
     def submit_human_bid(self, state: MatchState, bid: BidAction) -> MatchState:
         """Process the human's bid, then auto-advance AI."""
+        self.last_ai_events = []
         hand = state.current_hand
         assert hand is not None
         assert hand.phase == "auction"
@@ -79,6 +124,7 @@ class MatchEngine:
 
     def submit_human_card(self, state: MatchState, card_index: int) -> MatchState:
         """Process the human's card play, then auto-advance AI."""
+        self.last_ai_events = []
         hand = state.current_hand
         assert hand is not None
         assert hand.phase == "trick_play"
@@ -194,7 +240,11 @@ class MatchEngine:
     # ------------------------------------------------------------------
 
     def _advance_ai(self, state: MatchState) -> MatchState:
-        """Auto-play all AI turns until the human's turn or hand/match end."""
+        """Auto-play all AI turns until the human's turn or hand/match end.
+
+        Populates ``self.last_ai_events`` with exact decision data for every
+        AI action taken during this advance cycle.
+        """
         while True:
             # Match finished — nothing to advance
             if state.status == "complete":
@@ -223,6 +273,22 @@ class MatchEngine:
                     auction_transcript=tuple(hand.auction),
                 )
                 bid = self.bidding_policy.choose_bid(obs)
+
+                # Capture exact event data before the bid modifies state
+                legal_bids = self.get_legal_bids(state)
+                self.last_ai_events.append(
+                    AIActionEvent(
+                        turn_number=hand.turn_number,
+                        seat=seat,
+                        phase="bid",
+                        legal_actions=[
+                            {"n": b.n, "contract": b.contract} for b in legal_bids
+                        ],
+                        chosen_action={"n": bid.n, "contract": bid.contract},
+                        game_state=_build_game_snapshot(hand, seat),
+                    )
+                )
+
                 state = self._process_bid(state, seat, bid)
 
             elif hand.phase == "trick_play":
@@ -236,6 +302,25 @@ class MatchEngine:
                     hand.trump,
                     seat,
                 )
+
+                # Capture exact event data before the play modifies state
+                legal_indices = get_legal_indices(
+                    hand.hands[seat],
+                    hand.current_trick.plays,
+                    hand.contract_type,
+                    hand.trump,
+                )
+                self.last_ai_events.append(
+                    AIActionEvent(
+                        turn_number=hand.turn_number,
+                        seat=seat,
+                        phase="play",
+                        legal_actions=legal_indices,
+                        chosen_action=card_idx,
+                        game_state=_build_game_snapshot(hand, seat),
+                    )
+                )
+
                 state = self._process_card_play(state, seat, card_idx)
             else:
                 # Unexpected phase — bail to avoid infinite loop

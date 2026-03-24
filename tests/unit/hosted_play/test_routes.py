@@ -852,3 +852,154 @@ class TestHxPostUrl:
         # literal placeholder "{link_uuid}"
         assert f'hx-post="/play/{link_uuid}/nickname"' in resp.text
         assert "{link_uuid}" not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Test: AI decision content quality
+# ---------------------------------------------------------------------------
+
+
+class TestAIDecisionContent:
+    """Verify AI decision rows have non-empty legal_actions and chosen_action.
+
+    Regression test for the P1 finding: AI decision rows must contain exact
+    legal_actions, chosen_action, and game_state — not empty placeholders.
+    """
+
+    def test_ai_bid_decisions_have_content(self, client, app):
+        """After a bid route, AI bid decision rows have non-empty fields."""
+        link_uuid = _setup_game(client)
+
+        # Play a few auction turns to generate AI bid decisions
+        for _ in range(10):
+            result = _get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+                break  # One bid is enough to trigger AI auto-advance
+            else:
+                break
+
+        # Query AI decision rows
+        session = app.state.session_factory()
+        ai_decisions = session.query(Decision).filter(Decision.actor_type == "ai").all()
+
+        assert len(ai_decisions) > 0, "Expected at least one AI decision row"
+
+        for d in ai_decisions:
+            legal = json.loads(d.legal_actions_json)
+            chosen = json.loads(d.chosen_action_json)
+            game_st = json.loads(d.game_state_json)
+
+            assert (
+                legal != []
+            ), f"AI decision turn={d.turn_number} has empty legal_actions"
+            assert (
+                chosen != {}
+            ), f"AI decision turn={d.turn_number} has empty chosen_action"
+            assert (
+                game_st != {}
+            ), f"AI decision turn={d.turn_number} has empty game_state"
+
+            # Verify legal_actions structure for bid phase
+            if d.phase == "bid":
+                assert isinstance(legal, list)
+                assert all("n" in b and "contract" in b for b in legal)
+                assert "n" in chosen
+                assert "contract" in chosen
+
+            # Verify game_state has required context fields
+            assert "phase" in game_st
+            assert "seat" in game_st
+            assert "turn_number" in game_st
+
+        session.close()
+
+    def test_ai_play_decisions_have_content(self, client, app):
+        """After a play-card route, AI play decision rows have non-empty fields."""
+        link_uuid = _setup_game(client)
+
+        # Navigate to trick play and play one card
+        for _ in range(20):
+            result = _get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+            elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                ai_manager = app.state.ai_manager
+                info = ai_manager.get_model_info(state.ai_model)
+                engine = MatchEngine(
+                    bidding_policy=info.bidding_policy,
+                    play_strategy=info.play_strategy,
+                )
+                legal = engine.get_legal_plays(state)
+                client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "card_index": legal[0],
+                    },
+                )
+                break
+            else:
+                break
+
+        # Query AI play decision rows
+        session = app.state.session_factory()
+        ai_play_decisions = (
+            session.query(Decision)
+            .filter(Decision.actor_type == "ai", Decision.phase == "play")
+            .all()
+        )
+
+        if len(ai_play_decisions) == 0:
+            session.close()
+            pytest.skip("No AI play decisions generated in this game state")
+
+        for d in ai_play_decisions:
+            legal = json.loads(d.legal_actions_json)
+            chosen = json.loads(d.chosen_action_json)
+            game_st = json.loads(d.game_state_json)
+
+            assert (
+                legal != []
+            ), f"AI play decision turn={d.turn_number} has empty legal_actions"
+            assert isinstance(legal, list)
+            assert all(isinstance(idx, int) for idx in legal)
+            assert isinstance(
+                chosen, int
+            ), f"AI play chosen_action should be int, got {type(chosen)}"
+            assert (
+                game_st != {}
+            ), f"AI play decision turn={d.turn_number} has empty game_state"
+            assert game_st.get("phase") == "trick_play"
+
+        session.close()

@@ -676,6 +676,128 @@ class TestBidOrder:
         assert _bid_order(3) == [0, 1, 2, 3]
 
 
+class TestAIActionEvents:
+    """Verify engine emits exact AI action events during auto-advance."""
+
+    def test_start_match_emits_bid_events(self, engine: MatchEngine) -> None:
+        """start_match() emits events for AI bids in the first auction."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Engine should have captured AI bid events during start_match
+        events = engine.last_ai_events
+        assert len(events) > 0, "Expected at least one AI event from start_match"
+
+        for event in events:
+            assert event.seat != HUMAN_SEAT, "AI events should not be for human seat"
+            assert event.phase == "bid"
+            assert isinstance(event.legal_actions, list)
+            assert len(event.legal_actions) > 0, "legal_actions must not be empty"
+            assert isinstance(event.chosen_action, dict)
+            assert "n" in event.chosen_action
+            assert "contract" in event.chosen_action
+            assert isinstance(event.game_state, dict)
+            assert event.game_state["phase"] == "auction"
+
+    def test_submit_human_bid_emits_events(self, engine: MatchEngine) -> None:
+        """submit_human_bid() emits events for subsequent AI bids."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase != "auction" or hand.current_seat != HUMAN_SEAT:
+            pytest.skip("Human not in auction position after start")
+
+        # Human passes
+        state = engine.submit_human_bid(state, BidAction.pass_bid())
+
+        # Events should be fresh (only from this submit call)
+        for event in engine.last_ai_events:
+            assert event.seat != HUMAN_SEAT
+            assert len(event.legal_actions) > 0
+
+    def test_submit_human_card_emits_play_events(self, engine: MatchEngine) -> None:
+        """submit_human_card() emits events for subsequent AI plays."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Get to trick play
+        while hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            if 5 > hand.current_high_bid:
+                state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
+            else:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+            hand = state.current_hand
+            if hand is None:
+                pytest.skip("Match ended during auction")
+
+        if hand.phase != "trick_play" or hand.current_seat != HUMAN_SEAT:
+            pytest.skip("Human not in trick play position")
+
+        legal = engine.get_legal_plays(state)
+        state = engine.submit_human_card(state, legal[0])
+
+        # Should have AI play events
+        play_events = [e for e in engine.last_ai_events if e.phase == "play"]
+        if len(play_events) > 0:
+            for event in play_events:
+                assert event.seat != HUMAN_SEAT
+                assert isinstance(event.legal_actions, list)
+                assert len(event.legal_actions) > 0
+                assert isinstance(event.chosen_action, int)
+                assert event.game_state["phase"] == "trick_play"
+
+    def test_events_cleared_between_calls(self, engine: MatchEngine) -> None:
+        """Each public method resets last_ai_events."""
+        state = engine.start_match(SEED, "heuristic")
+        events_from_start = list(engine.last_ai_events)
+        assert len(events_from_start) > 0
+
+        hand = state.current_hand
+        assert hand is not None
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.pass_bid())
+            # Events should be fresh, not accumulated from start_match
+            assert engine.last_ai_events != events_from_start
+
+    def test_event_seat_is_exact(self, engine: MatchEngine) -> None:
+        """Event seat matches the actual AI seat that acted."""
+        engine.start_match(SEED, "heuristic")
+        events = engine.last_ai_events
+
+        for event in events:
+            assert 0 <= event.seat < 4
+            assert event.seat != HUMAN_SEAT
+            # Seat must be one of the AI seats
+            assert event.seat in (1, 2, 3)
+
+    def test_event_game_state_has_required_fields(self, engine: MatchEngine) -> None:
+        """Event game_state contains context fields for replay."""
+        engine.start_match(SEED, "heuristic")
+        events = engine.last_ai_events
+        assert len(events) > 0
+
+        required_fields = {
+            "phase",
+            "seat",
+            "turn_number",
+            "dealer_seat",
+            "current_high_bid",
+            "auction",
+            "contract_type",
+            "trump",
+            "tricks_team0",
+            "tricks_team1",
+            "hand_size",
+        }
+        for event in events:
+            assert required_fields.issubset(
+                event.game_state.keys()
+            ), f"Missing fields: {required_fields - event.game_state.keys()}"
+
+
 class TestMatchDeterminism:
     """Same seed + config = identical results."""
 
