@@ -861,3 +861,110 @@ class TestVerdictBusBridge:
 
         msgs = read_inbox("orchestrator", bus_root, auto_expire=False)
         assert len(msgs) == 0
+
+    def test_semantic_dedup_suppresses_duplicate_pr_sha(self, tmp_path: Path) -> None:
+        """Second verdict for same PR+SHA is suppressed by semantic dedup."""
+        queue_dir = tmp_path / "queue"
+        bus_root = tmp_path / "bus"
+
+        verdict1 = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha_abc",
+            status="passed",
+            reason="Clean review",
+        )
+        write_verdict(
+            verdict1,
+            queue_dir,
+            emit_event=False,
+            emit_bus_message=True,
+            bus_root=bus_root,
+        )
+
+        # Second verdict for same PR+SHA but different status
+        verdict2 = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha_abc",
+            status="blocked",
+            reason="Found issues on re-review",
+            findings=[{"check_id": "C1", "severity": "BLOCK", "message": "bad"}],
+        )
+        write_verdict(
+            verdict2,
+            queue_dir,
+            emit_event=False,
+            emit_bus_message=True,
+            bus_root=bus_root,
+        )
+
+        from bid_euchre.ops.message_bus import read_inbox
+
+        msgs = read_inbox("orchestrator", bus_root, auto_expire=False)
+        # Only one bus message — the second was suppressed
+        assert len(msgs) == 1
+        assert msgs[0]["payload"]["verdict_status"] == "passed"
+
+    def test_semantic_dedup_allows_different_sha(self, tmp_path: Path) -> None:
+        """Verdicts for the same PR but different SHA are NOT suppressed."""
+        queue_dir = tmp_path / "queue"
+        bus_root = tmp_path / "bus"
+
+        verdict1 = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha_abc",
+            status="passed",
+            reason="Clean review",
+        )
+        write_verdict(
+            verdict1,
+            queue_dir,
+            emit_event=False,
+            emit_bus_message=True,
+            bus_root=bus_root,
+        )
+
+        # Same PR, different SHA (new commit pushed)
+        verdict2 = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha_def",
+            status="passed",
+            reason="Clean review after push",
+        )
+        write_verdict(
+            verdict2,
+            queue_dir,
+            emit_event=False,
+            emit_bus_message=True,
+            bus_root=bus_root,
+        )
+
+        from bid_euchre.ops.message_bus import read_inbox
+
+        msgs = read_inbox("orchestrator", bus_root, auto_expire=False)
+        # Both messages come through — different SHA
+        assert len(msgs) == 2
+
+    def test_semantic_dedup_allows_different_pr(self, tmp_path: Path) -> None:
+        """Verdicts for different PRs are NOT suppressed."""
+        queue_dir = tmp_path / "queue"
+        bus_root = tmp_path / "bus"
+
+        for pr_num in (42, 43):
+            verdict = ReviewVerdict(
+                pr_number=pr_num,
+                reviewed_sha="sha_abc",
+                status="passed",
+                reason="Clean",
+            )
+            write_verdict(
+                verdict,
+                queue_dir,
+                emit_event=False,
+                emit_bus_message=True,
+                bus_root=bus_root,
+            )
+
+        from bid_euchre.ops.message_bus import read_inbox
+
+        msgs = read_inbox("orchestrator", bus_root, auto_expire=False)
+        assert len(msgs) == 2

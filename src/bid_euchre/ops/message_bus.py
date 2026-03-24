@@ -92,6 +92,22 @@ VALID_MESSAGE_TRANSITIONS: dict[str, frozenset[str]] = {
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_TTL_SECONDS: int = 86400  # 24-hour expiry by default
 
+# Inbox compaction policy — thresholds and retention
+#
+# Auto-compaction fires when a read_inbox call encounters more raw JSONL
+# lines than this threshold.  It is transparent: the caller gets the same
+# results, but the file is rewritten with only the deduplicated/kept
+# records.  This prevents inbox files from growing unboundedly in long
+# steward sessions.
+AUTO_COMPACT_RAW_THRESHOLD: int = 200
+
+# Retention tiers for handled messages during compaction:
+#   - Active (pending, delivered): always kept
+#   - Handled (acked): kept for COMPACT_HANDLED_MAX_AGE_HOURS
+#   - Terminal (resolved, expired, dead_lettered): kept for COMPACT_TERMINAL_MAX_AGE_HOURS
+COMPACT_HANDLED_MAX_AGE_HOURS: float = 4.0
+COMPACT_TERMINAL_MAX_AGE_HOURS: float = 1.0
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -434,6 +450,7 @@ def read_inbox(
     message_type: str | Sequence[str] | None = None,
     limit: int = 50,
     auto_expire: bool = True,
+    auto_compact: bool = True,
     now: float | None = None,
 ) -> list[dict[str, Any]]:
     """Read and filter a lane's inbox messages.
@@ -445,14 +462,44 @@ def read_inbox(
     ``payload.ttl_seconds`` has elapsed are automatically transitioned
     to ``expired`` before filtering.
 
+    When *auto_compact* is ``True`` (the default), the inbox is
+    transparently compacted if the raw JSONL line count exceeds
+    ``AUTO_COMPACT_RAW_THRESHOLD``.  Compaction uses tiered retention
+    so that handled and terminal messages are purged sooner than the
+    default 24-hour TTL.  The compaction is best-effort: failures are
+    logged but do not affect the read result.
+
     Args:
         message_type: Filter by message type.  Accepts a single type string,
             a sequence of type strings (matches any), or ``None`` (no filter).
+        auto_compact: Trigger transparent compaction when raw inbox size
+            exceeds ``AUTO_COMPACT_RAW_THRESHOLD``.  Default ``True``.
         now: Override for current time as Unix timestamp (for testing).
             Passed through to ``_expire_stale_on_read()``.
     """
     root = shared_bus_root(bus_root)
     raw = _read_inbox_raw(lane_id, root)
+
+    # Auto-compact: if the raw inbox is large, compact before proceeding.
+    # This is transparent — the caller gets the same results, but the file
+    # is rewritten with only the deduplicated/kept records.
+    if auto_compact and len(raw) > AUTO_COMPACT_RAW_THRESHOLD:
+        try:
+            compact_inbox(lane_id, root, tiered=True, now=now)
+            # Re-read after compaction
+            raw = _read_inbox_raw(lane_id, root)
+            logger.debug(
+                "Auto-compacted inbox for %s (%d raw lines exceeded threshold %d)",
+                lane_id,
+                len(raw),
+                AUTO_COMPACT_RAW_THRESHOLD,
+            )
+        except Exception:
+            logger.warning(
+                "Auto-compaction failed for %s inbox; proceeding with uncompacted data",
+                lane_id,
+                exc_info=True,
+            )
 
     # Deduplicate: latest record per message_id wins
     by_id: dict[str, dict[str, Any]] = {}
@@ -1100,19 +1147,52 @@ def inbox_stats(bus_root: Path | None = None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _tiered_cutoff(status: str, current_time: float, max_age_hours: float) -> float:
+    """Return the cutoff timestamp for a message based on its status tier.
+
+    Tiered retention policy:
+
+    - **Handled** (``acked``): shorter retention — the recipient has
+      acknowledged the message so it is no longer actionable.  Default
+      ``COMPACT_HANDLED_MAX_AGE_HOURS`` (4 h).
+    - **Terminal** (``resolved``, ``expired``, ``dead_lettered``): shortest
+      retention — fully resolved lifecycle.  Default
+      ``COMPACT_TERMINAL_MAX_AGE_HOURS`` (1 h).
+
+    When the caller passes an explicit ``max_age_hours`` that is *shorter*
+    than the tier default, the caller's value wins (most-restrictive).
+    """
+    terminal = {"resolved", "expired", "dead_lettered"}
+
+    if status in terminal:
+        tier_hours = min(COMPACT_TERMINAL_MAX_AGE_HOURS, max_age_hours)
+    elif status == "acked":
+        tier_hours = min(COMPACT_HANDLED_MAX_AGE_HOURS, max_age_hours)
+    else:
+        tier_hours = max_age_hours
+
+    return current_time - (tier_hours * 3600)
+
+
 def compact_inbox(
     lane_id: str,
     bus_root: Path | None = None,
     *,
     max_age_hours: float = 24.0,
     now: float | None = None,
+    tiered: bool = True,
 ) -> dict[str, Any]:
     """Compact a lane's inbox by removing old handled messages.
 
     Rewrites the per-lane inbox JSONL file, keeping only:
-    - Active messages (pending, delivered) regardless of age
-    - Handled messages (acked, resolved, expired, dead_lettered) newer
-      than ``max_age_hours``
+
+    - **Active** messages (``pending``, ``delivered``) — always kept.
+    - **Handled** messages (``acked``) — kept for
+      ``COMPACT_HANDLED_MAX_AGE_HOURS`` (default 4 h) when *tiered* is
+      ``True``, otherwise ``max_age_hours``.
+    - **Terminal** messages (``resolved``, ``expired``, ``dead_lettered``)
+      — kept for ``COMPACT_TERMINAL_MAX_AGE_HOURS`` (default 1 h) when
+      *tiered* is ``True``, otherwise ``max_age_hours``.
 
     The global audit trail (``messages.jsonl``) is **not** touched.
 
@@ -1123,8 +1203,12 @@ def compact_inbox(
     Args:
         lane_id: The lane whose inbox to compact.
         bus_root: Override for bus root directory.
-        max_age_hours: Remove handled messages older than this (default 24h).
+        max_age_hours: Fallback age limit for handled messages (default 24 h).
+            When *tiered* is ``True`` the per-status tier defaults take
+            precedence unless ``max_age_hours`` is shorter.
         now: Override for current time as Unix timestamp (for testing).
+        tiered: Apply tiered retention (shorter for acked/terminal).
+            Default ``True``.
 
     Returns:
         Dict with keys: ``lane_id``, ``before`` (raw line count),
@@ -1139,7 +1223,6 @@ def compact_inbox(
         return {"lane_id": lane_id, "before": 0, "after": 0, "removed": 0}
 
     current_time = now or time.time()
-    cutoff_ts = current_time - (max_age_hours * 3600)
     # Messages that have been handled — safe to purge when old enough.
     # Includes acked (handled but not yet resolved) and all terminal states.
     purgeable = {"acked", "resolved", "expired", "dead_lettered"}
@@ -1177,7 +1260,7 @@ def compact_inbox(
                     kept.append(rec)
                     continue
 
-                # Handled message — check age
+                # Handled message — check age against tier-appropriate cutoff
                 created = rec.get("created_at", "")
                 try:
                     created_ts = datetime.fromisoformat(created).timestamp()
@@ -1185,6 +1268,11 @@ def compact_inbox(
                     # Can't parse timestamp — keep to be safe
                     kept.append(rec)
                     continue
+
+                if tiered:
+                    cutoff_ts = _tiered_cutoff(status, current_time, max_age_hours)
+                else:
+                    cutoff_ts = current_time - (max_age_hours * 3600)
 
                 if created_ts < cutoff_ts:
                     removed_count += 1

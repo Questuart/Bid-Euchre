@@ -17,6 +17,9 @@ from unittest.mock import patch
 import pytest
 
 from bid_euchre.ops.message_bus import (
+    AUTO_COMPACT_RAW_THRESHOLD,
+    COMPACT_HANDLED_MAX_AGE_HOURS,
+    COMPACT_TERMINAL_MAX_AGE_HOURS,
     DEFAULT_MAX_RETRIES,
     DEFAULT_TTL_SECONDS,
     VALID_MESSAGE_PRIORITIES,
@@ -27,6 +30,7 @@ from bid_euchre.ops.message_bus import (
     _content_dedup_key,
     _find_content_duplicate,
     _native_content_hash,
+    _tiered_cutoff,
     ack_message,
     append_message,
     bulk_ack_messages,
@@ -1766,3 +1770,153 @@ class TestContentDedup:
 
         msg2 = create_message("review", "orchestrator", "progress", "Verdict B")
         assert _find_content_duplicate(msg2, bus_root) is None
+
+
+# ---------------------------------------------------------------------------
+# Tiered compaction policy
+# ---------------------------------------------------------------------------
+
+
+class TestTieredCompaction:
+    """Test tiered retention in compact_inbox."""
+
+    def test_tiered_cutoff_terminal_uses_shorter_retention(self) -> None:
+        """Terminal messages use COMPACT_TERMINAL_MAX_AGE_HOURS."""
+        now = 100_000.0
+        cutoff = _tiered_cutoff("resolved", now, max_age_hours=24.0)
+        expected = now - (COMPACT_TERMINAL_MAX_AGE_HOURS * 3600)
+        assert cutoff == expected
+
+    def test_tiered_cutoff_acked_uses_handled_retention(self) -> None:
+        """Acked messages use COMPACT_HANDLED_MAX_AGE_HOURS."""
+        now = 100_000.0
+        cutoff = _tiered_cutoff("acked", now, max_age_hours=24.0)
+        expected = now - (COMPACT_HANDLED_MAX_AGE_HOURS * 3600)
+        assert cutoff == expected
+
+    def test_tiered_cutoff_caller_override_wins_when_shorter(self) -> None:
+        """If caller's max_age_hours is shorter than tier default, it wins."""
+        now = 100_000.0
+        # Terminal tier default is 1h; caller requests 0.5h
+        cutoff = _tiered_cutoff("resolved", now, max_age_hours=0.5)
+        expected = now - (0.5 * 3600)
+        assert cutoff == expected
+
+    def test_tiered_compact_purges_terminal_before_acked(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Terminal messages are purged with shorter retention than acked."""
+        # Create an acked message and a resolved message, both "old"
+        msg_acked = create_message("o", "lane-a", "assignment", "Acked msg")
+        send_message(msg_acked, bus_root, events_dir=events_dir)
+        ack_message(msg_acked.message_id, "lane-a", bus_root, events_dir=events_dir)
+
+        msg_resolved = create_message("o", "lane-a", "completion", "Resolved msg")
+        send_message(msg_resolved, bus_root, events_dir=events_dir)
+        ack_message(msg_resolved.message_id, "lane-a", bus_root, events_dir=events_dir)
+        resolve_message(
+            msg_resolved.message_id, "lane-a", bus_root, events_dir=events_dir
+        )
+
+        # Time just past the terminal retention (1h) but within handled (4h)
+        future_time = time.time() + (COMPACT_TERMINAL_MAX_AGE_HOURS * 3600) + 60
+
+        result = compact_inbox(
+            "lane-a", bus_root, max_age_hours=24.0, now=future_time, tiered=True
+        )
+        # Resolved (terminal) is purged; acked (handled) is kept
+        assert result["removed"] == 1
+        assert result["after"] == 1
+
+        inbox = read_inbox("lane-a", bus_root, auto_compact=False)
+        assert len(inbox) == 1
+        assert inbox[0]["summary"] == "Acked msg"
+
+    def test_tiered_false_uses_flat_max_age(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """With tiered=False, all handled messages use the same max_age."""
+        msg = create_message("o", "lane-a", "assignment", "Task")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "lane-a", bus_root, events_dir=events_dir)
+
+        # Time past 4h (handled tier) but within 24h (flat)
+        future_time = time.time() + (COMPACT_HANDLED_MAX_AGE_HOURS * 3600) + 60
+
+        result = compact_inbox(
+            "lane-a", bus_root, max_age_hours=24.0, now=future_time, tiered=False
+        )
+        # With flat policy, 24h retention — message is kept
+        assert result["removed"] == 0
+        assert result["after"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Auto-compaction on read_inbox
+# ---------------------------------------------------------------------------
+
+
+class TestAutoCompaction:
+    """Test auto-compaction triggered by read_inbox."""
+
+    def test_auto_compact_triggers_above_threshold(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Auto-compaction fires when raw line count exceeds threshold."""
+        # Create many messages and ack them to inflate the inbox
+        lane = "auto-compact-lane"
+        for i in range(AUTO_COMPACT_RAW_THRESHOLD + 10):
+            msg = create_message("o", lane, "assignment", f"Task {i}")
+            send_message(msg, bus_root, events_dir=events_dir)
+            ack_message(msg.message_id, lane, bus_root, events_dir=events_dir)
+
+        # Each send + ack = 2 raw lines per message
+        # Total raw lines: (threshold+10) * 2, well above threshold
+
+        # Set time past the handled retention so acked messages get purged
+        future = time.time() + (COMPACT_HANDLED_MAX_AGE_HOURS * 3600) + 60
+
+        # read_inbox with auto_compact=True should compact transparently
+        inbox = read_inbox(lane, bus_root, auto_compact=True, now=future)
+        # All messages are old acked — they get purged by tiered compaction
+        assert len(inbox) == 0
+
+    def test_auto_compact_disabled(self, bus_root: Path, events_dir: Path) -> None:
+        """With auto_compact=False, no compaction happens on read."""
+        lane = "no-compact-lane"
+        n_msgs = AUTO_COMPACT_RAW_THRESHOLD + 10
+        for i in range(n_msgs):
+            msg = create_message("o", lane, "assignment", f"Task {i}")
+            send_message(msg, bus_root, events_dir=events_dir)
+            ack_message(msg.message_id, lane, bus_root, events_dir=events_dir)
+
+        future = time.time() + (COMPACT_HANDLED_MAX_AGE_HOURS * 3600) + 60
+
+        # With auto_compact=False, acked messages still show up
+        inbox = read_inbox(
+            lane,
+            bus_root,
+            auto_compact=False,
+            auto_expire=False,
+            now=future,
+            limit=n_msgs + 10,
+        )
+        assert len(inbox) == n_msgs
+
+    def test_auto_compact_below_threshold_is_noop(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Below threshold, no compaction happens even with auto_compact=True."""
+        lane = "small-lane"
+        # Create just a few messages — well below threshold
+        for i in range(5):
+            msg = create_message("o", lane, "assignment", f"Task {i}")
+            send_message(msg, bus_root, events_dir=events_dir)
+            ack_message(msg.message_id, lane, bus_root, events_dir=events_dir)
+
+        future = time.time() + (COMPACT_HANDLED_MAX_AGE_HOURS * 3600) + 60
+
+        # Even though messages are old enough to purge, the threshold isn't hit
+        # so auto-compact doesn't fire — messages remain
+        inbox = read_inbox(lane, bus_root, auto_compact=True, now=future)
+        assert len(inbox) == 5
