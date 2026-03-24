@@ -835,3 +835,94 @@ class TestDashboardWatchFlag:
         output = stdout.decode()
         assert "Steward Dashboard" in output
         assert "Refreshing every 1s" in output
+
+    def test_single_shot_json_is_valid(self) -> None:
+        """Single-shot --json produces valid indented JSON."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--json",
+                "dashboard",
+                "--no-probe",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, dict)
+        # Indented output should contain newlines
+        assert "\n" in result.stdout
+
+    def test_watch_json_emits_ndjson(self) -> None:
+        """--watch --json produces compact NDJSON without ANSI escape codes."""
+        import signal
+        import subprocess
+        import time as time_mod
+
+        proc = subprocess.Popen(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--json",
+                "dashboard",
+                "--no-probe",
+                "--watch",
+                "--interval",
+                "1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        # Give it time to print at least one iteration
+        time_mod.sleep(2)
+        proc.send_signal(signal.SIGINT)
+        stdout, _ = proc.communicate(timeout=5)
+        output = stdout.decode()
+
+        # No ANSI escape codes in JSON output
+        assert "\033[" not in output
+
+        # Each non-empty line should be valid JSON
+        lines = [ln for ln in output.strip().split("\n") if ln.strip()]
+        assert len(lines) >= 1
+        for line in lines:
+            data = json.loads(line)
+            assert isinstance(data, dict)
+
+    def test_watch_json_no_refresh_banner(self) -> None:
+        """--watch --json suppresses the 'Refreshing every Ns' banner."""
+        import signal
+        import subprocess
+        import time as time_mod
+
+        proc = subprocess.Popen(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--json",
+                "dashboard",
+                "--no-probe",
+                "--watch",
+                "--interval",
+                "1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        time_mod.sleep(2)
+        proc.send_signal(signal.SIGINT)
+        stdout, _ = proc.communicate(timeout=5)
+        output = stdout.decode()
+
+        assert "Refreshing every" not in output

@@ -52,6 +52,9 @@ Usage:
     uv run python scripts/internal/ops.py workers retire LANE_ID [--json]
     uv run python scripts/internal/ops.py workers dispatch PACKET_ID LANE_ID [--json]
     uv run python scripts/internal/ops.py workers maintain [--dry-run] [--json]
+    uv run python scripts/internal/ops.py lane refresh <LANE_ID|--all-idle> [--force] [--json]
+    uv run python scripts/internal/ops.py lane check-approvals [--json]
+    uv run python scripts/internal/ops.py lane peek LANE_ID [--lines N] [--json]
     uv run python scripts/internal/ops.py usage import [--usage-dir DIR] [--output-dir DIR] [--json]
     uv run python scripts/internal/ops.py usage attribute [--output-dir DIR] [--json]
     uv run python scripts/internal/ops.py usage summary [--output-dir DIR] [--json]
@@ -175,24 +178,31 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                 check_worktree=not getattr(args, "no_probe", False),
             )
 
-            if watch:
-                # Clear screen for clean refresh
-                print("\033[2J\033[H", end="", flush=True)
-
             if args.json:
-                print(json.dumps(format_dashboard_json(view), indent=2))
+                # In watch mode, emit compact NDJSON (one JSON object per line)
+                # so the output stream stays machine-parseable.
+                # In single-shot mode, emit indented JSON for readability.
+                if watch:
+                    print(json.dumps(format_dashboard_json(view)))
+                else:
+                    print(json.dumps(format_dashboard_json(view), indent=2))
             else:
+                if watch:
+                    # Clear screen for clean refresh (text mode only —
+                    # ANSI escapes would corrupt JSON output)
+                    print("\033[2J\033[H", end="", flush=True)
                 print(format_dashboard_text(view))
 
             if not watch:
                 break
 
-            print(f"\n--- Refreshing every {interval}s (Ctrl+C to stop) ---")
+            if not args.json:
+                print(f"\n--- Refreshing every {interval}s (Ctrl+C to stop) ---")
             sys.stdout.flush()
             time.sleep(interval)
     except KeyboardInterrupt:
         if watch:
-            print("\nWatch stopped.")
+            print("\nWatch stopped.", file=sys.stderr)
         return 0
 
     return 0
@@ -2419,10 +2429,60 @@ def cmd_lane(args: argparse.Namespace) -> int:
                 print("No lanes stuck on approval prompts.")
         return 1 if findings else 0
 
+    elif action == "peek":
+        import subprocess
+
+        lane_id = args.lane_id
+        lines = args.lines
+        tmux_session = "steward"
+
+        from bid_euchre.ops.worker_pool import _resolve_tmux_target
+
+        target = _resolve_tmux_target(
+            lane_id, tmux_session, runtime_dir=args.runtime_dir
+        )
+        try:
+            result = subprocess.run(
+                [
+                    "tmux",
+                    "capture-pane",
+                    "-t",
+                    target,
+                    "-p",
+                    "-S",
+                    str(-lines),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                err = result.stderr.strip()
+                print(f"Error: tmux capture-pane failed: {err}", file=sys.stderr)
+                return 1
+            content = result.stdout
+            if args.json:
+                print(
+                    json.dumps(
+                        {"lane": lane_id, "content": content},
+                        indent=2,
+                    )
+                )
+            else:
+                print(content, end="")
+            return 0
+        except FileNotFoundError:
+            print("Error: tmux is not installed or not on PATH", file=sys.stderr)
+            return 1
+        except subprocess.TimeoutExpired:
+            print("Error: tmux capture-pane timed out", file=sys.stderr)
+            return 1
+
     else:
         print(
             "Usage: ops.py lane refresh <lane-id> | --all-idle\n"
-            "       ops.py lane check-approvals"
+            "       ops.py lane check-approvals\n"
+            "       ops.py lane peek <lane-id> [--lines N]"
         )
         return 1
 
@@ -3414,6 +3474,21 @@ def build_parser() -> argparse.ArgumentParser:
     lane_sub.add_parser(
         "check-approvals",
         help="Check for lanes stuck on tool-approval prompts",
+    )
+
+    lane_peek_parser = lane_sub.add_parser(
+        "peek",
+        help="Capture tmux pane content for a lane (large scrollback buffer)",
+    )
+    lane_peek_parser.add_argument(
+        "lane_id",
+        help="Lane ID to peek (e.g. author-a)",
+    )
+    lane_peek_parser.add_argument(
+        "--lines",
+        type=int,
+        default=80,
+        help="Number of scrollback lines to capture (default: 80)",
     )
 
     # workers (Platform-7: worker pool lifecycle management)

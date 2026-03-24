@@ -4352,3 +4352,175 @@ class TestBusRootRegression:
             "Found worktree-local bus path(s) in ops.py — use shared_bus_root() instead:\n"
             + "\n".join(f"  L{n}: {l.strip()}" for n, l in hits)
         )
+
+
+class TestLanePeek:
+    """Tests for the lane peek subcommand."""
+
+    def test_peek_parser_registered(self) -> None:
+        """The 'lane peek' subcommand is registered in the parser."""
+        import ops
+
+        parser = ops.build_parser()
+        args = parser.parse_args(["lane", "peek", "author-a"])
+        assert args.lane_action == "peek"
+        assert args.lane_id == "author-a"
+        assert args.lines == 80  # default
+
+    def test_peek_custom_lines(self) -> None:
+        """--lines flag is parsed correctly."""
+        import ops
+
+        parser = ops.build_parser()
+        args = parser.parse_args(["lane", "peek", "author-a", "--lines", "200"])
+        assert args.lines == 200
+
+    def test_peek_text_output(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """lane peek without --json prints raw pane content."""
+        import subprocess
+
+        import ops
+
+        fake_output = "line1\nline2\nline3\n"
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=fake_output, stderr=""
+        )
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
+        # Also mock _resolve_tmux_target
+        monkeypatch.setattr(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            lambda *a, **kw: "steward:test.0",
+        )
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "lane",
+                "peek",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert captured.out == fake_output
+
+    def test_peek_json_output(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """lane peek --json wraps output in {lane, content} JSON object."""
+        import subprocess
+
+        import ops
+
+        fake_output = "hello world\n"
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=fake_output, stderr=""
+        )
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
+        monkeypatch.setattr(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            lambda *a, **kw: "steward:test.0",
+        )
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "lane",
+                "peek",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["lane"] == "author-a"
+        assert data["content"] == fake_output
+
+    def test_peek_tmux_not_found(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """lane peek returns 1 when tmux is not found."""
+        import subprocess
+
+        import ops
+
+        def _raise_fnf(*a: object, **kw: object) -> None:
+            raise FileNotFoundError("tmux")
+
+        monkeypatch.setattr(subprocess, "run", _raise_fnf)
+        monkeypatch.setattr(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            lambda *a, **kw: "steward:test.0",
+        )
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "lane",
+                "peek",
+                "author-a",
+            ]
+        )
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "tmux" in captured.err.lower()
+
+    def test_peek_tmux_failure(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """lane peek returns 1 when tmux capture-pane fails."""
+        import subprocess
+
+        import ops
+
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="no such pane"
+        )
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
+        monkeypatch.setattr(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            lambda *a, **kw: "steward:test.0",
+        )
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "lane",
+                "peek",
+                "author-a",
+            ]
+        )
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "no such pane" in captured.err
