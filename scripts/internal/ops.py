@@ -1572,8 +1572,13 @@ def cmd_task(args: argparse.Namespace) -> int:
                     return 1
 
         do_reset = getattr(args, "reset", False)
+        no_auto_refresh = getattr(args, "no_auto_refresh", False)
         result = dispatch_to_worker(
-            packet_id, lane_id, runtime_dir=args.runtime_dir, reset=do_reset
+            packet_id,
+            lane_id,
+            runtime_dir=args.runtime_dir,
+            reset=do_reset,
+            no_auto_refresh=no_auto_refresh,
         )
         if args.json:
             from dataclasses import asdict
@@ -2447,8 +2452,13 @@ def cmd_workers(args: argparse.Namespace) -> int:
         packet_id = args.packet_id
         lane_id = args.lane_id
         do_reset = getattr(args, "reset", False)
+        no_auto_refresh = getattr(args, "no_auto_refresh", False)
         result = dispatch_to_worker(
-            packet_id, lane_id, runtime_dir=args.runtime_dir, reset=do_reset
+            packet_id,
+            lane_id,
+            runtime_dir=args.runtime_dir,
+            reset=do_reset,
+            no_auto_refresh=no_auto_refresh,
         )
         if args.json:
             from dataclasses import asdict
@@ -3128,6 +3138,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Reset worktree to origin/main and clear Claude session before dispatching",
     )
+    task_dispatch_parser.add_argument(
+        "--no-refresh",
+        action="store_true",
+        dest="no_auto_refresh",
+        default=False,
+        help="Skip automatic staleness check and refresh of the target worktree",
+    )
 
     task_accept_parser = task_sub.add_parser(
         "accept",
@@ -3382,6 +3399,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Reset worktree to origin/main and clear Claude session before dispatching",
+    )
+    workers_dispatch.add_argument(
+        "--no-refresh",
+        action="store_true",
+        dest="no_auto_refresh",
+        default=False,
+        help="Skip automatic staleness check and refresh of the target worktree",
     )
 
     workers_maintain = workers_sub.add_parser(
