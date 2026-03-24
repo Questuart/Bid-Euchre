@@ -1,8 +1,9 @@
 # SP-4-05 Step 6: Reactive Control-Loop Proving Run Test Plan
 
 **Parent:** `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md`
-**Status:** DRAFT — execute after PRs 0–2 land
+**Status:** EXECUTING — proving run in progress
 **Date:** 2026-03-24
+**Proving run started:** 2026-03-24T04:30Z
 
 ---
 
