@@ -26,6 +26,7 @@ Modules:
     supervisor  -- Supervisor routines and delta summaries (Platform-6)
     worker_pool -- Worker pool lifecycle management (Platform-7)
     token_economy -- Token economy observability (usage data import/rollups)
+    audit_trail -- Durable audit trail for remote channel exchanges (Platform-8b)
 """
 
 # Shared constant: GitHub status/check context names that represent

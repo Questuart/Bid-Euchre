@@ -1,0 +1,279 @@
+"""Durable audit trail for remote channel exchanges (Platform-8b).
+
+Records every inbound and outbound remote exchange (Telegram, future Discord)
+to a repo-owned JSONL file for cross-session traceability and incident forensics.
+
+Storage layout::
+
+    .claude/runtime/audit_trail/
+        remote_exchanges.jsonl    # Append-only audit log
+        .remote_exchanges.lock    # flock file
+
+The audit trail is separate from the lane-to-lane message bus. It captures
+external channel traffic (operator ↔ orchestrator via Telegram), not internal
+lane communication.
+
+Design decisions:
+- Content hash + preview (not full content) to limit sensitive data exposure
+- Reuses the flock+JSONL pattern from ``message_bus.py`` and ``events.py``
+- No event emission in v1 — append-only; dashboard integration deferred
+"""
+
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import logging
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger("ops.audit_trail")
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+DEFAULT_AUDIT_DIR = Path(".claude/runtime/audit_trail")
+EXCHANGES_FILE = "remote_exchanges.jsonl"
+LOCK_FILE = ".remote_exchanges.lock"
+
+VALID_DIRECTIONS = frozenset({"inbound", "outbound"})
+
+VALID_EXCHANGE_TYPES = frozenset(
+    {
+        "message",
+        "reply",
+        "react",
+        "edit",
+        "download_attachment",
+        "permission_relay_observed",
+    }
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def content_hash(text: str) -> str:
+    """Return the SHA-256 hex digest of *text*.
+
+    >>> content_hash("hello")
+    '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824'
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def content_preview(text: str, max_len: int = 200) -> str:
+    """Return the first *max_len* characters of *text*, adding '…' if truncated.
+
+    >>> content_preview("short")
+    'short'
+    >>> len(content_preview("x" * 300)) <= 201  # 200 chars + ellipsis
+    True
+    """
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "…"
+
+
+def _now_iso() -> str:
+    """Return current UTC time as ISO 8601 string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AuditRecord:
+    """One recorded remote exchange.
+
+    All fields are set at creation time and never mutated.
+    """
+
+    exchange_id: str
+    timestamp: str
+    direction: str
+    channel_source: str
+    sender_identity: str
+    exchange_type: str
+    content_hash: str
+    content_preview: str
+    chat_id: str
+    message_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.direction not in VALID_DIRECTIONS:
+            raise ValueError(
+                f"Invalid direction {self.direction!r}. "
+                f"Must be one of: {sorted(VALID_DIRECTIONS)}"
+            )
+        if self.exchange_type not in VALID_EXCHANGE_TYPES:
+            raise ValueError(
+                f"Invalid exchange_type {self.exchange_type!r}. "
+                f"Must be one of: {sorted(VALID_EXCHANGE_TYPES)}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict suitable for JSON encoding."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AuditRecord:
+        """Deserialize from a dict (e.g. parsed from JSONL)."""
+        return cls(**data)
+
+
+def create_record(
+    direction: str,
+    channel_source: str,
+    sender_identity: str,
+    exchange_type: str,
+    content: str,
+    chat_id: str,
+    message_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    timestamp: str | None = None,
+) -> AuditRecord:
+    """Create a new :class:`AuditRecord` with auto-generated ID, hash, and preview.
+
+    This is the preferred constructor — it computes ``exchange_id``,
+    ``content_hash``, and ``content_preview`` automatically.
+    """
+    return AuditRecord(
+        exchange_id=str(uuid.uuid4()),
+        timestamp=timestamp or _now_iso(),
+        direction=direction,
+        channel_source=channel_source,
+        sender_identity=sender_identity,
+        exchange_type=exchange_type,
+        content_hash=content_hash(content),
+        content_preview=content_preview(content),
+        chat_id=chat_id,
+        message_id=message_id,
+        metadata=metadata or {},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+
+
+def _append_jsonl(path: Path, data: dict[str, Any], lock_path: Path) -> None:
+    """Append a JSON line to a file under flock protection.
+
+    Same flock pattern as ``message_bus._append_jsonl()`` and
+    ``events.append_event()``.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
+        try:
+            with open(path, "a") as f:
+                f.write(json.dumps(data, sort_keys=True, default=str) + "\n")
+                f.flush()
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+
+
+def append_record(record: AuditRecord, audit_dir: Path | None = None) -> None:
+    """Append an :class:`AuditRecord` to the audit trail JSONL file.
+
+    Args:
+        record: The audit record to persist.
+        audit_dir: Override for audit trail directory. Defaults to
+            ``.claude/runtime/audit_trail``.
+    """
+    if audit_dir is None:
+        audit_dir = DEFAULT_AUDIT_DIR
+
+    exchanges_path = audit_dir / EXCHANGES_FILE
+    lock_path = audit_dir / LOCK_FILE
+
+    _append_jsonl(exchanges_path, record.to_dict(), lock_path)
+    logger.debug(
+        "Audit record appended: %s (%s)", record.exchange_id, record.exchange_type
+    )
+
+
+def read_records(
+    audit_dir: Path | None = None,
+    *,
+    direction: str | None = None,
+    channel_source: str | None = None,
+    since: datetime | None = None,
+    limit: int | None = None,
+) -> list[AuditRecord]:
+    """Read audit records from the JSONL file with optional filtering.
+
+    Args:
+        audit_dir: Override for audit trail directory. Defaults to
+            ``.claude/runtime/audit_trail``.
+        direction: Filter by ``"inbound"`` or ``"outbound"``.
+        channel_source: Filter by channel (e.g. ``"telegram"``).
+        since: Only return records with timestamp >= this datetime.
+        limit: Maximum number of records to return (most recent first
+            after filtering; ``None`` means no limit).
+
+    Returns:
+        List of :class:`AuditRecord` instances matching the filters,
+        in chronological order (oldest first). If *limit* is specified,
+        returns the **last** *limit* records after filtering.
+    """
+    if audit_dir is None:
+        audit_dir = DEFAULT_AUDIT_DIR
+
+    exchanges_path = audit_dir / EXCHANGES_FILE
+
+    if not exchanges_path.exists():
+        return []
+
+    records: list[AuditRecord] = []
+    with open(exchanges_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed JSONL line in audit trail")
+                continue
+
+            # Apply filters
+            if direction is not None and data.get("direction") != direction:
+                continue
+            if (
+                channel_source is not None
+                and data.get("channel_source") != channel_source
+            ):
+                continue
+            if since is not None:
+                record_ts = data.get("timestamp", "")
+                try:
+                    record_dt = datetime.fromisoformat(record_ts)
+                    if record_dt < since:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+
+            try:
+                records.append(AuditRecord.from_dict(data))
+            except (TypeError, ValueError) as exc:
+                logger.warning("Skipping invalid audit record: %s", exc)
+                continue
+
+    if limit is not None and len(records) > limit:
+        records = records[-limit:]
+
+    return records
