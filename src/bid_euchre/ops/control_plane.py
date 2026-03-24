@@ -79,6 +79,7 @@ CAT_CI_READY = "ci_ready"
 CAT_UNACKED_MESSAGE = "unacked_message"
 CAT_TASK_LIFECYCLE = "task_lifecycle"
 CAT_REVIEW_VERDICT = "review_verdict"
+CAT_AUDIT_EXCHANGE = "audit_exchange"
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +413,129 @@ def items_from_unacked_messages(
 
 
 # ---------------------------------------------------------------------------
+# Derivation: audit trail records → actionable items
+# ---------------------------------------------------------------------------
+
+
+def items_from_audit_records(
+    records: list[dict[str, Any]],
+    *,
+    now_iso: str | None = None,
+    unanswered_threshold_minutes: int = 5,
+) -> list[ActionableItem]:
+    """Derive actionable items from audit trail records.
+
+    Surfaces:
+    - Inbound messages that have no subsequent outbound reply in the same
+      chat within *unanswered_threshold_minutes*.
+
+    Args:
+        records: List of audit record dicts (as returned by
+            ``AuditRecord.to_dict()`` or read from JSONL).
+        now_iso: Override for current timestamp.
+        unanswered_threshold_minutes: Minutes after which an unanswered
+            inbound message is flagged.
+
+    Returns:
+        List of actionable items derived from audit exchange analysis.
+    """
+    if now_iso is None:
+        now_iso = _now_iso()
+
+    items: list[ActionableItem] = []
+    # Use now_iso for age calculation (not wall-clock time) so callers
+    # can control the reference point in tests and reconciliation cycles.
+    try:
+        now_ts = datetime.fromisoformat(now_iso).timestamp()
+    except (ValueError, TypeError):
+        now_ts = time.time()
+
+    # Group records by chat_id to check for unanswered inbound messages.
+    chats: dict[str, list[dict[str, Any]]] = {}
+    for rec in records:
+        cid = rec.get("chat_id", "")
+        if cid:
+            chats.setdefault(cid, []).append(rec)
+
+    for chat_id, chat_records in chats.items():
+        # Find the most recent inbound message.
+        last_inbound: dict[str, Any] | None = None
+        last_outbound_ts: float = 0.0
+
+        for rec in chat_records:
+            direction = rec.get("direction", "")
+            ts_str = rec.get("timestamp", "")
+            try:
+                rec_ts = datetime.fromisoformat(ts_str).timestamp()
+            except (ValueError, TypeError):
+                continue
+
+            if direction == "inbound":
+                if last_inbound is None:
+                    last_inbound = rec
+                else:
+                    try:
+                        prev_ts = datetime.fromisoformat(
+                            last_inbound.get("timestamp", "")
+                        ).timestamp()
+                    except (ValueError, TypeError):
+                        prev_ts = 0.0
+                    if rec_ts > prev_ts:
+                        last_inbound = rec
+            elif direction == "outbound":
+                if rec_ts > last_outbound_ts:
+                    last_outbound_ts = rec_ts
+
+        if last_inbound is None:
+            continue
+
+        # Check if the last inbound has been answered.
+        try:
+            inbound_ts = datetime.fromisoformat(
+                last_inbound.get("timestamp", "")
+            ).timestamp()
+        except (ValueError, TypeError):
+            continue
+
+        # If there's an outbound after the last inbound, it's answered.
+        if last_outbound_ts > inbound_ts:
+            continue
+
+        age_minutes = (now_ts - inbound_ts) / 60
+        if age_minutes < unanswered_threshold_minutes:
+            continue
+
+        sender = last_inbound.get("sender_identity", "unknown")
+        preview = last_inbound.get("content_preview", "")[:80]
+        exchange_id = last_inbound.get("exchange_id", "")
+
+        items.append(
+            ActionableItem(
+                item_id=_stable_id(CAT_AUDIT_EXCHANGE, chat_id, exchange_id),
+                severity=SEVERITY_WARN if age_minutes < 30 else SEVERITY_HIGH,
+                category=CAT_AUDIT_EXCHANGE,
+                source="audit_trail",
+                summary=f"Unanswered inbound from {sender}: {preview!r}",
+                first_seen_at=now_iso,
+                last_seen_at=now_iso,
+                recommended_action=(
+                    f"Reply to {sender} in chat {chat_id} "
+                    f"(unanswered {int(age_minutes)}min)"
+                ),
+                details={
+                    "chat_id": chat_id,
+                    "exchange_id": exchange_id,
+                    "sender": sender,
+                    "age_minutes": round(age_minutes, 1),
+                    "content_preview": preview,
+                },
+            )
+        )
+
+    return items
+
+
+# ---------------------------------------------------------------------------
 # Merge with previous state (ack/clear persistence)
 # ---------------------------------------------------------------------------
 
@@ -589,8 +713,10 @@ def derive_items(
     monitor_findings: list[dict[str, Any]] | None = None,
     task_packets: list[dict[str, Any]] | None = None,
     unacked_messages: list[dict[str, Any]] | None = None,
+    audit_records: list[dict[str, Any]] | None = None,
     now_iso: str | None = None,
     unacked_message_age_minutes: int = 10,
+    unanswered_threshold_minutes: int = 5,
 ) -> list[ActionableItem]:
     """Derive actionable items from all input sources.
 
@@ -617,6 +743,15 @@ def derive_items(
             )
         )
 
+    if audit_records:
+        all_items.extend(
+            items_from_audit_records(
+                audit_records,
+                now_iso=now_iso,
+                unanswered_threshold_minutes=unanswered_threshold_minutes,
+            )
+        )
+
     return all_items
 
 
@@ -631,6 +766,7 @@ def reconcile(
     monitor_findings: list[dict[str, Any]] | None = None,
     task_packets: list[dict[str, Any]] | None = None,
     unacked_messages: list[dict[str, Any]] | None = None,
+    audit_records: list[dict[str, Any]] | None = None,
     now_iso: str | None = None,
 ) -> FleetStatus:
     """Run one reconciliation cycle.
@@ -654,6 +790,7 @@ def reconcile(
         monitor_findings=monitor_findings,
         task_packets=task_packets,
         unacked_messages=unacked_messages,
+        audit_records=audit_records,
         now_iso=now_iso,
     )
 

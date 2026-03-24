@@ -1,7 +1,8 @@
-"""Integration tests for the remote exchange audit trail (Platform-8b, SP-4-06 PR 4).
+"""Integration tests for the remote exchange audit trail (Platform-8b).
 
 Tests end-to-end round trips, concurrent writers, large-volume throughput,
-and mixed-direction filtering across the full audit trail stack.
+mixed-direction filtering, runtime wiring (MCP outbound + channel tag inbound),
+and controller state projection from audit records.
 """
 
 from __future__ import annotations
@@ -16,13 +17,21 @@ import pytest
 
 from bid_euchre.ops.audit_trail import (
     append_record,
+    audit_channel_tag,
     audit_edit,
     audit_inbound,
+    audit_mcp_outbound,
     audit_react,
     audit_reply,
     content_hash,
     create_record,
     read_records,
+)
+from bid_euchre.ops.control_plane import (
+    CAT_AUDIT_EXCHANGE,
+    derive_items,
+    items_from_audit_records,
+    reconcile,
 )
 
 # ---------------------------------------------------------------------------
@@ -675,3 +684,454 @@ class TestMixedDirectionFiltering:
         discord_only = read_records(audit_dir=tmp_path, channel_source="discord")
         assert len(discord_only) == 1
         assert discord_only[0].sender_identity == "dc_user"
+
+
+# ---------------------------------------------------------------------------
+# 5. Runtime wiring: MCP outbound wrapper
+# ---------------------------------------------------------------------------
+
+
+class TestMcpOutboundWiring:
+    """Verify audit_mcp_outbound routes MCP tool calls to the right audit functions."""
+
+    def test_reply_tool_audited(self, tmp_path: Path) -> None:
+        """MCP reply tool call produces an outbound reply audit record."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__reply",
+            tool_args={
+                "chat_id": "123",
+                "body": "Fleet is nominal.",
+                "reply_to": "42",
+            },
+            audit_dir=tmp_path,
+        )
+        assert rec is not None
+        assert rec.direction == "outbound"
+        assert rec.exchange_type == "reply"
+        assert rec.chat_id == "123"
+        assert rec.metadata.get("reply_to") == "42"
+
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+        assert records[0].exchange_id == rec.exchange_id
+
+    def test_react_tool_audited(self, tmp_path: Path) -> None:
+        """MCP react tool call produces an outbound react audit record."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__react",
+            tool_args={
+                "chat_id": "123",
+                "message_id": "42",
+                "emoji": "👍",
+            },
+            audit_dir=tmp_path,
+        )
+        assert rec is not None
+        assert rec.direction == "outbound"
+        assert rec.exchange_type == "react"
+        assert rec.metadata.get("emoji") == "👍"
+
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+
+    def test_edit_tool_audited(self, tmp_path: Path) -> None:
+        """MCP edit tool call produces an outbound edit audit record."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__edit",
+            tool_args={
+                "chat_id": "123",
+                "message_id": "42",
+                "body": "Updated message text.",
+            },
+            audit_dir=tmp_path,
+        )
+        assert rec is not None
+        assert rec.direction == "outbound"
+        assert rec.exchange_type == "edit"
+        assert rec.message_id == "42"
+
+    def test_unknown_tool_returns_none(self, tmp_path: Path) -> None:
+        """Non-Telegram MCP tools are silently skipped."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__github__create_issue",
+            tool_args={"title": "test"},
+            audit_dir=tmp_path,
+        )
+        assert rec is None
+
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 0
+
+    def test_missing_chat_id_returns_none(self, tmp_path: Path) -> None:
+        """Reply tool without chat_id is skipped (logged as warning)."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__reply",
+            tool_args={"body": "No chat_id here"},
+            audit_dir=tmp_path,
+        )
+        assert rec is None
+
+    def test_camel_case_args_accepted(self, tmp_path: Path) -> None:
+        """camelCase arg names (chatId, messageId) also work."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__react",
+            tool_args={
+                "chatId": "456",
+                "messageId": "99",
+                "emoji": "🎉",
+            },
+            audit_dir=tmp_path,
+        )
+        assert rec is not None
+        assert rec.chat_id == "456"
+        assert rec.message_id == "99"
+
+    def test_multiple_outbound_calls_sequential(self, tmp_path: Path) -> None:
+        """Multiple outbound calls produce distinct sequential audit records."""
+        audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__reply",
+            tool_args={"chat_id": "123", "body": "First reply"},
+            audit_dir=tmp_path,
+        )
+        audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__react",
+            tool_args={"chat_id": "123", "message_id": "1", "emoji": "✅"},
+            audit_dir=tmp_path,
+        )
+        audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__edit",
+            tool_args={"chat_id": "123", "message_id": "2", "body": "Edited"},
+            audit_dir=tmp_path,
+        )
+
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 3
+        assert [r.exchange_type for r in records] == ["reply", "react", "edit"]
+
+
+# ---------------------------------------------------------------------------
+# 6. Runtime wiring: channel tag inbound wrapper
+# ---------------------------------------------------------------------------
+
+
+class TestChannelTagWiring:
+    """Verify audit_channel_tag parses <channel> tags and audits inbound messages."""
+
+    def test_standard_channel_tag(self, tmp_path: Path) -> None:
+        """Standard Telegram channel tag produces an inbound audit record."""
+        tag = '<channel source="telegram" chat_id="8122530898" message_id="100" user="operator" ts="2026-03-24T10:00:00Z">'
+        rec = audit_channel_tag(
+            tag_text=tag,
+            content="What's the fleet status?",
+            audit_dir=tmp_path,
+        )
+        assert rec is not None
+        assert rec.direction == "inbound"
+        assert rec.exchange_type == "message"
+        assert rec.chat_id == "8122530898"
+        assert rec.message_id == "100"
+        assert rec.sender_identity == "operator"
+        assert rec.channel_source == "telegram"
+
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+
+    def test_self_closing_tag(self, tmp_path: Path) -> None:
+        """Self-closing <channel ... /> tag is parsed correctly."""
+        tag = '<channel source="telegram" chat_id="123" message_id="42" user="alice" />'
+        rec = audit_channel_tag(
+            tag_text=tag, content="Test message", audit_dir=tmp_path
+        )
+        assert rec is not None
+        assert rec.chat_id == "123"
+        assert rec.sender_identity == "alice"
+
+    def test_non_channel_tag_returns_none(self, tmp_path: Path) -> None:
+        """Non-channel tag text is rejected."""
+        rec = audit_channel_tag(
+            tag_text="<system-reminder>Some reminder</system-reminder>",
+            content="Body text",
+            audit_dir=tmp_path,
+        )
+        assert rec is None
+
+    def test_missing_chat_id_returns_none(self, tmp_path: Path) -> None:
+        """Channel tag without chat_id returns None."""
+        tag = '<channel source="telegram" user="bob">'
+        rec = audit_channel_tag(tag_text=tag, content="No chat", audit_dir=tmp_path)
+        assert rec is None
+
+    def test_timestamp_normalization(self, tmp_path: Path) -> None:
+        """Inbound timestamp with Z suffix is normalized to +00:00."""
+        tag = '<channel source="telegram" chat_id="123" message_id="1" user="u" ts="2026-03-24T08:00:00Z">'
+        rec = audit_channel_tag(tag_text=tag, content="Test", audit_dir=tmp_path)
+        assert rec is not None
+        assert "+00:00" in rec.timestamp
+        assert "Z" not in rec.timestamp
+
+    def test_full_inbound_outbound_cycle(self, tmp_path: Path) -> None:
+        """Inbound via channel tag + outbound via MCP wrapper = full round-trip."""
+        # Inbound: operator sends a message
+        tag = '<channel source="telegram" chat_id="999" message_id="50" user="operator" ts="2026-03-24T12:00:00Z">'
+        inbound_rec = audit_channel_tag(
+            tag_text=tag,
+            content="Deploy status?",
+            audit_dir=tmp_path,
+        )
+
+        # Outbound: orchestrator replies via MCP tool
+        outbound_rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__reply",
+            tool_args={
+                "chat_id": "999",
+                "body": "All clear — CI green.",
+                "reply_to": "50",
+            },
+            audit_dir=tmp_path,
+        )
+
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 2
+        assert records[0].direction == "inbound"
+        assert records[1].direction == "outbound"
+        assert inbound_rec is not None
+        assert outbound_rec is not None
+        assert records[0].exchange_id == inbound_rec.exchange_id
+        assert records[1].exchange_id == outbound_rec.exchange_id
+
+
+# ---------------------------------------------------------------------------
+# 7. Controller state projection from audit records
+# ---------------------------------------------------------------------------
+
+
+class TestControllerAuditProjection:
+    """Verify the controller derives actionable items from audit trail records."""
+
+    @staticmethod
+    def _make_record_dict(
+        direction: str,
+        chat_id: str = "123",
+        sender: str = "operator",
+        exchange_type: str = "message",
+        content: str = "Hello",
+        ts: str = "2026-03-24T08:00:00+00:00",
+        exchange_id: str = "ex-1",
+    ) -> dict:
+        """Helper to create an audit record dict for testing."""
+        return {
+            "exchange_id": exchange_id,
+            "timestamp": ts,
+            "direction": direction,
+            "channel_source": "telegram",
+            "sender_identity": sender,
+            "exchange_type": exchange_type,
+            "content_hash": content_hash(content),
+            "content_preview": content,
+            "chat_id": chat_id,
+            "message_id": "1",
+            "metadata": {},
+        }
+
+    def test_unanswered_inbound_surfaces_item(self) -> None:
+        """Inbound message with no reply beyond threshold produces an item."""
+        # An old inbound message (30+ minutes ago)
+        old_ts = datetime(2026, 3, 24, 7, 0, 0, tzinfo=timezone.utc).isoformat()
+        records = [
+            self._make_record_dict(
+                direction="inbound",
+                ts=old_ts,
+                content="Status check?",
+                sender="operator",
+            ),
+        ]
+
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 1
+        assert items[0].category == CAT_AUDIT_EXCHANGE
+        assert items[0].source == "audit_trail"
+        assert "operator" in items[0].summary
+        assert "unanswered" in items[0].recommended_action.lower()
+
+    def test_answered_inbound_no_item(self) -> None:
+        """Inbound followed by outbound reply does not surface an item."""
+        base_ts = "2026-03-24T07:00:00+00:00"
+        reply_ts = "2026-03-24T07:01:00+00:00"
+        records = [
+            self._make_record_dict(
+                direction="inbound",
+                ts=base_ts,
+                exchange_id="in-1",
+            ),
+            self._make_record_dict(
+                direction="outbound",
+                ts=reply_ts,
+                exchange_type="reply",
+                sender="orchestrator",
+                exchange_id="out-1",
+            ),
+        ]
+
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 0
+
+    def test_recent_unanswered_below_threshold_no_item(self) -> None:
+        """Inbound message within threshold window does not surface an item."""
+        # 2 minutes ago relative to now_iso
+        recent_ts = "2026-03-24T07:58:00+00:00"
+        records = [
+            self._make_record_dict(direction="inbound", ts=recent_ts),
+        ]
+
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 0
+
+    def test_severity_escalates_with_age(self) -> None:
+        """Items for longer-unanswered messages get higher severity."""
+        # 10 minutes old → warn
+        ts_10m = "2026-03-24T07:50:00+00:00"
+        items_10m = items_from_audit_records(
+            [self._make_record_dict(direction="inbound", ts=ts_10m, chat_id="a")],
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert items_10m[0].severity == "warn"
+
+        # 45 minutes old → high
+        ts_45m = "2026-03-24T07:15:00+00:00"
+        items_45m = items_from_audit_records(
+            [self._make_record_dict(direction="inbound", ts=ts_45m, chat_id="b")],
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert items_45m[0].severity == "high"
+
+    def test_multi_chat_independent(self) -> None:
+        """Unanswered detection is per-chat — answered chat A doesn't clear chat B."""
+        old_ts = "2026-03-24T07:00:00+00:00"
+        reply_ts = "2026-03-24T07:01:00+00:00"
+        records = [
+            # Chat A: inbound answered
+            self._make_record_dict(
+                direction="inbound", chat_id="A", ts=old_ts, exchange_id="a-in"
+            ),
+            self._make_record_dict(
+                direction="outbound",
+                chat_id="A",
+                ts=reply_ts,
+                exchange_type="reply",
+                exchange_id="a-out",
+            ),
+            # Chat B: inbound NOT answered
+            self._make_record_dict(
+                direction="inbound", chat_id="B", ts=old_ts, exchange_id="b-in"
+            ),
+        ]
+
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 1
+        assert items[0].details["chat_id"] == "B"
+
+    def test_derive_items_includes_audit(self) -> None:
+        """derive_items() includes audit_records parameter."""
+        old_ts = "2026-03-24T07:00:00+00:00"
+        records = [
+            self._make_record_dict(direction="inbound", ts=old_ts),
+        ]
+
+        items = derive_items(
+            audit_records=records,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+        audit_items = [i for i in items if i.category == CAT_AUDIT_EXCHANGE]
+        assert len(audit_items) == 1
+
+    def test_reconcile_with_audit_records(self, tmp_path: Path) -> None:
+        """reconcile() accepts audit_records and persists them in fleet status."""
+        old_ts = "2026-03-24T07:00:00+00:00"
+        records = [
+            self._make_record_dict(direction="inbound", ts=old_ts),
+        ]
+
+        status = reconcile(
+            runtime_dir=tmp_path,
+            audit_records=records,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+        audit_items = [i for i in status.items if i.category == CAT_AUDIT_EXCHANGE]
+        assert len(audit_items) == 1
+        assert status.cycle_count == 1
+
+    def test_end_to_end_write_then_project(self, tmp_path: Path) -> None:
+        """Full E2E: write audit records → read them → controller projects items."""
+        audit_dir = tmp_path / "audit"
+        runtime_dir = tmp_path / "runtime"
+
+        # 1. Write exchanges via runtime wrappers
+        tag = '<channel source="telegram" chat_id="8122530898" message_id="100" user="operator" ts="2026-03-24T07:00:00Z">'
+        audit_channel_tag(tag_text=tag, content="Status?", audit_dir=audit_dir)
+
+        # 2. Read records from audit trail
+        records = read_records(audit_dir=audit_dir)
+        assert len(records) == 1
+
+        # 3. Convert to dicts for controller consumption
+        record_dicts = [r.to_dict() for r in records]
+
+        # 4. Feed to controller
+        status = reconcile(
+            runtime_dir=runtime_dir,
+            audit_records=record_dicts,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+
+        # 5. Verify controller surfaces the unanswered inbound
+        audit_items = [i for i in status.items if i.category == CAT_AUDIT_EXCHANGE]
+        assert len(audit_items) == 1
+        assert "operator" in audit_items[0].summary
+        assert audit_items[0].source == "audit_trail"
+
+    def test_end_to_end_answered_then_cleared(self, tmp_path: Path) -> None:
+        """E2E: inbound + reply → controller finds no unanswered items."""
+        audit_dir = tmp_path / "audit"
+        runtime_dir = tmp_path / "runtime"
+
+        # Inbound via channel tag
+        tag = '<channel source="telegram" chat_id="123" message_id="50" user="user1" ts="2026-03-24T07:00:00Z">'
+        audit_channel_tag(tag_text=tag, content="Hello", audit_dir=audit_dir)
+
+        # Outbound via MCP wrapper
+        audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__reply",
+            tool_args={"chat_id": "123", "body": "Hi back!", "reply_to": "50"},
+            audit_dir=audit_dir,
+        )
+
+        # Read and project
+        records = read_records(audit_dir=audit_dir)
+        record_dicts = [r.to_dict() for r in records]
+
+        status = reconcile(
+            runtime_dir=runtime_dir,
+            audit_records=record_dicts,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+
+        audit_items = [i for i in status.items if i.category == CAT_AUDIT_EXCHANGE]
+        assert len(audit_items) == 0
