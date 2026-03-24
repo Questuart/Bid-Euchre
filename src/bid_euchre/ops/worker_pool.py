@@ -459,6 +459,65 @@ def _get_lane_task_id(
     return None
 
 
+def _is_worktree_stale(
+    lane_id: str,
+    runtime_dir: Path | None = None,
+) -> bool:
+    """Check whether a lane's worktree is on a stale (non-main) branch.
+
+    A worktree is "stale" if it is checked out on a branch other than ``main``
+    or is ahead of ``origin/main``.  This indicates leftover state from a
+    previous task.
+
+    The check uses ``git rev-parse`` inside the resolved worktree path.
+    Returns ``False`` on any error (safe default: assume not stale).
+
+    Args:
+        lane_id: Lane to check.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        ``True`` if the worktree appears stale, ``False`` otherwise.
+    """
+    worktree_path = _resolve_worktree_path(lane_id, runtime_dir)
+    if not worktree_path:
+        return False
+
+    try:
+        # Get the current branch name
+        branch_result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if branch_result.returncode != 0:
+            return False
+
+        branch = branch_result.stdout.strip()
+        if branch != "main":
+            return True
+
+        # On main — check if ahead of origin/main
+        ahead_result = subprocess.run(
+            ["git", "rev-list", "--count", "origin/main..HEAD"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if ahead_result.returncode == 0:
+            ahead_count = int(ahead_result.stdout.strip())
+            if ahead_count > 0:
+                return True
+
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return False
+
+    return False
+
+
 def _minutes_since(iso_timestamp: str | None, now: datetime) -> float | None:
     """Calculate minutes elapsed since an ISO 8601 timestamp.
 
@@ -1151,6 +1210,7 @@ def dispatch_to_worker(
     tmux_session: str = DEFAULT_TMUX_SESSION,
     runtime_dir: Path | None = None,
     reset: bool = False,
+    no_auto_refresh: bool = False,
 ) -> PoolAction:
     """Complete lifecycle: wake worker, assign task packet, nudge pane.
 
@@ -1158,6 +1218,7 @@ def dispatch_to_worker(
     1. Load task packet, verify it is in "approved" status.
     2. Take pool snapshot, verify lane_id has capacity.
     3. If lane is parked/retired: wake_worker() first.
+    3a. Auto-refresh stale worktrees (unless ``no_auto_refresh`` or ``reset``).
     3b. If ``reset=True``: reset worktree to origin/main and clear session.
     4. Transition packet to "dispatched" with owner = lane_id.
     4b. Copy dispatched packet JSON to the target worktree's task_queue
@@ -1178,6 +1239,8 @@ def dispatch_to_worker(
         reset: If True, reset the worktree to origin/main and send /clear
             to the Claude session before dispatching.  Recommended when the
             lane is idle and stale context should be discarded.
+        no_auto_refresh: If True, skip the automatic staleness check and
+            refresh.  Useful when the caller knows the lane is already clean.
 
     Returns:
         A :class:`PoolAction` describing what happened.
@@ -1263,6 +1326,34 @@ def dispatch_to_worker(
                 executed=False,
                 error=f"wake_failed:{wake_result.error}",
             )
+
+    # 3a. Auto-refresh stale worktrees
+    #     Skip if caller already requested explicit reset (step 3b does the same
+    #     thing) or if auto-refresh is disabled.
+    if not reset and not no_auto_refresh:
+        if _is_worktree_stale(lane_id, runtime_dir):
+            logger.info(
+                "Lane %s worktree is stale; auto-refreshing before dispatch",
+                lane_id,
+            )
+            auto_refresh = refresh_worker(
+                lane_id,
+                force=True,
+                tmux_session=tmux_session,
+                runtime_dir=runtime_dir,
+            )
+            if auto_refresh.executed:
+                logger.info("Auto-refresh succeeded for %s", lane_id)
+                import time
+
+                # Brief pause to let /clear complete before sending /start-task
+                time.sleep(2)
+            else:
+                logger.warning(
+                    "Auto-refresh failed for %s: %s (continuing dispatch)",
+                    lane_id,
+                    auto_refresh.reason,
+                )
 
     # 3b. Reset worktree and clear session if requested
     if reset:

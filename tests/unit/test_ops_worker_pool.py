@@ -22,6 +22,7 @@ from bid_euchre.ops.worker_pool import (
     _classify_pool_status,
     _dynamic_pane_lookup,
     _get_lane_task_id,
+    _is_worktree_stale,
     _managed_lanes,
     _minutes_since,
     _probe_tmux_pane,
@@ -2348,6 +2349,359 @@ class TestDispatchWithReset:
         assert result.executed is True
         mock_reset.assert_called_once()
         mock_clear.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Dispatch auto-refresh stale worktrees
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchAutoRefresh:
+    """Test that dispatch_to_worker() auto-refreshes stale lanes."""
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}._is_worktree_stale")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_auto_refreshes_stale_lane(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_stale: MagicMock,
+        mock_refresh: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch should auto-refresh a stale lane before dispatching."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_stale.return_value = True
+        mock_refresh.return_value = PoolAction(
+            action="refresh",
+            lane_id="author-a",
+            reason="Refreshed OK",
+            executed=True,
+        )
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+        mock_stale.assert_called_once_with("author-a", runtime_dir)
+        mock_refresh.assert_called_once_with(
+            "author-a",
+            force=True,
+            tmux_session=DEFAULT_TMUX_SESSION,
+            runtime_dir=runtime_dir,
+        )
+        mock_sleep.assert_called_once_with(2)
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}._is_worktree_stale")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_skips_refresh_for_clean_lane(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_stale: MagicMock,
+        mock_refresh: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch should NOT refresh if the lane is not stale."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_stale.return_value = False
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+        mock_refresh.assert_not_called()
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}._is_worktree_stale")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_skips_refresh_when_no_auto_refresh(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_stale: MagicMock,
+        mock_refresh: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """no_auto_refresh=True should skip staleness check entirely."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker(
+            "pkt1", "author-a", runtime_dir=runtime_dir, no_auto_refresh=True
+        )
+        assert result.executed is True
+        mock_stale.assert_not_called()
+        mock_refresh.assert_not_called()
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}._is_worktree_stale")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_skips_auto_refresh_when_reset_true(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_stale: MagicMock,
+        mock_refresh: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """When reset=True, auto-refresh should be skipped (reset handles it)."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        with (
+            patch(f"{_WORKER_POOL}.reset_worktree") as mock_reset_wt,
+            patch(f"{_WORKER_POOL}.clear_session") as mock_clear,
+            patch("time.sleep"),
+        ):
+            mock_reset_wt.return_value = PoolAction(
+                action="reset_worktree",
+                lane_id="author-a",
+                reason="Reset OK",
+                executed=True,
+            )
+            mock_clear.return_value = PoolAction(
+                action="clear_session",
+                lane_id="author-a",
+                reason="Clear OK",
+                executed=True,
+            )
+            result = dispatch_to_worker(
+                "pkt1", "author-a", runtime_dir=runtime_dir, reset=True
+            )
+        assert result.executed is True
+        # Auto-refresh should not be called; the explicit reset handles it
+        mock_stale.assert_not_called()
+        mock_refresh.assert_not_called()
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.refresh_worker")
+    @patch(f"{_WORKER_POOL}._is_worktree_stale")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_continues_if_auto_refresh_fails(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_stale: MagicMock,
+        mock_refresh: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch should succeed even when auto-refresh fails."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_stale.return_value = True
+        mock_refresh.return_value = PoolAction(
+            action="refresh",
+            lane_id="author-a",
+            reason="Dirty worktree",
+            executed=False,
+            error="dirty_worktree",
+        )
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        # Dispatch should still succeed despite refresh failure
+        assert result.executed is True
+        mock_refresh.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _is_worktree_stale()
+# ---------------------------------------------------------------------------
+
+
+class TestIsWorktreeStale:
+    """Test _is_worktree_stale() helper."""
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    def test_stale_non_main_branch(
+        self,
+        mock_resolve: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Lane on a non-main branch is stale."""
+        mock_resolve.return_value = str(tmp_path)
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            # git rev-parse --abbrev-ref HEAD returns "fix/some-branch"
+            mock_run.return_value = MagicMock(returncode=0, stdout="fix/some-branch\n")
+            assert _is_worktree_stale("author-a") is True
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    def test_clean_main_branch(
+        self,
+        mock_resolve: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Lane on main with 0 commits ahead is not stale."""
+        mock_resolve.return_value = str(tmp_path)
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            # First call: branch = main; second call: 0 commits ahead
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="main\n"),
+                MagicMock(returncode=0, stdout="0\n"),
+            ]
+            assert _is_worktree_stale("author-a") is False
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    def test_main_branch_ahead(
+        self,
+        mock_resolve: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Lane on main but ahead of origin/main is stale."""
+        mock_resolve.return_value = str(tmp_path)
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stdout="main\n"),
+                MagicMock(returncode=0, stdout="3\n"),
+            ]
+            assert _is_worktree_stale("author-a") is True
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    def test_unresolved_worktree_not_stale(
+        self,
+        mock_resolve: MagicMock,
+    ) -> None:
+        """Unresolvable worktree returns False (safe default)."""
+        mock_resolve.return_value = None
+        assert _is_worktree_stale("author-a") is False
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path")
+    def test_git_error_returns_false(
+        self,
+        mock_resolve: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Git errors return False (safe default)."""
+        mock_resolve.return_value = str(tmp_path)
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=128, stdout="")
+            assert _is_worktree_stale("author-a") is False
 
 
 # ---------------------------------------------------------------------------
