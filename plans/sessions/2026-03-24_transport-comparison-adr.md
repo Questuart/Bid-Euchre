@@ -69,7 +69,7 @@ The 2026-03-24 overnight autonomous run (43+ PRs shipped) and proving runs
 | **Durability** | ✅ JSONL + flock; survives restarts; queryable | ⚠️ JSON file; format undocumented; may change between Claude versions | ❌ Ephemeral; no durable record unless repo-owned audit layer captures it | ⚠️ Stateless; fires once per tool use; no persistence | ❌ Fire-and-forget; no persistence or retry |
 | **Structured metadata** | ✅ Full: type, priority, severity, task_id, from/to, timestamps, TTL | ⚠️ Limited: from, summary, text only; no typed fields | ⚠️ Plain text messages; structured data must be encoded in message body | ✅ Full programmatic access to repo state; can read any structured artifact | ❌ Raw string injection; no structure |
 | **Ack / clear** | ✅ Full lifecycle: pending→delivered→acked→resolved→expired | ❌ No ack mechanism; read status unknown | ❌ No native ack; must layer ack protocol on top | ⚠️ Implicit (hook ran = state was checked); no explicit ack protocol | ❌ No ack; no delivery confirmation |
-| **Auditability** | ✅ Global `messages.jsonl` audit trail; per-lane inboxes; content-hash dedup | ⚠️ `~/.claude/teams/default/inboxes/<lane>.json` exists but is opaque; format may change | ⚠️ Only if repo-owned `audit_trail.py` captures exchanges (SP-4-06) | ⚠️ Hook execution is not logged by default; must emit events explicitly | ❌ No audit trail; `send-keys` is invisible |
+| **Auditability** | ✅ Global JSONL audit trail (`.claude/runtime/message_bus/messages.jsonl`); per-lane inboxes; content-hash dedup | ⚠️ `~/.claude/teams/default/inboxes/<lane>.json` exists but is opaque; format may change | ⚠️ Only if repo-owned audit trail module (`src/bid_euchre/ops/audit_trail.py`) captures exchanges (SP-4-06) | ⚠️ Hook execution is not logged by default; must emit events explicitly | ❌ No audit trail; `send-keys` is invisible |
 | **Operator usability** | ⚠️ CLI only (`ops.py inbox`); not natural for humans; good for agents | ⚠️ Invisible to operator; used implicitly by Claude sessions | ✅ Natural for humans (Telegram chat); good for mobile/remote | ❌ Invisible to operator; purely mechanical | ❌ Invisible; only visible as typed text in tmux pane |
 | **Impl/maint cost** | ✅ Stable (1500+ LOC, mature); well-tested; low ongoing cost | ✅ Zero cost (built into Claude Code); bridge is 80 LOC | ⚠️ Plugin dependency; bun subprocess; competing-process bugs (#1615); auto-detect logic | ✅ Bash scripts; simple; stable pattern | ✅ 3 LOC (`tmux send-keys`); trivial |
 
@@ -119,7 +119,7 @@ orchestrator.
 - Permission relay (orchestrator as single ingress) works as designed
 
 **Constraint:** All inbound Channel messages must be captured by the
-repo-owned audit trail (`audit_trail.py`) before being acted on.
+repo-owned audit trail (`src/bid_euchre/ops/audit_trail.py`) before being acted on.
 Channels are adapters on top of repo-owned state, not sources of truth.
 
 **Not suitable for:** Lane-to-lane coordination (only orchestrator has the
@@ -134,14 +134,14 @@ channel), durable audit (ephemeral without repo layer), structured metadata
 tool-use boundaries.
 
 **Evidence:**
-- `pre-merge-review-guard.sh` blocks unsafe merges without any transport
+- `.claude/hooks/pre-merge-review-guard.sh` blocks unsafe merges without any transport
   dependency
-- `post-merge-notify.sh` fires task-completion lifecycle reliably
-- `session-sync-worktree.sh` keeps worktrees fresh on session start
+- `.claude/hooks/post-merge-notify.sh` fires task-completion lifecycle reliably
+- `.claude/hooks/session-sync-worktree.sh` keeps worktrees fresh on session start
 - Hook latency is zero (in-process); no polling, no queue
 
 **Architecture:** Hooks should read the controller projection
-(`fleet_status.json`) produced by the controller module (SP-4-07
+(`.claude/runtime/fleet_status.json`) produced by the controller module (SP-4-07
 Deliverable 1). They enforce state that is already computed — they do
 not compute it themselves.
 
@@ -257,7 +257,7 @@ This keeps transport simple while making consumption reliable.
 | Native inbox format changes between Claude versions | Bridge imports are idempotent; format changes cause import failures (logged), not data loss |
 | Hook overhead grows with controller state | Controller projection is a single JSON file read; hooks remain O(1) |
 | Custom bus JSONL grows unboundedly | Auto-compaction at 200 lines; tiered retention (4h handled, 1h terminal) already implemented |
-| Multiple transports increase operator cognitive load | Controller projection unifies all sources into one actionable view; operators read `fleet_status.json`, not individual transports |
+| Multiple transports increase operator cognitive load | Controller projection unifies all sources into one actionable view; operators read `.claude/runtime/fleet_status.json`, not individual transports |
 
 ---
 
