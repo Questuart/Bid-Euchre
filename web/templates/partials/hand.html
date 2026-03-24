@@ -1,0 +1,49 @@
+{# Player's hand partial — legal cards as form buttons, illegal as plain divs.
+   Context variables:
+     - link_uuid: str — player's game link UUID
+     - turn_number: int — current turn for idempotency
+     - human_hand: list[list[str, str]] — cards as [suit, rank] pairs
+     - legal_plays: list[int] | None — legal card indices (None if not in trick_play phase)
+     - phase: str — current hand phase ("auction", "trick_play", "complete", "redeal")
+#}
+{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
+
+<div id="human-hand" class="hand">
+    <h3>Your Hand</h3>
+    <div class="card-fan">
+        {% for card in human_hand %}
+            {% set suit = card[0] %}
+            {% set rank = card[1] %}
+            {% set idx = loop.index0 %}
+            {% set suit_class = suit_classes.get(suit, "spades") %}
+            {% set suit_sym = suit_symbols.get(suit, suit) %}
+
+            {% if phase == "trick_play" and legal_plays is not none and idx in legal_plays %}
+                {# Legal card — clickable form button #}
+                <form method="post"
+                      action="/play/{{ link_uuid }}/play-card"
+                      hx-post="/play/{{ link_uuid }}/play-card"
+                      hx-target="#game-board"
+                      hx-swap="innerHTML"
+                      class="card-form">
+                    <input type="hidden" name="turn_number" value="{{ turn_number }}">
+                    <input type="hidden" name="card_index" value="{{ idx }}">
+                    <button type="submit"
+                            class="card card--{{ suit_class }} card--legal"
+                            title="{{ rank }}{{ suit_sym }} (click to play)">
+                        <span class="card__rank">{{ rank }}</span>
+                        <span class="card__suit">{{ suit_sym }}</span>
+                    </button>
+                </form>
+            {% else %}
+                {# Illegal or non-play-phase card — plain div #}
+                <div class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}"
+                     title="{{ rank }}{{ suit_sym }}">
+                    <span class="card__rank">{{ rank }}</span>
+                    <span class="card__suit">{{ suit_sym }}</span>
+                </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+</div>
