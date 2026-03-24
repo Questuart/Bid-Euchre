@@ -32,12 +32,13 @@ monitoring infrastructure.
 
 1. **Read pending inbox messages (priority-sorted):**
    ```bash
-   uv run python scripts/internal/ops.py inbox --lane orchestrator --status pending --include-native
+   uv run python scripts/internal/ops.py inbox --lane orchestrator --status pending --include-native --prioritized
    ```
    The `--include-native` flag imports any messages from the Claude native inbox
    into the message bus before listing, so nothing is missed.
-   Manually sort results by priority: P0 (`supervisor_alert`, `recovery`) first,
-   then P1 (`completion`, `escalation`, `blocker`), then P2 (`ack`, `progress`).
+   The `--prioritized` flag groups messages by tier: P0 (`supervisor_alert`,
+   `recovery`) first, then P1 (`completion`, `escalation`, `blocker`), then
+   P2 (`ack`, `progress`).
 
 2. **Filter for high-priority message types** — process these BEFORE any other
    status checks:
@@ -57,7 +58,10 @@ monitoring infrastructure.
    # Ack individual high-priority messages after acting on them
    uv run python scripts/internal/ops.py inbox ack <MSG_ID> --lane orchestrator
 
-   # Bulk-ack low-priority informational messages (filter by summary pattern)
+   # Bulk-ack all remaining pending messages
+   uv run python scripts/internal/ops.py inbox ack-all --lane orchestrator
+
+   # Or selectively bulk-ack by summary pattern (regex)
    uv run python scripts/internal/ops.py inbox ack-all --lane orchestrator --filter-summary "Task received|progress"
    ```
 
