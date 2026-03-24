@@ -14,6 +14,9 @@ from bid_euchre.ops.audit_trail import (
     VALID_EXCHANGE_TYPES,
     AuditRecord,
     append_record,
+    audit_edit,
+    audit_react,
+    audit_reply,
     content_hash,
     content_preview,
     create_record,
@@ -489,3 +492,201 @@ class TestMalformedData:
 
         records = read_records(audit_dir=tmp_path)
         assert len(records) == 1
+
+
+# ---------------------------------------------------------------------------
+# Outbound audit wrappers (SP-4-06 PR 2)
+# ---------------------------------------------------------------------------
+
+
+class TestAuditReply:
+    def test_basic_reply(self, tmp_path: Path) -> None:
+        record = audit_reply(
+            chat_id="8122530898",
+            body="Hello operator!",
+            audit_dir=tmp_path,
+        )
+        assert record.direction == "outbound"
+        assert record.exchange_type == "reply"
+        assert record.channel_source == "telegram"
+        assert record.sender_identity == "orchestrator"
+        assert record.chat_id == "8122530898"
+        assert record.content_hash == content_hash("Hello operator!")
+        assert record.content_preview == "Hello operator!"
+        assert record.metadata == {}
+
+    def test_reply_with_reply_to(self, tmp_path: Path) -> None:
+        record = audit_reply(
+            chat_id="123",
+            body="Got it",
+            reply_to="42",
+            audit_dir=tmp_path,
+        )
+        assert record.metadata["reply_to"] == "42"
+
+    def test_reply_with_files(self, tmp_path: Path) -> None:
+        record = audit_reply(
+            chat_id="123",
+            body="See attached",
+            files=["/tmp/photo.jpg", "/tmp/doc.pdf"],
+            audit_dir=tmp_path,
+        )
+        assert record.metadata["files"] == ["/tmp/photo.jpg", "/tmp/doc.pdf"]
+
+    def test_reply_with_reply_to_and_files(self, tmp_path: Path) -> None:
+        record = audit_reply(
+            chat_id="123",
+            body="Here you go",
+            reply_to="99",
+            files=["/tmp/report.pdf"],
+            audit_dir=tmp_path,
+        )
+        assert record.metadata["reply_to"] == "99"
+        assert record.metadata["files"] == ["/tmp/report.pdf"]
+
+    def test_reply_persisted(self, tmp_path: Path) -> None:
+        """Verify the record is actually appended to the JSONL file."""
+        audit_reply(chat_id="123", body="test", audit_dir=tmp_path)
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+        assert records[0].exchange_type == "reply"
+        assert records[0].direction == "outbound"
+
+    def test_reply_returns_record(self, tmp_path: Path) -> None:
+        """audit_reply returns the same record that was persisted."""
+        returned = audit_reply(chat_id="123", body="check", audit_dir=tmp_path)
+        persisted = read_records(audit_dir=tmp_path)
+        assert len(persisted) == 1
+        assert returned == persisted[0]
+
+    def test_reply_long_body_preview_truncated(self, tmp_path: Path) -> None:
+        long_body = "x" * 500
+        record = audit_reply(chat_id="123", body=long_body, audit_dir=tmp_path)
+        assert record.content_preview == "x" * 200 + "…"
+        assert record.content_hash == content_hash(long_body)
+
+
+class TestAuditReact:
+    def test_basic_react(self, tmp_path: Path) -> None:
+        record = audit_react(
+            chat_id="8122530898",
+            message_id="42",
+            emoji="👍",
+            audit_dir=tmp_path,
+        )
+        assert record.direction == "outbound"
+        assert record.exchange_type == "react"
+        assert record.channel_source == "telegram"
+        assert record.sender_identity == "orchestrator"
+        assert record.chat_id == "8122530898"
+        assert record.message_id == "42"
+        assert record.metadata["emoji"] == "👍"
+        assert record.content_hash == content_hash("👍")
+        assert record.content_preview == "👍"
+
+    def test_react_persisted(self, tmp_path: Path) -> None:
+        audit_react(chat_id="123", message_id="10", emoji="🎉", audit_dir=tmp_path)
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+        assert records[0].exchange_type == "react"
+        assert records[0].metadata["emoji"] == "🎉"
+
+    def test_react_returns_record(self, tmp_path: Path) -> None:
+        returned = audit_react(
+            chat_id="123", message_id="10", emoji="✅", audit_dir=tmp_path
+        )
+        persisted = read_records(audit_dir=tmp_path)
+        assert len(persisted) == 1
+        assert returned == persisted[0]
+
+
+class TestAuditEdit:
+    def test_basic_edit(self, tmp_path: Path) -> None:
+        record = audit_edit(
+            chat_id="8122530898",
+            message_id="42",
+            body="Updated message text",
+            audit_dir=tmp_path,
+        )
+        assert record.direction == "outbound"
+        assert record.exchange_type == "edit"
+        assert record.channel_source == "telegram"
+        assert record.sender_identity == "orchestrator"
+        assert record.chat_id == "8122530898"
+        assert record.message_id == "42"
+        assert record.content_hash == content_hash("Updated message text")
+        assert record.content_preview == "Updated message text"
+
+    def test_edit_persisted(self, tmp_path: Path) -> None:
+        audit_edit(
+            chat_id="123",
+            message_id="10",
+            body="corrected text",
+            audit_dir=tmp_path,
+        )
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+        assert records[0].exchange_type == "edit"
+        assert records[0].direction == "outbound"
+
+    def test_edit_returns_record(self, tmp_path: Path) -> None:
+        returned = audit_edit(
+            chat_id="123",
+            message_id="10",
+            body="fixed",
+            audit_dir=tmp_path,
+        )
+        persisted = read_records(audit_dir=tmp_path)
+        assert len(persisted) == 1
+        assert returned == persisted[0]
+
+    def test_edit_long_body_preview_truncated(self, tmp_path: Path) -> None:
+        long_body = "y" * 400
+        record = audit_edit(
+            chat_id="123",
+            message_id="5",
+            body=long_body,
+            audit_dir=tmp_path,
+        )
+        assert record.content_preview == "y" * 200 + "…"
+        assert record.content_hash == content_hash(long_body)
+
+
+class TestOutboundWrapperIntegration:
+    """Cross-wrapper tests verifying they coexist in the same audit log."""
+
+    def test_mixed_outbound_sequence(self, tmp_path: Path) -> None:
+        """All three wrapper types write to the same log and can be read back."""
+        audit_reply(chat_id="123", body="Hello", audit_dir=tmp_path)
+        audit_react(chat_id="123", message_id="1", emoji="👍", audit_dir=tmp_path)
+        audit_edit(chat_id="123", message_id="2", body="Updated", audit_dir=tmp_path)
+
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 3
+        types = [r.exchange_type for r in records]
+        assert types == ["reply", "react", "edit"]
+        assert all(r.direction == "outbound" for r in records)
+
+    def test_outbound_filter(self, tmp_path: Path) -> None:
+        """Outbound wrappers can be filtered from a mixed log."""
+        # Add an inbound record manually
+        inbound = create_record(
+            direction="inbound",
+            channel_source="telegram",
+            sender_identity="user",
+            exchange_type="message",
+            content="operator says hi",
+            chat_id="123",
+        )
+        append_record(inbound, audit_dir=tmp_path)
+
+        # Add outbound via wrappers
+        audit_reply(chat_id="123", body="reply text", audit_dir=tmp_path)
+        audit_react(chat_id="123", message_id="1", emoji="🎉", audit_dir=tmp_path)
+
+        all_records = read_records(audit_dir=tmp_path)
+        assert len(all_records) == 3
+
+        outbound = read_records(audit_dir=tmp_path, direction="outbound")
+        assert len(outbound) == 2
+        assert all(r.direction == "outbound" for r in outbound)

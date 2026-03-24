@@ -206,6 +206,119 @@ def append_record(record: AuditRecord, audit_dir: Path | None = None) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Outbound audit wrappers
+# ---------------------------------------------------------------------------
+
+
+def audit_reply(
+    chat_id: str,
+    body: str,
+    reply_to: str | None = None,
+    files: list[str] | None = None,
+    audit_dir: Path | None = None,
+) -> AuditRecord:
+    """Log an outbound reply to the audit trail.
+
+    Creates an :class:`AuditRecord` with ``direction="outbound"`` and
+    ``exchange_type="reply"``, appends it, and returns it.
+
+    Args:
+        chat_id: Telegram chat ID the reply is sent to.
+        body: The reply text content.
+        reply_to: Optional message ID being replied to.
+        files: Optional list of file paths attached to the reply.
+        audit_dir: Override for audit trail directory.
+
+    Returns:
+        The persisted :class:`AuditRecord`.
+    """
+    metadata: dict[str, Any] = {}
+    if reply_to is not None:
+        metadata["reply_to"] = reply_to
+    if files:
+        metadata["files"] = files
+
+    record = create_record(
+        direction="outbound",
+        channel_source="telegram",
+        sender_identity="orchestrator",
+        exchange_type="reply",
+        content=body,
+        chat_id=chat_id,
+        metadata=metadata if metadata else None,
+    )
+    append_record(record, audit_dir=audit_dir)
+    return record
+
+
+def audit_react(
+    chat_id: str,
+    message_id: str,
+    emoji: str,
+    audit_dir: Path | None = None,
+) -> AuditRecord:
+    """Log an outbound reaction to the audit trail.
+
+    Creates an :class:`AuditRecord` with ``direction="outbound"`` and
+    ``exchange_type="react"``, appends it, and returns it.
+
+    Args:
+        chat_id: Telegram chat ID.
+        message_id: Message ID being reacted to.
+        emoji: The emoji reaction.
+        audit_dir: Override for audit trail directory.
+
+    Returns:
+        The persisted :class:`AuditRecord`.
+    """
+    record = create_record(
+        direction="outbound",
+        channel_source="telegram",
+        sender_identity="orchestrator",
+        exchange_type="react",
+        content=emoji,
+        chat_id=chat_id,
+        message_id=message_id,
+        metadata={"emoji": emoji},
+    )
+    append_record(record, audit_dir=audit_dir)
+    return record
+
+
+def audit_edit(
+    chat_id: str,
+    message_id: str,
+    body: str,
+    audit_dir: Path | None = None,
+) -> AuditRecord:
+    """Log an outbound message edit to the audit trail.
+
+    Creates an :class:`AuditRecord` with ``direction="outbound"`` and
+    ``exchange_type="edit"``, appends it, and returns it.
+
+    Args:
+        chat_id: Telegram chat ID.
+        message_id: Message ID being edited.
+        body: The new message text after editing.
+        audit_dir: Override for audit trail directory.
+
+    Returns:
+        The persisted :class:`AuditRecord`.
+    """
+    record = create_record(
+        direction="outbound",
+        channel_source="telegram",
+        sender_identity="orchestrator",
+        exchange_type="edit",
+        content=body,
+        chat_id=chat_id,
+        message_id=message_id,
+    )
+    append_record(record, audit_dir=audit_dir)
+    return record
+
+
 def read_records(
     audit_dir: Path | None = None,
     *,
