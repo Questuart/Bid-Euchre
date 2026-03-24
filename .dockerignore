@@ -1,0 +1,93 @@
+# =============================================================================
+# .dockerignore — keep the Docker image lean
+# =============================================================================
+
+# Version control
+.git/
+.gitignore
+.git-blame-ignore-revs
+
+# CI / GitHub
+.github/
+
+# Claude Code / agent infrastructure
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+MEMORY.md
+
+# Documentation and plans
+docs/
+plans/
+
+# Tests
+tests/
+.pytest_cache/
+.hypothesis/
+.test_durations
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Notebooks
+notebooks/
+.ipynb_checkpoints/
+
+# Experiments (configs and runner — not needed at runtime)
+experiments/
+
+# Data artifacts (generated, never committed)
+data/
+
+# Virtual environments
+.venv/
+venv/
+.env
+.env.local
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+*.egg
+
+# Model artifacts
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.onnx
+*.joblib
+*.model
+weights/
+checkpoints/
+
+# IDE / editor
+.vscode/
+.cursor/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Linting / formatting caches
+.ruff_cache/
+.mypy_cache/
+.pre-commit-config.yaml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc temp files
+*.tmp
+*.temp
+*.bak
+*.log
+*.logs
