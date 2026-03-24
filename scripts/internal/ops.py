@@ -2368,8 +2368,28 @@ def cmd_lane(args: argparse.Namespace) -> int:
             print(format_action_text(result))
         return 0 if result.executed else 1
 
+    elif action == "check-approvals":
+        from bid_euchre.ops.monitor import (
+            check_approval_stalls,
+            format_findings_json,
+            format_findings_text,
+        )
+
+        findings = check_approval_stalls(runtime_dir=args.runtime_dir)
+        if args.json:
+            print(json.dumps(format_findings_json(findings), indent=2))
+        else:
+            if findings:
+                print(format_findings_text(findings))
+            else:
+                print("No lanes stuck on approval prompts.")
+        return 1 if findings else 0
+
     else:
-        print("Usage: ops.py lane refresh <lane-id> | --all-idle")
+        print(
+            "Usage: ops.py lane refresh <lane-id> | --all-idle\n"
+            "       ops.py lane check-approvals"
+        )
         return 1
 
 
@@ -3326,6 +3346,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Save dirty worktree diff to /tmp and proceed with reset",
+    )
+
+    lane_sub.add_parser(
+        "check-approvals",
+        help="Check for lanes stuck on tool-approval prompts",
     )
 
     # workers (Platform-7: worker pool lifecycle management)
