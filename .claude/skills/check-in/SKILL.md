@@ -30,10 +30,12 @@ monitoring infrastructure.
 
 ### Phase 1 — Inbox Poll (MANDATORY FIRST STEP)
 
-1. **Read pending inbox messages:**
+1. **Read pending inbox messages (priority-sorted):**
    ```bash
    uv run python scripts/internal/ops.py inbox --lane orchestrator --status pending
    ```
+   Manually sort results by priority: P0 (`supervisor_alert`, `recovery`) first,
+   then P1 (`completion`, `escalation`, `blocker`), then P2 (`ack`, `progress`).
 
 2. **Filter for high-priority message types** — process these BEFORE any other
    status checks:
