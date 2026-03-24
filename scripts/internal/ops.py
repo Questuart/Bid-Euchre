@@ -1,6 +1,7 @@
 """Operator CLI — single entrypoint for steward workspace health.
 
 Usage:
+    uv run python scripts/internal/ops.py dashboard [--watch] [--interval N] [--no-probe] [--json]
     uv run python scripts/internal/ops.py status [--json]
     uv run python scripts/internal/ops.py worktrees [--json]
     uv run python scripts/internal/ops.py events [--type TYPE] [--lane LANE] [--limit N] [--json]
@@ -141,6 +142,8 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
     """Dashboard-first steward supervision surface."""
+    import time
+
     dashboard_action = getattr(args, "dashboard_action", None)
 
     if dashboard_action == "set-visibility":
@@ -162,15 +165,35 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         format_dashboard_text,
     )
 
-    view = build_dashboard_view(
-        args.runtime_dir,
-        check_worktree=not getattr(args, "no_probe", False),
-    )
+    watch = getattr(args, "watch", False)
+    interval = getattr(args, "interval", 30)
 
-    if args.json:
-        print(json.dumps(format_dashboard_json(view), indent=2))
-    else:
-        print(format_dashboard_text(view))
+    try:
+        while True:
+            view = build_dashboard_view(
+                args.runtime_dir,
+                check_worktree=not getattr(args, "no_probe", False),
+            )
+
+            if watch:
+                # Clear screen for clean refresh
+                print("\033[2J\033[H", end="", flush=True)
+
+            if args.json:
+                print(json.dumps(format_dashboard_json(view), indent=2))
+            else:
+                print(format_dashboard_text(view))
+
+            if not watch:
+                break
+
+            print(f"\n--- Refreshing every {interval}s (Ctrl+C to stop) ---")
+            sys.stdout.flush()
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        if watch:
+            print("\nWatch stopped.")
+        return 0
 
     return 0
 
@@ -2728,6 +2751,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Skip dirty-worktree subprocess probes (faster)",
+    )
+    dash_parser.add_argument(
+        "--watch",
+        "-w",
+        action="store_true",
+        default=False,
+        help="Auto-refresh dashboard in a loop (Ctrl+C to stop)",
+    )
+    dash_parser.add_argument(
+        "--interval",
+        type=int,
+        default=30,
+        help="Refresh interval in seconds when --watch is active (default: 30)",
     )
     dash_sub = dash_parser.add_subparsers(dest="dashboard_action")
     set_vis = dash_sub.add_parser(
