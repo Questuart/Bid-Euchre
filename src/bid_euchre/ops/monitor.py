@@ -1373,6 +1373,96 @@ def _notify_approval_stall(
 
 
 # ---------------------------------------------------------------------------
+# Fleet-level idle check — auto-shutoff recommendation (#1572 / #1587)
+# ---------------------------------------------------------------------------
+
+
+def check_fleet_idle(
+    runtime_dir: Path | None = None,
+    *,
+    now: datetime | None = None,
+    threshold_minutes: float = 90,
+) -> list[MonitorFinding]:
+    """Check whether the entire fleet has been idle beyond the shutoff threshold.
+
+    Calls :func:`~bid_euchre.ops.idle_detector.recommend_shutoff` and translates
+    the result into a HIGH-severity finding when shutoff is recommended.  The
+    finding's ``details`` include the structured recommendation so the
+    orchestrator can act on it (cancel cron jobs, produce handoff, etc.).
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+        now: Override for current time (for testing).
+        threshold_minutes: Minutes threshold before idle shutoff is recommended.
+
+    Returns:
+        List of findings (0 or 1).
+    """
+    findings: list[MonitorFinding] = []
+
+    try:
+        from bid_euchre.ops.idle_detector import recommend_shutoff
+
+        recommendation = recommend_shutoff(
+            threshold_minutes=threshold_minutes,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+    except Exception as exc:
+        logger.warning("Fleet idle check failed: %s", exc)
+        findings.append(
+            MonitorFinding(
+                category="fleet_idle",
+                severity=SEVERITY_WARN,
+                summary=f"Could not check fleet idle status: {exc}",
+            )
+        )
+        return findings
+
+    if recommendation.should_shutoff:
+        actions_text = "; ".join(recommendation.recommended_actions)
+        findings.append(
+            MonitorFinding(
+                category="fleet_idle",
+                severity=SEVERITY_HIGH,
+                summary=(
+                    f"Fleet idle for {recommendation.idle_status.idle_minutes:.0f}m — "
+                    f"auto-shutoff recommended"
+                ),
+                details={
+                    "should_shutoff": True,
+                    "idle_minutes": recommendation.idle_status.idle_minutes,
+                    "threshold_minutes": threshold_minutes,
+                    "recommended_actions": recommendation.recommended_actions,
+                    "reason": recommendation.idle_status.reason,
+                },
+            )
+        )
+        logger.warning(
+            "Fleet idle shutoff finding emitted: %.0fm idle. Actions: %s",
+            recommendation.idle_status.idle_minutes,
+            actions_text,
+        )
+    else:
+        # Emit an info-level finding for observability
+        status = recommendation.idle_status
+        findings.append(
+            MonitorFinding(
+                category="fleet_idle",
+                severity=SEVERITY_INFO,
+                summary=(f"Fleet active — {status.reason}"),
+                details={
+                    "should_shutoff": False,
+                    "idle_minutes": status.idle_minutes,
+                    "active_lanes": status.active_lanes,
+                },
+            )
+        )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Auto-dispatch: assign approved packets to idle lanes (SP-4-02 Step 6)
 # ---------------------------------------------------------------------------
 
@@ -1687,6 +1777,7 @@ def run_monitoring_cycle(
     7. Recently merged PR detection (new merges since last cycle)
     8. Auto-complete dispatched packets whose PRs were merged externally
     9. Auto-dispatch approved packets to idle lanes
+    10. Fleet-level idle check — auto-shutoff recommendation (#1572)
 
     Optionally sends a summary to the orchestrator inbox.
 
@@ -1740,7 +1831,10 @@ def run_monitoring_cycle(
     if not no_auto_dispatch:
         findings.extend(check_auto_dispatch(runtime_dir, current_findings=findings))
 
-    # 10. Notify orchestrator
+    # 10. Fleet-level idle check — auto-shutoff recommendation (#1572)
+    findings.extend(check_fleet_idle(runtime_dir, now=now))
+
+    # 11. Notify orchestrator
     if notify_orchestrator:
         _send_findings_to_orchestrator(findings)
 

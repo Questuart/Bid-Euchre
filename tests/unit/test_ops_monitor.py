@@ -22,6 +22,7 @@ from bid_euchre.ops.monitor import (
     check_approval_stalls,
     check_auto_dispatch,
     check_escalations,
+    check_fleet_idle,
     check_idle_lanes,
     check_lane_health,
     check_merged_dispatches,
@@ -2767,3 +2768,87 @@ class TestCheckOpenPRsReady:
 
         ready = [f for f in findings if f.category == "pr_ready"]
         assert len(ready) == 0
+
+
+# ---------------------------------------------------------------------------
+# check_fleet_idle tests
+# ---------------------------------------------------------------------------
+
+
+class TestCheckFleetIdle:
+    """Tests for fleet-level idle check (auto-shutoff wiring)."""
+
+    def test_emits_high_finding_when_idle(self) -> None:
+        """Should emit HIGH severity finding when fleet is idle."""
+        from bid_euchre.ops.idle_detector import IdleStatus, ShutoffRecommendation
+
+        idle_rec = ShutoffRecommendation(
+            should_shutoff=True,
+            idle_status=IdleStatus(
+                idle=True,
+                idle_minutes=120.0,
+                last_meaningful_event=None,
+                active_lanes=[],
+                reason="No meaningful activity for 120m (threshold: 90m)",
+            ),
+            recommended_actions=["Cancel cron jobs", "Produce handoff"],
+        )
+
+        with patch(
+            "bid_euchre.ops.monitor.check_fleet_idle.__module__",
+            create=True,
+        ):
+            with patch(
+                "bid_euchre.ops.idle_detector.recommend_shutoff",
+                return_value=idle_rec,
+            ):
+                findings = check_fleet_idle()
+
+        high = [f for f in findings if f.severity == "high"]
+        assert len(high) == 1
+        assert high[0].category == "fleet_idle"
+        assert "120m" in high[0].summary
+        assert "shutoff" in high[0].summary.lower()
+        assert high[0].details["should_shutoff"] is True
+        assert high[0].details["idle_minutes"] == 120.0
+        assert len(high[0].details["recommended_actions"]) == 2
+
+    def test_emits_info_when_active(self) -> None:
+        """Should emit info finding when fleet is active."""
+        from bid_euchre.ops.idle_detector import IdleStatus, ShutoffRecommendation
+
+        active_rec = ShutoffRecommendation(
+            should_shutoff=False,
+            idle_status=IdleStatus(
+                idle=False,
+                idle_minutes=10.0,
+                last_meaningful_event=None,
+                active_lanes=["author-a"],
+                reason="Active lanes: author-a",
+            ),
+            recommended_actions=[],
+        )
+
+        with patch(
+            "bid_euchre.ops.idle_detector.recommend_shutoff",
+            return_value=active_rec,
+        ):
+            findings = check_fleet_idle()
+
+        info = [f for f in findings if f.severity == "info"]
+        assert len(info) == 1
+        assert info[0].category == "fleet_idle"
+        assert info[0].details["should_shutoff"] is False
+        assert "author-a" in info[0].details["active_lanes"]
+
+    def test_handles_exception_gracefully(self) -> None:
+        """Should emit warn finding if idle check raises."""
+        with patch(
+            "bid_euchre.ops.idle_detector.recommend_shutoff",
+            side_effect=RuntimeError("events dir missing"),
+        ):
+            findings = check_fleet_idle()
+
+        warn = [f for f in findings if f.severity == "warn"]
+        assert len(warn) == 1
+        assert "Could not check fleet idle status" in warn[0].summary
