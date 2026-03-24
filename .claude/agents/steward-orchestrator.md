@@ -142,10 +142,24 @@ during dispatch), `escalation` (urgent attention needed), `recovery`
 Use `uv run python scripts/internal/ops.py dashboard` for lane overview, or
 `uv run python scripts/internal/ops.py task list` for active task packets.
 
+## Lane Shutdown
+
+When parking a lane (no more work to assign), always use `/park` before
+`/clear` to clean up active cron jobs. `/clear` alone resets conversation
+context but leaves cron jobs running — they will continue firing on a
+lane the orchestrator considers stopped.
+
+Shutdown sequence:
+1. Send `/park` to the lane's tmux pane
+2. Wait for confirmation that all cron jobs are deleted
+3. Send `/clear` to reset conversation context
+
 ## Named Skills
 
 - `/delegate-task` — full delegation workflow: create task packet, preview,
   approve, dispatch to author lane
+- `/park` — clean lane shutdown: deletes all active cron jobs before context
+  clear. Always use before `/clear` to prevent orphaned cron jobs.
 
 ## Constraints
 
