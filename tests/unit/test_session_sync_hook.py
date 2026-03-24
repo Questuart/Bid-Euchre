@@ -37,6 +37,24 @@ class TestSessionSyncSilentSuccess:
                 "WARNING" in line
             ), f"Non-warning stderr output found (issue #1421): {line}"
 
+    def test_git_reset_silences_stdout(self) -> None:
+        """The git reset command must redirect both stdout and stderr (issue #1437)."""
+        content = HOOK_PATH.read_text()
+        # Find the git reset line
+        reset_lines = [
+            line.strip()
+            for line in content.splitlines()
+            if "git" in line and "reset" in line and not line.strip().startswith("#")
+        ]
+        assert (
+            len(reset_lines) == 1
+        ), f"Expected 1 git reset line, found {len(reset_lines)}"
+        reset_line = reset_lines[0]
+        # Must redirect stdout (>/dev/null) — not just stderr (2>/dev/null)
+        assert (
+            ">/dev/null" in reset_line
+        ), f"git reset must redirect stdout to /dev/null: {reset_line}"
+
     def test_non_steward_dir_exits_silently(self) -> None:
         """Hook exits 0 with no output when PROJECT_DIR is not a steward dir."""
         import os
