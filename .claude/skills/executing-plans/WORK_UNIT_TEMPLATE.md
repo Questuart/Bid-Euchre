@@ -19,10 +19,16 @@ Each agent receives instructions in this format:
 7. Create PR with plan reference
 8. Update MEMORY.md with completion status
 
+**Test Criteria**:
+<!-- Specific, verifiable conditions — not just "tests pass" -->
+- [Exact verification command and expected output]
+- [Observable outcome that proves the feature works end-to-end]
+
 **Exit Criteria**:
 - All changes implemented
+- Test criteria verified (see above)
 - `make check` passing
-- PR created
+- PR created with test criteria in description
 - MEMORY.md updated
 ```
 
