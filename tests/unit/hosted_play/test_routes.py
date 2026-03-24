@@ -13,9 +13,11 @@ import pytest
 from starlette.testclient import TestClient
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
+from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
+from web.ai_manager import AIManager, ModelInfo
 from web.app import create_app
 from web.config import HostedPlayConfig
-from web.db import Decision, Match, Player
+from web.db import Decision, Hand, Match, Player
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -609,6 +611,140 @@ class TestNewMatch:
         resp = client.post(f"/play/{link_uuid}/new-match")
         assert resp.status_code == 200
         assert "Start Match" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Redeal persistence
+# ---------------------------------------------------------------------------
+
+
+class _AlwaysPassBidder(BiddingPolicy):
+    """Bidding policy that always passes — forces all-pass redeals."""
+
+    def __init__(self) -> None:
+        super().__init__(name="always_pass")
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        return BidAction.pass_bid()
+
+
+@pytest.fixture()
+def allpass_client(config):
+    """TestClient whose AI always passes — forces all-pass redeals.
+
+    The AI manager is set during the lifespan (triggered by entering the
+    TestClient context), so we swap the bidding policy after startup.
+    """
+    application = create_app(config=config)
+    with TestClient(application) as c:
+        ai_manager: AIManager = application.state.ai_manager
+        info = ai_manager.available_models["heuristic"]
+        ai_manager.available_models["heuristic"] = ModelInfo(
+            id=info.id,
+            name=info.name,
+            description=info.description,
+            bidding_policy=_AlwaysPassBidder(),
+            play_strategy=info.play_strategy,
+        )
+        yield c, application
+
+
+class TestRedealPersistence:
+    """All-pass redeal creates a Hand row marked 'redeal' with correct metadata."""
+
+    def test_all_pass_hand_row_marked_redeal(self, allpass_client):
+        """Force all-pass → assert Hand row persisted as 'redeal'."""
+        client, app = allpass_client
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        # Load the current match state to get the turn number
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "auction"
+        assert hand.current_seat == HUMAN_SEAT
+
+        original_deal_id = hand.deal_id
+        original_dealer = hand.dealer_seat
+        match_id = match_row.id
+        session.close()
+
+        # Human passes — all AI already passed → all-pass redeal
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            data={
+                "turn_number": hand.turn_number,
+                "bid_n": 0,
+                "bid_contract": "",
+            },
+        )
+        assert resp.status_code == 200
+
+        # Verify the hand row for the redealt hand
+        session = app.state.session_factory()
+        try:
+            redeal_hand = (
+                session.query(Hand).filter_by(match_id=match_id, hand_number=0).first()
+            )
+            assert redeal_hand is not None, "Expected Hand row for the redealt hand"
+            assert redeal_hand.status == "redeal"
+            assert redeal_hand.deal_id == original_deal_id
+            assert redeal_hand.dealer_seat == original_dealer
+
+            # Verify a new hand row exists for the next deal
+            next_hand = (
+                session.query(Hand)
+                .filter_by(match_id=match_id)
+                .filter(Hand.deal_id > original_deal_id)
+                .first()
+            )
+            assert next_hand is not None, "Expected Hand row for the post-redeal hand"
+            assert next_hand.status == "in_progress"
+            assert next_hand.deal_id == original_deal_id + 1
+            assert next_hand.dealer_seat == (original_dealer + 1) % 4
+        finally:
+            session.close()
+
+    def test_match_state_has_new_hand_after_redeal(self, allpass_client):
+        """After redeal, serialized match state shows the new hand (not redeal)."""
+        client, app = allpass_client
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        hand = state.current_hand
+        assert hand is not None
+        session.close()
+
+        # Human passes → all-pass redeal
+        client.post(
+            f"/play/{link_uuid}/bid",
+            data={
+                "turn_number": hand.turn_number,
+                "bid_n": 0,
+                "bid_contract": "",
+            },
+        )
+
+        # Load the match state after redeal
+        result2 = _get_match_state(app, link_uuid)
+        assert result2 is not None
+        state2, _, session2 = result2
+
+        # Match state should show the new hand in auction phase
+        new_hand = state2.current_hand
+        assert new_hand is not None
+        assert new_hand.phase == "auction"
+        assert state2.hands_played == 0  # Redeals don't count
+        session2.close()
 
 
 # ---------------------------------------------------------------------------

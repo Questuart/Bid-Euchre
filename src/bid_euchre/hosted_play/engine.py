@@ -302,18 +302,31 @@ class MatchEngine:
 
         return state
 
+    def deal_after_redeal(self, state: MatchState) -> MatchState:
+        """Advance dealer, deal a new hand, and auto-advance AI after a redeal.
+
+        The route layer calls this after persisting the terminal ``"redeal"``
+        hand row.  Separating the redeal marker from the deal gives callers a
+        chance to write the old hand state before it is replaced.
+        """
+        hand = state.current_hand
+        assert hand is not None and hand.phase == "redeal"
+        state.dealer_seat = (state.dealer_seat + 1) % _NUM_PLAYERS
+        state.deal_id += 1
+        state = self._deal_new_hand(state)
+        state = self._advance_ai(state)
+        return state
+
     def _process_auction_end(self, state: MatchState) -> MatchState:
         """Finalize the auction: set contract or trigger redeal."""
         hand = state.current_hand
         assert hand is not None
 
         if hand.bidder_seat is None:
-            # All passed — redeal
+            # All passed — mark redeal and return.  The caller (route layer)
+            # persists this terminal state, then calls deal_after_redeal()
+            # to advance the dealer and start the next hand.
             hand.phase = "redeal"
-            state.dealer_seat = (state.dealer_seat + 1) % _NUM_PLAYERS
-            state.deal_id += 1
-            state = self._deal_new_hand(state)
-            state = self._advance_ai(state)
             return state
 
         # Contract set — transition to trick play

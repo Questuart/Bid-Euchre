@@ -333,9 +333,12 @@ async def select_ai(
         session.add(match_row)
         session.flush()
 
-        # Create the initial hand row
+        # Create the initial hand row (use deal_id as hand_number to stay
+        # unique even when redeals occur before any hand completes)
         if state.current_hand is not None:
-            _ensure_hand_row(session, match_row, state.current_hand, state.hands_played)
+            _ensure_hand_row(
+                session, match_row, state.current_hand, state.current_hand.deal_id
+            )
 
         session.commit()
 
@@ -404,10 +407,9 @@ async def submit_bid(
 
         # Record pre-action state for decision logging
         pre_turn = hand.turn_number
-        hand_number = state.hands_played
 
-        # Ensure hand row exists
-        hand_row = _ensure_hand_row(session, match_row, hand, hand_number)
+        # Ensure hand row exists (keyed by deal_id for redeal-safe uniqueness)
+        hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
 
         # Log human decision
         _log_decision(
@@ -438,16 +440,28 @@ async def submit_bid(
             "bid",
         )
 
-        # Update hand row if hand completed
+        # Update hand row if hand completed or redealt
         current_hand = state.current_hand
-        if current_hand is not None and current_hand.phase in ("complete", "redeal"):
+        if current_hand is not None and current_hand.phase == "redeal":
+            # Persist the terminal redeal state before dealing next hand
             _update_hand_row(hand_row, current_hand)
+            state = engine.deal_after_redeal(state)
+            # Create a hand row for the newly dealt hand
+            if state.current_hand is not None:
+                _ensure_hand_row(
+                    session,
+                    match_row,
+                    state.current_hand,
+                    state.current_hand.deal_id,
+                )
+        elif current_hand is not None and current_hand.phase == "complete":
+            _update_hand_row(hand_row, current_hand)
+            # If a new hand started after completion, ensure its row exists
+            new_hand = state.current_hand
+            if new_hand is not None and new_hand.deal_id != hand.deal_id:
+                _ensure_hand_row(session, match_row, new_hand, new_hand.deal_id)
         elif current_hand is not None:
             hand_row.hand_state_json = json.dumps(current_hand.to_dict())
-
-        # If a new hand started, ensure its row exists
-        if state.hands_played > hand_number and state.current_hand is not None:
-            _ensure_hand_row(session, match_row, state.current_hand, state.hands_played)
 
         _update_match_row(match_row, state)
         session.commit()
@@ -504,10 +518,9 @@ async def submit_card(
 
         # Record pre-action state for decision logging
         pre_turn = hand.turn_number
-        hand_number = state.hands_played
 
-        # Ensure hand row exists
-        hand_row = _ensure_hand_row(session, match_row, hand, hand_number)
+        # Ensure hand row exists (keyed by deal_id for redeal-safe uniqueness)
+        hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
 
         # Log human decision
         _log_decision(
@@ -538,16 +551,17 @@ async def submit_card(
             "play",
         )
 
-        # Update hand row if hand completed
+        # Update hand row if hand completed (redeals cannot occur during
+        # card play, but keep the check consistent)
         current_hand = state.current_hand
-        if current_hand is not None and current_hand.phase in ("complete", "redeal"):
+        if current_hand is not None and current_hand.phase == "complete":
             _update_hand_row(hand_row, current_hand)
+            # If a new hand started after completion, ensure its row exists
+            new_hand = state.current_hand
+            if new_hand is not None and new_hand.deal_id != hand.deal_id:
+                _ensure_hand_row(session, match_row, new_hand, new_hand.deal_id)
         elif current_hand is not None:
             hand_row.hand_state_json = json.dumps(current_hand.to_dict())
-
-        # If a new hand started, ensure its row exists
-        if state.hands_played > hand_number and state.current_hand is not None:
-            _ensure_hand_row(session, match_row, state.current_hand, state.hands_played)
 
         _update_match_row(match_row, state)
         session.commit()

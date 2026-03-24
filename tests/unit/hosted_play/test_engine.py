@@ -203,7 +203,7 @@ class TestFullHandFlow:
 
 
 class TestAllPassRedeal:
-    """All 4 pass → new hand dealt, dealer advances."""
+    """All 4 pass → hand marked redeal; deal_after_redeal() starts next hand."""
 
     def test_all_pass_triggers_redeal(self, pass_engine: MatchEngine) -> None:
         state = pass_engine.start_match(SEED, "heuristic")
@@ -214,18 +214,32 @@ class TestAllPassRedeal:
         assert hand.phase == "auction"
         assert hand.current_seat == HUMAN_SEAT
 
-        # Human also passes
+        initial_dealer = state.dealer_seat
+        initial_deal_id = state.deal_id
+
+        # Human also passes → all-pass → hand marked "redeal"
         state = pass_engine.submit_human_bid(state, BidAction.pass_bid())
 
-        # After all pass, a new hand should be dealt with advanced dealer
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "redeal"
+        # Dealer and deal_id not yet advanced (waiting for persistence)
+        assert state.dealer_seat == initial_dealer
+        assert state.deal_id == initial_deal_id
+        assert state.hands_played == 0  # Redeals don't count
+
+        # After persistence, deal the next hand
+        state = pass_engine.deal_after_redeal(state)
+
         hand = state.current_hand
         assert hand is not None
         assert hand.phase == "auction"
-        # Dealer should have rotated (possibly multiple times if human wasn't first bidder)
-        assert state.hands_played == 0  # No hands completed (redeals don't count)
+        assert state.hands_played == 0  # Still no completed hands
+        assert state.dealer_seat == (initial_dealer + 1) % 4
+        assert state.deal_id == initial_deal_id + 1
 
     def test_redeal_advances_dealer(self) -> None:
-        """Verify dealer rotates on redeal."""
+        """Verify dealer rotates only after deal_after_redeal()."""
         engine = MatchEngine(
             bidding_policy=AlwaysPassBidder(),
             play_strategy=FirstLegalPlay(),
@@ -236,9 +250,15 @@ class TestAllPassRedeal:
         # Human passes — triggers all-pass redeal
         state = engine.submit_human_bid(state, BidAction.pass_bid())
 
-        # After redeal, dealer should advance by at least 1
-        # (may advance more if multiple auto-redeals happen)
-        assert state.dealer_seat != initial_dealer
+        # Before deal_after_redeal, dealer hasn't rotated
+        assert state.dealer_seat == initial_dealer
+        assert state.current_hand is not None
+        assert state.current_hand.phase == "redeal"
+
+        # After deal_after_redeal, dealer advances
+        state = engine.deal_after_redeal(state)
+        expected = (initial_dealer + 1) % 4
+        assert state.dealer_seat == expected
 
 
 # ---------------------------------------------------------------------------
@@ -512,7 +532,7 @@ class TestDealerRotation:
             assert state.dealer_seat == expected
 
     def test_dealer_rotates_on_redeal(self) -> None:
-        """Dealer also rotates when all pass (redeal)."""
+        """Dealer rotates after deal_after_redeal() on all-pass."""
         engine = MatchEngine(
             bidding_policy=AlwaysPassBidder(),
             play_strategy=FirstLegalPlay(),
@@ -520,11 +540,16 @@ class TestDealerRotation:
         state = engine.start_match(SEED, "heuristic")
         initial_dealer = state.dealer_seat
 
-        # Human passes → all pass → redeal
+        # Human passes → all pass → redeal (hand marked, not yet dealt)
         state = engine.submit_human_bid(state, BidAction.pass_bid())
+        assert state.current_hand is not None
+        assert state.current_hand.phase == "redeal"
+        assert state.dealer_seat == initial_dealer  # Not yet rotated
 
-        # Dealer should have advanced (possibly multiple times)
-        assert state.dealer_seat != initial_dealer
+        # After deal_after_redeal, dealer advances
+        state = engine.deal_after_redeal(state)
+        expected = (initial_dealer + 1) % 4
+        assert state.dealer_seat == expected
 
 
 # ---------------------------------------------------------------------------
