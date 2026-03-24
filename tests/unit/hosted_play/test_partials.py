@@ -358,12 +358,13 @@ class TestScore:
         assert "Hand 1" in html
 
     def test_high_contract_display(self, env):
+        """Engine produces lowercase 'high' for no-trump high contracts."""
         tmpl = env.get_template("partials/score.html")
         html = tmpl.render(
             score_human=10,
             score_ai=5,
             hands_played=2,
-            contract_type="HIGH",
+            contract_type="high",
             trump=None,
             winning_bid=7,
             bidder_seat=1,
@@ -374,6 +375,25 @@ class TestScore:
         )
         assert "7" in html
         assert "High" in html
+
+    def test_low_contract_display(self, env):
+        """Engine produces lowercase 'low' for no-trump low contracts."""
+        tmpl = env.get_template("partials/score.html")
+        html = tmpl.render(
+            score_human=10,
+            score_ai=5,
+            hands_played=2,
+            contract_type="low",
+            trump=None,
+            winning_bid=7,
+            bidder_seat=1,
+            tricks_team0=0,
+            tricks_team1=0,
+            dealer_seat=2,
+            phase="trick_play",
+        )
+        assert "7" in html
+        assert "Low" in html
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +438,44 @@ class TestHandResult:
         )
         assert "Set!" in html
         assert "-8" in html  # points
+
+    def test_high_contract_result(self, env):
+        """Engine produces lowercase 'high' for no-trump high contracts."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=7,
+            bidder_seat=0,
+            contract_type="high",
+            trump=None,
+            tricks_team0=8,
+            tricks_team1=2,
+            points_team0=8,
+            points_team1=2,
+            score_human=8,
+            score_ai=2,
+            hands_played=1,
+        )
+        assert "Made it!" in html
+        assert "High" in html
+
+    def test_low_contract_result(self, env):
+        """Engine produces lowercase 'low' for no-trump low contracts."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=7,
+            bidder_seat=1,
+            contract_type="low",
+            trump=None,
+            tricks_team0=3,
+            tricks_team1=7,
+            points_team0=3,
+            points_team1=7,
+            score_human=3,
+            score_ai=7,
+            hands_played=1,
+        )
+        assert "Made it!" in html
+        assert "Low" in html
 
 
 # ---------------------------------------------------------------------------
