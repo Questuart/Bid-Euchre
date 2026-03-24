@@ -30,6 +30,7 @@ from web.export import (
     SCHEMA_VERSION,
     decision_to_jsonl,
     export_decisions,
+    validate_replay,
 )
 
 # ---------------------------------------------------------------------------
@@ -624,3 +625,376 @@ class TestExportDecisions:
             record = json.loads(line)  # Must not raise
             missing = REQUIRED_FIELDS - set(record.keys())
             assert not missing, f"Missing required fields: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# Replay validation tests (validate_replay)
+# ---------------------------------------------------------------------------
+
+# Test fixtures use seed=42, deal_id=7 which produces:
+#   Seat 0: DK DT SQ CA HQ CT CQ HA DA SK
+#   Seat 1: HJ HJ SA ST HT SK HK CK DA SJ
+#   Seat 2: DK DJ SQ CK CT DT CJ CQ HT SA
+#   Seat 3: DQ HK CJ HQ SJ DQ CA HA DJ ST
+#
+# Contract: Hearts trump (contract_type="suit", trump="H")
+# Bid: Seat 1 bids 5 hearts.
+#
+# Trick 0: Seat 0 leads DK → Seat 1 plays DA → Seat 2 plays DK → Seat 3 plays DQ
+#   Winner: Seat 1 (DA is highest diamond)
+
+_MATCH_UUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+_MATCH_SEED = 42
+_DEAL_ID = 7
+
+# Visible game state capturing auction result and one completed trick.
+_GAME_STATE_AFTER_TRICK_0 = {
+    "status": "active",
+    "winner": None,
+    "score_human": 0,
+    "score_ai": 0,
+    "hands_played": 0,
+    "phase": "trick_play",
+    "dealer_seat": 0,
+    "current_seat": 1,
+    "turn_number": 8,
+    "human_hand": [
+        ["D", "T"],
+        ["S", "Q"],
+        ["C", "A"],
+        ["H", "Q"],
+        ["C", "T"],
+        ["C", "Q"],
+        ["H", "A"],
+        ["D", "A"],
+        ["S", "K"],
+    ],
+    "auction": [
+        {"seat": 1, "n": 0, "contract": None},
+        {"seat": 2, "n": 0, "contract": None},
+        {"seat": 3, "n": 0, "contract": None},
+        {"seat": 0, "n": 0, "contract": None},
+        {"seat": 1, "n": 5, "contract": "H"},
+    ],
+    "contract_type": "suit",
+    "trump": "H",
+    "current_trick": None,
+    "completed_tricks": [
+        {
+            "leader": 0,
+            "plays": [
+                [0, ["D", "K"]],
+                [1, ["D", "A"]],
+                [2, ["D", "K"]],
+                [3, ["D", "Q"]],
+            ],
+            "winner": 1,
+        },
+    ],
+    "tricks_team0": 0,
+    "tricks_team1": 1,
+}
+
+# Minimal game state for first bid decision (full human hand, auction phase).
+_GAME_STATE_AUCTION_START = {
+    "status": "active",
+    "winner": None,
+    "score_human": 0,
+    "score_ai": 0,
+    "hands_played": 0,
+    "phase": "auction",
+    "dealer_seat": 0,
+    "current_seat": 1,
+    "turn_number": 0,
+    "human_hand": [
+        ["D", "K"],
+        ["D", "T"],
+        ["S", "Q"],
+        ["C", "A"],
+        ["H", "Q"],
+        ["C", "T"],
+        ["C", "Q"],
+        ["H", "A"],
+        ["D", "A"],
+        ["S", "K"],
+    ],
+    "auction": [],
+    "contract_type": None,
+    "trump": None,
+    "current_trick": None,
+    "completed_tricks": [],
+    "tricks_team0": 0,
+    "tricks_team1": 0,
+}
+
+# Game state for the play decision at trick 0, seat 0 leading.
+_GAME_STATE_PLAY_SEAT0 = {
+    "status": "active",
+    "winner": None,
+    "score_human": 0,
+    "score_ai": 0,
+    "hands_played": 0,
+    "phase": "trick_play",
+    "dealer_seat": 0,
+    "current_seat": 0,
+    "turn_number": 5,
+    "human_hand": [
+        ["D", "K"],
+        ["D", "T"],
+        ["S", "Q"],
+        ["C", "A"],
+        ["H", "Q"],
+        ["C", "T"],
+        ["C", "Q"],
+        ["H", "A"],
+        ["D", "A"],
+        ["S", "K"],
+    ],
+    "auction": [
+        {"seat": 1, "n": 0, "contract": None},
+        {"seat": 2, "n": 0, "contract": None},
+        {"seat": 3, "n": 0, "contract": None},
+        {"seat": 0, "n": 0, "contract": None},
+        {"seat": 1, "n": 5, "contract": "H"},
+    ],
+    "contract_type": "suit",
+    "trump": "H",
+    "current_trick": {"leader": 0, "plays": []},
+    "completed_tricks": [],
+    "tricks_team0": 0,
+    "tricks_team1": 0,
+}
+
+
+def _write_jsonl(path, records):
+    """Write a list of record dicts as JSONL to *path*."""
+    with open(path, "w") as f:
+        for rec in records:
+            f.write(json.dumps(rec) + "\n")
+
+
+def _make_bid_record(turn, seat, *, chosen, legal=None, game_state=None):
+    """Build a minimal bid-phase JSONL record."""
+    return {
+        "schema_version": 1,
+        "event": "hosted_decision",
+        "match_uuid": _MATCH_UUID,
+        "match_seed": _MATCH_SEED,
+        "hand_number": 1,
+        "deal_id": _DEAL_ID,
+        "dealer_seat": 0,
+        "turn_number": turn,
+        "seat": seat,
+        "phase": "bid",
+        "actor_type": "human" if seat == 0 else "ai",
+        "decision_source": "human" if seat == 0 else "heuristic",
+        "ai_model": "heuristic",
+        "legal_actions": legal or [{"n": 0}],
+        "chosen_action": chosen,
+        "game_state": game_state or _GAME_STATE_AUCTION_START,
+        "decision_time_ms": 1000,
+        "timestamp": "2026-03-24T06:00:00+00:00",
+    }
+
+
+def _make_play_record(turn, seat, *, chosen, legal, game_state):
+    """Build a minimal play-phase JSONL record."""
+    return {
+        "schema_version": 1,
+        "event": "hosted_decision",
+        "match_uuid": _MATCH_UUID,
+        "match_seed": _MATCH_SEED,
+        "hand_number": 1,
+        "deal_id": _DEAL_ID,
+        "dealer_seat": 0,
+        "turn_number": turn,
+        "seat": seat,
+        "phase": "play",
+        "actor_type": "human" if seat == 0 else "ai",
+        "decision_source": "human" if seat == 0 else "heuristic",
+        "ai_model": "heuristic",
+        "legal_actions": legal,
+        "chosen_action": chosen,
+        "game_state": game_state,
+        "decision_time_ms": 500,
+        "timestamp": "2026-03-24T06:00:01+00:00",
+    }
+
+
+class TestValidateReplay:
+    """Tests for validate_replay — offline JSONL correctness verification."""
+
+    def test_valid_file_returns_no_errors(self, tmp_path):
+        """A correctly formed JSONL file produces an empty error list."""
+        records = [
+            # 5 bid decisions (4 passes + 1 real bid)
+            _make_bid_record(0, 1, chosen={"n": 0}),
+            _make_bid_record(1, 2, chosen={"n": 0}),
+            _make_bid_record(2, 3, chosen={"n": 0}),
+            _make_bid_record(3, 0, chosen={"n": 0}),
+            _make_bid_record(
+                4,
+                1,
+                chosen={"n": 5, "contract": "H"},
+                legal=[{"n": 0}, {"n": 5, "contract": "H"}],
+            ),
+            # Play: seat 0 leads DK (index 0), all 10 indices legal
+            _make_play_record(
+                5,
+                0,
+                chosen=0,
+                legal=list(range(10)),
+                game_state=_GAME_STATE_PLAY_SEAT0,
+            ),
+        ]
+
+        path = tmp_path / "valid.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        assert errors == [], f"Expected no errors, got: {errors}"
+
+    def test_empty_file_returns_no_errors(self, tmp_path):
+        """An empty JSONL file is trivially valid."""
+        path = tmp_path / "empty.jsonl"
+        path.write_text("")
+
+        errors = validate_replay(path)
+        assert errors == []
+
+    def test_invalid_json_line_reported(self, tmp_path):
+        """Lines that aren't valid JSON produce parse errors."""
+        path = tmp_path / "bad.jsonl"
+        path.write_text("not valid json\n")
+
+        errors = validate_replay(path)
+        assert len(errors) == 1
+        assert "invalid JSON" in errors[0]
+
+    def test_missing_required_field_reported(self, tmp_path):
+        """Records missing required routing fields produce errors."""
+        path = tmp_path / "missing.jsonl"
+        # Missing match_seed
+        _write_jsonl(path, [{"match_uuid": "abc", "hand_number": 1, "deal_id": 7}])
+
+        errors = validate_replay(path)
+        assert any("missing required field" in e for e in errors)
+
+    def test_deal_regeneration_mismatch(self, tmp_path):
+        """Detects when human_hand doesn't match dealt cards."""
+        bad_state = dict(_GAME_STATE_AUCTION_START)
+        bad_state["human_hand"] = [["Z", "9"]] * 10  # Fake cards
+
+        records = [_make_bid_record(0, 1, chosen={"n": 0}, game_state=bad_state)]
+
+        path = tmp_path / "bad_deal.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        assert any("not in dealt hand" in e for e in errors)
+
+    def test_chosen_action_not_in_legal(self, tmp_path):
+        """Detects when chosen_action is not in legal_actions."""
+        records = [
+            _make_bid_record(
+                0,
+                1,
+                chosen={"n": 7, "contract": "S"},  # Not in legal
+                legal=[{"n": 0}, {"n": 5, "contract": "H"}],
+            ),
+        ]
+
+        path = tmp_path / "bad_action.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        assert any("chosen action not in legal_actions" in e for e in errors)
+
+    def test_trick_winner_mismatch(self, tmp_path):
+        """Detects when logged trick winner disagrees with trick_winner()."""
+        bad_state = json.loads(json.dumps(_GAME_STATE_AFTER_TRICK_0))
+        # Trick 0: DA wins (seat 1), but we claim seat 3 won.
+        bad_state["completed_tricks"][0]["winner"] = 3
+
+        records = [
+            _make_bid_record(0, 1, chosen={"n": 0}),
+            _make_play_record(
+                5,
+                0,
+                chosen=0,
+                legal=list(range(10)),
+                game_state=bad_state,
+            ),
+        ]
+
+        path = tmp_path / "bad_winner.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        assert any("winner mismatch" in e for e in errors)
+
+    def test_trick_count_mismatch(self, tmp_path):
+        """Detects when logged tricks_team counts don't match completed_tricks."""
+        bad_state = json.loads(json.dumps(_GAME_STATE_AFTER_TRICK_0))
+        # Completed trick winner is seat 1 (team 1), but claim team0 won it.
+        bad_state["tricks_team0"] = 1
+        bad_state["tricks_team1"] = 0
+
+        records = [
+            _make_bid_record(0, 1, chosen={"n": 0}),
+            _make_play_record(
+                5,
+                0,
+                chosen=0,
+                legal=list(range(10)),
+                game_state=bad_state,
+            ),
+        ]
+
+        path = tmp_path / "bad_count.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        assert any("team0 tricks mismatch" in e for e in errors)
+        assert any("team1 tricks mismatch" in e for e in errors)
+
+    def test_play_legality_cross_check(self, tmp_path):
+        """Verifies get_legal_indices cross-check catches bad legal_actions."""
+        # Seat 0 leading — all 10 indices are legal.
+        # But we claim only index 0 is legal (wrong).
+        records = [
+            _make_bid_record(0, 1, chosen={"n": 0}),
+            _make_play_record(
+                5,
+                0,
+                chosen=0,
+                legal=[0],  # Should be [0..9]
+                game_state=_GAME_STATE_PLAY_SEAT0,
+            ),
+        ]
+
+        path = tmp_path / "bad_legal.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        assert any("legal_actions mismatch" in e for e in errors)
+
+    def test_valid_trick_winner_passes(self, tmp_path):
+        """A correct trick winner passes the check."""
+        records = [
+            _make_bid_record(0, 1, chosen={"n": 0}),
+            _make_play_record(
+                5,
+                0,
+                chosen=0,
+                legal=list(range(10)),
+                game_state=_GAME_STATE_AFTER_TRICK_0,
+            ),
+        ]
+
+        path = tmp_path / "good_winner.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        # No trick winner errors
+        assert not any("winner mismatch" in e for e in errors)
