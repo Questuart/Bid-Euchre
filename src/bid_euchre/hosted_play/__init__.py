@@ -8,10 +8,11 @@ This package is web-framework-free.  The ``web/`` application layer imports
 from here; this package must never import from ``web/``.
 """
 
-from .engine import HUMAN_SEAT, MATCH_TARGET, MatchEngine
+from .engine import HUMAN_SEAT, MATCH_TARGET, AIActionEvent, MatchEngine
 from .state import HandState, MatchState, TrickResult, TrickState
 
 __all__ = [
+    "AIActionEvent",
     "HUMAN_SEAT",
     "MATCH_TARGET",
     "HandState",

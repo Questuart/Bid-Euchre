@@ -428,17 +428,15 @@ async def submit_bid(
         )
 
         # Apply action — engine auto-advances AI
-        prev_turn = hand.turn_number
         state = engine.submit_human_bid(state, bid)
 
-        # Log AI decisions that occurred during auto-advance
+        # Log AI decisions captured during auto-advance
         _log_ai_decisions_after_advance(
             session,
             match_row,
             hand_row,
+            engine,
             state,
-            prev_turn,
-            "bid",
         )
 
         # Update hand row if hand completed or redealt
@@ -539,17 +537,15 @@ async def submit_card(
         )
 
         # Apply action — engine auto-advances AI
-        prev_turn = hand.turn_number
         state = engine.submit_human_card(state, card_index)
 
-        # Log AI decisions that occurred during auto-advance
+        # Log AI decisions captured during auto-advance
         _log_ai_decisions_after_advance(
             session,
             match_row,
             hand_row,
+            engine,
             state,
-            prev_turn,
-            "play",
         )
 
         # Update hand row if hand completed (redeals cannot occur during
@@ -613,45 +609,28 @@ def _log_ai_decisions_after_advance(
     session,
     match_row: Match,
     hand_row: Hand,
+    engine: MatchEngine,
     state,
-    prev_turn: int,
-    calling_phase: str,
 ) -> None:
-    """Log AI decisions that occurred between prev_turn and current turn.
+    """Log AI decisions captured during the engine's last auto-advance.
 
-    After the engine auto-advances AI turns, we know AI acted for every
-    turn_number between ``prev_turn + 1`` and the current turn_number.
-
-    *calling_phase* is ``"bid"`` or ``"play"`` (matching the DB constraint)
-    and is passed from the calling route handler.
-
-    Note: The engine doesn't expose per-step callbacks, so legal actions
-    and game states for intermediate AI turns are recorded as empty
-    placeholders.  This is a known V1 limitation.
+    Uses the exact per-turn action events emitted by ``MatchEngine._advance_ai``
+    (via ``engine.last_ai_events``) so that every AI decision row has the actual
+    seat, legal_actions, chosen_action, and game_state snapshot.
     """
-    current_hand = state.current_hand
-    if current_hand is None:
-        return
-
-    current_turn = current_hand.turn_number
     ai_model = state.ai_model
 
-    for t in range(prev_turn + 1, current_turn):
-        # Simplified seat calculation — approximation for V1
-        seat = (HUMAN_SEAT + 1 + (t - prev_turn - 1)) % 4
-        if seat == HUMAN_SEAT:
-            continue  # Skip — human turns are logged separately
-
+    for event in engine.last_ai_events:
         _log_decision(
             session,
             match_row,
             hand_row,
-            turn_number=t,
-            seat=seat,
-            phase=calling_phase,
+            turn_number=event.turn_number,
+            seat=event.seat,
+            phase=event.phase,
             actor_type="ai",
             decision_source=ai_model,
-            legal_actions=[],
-            chosen_action={},
-            game_state={},
+            legal_actions=event.legal_actions,
+            chosen_action=event.chosen_action,
+            game_state=event.game_state,
         )
