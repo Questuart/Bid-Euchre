@@ -24,7 +24,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 |------|--------|------|---------------|-------|
 | Step 0: Phase 4 scope lock and sub-plan registration | COMPLETE | 2026-03-23 | author-scratch | SP-4-01 created and registered. |
 | Step 1: Platform-8a preflight and Telegram transport skeleton | COMPLETE | 2026-03-24 | flex-b | SP-4-04 all steps proven. PRs #1436, #1451, #1452 merged. Pairing confirmed (user 8122530898), messages flow both ways, kill switch verified. |
-| Step 2: Platform-8b repo-owned remote audit trail, kill switch, and operator fallback | COMPLETE | 2026-03-24 | author-a | SP-4-06 all 4 PRs shipped: core writer (#1533), outbound wrappers (#1536), inbound helper (#1541), integration tests (PR 4). |
+| Step 2: Platform-8b repo-owned remote audit trail, kill switch, and operator fallback | COMPLETE | 2026-03-24 | author-a | SP-4-06 all 4 PRs shipped: core writer (#1533), outbound wrappers (#1536), inbound helper (#1541), integration tests (#1549). |
 | Step 3: Platform-9a idle-attention alerts and acknowledgement loop | PENDING | -- | -- | Prove one useful alert path with dedupe, rate limiting, and ack behavior. |
 | Step 4: Platform-9b away-from-desk queue-moving proving run | PENDING | -- | -- | Demonstrate status, reroute, review request, and blocker inspection through `orchestrator`. |
 | Step 5: Platform-9c first hardening pass and Phase 4 handoff | PENDING | -- | -- | Fix real proving-run issues, update docs, and record known gaps. |
