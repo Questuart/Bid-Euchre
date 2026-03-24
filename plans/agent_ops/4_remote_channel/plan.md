@@ -3,7 +3,7 @@
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase:** `4_remote_channel`
 **Status:** READY FOR ENTRY
-**Last updated:** 2026-03-23 by Codex (thin remote-ops v1 outline)
+**Last updated:** 2026-03-24 by Codex (register SP-4-05 reactive control-loop hardening)
 
 ---
 
@@ -28,6 +28,10 @@ treats the remote channel as a thin transport into `orchestrator`.
   before remote transport adds a new cost dimension. SP-4-02 and SP-4-03
   overlap in `scripts/internal/ops.py` and dashboard surfaces — serialize
   shared CLI/dashboard work or split further during implementation.
+- SP-4-05 (reactive control-loop hardening) stabilizes local lifecycle
+  reactivity before Platform-8 proving. Telegram host/plugin preflight may
+  proceed in parallel, but remote proving should not rely on a weak local
+  completion/stall loop.
 
 ## Phase Constraints
 
@@ -42,6 +46,9 @@ treats the remote channel as a thin transport into `orchestrator`.
 - Every inbound and outbound remote exchange must be durably recorded in
   repo-owned state
 - The remote layer must not become a second control plane
+- `cmux` is not a required dependency for Phase 4 v1.
+  - If present, it is optional presentation/transport metadata only and must not
+    inject noise or lifecycle coupling into steward tmux sessions
 
 ## Slices
 
@@ -70,12 +77,13 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 
 ## Rollout Order
 
-1. Scope lock and transport preflight
-2. Telegram transport plus repo-owned logging
-3. Kill switch, mute, and operator fallback
-4. Alert / acknowledgement loop
-5. Queue-moving remote workflows through `orchestrator`
-6. First hardening pass from real use
+1. Scope lock plus local control-loop preflight
+2. Telegram host/plugin preflight and token baseline
+3. Telegram transport plus repo-owned logging
+4. Kill switch, mute, and operator fallback
+5. Alert / acknowledgement loop
+6. Queue-moving remote workflows through `orchestrator`
+7. First hardening pass from real use
 
 ## High-Value Workflows To Prove
 
@@ -100,8 +108,9 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 |----|-------|--------|------|
 | SP-4-01 | Platform-8 scope lock | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` |
 | SP-4-02 | Remote-ops preflight hardening | in_progress | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` |
-| SP-4-03 | Token economy observability and dashboard | proposed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` |
-| SP-4-04 | Platform-8a Telegram transport configuration | proposed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` |
+| SP-4-03 | Token economy observability and dashboard | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` |
+| SP-4-04 | Platform-8a Telegram transport configuration | in_progress | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` |
+| SP-4-05 | Reactive control-loop hardening | proposed | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` |
 
 ## Step Sequence
 

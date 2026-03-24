@@ -586,6 +586,19 @@ The platform must expose its own health signals, including:
 - idle-alert delivery success/failure
 - registry/message mismatch counts
 
+Before remote proving claims the platform is reactive, local lifecycle
+observability must already be machine-actionable. The platform should derive
+routine control state from repo-owned truth instead of human polling:
+
+- packet completed / packet still stale after merge
+- lane freed / lane idle / lane unavailable
+- PR ready / PR blocked
+- stall warning / stall escalation
+
+Hooks may provide low-latency hints, but routine lifecycle truth should come
+from a repo-owned reconciler/monitor path. Inboxes, dashboards, and remote
+channels are operator projections of that state, not the primary controller.
+
 ## Remote Operator Channels
 
 The platform should support an official Claude Code plugin path for:
@@ -1245,6 +1258,9 @@ These are the short names future handoffs should use.
   - if `cmux_workspace_ref` / `cmux_surface_ref` become live and stable, the
     pane nudge adapter may move from tmux targeting to `cmux` surface targeting
   - `cmux` remains presentation and transport metadata, not control-plane truth
+  - until a first-class steward integration is explicitly approved, `cmux`
+    should remain inert for steward sessions; user-level `cmux` hooks must not
+    inject noise, errors, or lifecycle coupling into tmux-backed lanes
 
 ### `Platform-8` — Remote Operator Channel
 
@@ -1252,6 +1268,9 @@ These are the short names future handoffs should use.
 - Discord-compatible contract
 - notifications and bounded remote commands
 - preflight:
+  - verify the local control loop is already reactive enough that remote alerts
+    are projecting trusted lifecycle state rather than exporting local polling
+    gaps to the phone
   - verify Claude Code version supports Channels
   - verify claude.ai login is active
   - verify the organization/session allows channels when applicable
@@ -1309,6 +1328,19 @@ These are the short names future handoffs should use.
     repo-owned task/message contract remains canonical
   - any channel-backed lane delivery path must be treated as an adapter on top
     of repo-owned state, not as a second source of task truth
+- local control-loop prerequisite:
+  - before Platform-8 proving claims away-from-desk supervision is ready, the
+    local platform must already reconcile routine lifecycle transitions without
+    manual `gh` polling
+  - at minimum, repo-owned state must support:
+    - merged PR -> packet completed
+    - packet completed -> lane freed/eligible
+    - PR ready -> actionable signal
+    - stalled lane -> recovery/escalation
+  - remote alerts should project these reconciled states; they must not be the
+    first place the system discovers them
+  - optional presentation/transport integrations such as `cmux` must not be
+    required for this control loop and must not degrade steward tmux sessions
 - done when:
   - one remote channel can deliver summarized alerts and accept bounded replies
   - the implementation path is validated against either an official plugin or a
