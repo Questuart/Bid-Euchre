@@ -519,12 +519,21 @@ class TestWindowLayout:
 class TestTelegramChannelConfig:
     """Tests for the Telegram channel configuration (Platform-8a)."""
 
-    def test_telegram_enabled_env_var_defaults_to_zero(self) -> None:
-        """STEWARD_TELEGRAM_ENABLED must default to 0 (disabled)."""
+    def test_telegram_autodetect_with_fallback_to_zero(self) -> None:
+        """STEWARD_TELEGRAM_ENABLED must auto-detect from plugins, defaulting to 0."""
         content = STEWARD_SCRIPT.read_text()
+        # Must check whether the env var is already set (explicit override)
         assert (
-            'STEWARD_TELEGRAM_ENABLED="${STEWARD_TELEGRAM_ENABLED:-0}"' in content
-        ), "STEWARD_TELEGRAM_ENABLED must default to 0"
+            "${STEWARD_TELEGRAM_ENABLED+x}" in content
+        ), "Must check for explicit STEWARD_TELEGRAM_ENABLED override"
+        # Must auto-detect by running 'plugins list'
+        assert (
+            "plugins list" in content
+        ), "Must auto-detect Telegram plugin via 'plugins list'"
+        # Must fall back to 0 when plugin is not enabled
+        assert (
+            'STEWARD_TELEGRAM_ENABLED="0"' in content
+        ), "Must default STEWARD_TELEGRAM_ENABLED to 0 when plugin not enabled"
 
     def test_channels_flag_only_on_orchestrator(self) -> None:
         """--channels must only appear on the orchestrator pane launch, via ORCH_CHANNEL_FLAGS."""

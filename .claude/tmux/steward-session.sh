@@ -52,11 +52,20 @@ if [ -z "$CLAUDE_BIN" ]; then
 fi
 
 # Telegram channel configuration (Platform-8a).
-# Set STEWARD_TELEGRAM_ENABLED=1 to add the Telegram channel plugin to the
-# orchestrator pane.  Default is 0 (disabled / tmux-only).
+# Auto-detect: if the Telegram plugin is installed and enabled, default to on.
+# Override: set STEWARD_TELEGRAM_ENABLED=0 to explicitly disable, or =1 to force enable.
 # Only the orchestrator lane gets the channel flag — author lanes remain
 # tmux-only per SP-4-01 key decisions.
-STEWARD_TELEGRAM_ENABLED="${STEWARD_TELEGRAM_ENABLED:-0}"
+if [ -z "${STEWARD_TELEGRAM_ENABLED+x}" ]; then
+    _plugins="$("$CLAUDE_BIN" plugins list 2>/dev/null || true)"
+    if printf '%s\n' "$_plugins" | grep -q 'telegram' && \
+       ! printf '%s\n' "$_plugins" | grep -A4 'telegram' | grep -q 'disabled'; then
+        STEWARD_TELEGRAM_ENABLED="1"
+    else
+        STEWARD_TELEGRAM_ENABLED="0"
+    fi
+    unset _plugins
+fi
 
 # Platform pool worktrees
 AUTHOR_A="${PARENT_DIR}/${REPO_NAME}-steward-author"
