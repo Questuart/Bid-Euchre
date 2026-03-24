@@ -12,10 +12,10 @@
 
 | Step | Status | Date | Agent/Session | Notes |
 |------|--------|------|---------------|-------|
-| Step 0: Verify Phase 2 complete and read SP-3-02 | PENDING | -- | -- | Phase 2 CLOSED (PRs #1430, #1435). Routes already return HTMX partials. |
-| Step 1: Game board template (HTML/CSS for card display, bid UI, play UI) | PENDING | -- | -- | `game.html`, `base.html`, `style.css`. CSS-only card rendering with Unicode suits. |
-| Step 2: Template partials for HTMX responses (bid result, card play result, trick complete) | PENDING | -- | -- | `bid_panel.html`, `hand.html`, `trick.html`, `score.html`, `hand_result.html`, `match_result.html`. |
-| Step 3: Static assets (CSS, minimal JS for HTMX) | PENDING | -- | -- | `style.css`, `game.js`. Decision timer, card click handler, HTMX enhancements. |
+| Step 0: Verify Phase 2 complete and read SP-3-02 | COMPLETE | 2026-03-24 | brws-author-a | Phase 2 CLOSED (PRs #1430, #1435). SP-3-02 created (#1447). |
+| Step 1: Game board template (HTML/CSS for card display, bid UI, play UI) | IN_PROGRESS | 2026-03-24 | brws-author-a | `game.html`, `landing.html`, `style.css`. CSS-only card rendering with Unicode suits. |
+| Step 2: Template partials for HTMX responses (bid result, card play result, trick complete) | COMPLETE | 2026-03-24 | brws-author-b | PR #1475 merged. 8 HTMX partials: nickname, model-select, bid, hand, trick, score, hand-result, match-result. |
+| Step 3: Static assets (CSS, minimal JS for HTMX) | IN_PROGRESS | 2026-03-24 | brws-author-d | `style.css`, `game.js`. Decision timer, card click handler, HTMX enhancements. |
 | Step 4: End-to-end local vertical slice (uvicorn + browser test) | PENDING | -- | -- | Full match flow: create → nickname → select AI → bid → play → score → win/loss. |
 | Step 5: Refresh/resume proof (browser refresh preserves game state) | PENDING | -- | -- | Idempotent submissions + persisted state survive refresh at any point. |
 
@@ -23,7 +23,7 @@
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
-| SP-3-02 | `3_frontend_product/sub/2026-03-24_browser-ui.md` | proposed | Step 0 |
+| SP-3-02 | `3_frontend_product/sub/2026-03-24_browser-ui.md` | active | Steps 1-3 |
 | SP-3-01 | `3_frontend_product/sub/2026-03-14_htmx_game_ui.md` | superseded | -- |
 
 ## Blockers
@@ -41,6 +41,14 @@ Phase 3 and Phase 4 can execute in parallel after Phase 2 merges.
 If two agents are available, launch both simultaneously.
 
 ## Session Log
+
+### 2026-03-24 — orchestrator (checkpoint update)
+- Step 0: COMPLETE — Phase 2 verified, SP-3-02 created (PR #1447).
+- Step 1: IN_PROGRESS on brws-author-a (game board template, landing page, CSS).
+- Step 2: COMPLETE — PR #1475 merged (8 HTMX template partials).
+- Step 3: IN_PROGRESS on brws-author-d (static assets: CSS + JS).
+- SP-3-02 status: proposed → active.
+- Issue #1442 (spinner-aware activity detection) already closed by PR #1468.
 
 ### 2026-03-24 — brws-author-a
 - Completed: Phase 2 closure confirmed. Updated checkpoints with new 5-step structure from SP-3-02.
