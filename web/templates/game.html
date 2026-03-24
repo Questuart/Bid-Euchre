@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Bid Euchre — Game{% endblock %}
+
+{% block content %}
+{#
+    Main game board template for the Bid Euchre browser game.
+
+    This template composes the partial templates based on the current game phase.
+    Routes render this template with the appropriate context variables; each
+    partial documents its own expected variables in a header comment.
+
+    Top-level context variables (passed by the route handler):
+        link_uuid    — player's game link UUID
+        nickname     — player's (HTML-escaped) display name
+        phase        — overall game phase:
+                         "nickname"     — need nickname input
+                         "model_select" — choosing AI opponent
+                         "auction"      — bidding in progress
+                         "trick_play"   — playing cards
+                         "hand_result"  — between hands, showing result
+                         "match_result" — match complete, win/loss screen
+                         "redeal"       — all-pass redeal notification
+
+    Each phase includes the relevant partials. The #game-board div is the
+    primary HTMX swap target for all game-action responses.
+#}
+
+<div id="game-board">
+
+    {# ---- Setup phases: nickname & model selection ---- #}
+    {% if phase == "nickname" %}
+        {% include "partials/nickname_form.html" %}
+
+    {% elif phase == "model_select" %}
+        {% include "partials/model_select.html" %}
+
+    {# ---- Match result (win/loss screen) ---- #}
+    {% elif phase == "match_result" %}
+        {% include "partials/match_result.html" %}
+
+    {# ---- Hand result (between hands) ---- #}
+    {% elif phase == "hand_result" %}
+        {% include "partials/hand_result.html" %}
+
+    {# ---- Active game phases: auction and trick play ---- #}
+    {% elif phase in ("auction", "trick_play", "redeal") %}
+
+        {# AI hands — face-down card backs with counts #}
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
+            {# Left opponent (seat 1) #}
+            <div style="text-align:center; flex:0 0 auto;">
+                <div class="ai-hand">
+                    {% for _ in range(opp_left_count | default(0)) %}
+                    <div class="card-back"></div>
+                    {% endfor %}
+                </div>
+                <span class="ai-card-count">AI Left ({{ opp_left_count | default(0) }})</span>
+            </div>
+
+            {# Partner (seat 2) #}
+            <div style="text-align:center; flex:1 1 auto;">
+                <div class="ai-hand">
+                    {% for _ in range(partner_count | default(0)) %}
+                    <div class="card-back"></div>
+                    {% endfor %}
+                </div>
+                <span class="ai-card-count">Partner ({{ partner_count | default(0) }})</span>
+            </div>
+
+            {# Right opponent (seat 3) #}
+            <div style="text-align:center; flex:0 0 auto;">
+                <div class="ai-hand">
+                    {% for _ in range(opp_right_count | default(0)) %}
+                    <div class="card-back"></div>
+                    {% endfor %}
+                </div>
+                <span class="ai-card-count">AI Right ({{ opp_right_count | default(0) }})</span>
+            </div>
+        </div>
+
+        {# Trick area — always shown during active play #}
+        {% include "partials/trick.html" %}
+
+        {# Bid panel — auction phase only, when it's the human's turn #}
+        {% if phase == "auction" %}
+            {% include "partials/bid_panel.html" %}
+        {% endif %}
+
+        {# Human hand — always shown during active play #}
+        {% include "partials/hand.html" %}
+
+        {# Score bar — always shown during active play #}
+        {% include "partials/score.html" %}
+
+    {% endif %}
+
+</div>
+{% endblock %}
