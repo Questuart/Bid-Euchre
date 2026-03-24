@@ -389,6 +389,48 @@ def write_verdict(
     return path
 
 
+def _is_verdict_already_notified(
+    pr_number: int,
+    reviewed_sha: str,
+    bus_root: Path,
+) -> bool:
+    """Check if the orchestrator inbox already has a verdict for this PR+SHA.
+
+    Semantic dedup: prevents duplicate verdict bus messages when multiple
+    writers (review_driver, post-merge review) or retry rounds produce
+    verdicts for the same PR at the same SHA.  Content-based dedup in
+    ``send_message`` catches exact-summary matches; this catches cases
+    where the summary text differs but the underlying PR+SHA is the same
+    (e.g., different verdict statuses across rounds).
+
+    Returns ``True`` if a non-terminal inbox message already carries a
+    verdict notification for the given ``(pr_number, reviewed_sha)`` pair.
+    """
+    from bid_euchre.ops.message_bus import _read_inbox_raw
+
+    raw = _read_inbox_raw("orchestrator", bus_root)
+
+    # Deduplicate: latest record per message_id wins
+    by_id: dict[str, dict[str, Any]] = {}
+    for rec in raw:
+        mid = rec.get("message_id")
+        if mid:
+            by_id[mid] = rec
+
+    terminal = {"resolved", "expired", "dead_lettered"}
+    for rec in by_id.values():
+        if rec.get("status") in terminal:
+            continue
+        payload = rec.get("payload", {})
+        if (
+            payload.get("pr_number") == pr_number
+            and payload.get("reviewed_sha") == reviewed_sha
+            and payload.get("verdict_status") is not None
+        ):
+            return True
+    return False
+
+
 def _emit_verdict_bus_message(
     verdict: ReviewVerdict,
     *,
@@ -396,6 +438,11 @@ def _emit_verdict_bus_message(
     bus_root: Path | None = None,
 ) -> None:
     """Send a bus message to the orchestrator about a terminal verdict.
+
+    Applies semantic dedup: if the orchestrator inbox already contains a
+    verdict notification for the same ``(pr_number, reviewed_sha)`` pair,
+    the send is skipped regardless of summary text differences.  This
+    prevents noise from multiple writers or review rounds.
 
     Best-effort: failures are logged but do not propagate — the verdict
     file is already written and the event already emitted by this point.
@@ -408,11 +455,25 @@ def _emit_verdict_bus_message(
         )
 
         root = shared_bus_root(bus_root)
+
+        # Semantic dedup: skip if orchestrator already knows about this PR+SHA
+        if _is_verdict_already_notified(verdict.pr_number, verdict.reviewed_sha, root):
+            logger.info(
+                "Verdict bus message suppressed (semantic dedup): "
+                "PR #%d @ %s already notified",
+                verdict.pr_number,
+                verdict.reviewed_sha[:8],
+            )
+            return
+
         msg = create_message(
             from_lane=lane_id,
             to_lane="orchestrator",
             message_type="progress",
-            summary=(f"Review verdict for PR #{verdict.pr_number}: {verdict.status}"),
+            summary=(
+                f"Review verdict for PR #{verdict.pr_number} "
+                f"@ {verdict.reviewed_sha[:8]}: {verdict.status}"
+            ),
             payload={
                 "pr_number": verdict.pr_number,
                 "reviewed_sha": verdict.reviewed_sha,
@@ -426,7 +487,7 @@ def _emit_verdict_bus_message(
         logger.info(
             "Bus message sent to orchestrator: PR #%d verdict=%s",
             verdict.pr_number,
-            verdict.status,
+            verdict.reviewed_sha[:8],
         )
     except Exception:
         logger.warning(
