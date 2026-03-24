@@ -293,7 +293,7 @@ make check-quiet
 ## Outcome
 
 All 4 PRs shipped on 2026-03-24:
-- PR 1: Core writer + unit tests (#1533)
+- PR 1: Core writer + unit tests (#1532)
 - PR 2: Outbound wrappers (#1536)
 - PR 3: Inbound helper + channel tag parser (#1541)
 - PR 4: Integration tests + checkpoints update (#1549)
