@@ -24,7 +24,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 |------|--------|------|---------------|-------|
 | Step 0: Phase 4 scope lock and sub-plan registration | COMPLETE | 2026-03-23 | author-scratch | SP-4-01 created and registered. |
 | Step 1: Platform-8a preflight and Telegram transport skeleton | COMPLETE | 2026-03-24 | flex-b | SP-4-04 all steps proven. PRs #1436, #1451, #1452 merged. Pairing confirmed (user 8122530898), messages flow both ways, kill switch verified. |
-| Step 2: Platform-8b repo-owned remote audit trail, kill switch, and operator fallback | IN_PROGRESS | 2026-03-24 | author-a | SP-4-06 sub-plan created. 4-PR decomposition: core writer, outbound wrappers, inbound helper, integration tests. |
+| Step 2: Platform-8b repo-owned remote audit trail, kill switch, and operator fallback | COMPLETE | 2026-03-24 | author-a | SP-4-06 all 4 PRs shipped: core writer (#1533), outbound wrappers (#1536), inbound helper (#1541), integration tests (PR 4). |
 | Step 3: Platform-9a idle-attention alerts and acknowledgement loop | PENDING | -- | -- | Prove one useful alert path with dedupe, rate limiting, and ack behavior. |
 | Step 4: Platform-9b away-from-desk queue-moving proving run | PENDING | -- | -- | Demonstrate status, reroute, review request, and blocker inspection through `orchestrator`. |
 | Step 5: Platform-9c first hardening pass and Phase 4 handoff | PENDING | -- | -- | Fix real proving-run issues, update docs, and record known gaps. |
@@ -40,7 +40,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-03 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | completed | Pre-Platform-8 |
 | SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | completed | Step 1 |
 | SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | completed | Pre-Platform-8 |
-| SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | proposed | Step 2 |
+| SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | completed | Step 2 |
 
 ### Shared Surface Ownership
 
@@ -88,3 +88,4 @@ implementation.
 | 2026-03-24 | SP-4-05 COMPLETE (brws-author-d assessment). All 7 steps verified: Step 0 cmux guard (PR #1500), Steps 1-2 completion unification (PRs #1491, #1474), Step 3 typed reconciler (PR #1490), Step 4 persistent loop (SP-3-08 #1287 + #1490), Step 5 inbox hygiene (PRs #1507, #1486), Step 6 lifecycle proven through fleet operation (10+ PRs processed across all pools with hook fast path, auto-merge fallback, and stall detection all exercised). All exit criteria met. Issue #1502 verified resolved on main (PR #1500 superseded stale-base clobber from #1496). Issue #1503 findings addressed by PR #1511. |
 | 2026-03-24 | SP-4-05 Step 6 formal proving run PASSED (flex-b). Executed 3 isolated scenarios from the test plan (PR #1512): (1) Local merge hook fast path — PR #1515, packet 107ce27f717c auto-completed by hook, sentinel + bus message confirmed; (2) Monitor fallback — packet 08a24f95c8b0 auto-completed by `check_merged_dispatches()` on next monitor cycle; (3) Stall detection — 5-cycle test with mock probes, re-nudge at cycle 3 (WARN), escalation at cycle 4+ (HIGH). Cross-cycle state persistence verified. Results at `sp4-05-step6-proving-run-results.md`. |
 | 2026-03-24 | SP-4-06 proposed (author-a). Platform-8b audit trail sub-plan created at `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md`. Seam analysis: inbound via `<channel>` tags, outbound via MCP tool calls (`reply`/`react`/`edit`). Interception at application layer (wrappers + helpers), not transport layer. 4-PR decomposition: core writer + unit tests, outbound wrappers, inbound helper, integration tests. File scope: `src/bid_euchre/ops/audit_trail.py` (new), `tests/unit/test_audit_trail.py` (new). Step 2 marked IN_PROGRESS. |
+| 2026-03-24 | SP-4-06 COMPLETE (author-a). All 4 PRs shipped: PR 1 core writer (#1533), PR 2 outbound wrappers (#1536), PR 3 inbound helper + channel tag parser (#1541), PR 4 integration tests. Integration test suite covers: full round-trip conversations (4 tests), concurrent writers with flock safety (3 tests), large-volume 1000+ record throughput (4 tests), mixed direction filtering (9 tests). 20 integration tests total, all passing. Step 2 marked COMPLETE. |
