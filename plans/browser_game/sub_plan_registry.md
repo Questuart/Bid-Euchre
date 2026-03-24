@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Browser Game Hosting and Human Data Capture
 
 **Governing plan:** `plans/browser_game/governing_plan.md`
-**Last updated:** 2026-03-24
+**Last updated:** 2026-03-24 (Phase 5 activation)
 
 ---
 
@@ -15,13 +15,14 @@
 | SP-3-01 | HTMX Game UI (design reference) | Phase 3 — Frontend Product | superseded | -- | `3_frontend_product/sub/2026-03-14_htmx_game_ui.md` | 2026-03-14 | -- |
 | SP-3-02 | Browser UI Implementation | Phase 3 — Frontend Product | completed | brws-author-a | `3_frontend_product/sub/2026-03-24_browser-ui.md` | 2026-03-24 | 2026-03-24 |
 | SP-4-01 | Export & Replay Validation | Phase 4 — Data Pipeline | completed | brws-author-a | `4_data_pipeline/sub/2026-03-14_export_replay.md` | 2026-03-14 | 2026-03-24 |
+| SP-5-01 | Deployment and Launch | Phase 5 — Deployment and Launch Validation | active | brws-author-a | `5_deployment_launch/sub/2026-03-24_deployment-and-launch.md` | 2026-03-24 | -- |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
 | proposed | 0 |
-| active | 0 |
+| active | 1 |
 | blocked | 0 |
 | completed | 5 |
 | abandoned | 0 |
