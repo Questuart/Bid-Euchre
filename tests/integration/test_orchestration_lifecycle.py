@@ -20,6 +20,8 @@ from bid_euchre.ops.message_bus import (
     create_message,
     escalate_unacked,
     read_inbox,
+    read_inbox_prioritized,
+    resolve_message,
     send_message,
     shared_bus_root,
 )
@@ -422,3 +424,56 @@ class TestCrossPoolLifecycle:
             assert not any(
                 m["message_id"] == mid for m in other_inbox
             ), f"Message {mid} for {lane} leaked into {other_lane}'s inbox"
+
+
+# ---------------------------------------------------------------------------
+# Test: Ack/resolve transitions clear surfaced urgent items
+# ---------------------------------------------------------------------------
+
+
+class TestResolveTransitionsClearUrgent:
+    """Ack/resolve on urgent items removes them from pending views."""
+
+    def test_resolve_clears_urgent_items(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Urgent escalation message disappears from P0 after ack+resolve."""
+        # Send an urgent escalation to orchestrator
+        esc = create_message(
+            from_lane="ops",
+            to_lane="orchestrator",
+            message_type="escalation",
+            summary="URGENT: lane stalled",
+            priority="urgent",
+        )
+        esc_id = send_message(esc, bus_root=bus_root, events_dir=events_dir)
+
+        # Verify it appears in P0
+        p0, p1, p2 = read_inbox_prioritized(
+            "orchestrator", bus_root=bus_root, auto_expire=False, auto_compact=False
+        )
+        assert any(m["message_id"] == esc_id for m in p0)
+
+        # Ack the escalation
+        ack_message(esc_id, "orchestrator", bus_root=bus_root, events_dir=events_dir)
+
+        # After ack, no longer in pending inbox
+        pending = read_inbox(
+            "orchestrator",
+            bus_root=bus_root,
+            status="pending",
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert not any(m["message_id"] == esc_id for m in pending)
+
+        # Resolve it
+        resolve_message(
+            esc_id, "orchestrator", bus_root=bus_root, events_dir=events_dir
+        )
+
+        # After resolve, status is terminal
+        from bid_euchre.ops.message_bus import check_ack_status
+
+        status = check_ack_status(esc_id, "orchestrator", bus_root=bus_root)
+        assert status == "resolved"

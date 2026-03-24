@@ -814,6 +814,7 @@ def check_stalled_lanes(
     no_recovery: bool = False,
     _activity_probe: Any | None = None,
     _nudge_fn: Any | None = None,
+    _capture_fn: Any | None = None,
 ) -> list[MonitorFinding]:
     """Detect dispatched+acked lanes that have stopped making progress.
 
@@ -822,6 +823,9 @@ def check_stalled_lanes(
     2. The dispatch is older than ``stall_minutes``.
     3. The tmux pane's activity epoch has not changed over
        ``consecutive_cycles`` consecutive monitor invocations.
+    4. The pane does NOT show active-work indicators (spinner, progress
+       counters) — prevents false stall reports when the lane is actively
+       thinking but producing no visible output (#1612).
 
     When recovery is enabled (``no_recovery=False``, the default), stall
     detection includes a 2-step recovery ladder:
@@ -847,6 +851,9 @@ def check_stalled_lanes(
             If provided, used instead of tmux probe.
         _nudge_fn: Optional callable(lane_id, packet_id) for testing.
             If provided, used instead of ``nudge_pane()``.
+        _capture_fn: Optional callable(lane_id) -> str|None for testing.
+            If provided, used instead of ``_capture_pane_content()`` when
+            checking for active-work indicators (#1612).
 
     Returns:
         List of findings for stalled lanes (WARN for detection, HIGH for
@@ -959,6 +966,20 @@ def check_stalled_lanes(
         }
 
         if unchanged_count >= consecutive_cycles:
+            # ---- Active-work guard (#1612) ----
+            # Before reporting stalled, verify the pane isn't showing
+            # active-work indicators (spinner, progress counters).  A lane
+            # that is actively thinking may have an unchanged activity epoch
+            # but should not be reported as stalled.
+            pane_content = _capture_pane_content(
+                lane_id, tmux_session, runtime_dir, _capture_fn=_capture_fn
+            )
+            if pane_content is not None and _detect_active_work(pane_content):
+                # Lane is actively working — reset observation, skip stall
+                observations[lane_id]["unchanged_count"] = 0
+                observations[lane_id]["recovery_count"] = 0
+                continue
+
             # ---- Recovery ladder ----
             if not no_recovery and recovery_count == 0:
                 # Step 1: Re-nudge the lane

@@ -3,7 +3,7 @@
 **ID:** SP-4-06
 **Date:** 2026-03-24
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Platform-8b
-**Status:** completed
+**Status:** library complete, runtime wiring pending (#1573)
 **Owner:** author-a
 
 ---
@@ -260,6 +260,23 @@ make check-quiet
 - [x] No changes to existing bus, monitor, or dashboard modules
 - [x] Seam wiring documentation describes how orchestrator uses the audit trail
 - [x] Phase 4 checkpoints updated (Step 2 progressed toward COMPLETE)
+
+## Runtime Wiring Gap (#1573)
+
+> **Status (2026-03-24):** The audit trail *library* is complete and tested
+> (writer, wrappers, inbound/outbound helpers, integration tests). However,
+> **no runtime code path actually calls the audit functions**. The library
+> is a capability, not yet integrated into the orchestrator workflow.
+>
+> **What is missing:**
+> - No non-test caller of `audit_inbound()`, `audit_reply()`, `audit_react()`, or `audit_edit()`
+> - No orchestrator hook or skill that intercepts Telegram exchanges
+> - No PostToolUse hook for outbound MCP tool calls
+> - No inbound `<channel>` tag interception in orchestrator workflow
+>
+> **Next step:** A follow-up slice (Platform-8b-wiring) must wire the
+> audit trail into the orchestrator's Telegram workflow before Step 2 can
+> be considered truly COMPLETE. See #1573 for tracking.
 
 ## Known Gaps (deferred to Platform-9c hardening)
 

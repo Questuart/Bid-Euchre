@@ -770,6 +770,22 @@ class TestCheckExpired:
         expired2 = check_expired(bus_root, events_dir=events_dir, now=future + 100)
         assert len(expired2) == 0  # Already expired, skip
 
+    def test_check_expired_skips_acked_messages(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Acked messages must NOT be expired — acked→expired is invalid (#1596)."""
+        msg = create_message(
+            "a", "b", "assignment", "Acked task", payload={"ttl_seconds": 1}
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "b", bus_root, events_dir=events_dir)
+
+        # Run expiry well past TTL
+        future = time.time() + 100
+        expired = check_expired(bus_root, events_dir=events_dir, now=future)
+        # Should NOT expire the acked message (no ValueError raised)
+        assert len(expired) == 0
+
     def test_zero_now_is_preserved(self, bus_root: Path, events_dir: Path) -> None:
         """now=0.0 is a valid override and must not fall through to time.time()."""
         msg = create_message(
@@ -2102,16 +2118,40 @@ class TestEscalateUnacked:
         )
         assert len(first_escalation) == 1
 
-        # Now escalate again — only the original message should fire,
-        # not the escalation message itself. But the original is still
-        # pending, so it escalates again (just not the escalation).
+        # Now escalate again — the original already has an active
+        # (non-terminal) escalation, so it should NOT re-escalate (#1610).
         second_escalation = escalate_unacked(
             "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
         )
-        # Should still escalate the original (it's still unacked)
-        assert len(second_escalation) == 1
-        # But the escalation message IDs should be different
-        assert second_escalation[0] != first_escalation[0]
+        assert len(second_escalation) == 0, (
+            "Expected no re-escalation when an active escalation already "
+            f"exists, got {second_escalation}"
+        )
+
+    def test_escalation_dedup_allows_after_resolved(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Once an escalation is resolved, a new one can fire (#1610)."""
+        msg = create_message("ops", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # First escalation
+        first = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(first) == 1
+
+        # Resolve the escalation (ack then resolve)
+        ack_message(first[0], "orch", bus_root, events_dir=events_dir)
+        resolve_message(first[0], "orch", bus_root, events_dir=events_dir)
+
+        # Second escalation should now fire (original still unacked,
+        # previous escalation is terminal)
+        second = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(second) == 1
+        assert second[0] != first[0]
 
     def test_multiple_unacked_messages(self, bus_root: Path, events_dir: Path) -> None:
         """Multiple unacked messages should each get an escalation."""

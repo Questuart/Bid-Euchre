@@ -1028,6 +1028,158 @@ class TestStallRecovery:
 
 
 # ---------------------------------------------------------------------------
+# Active-work guard prevents false stall reports (#1612)
+# ---------------------------------------------------------------------------
+
+
+class TestActiveWorkGuard:
+    """Active-work indicators prevent false stall reports (#1612)."""
+
+    def test_active_work_prevents_stall_finding(self, tmp_path: Path) -> None:
+        """Lane showing spinner is NOT reported as stalled."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        nudges: list[tuple[str, str]] = []
+
+        def mock_nudge(lane_id: str, packet_id: str) -> None:
+            nudges.append((lane_id, packet_id))
+
+        def probe(_: str) -> int:
+            return 9999  # Same epoch every cycle (looks stalled)
+
+        def capture(_: str) -> str:
+            # Spinner visible — lane is actively working
+            return "Some output\n⏺ Running Bash(uv run pytest...)  12s\n"
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Build up to stall threshold
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=mock_nudge,
+                _capture_fn=capture,
+            )
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=mock_nudge,
+                _capture_fn=capture,
+            )
+            # Cycle 3: would normally stall but spinner is active
+            f3 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=mock_nudge,
+                _capture_fn=capture,
+            )
+
+        # No stall finding — lane is actively working
+        assert len(f3) == 0, f"Expected no stall findings, got: {f3}"
+        # No nudge attempted
+        assert len(nudges) == 0
+
+    def test_idle_pane_still_reports_stall(self, tmp_path: Path) -> None:
+        """Lane with NO spinner IS reported as stalled (normal behavior)."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        def probe(_: str) -> int:
+            return 9999
+
+        def capture(_: str) -> str:
+            # Idle prompt — no spinner
+            return "Some old output\n$\n"
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+                _capture_fn=capture,
+            )
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+                _capture_fn=capture,
+            )
+            # Cycle 3: should report stall
+            f3 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+                _capture_fn=capture,
+            )
+
+        assert len(f3) == 1
+        assert "stalled" in f3[0].summary or "re-nudged" in f3[0].summary
+
+    def test_capture_failure_does_not_block_stall_detection(
+        self, tmp_path: Path
+    ) -> None:
+        """If pane capture returns None, stall detection proceeds normally."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")
+
+        def probe(_: str) -> int:
+            return 9999
+
+        def capture(_: str) -> None:
+            return None  # Pane capture failed
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+                _capture_fn=capture,
+            )
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+                _capture_fn=capture,
+            )
+            f3 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+                _capture_fn=capture,
+            )
+
+        # Should still report stall — capture failure doesn't block detection
+        assert len(f3) == 1
+
+
+# ---------------------------------------------------------------------------
 # check_merged_dispatches tests (Gap A: auto-merge bypass)
 # ---------------------------------------------------------------------------
 
