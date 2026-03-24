@@ -2,7 +2,7 @@
    Context variables:
      - winning_bid: int — the winning bid amount
      - bidder_seat: int — seat of the declarer
-     - contract_type: str — "suit", "HIGH", or "LOW"
+     - contract_type: str — "suit", "high", or "low"
      - trump: str | None — trump suit letter (if suit contract)
      - tricks_team0: int — tricks won by human team (seats 0, 2)
      - tricks_team1: int — tricks won by AI team (seats 1, 3)
@@ -29,9 +29,9 @@
                 {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }} bid {{ winning_bid }}
                 {% if contract_type == "suit" and trump %}
                     {{ suit_symbols.get(trump, trump) }}
-                {% elif contract_type == "HIGH" %}
+                {% elif contract_type == "high" %}
                     High
-                {% elif contract_type == "LOW" %}
+                {% elif contract_type == "low" %}
                     Low
                 {% endif %}
                 and took {{ declarer_tricks }} tricks.
@@ -42,9 +42,9 @@
                 {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }} bid {{ winning_bid }}
                 {% if contract_type == "suit" and trump %}
                     {{ suit_symbols.get(trump, trump) }}
-                {% elif contract_type == "HIGH" %}
+                {% elif contract_type == "high" %}
                     High
-                {% elif contract_type == "LOW" %}
+                {% elif contract_type == "low" %}
                     Low
                 {% endif %}
                 but only took {{ declarer_tricks }} tricks.
