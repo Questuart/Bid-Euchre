@@ -1,0 +1,33 @@
+# Render Blueprint — Bid Euchre browser game
+# https://docs.render.com/blueprint-spec
+#
+# Deploy via: connect GitHub repo on Render dashboard, select this blueprint.
+# Render auto-deploys on pushes to main.
+
+databases:
+  - name: bideuchre-db
+    plan: free
+    databaseName: bideuchre
+    user: bideuchre
+
+services:
+  - type: web
+    name: bideuchre-web
+    runtime: docker
+    repo: https://github.com/Questuart/Bid-Euchre
+    branch: main
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bideuchre-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MODELS_DIR
+        value: /app/models
+      - key: DEFAULT_MODEL_ID
+        value: heuristic
