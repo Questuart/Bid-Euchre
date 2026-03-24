@@ -1381,13 +1381,29 @@ def _ensure_imported(output_dir: Path) -> None:
 
     Runs ``import_usage_data`` followed by ``attribute_sessions`` so that
     both ``session_usage.jsonl`` and ``session_attributions.jsonl`` are
-    populated.  This is best-effort — failures are logged and swallowed
-    so the dashboard never crashes due to import issues.
+    populated.  When usage data already exists but only attributions are
+    missing (e.g. a previous import crashed mid-way), rebuilds attributions
+    without re-importing host usage.
+
+    This is best-effort — failures are logged and swallowed so the dashboard
+    never crashes due to import issues.
     """
     if not _is_store_stale(output_dir):
         return
 
     try:
+        usage_file = output_dir / "session_usage.jsonl"
+        attr_file = output_dir / "session_attributions.jsonl"
+        usage_exists = usage_file.exists() and usage_file.stat().st_size > 0
+        attr_missing = not attr_file.exists() or attr_file.stat().st_size == 0
+
+        if usage_exists and attr_missing:
+            # Usage data is present but attributions are absent — rebuild
+            # attributions from existing data without re-scanning host usage.
+            attribute_sessions(output_dir=output_dir)
+            logger.info("Rebuilt missing attributions from existing usage data")
+            return
+
         result = import_usage_data(output_dir=output_dir)
         if result.sessions_imported > 0 or result.sessions_skipped > 0:
             attribute_sessions(output_dir=output_dir)

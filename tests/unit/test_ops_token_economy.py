@@ -28,6 +28,7 @@ from bid_euchre.ops.token_economy import (
     SessionRecord,
     ThroughputMetrics,
     UsageSummary,
+    _ensure_imported,
     _is_session_complete,
     _is_store_stale,
     attribute_sessions,
@@ -1437,6 +1438,45 @@ class TestAutoImport:
         output_dir.mkdir()
         result = dashboard_token_economy(output_dir=output_dir, auto_import=False)
         assert result == {}
+
+    def test_missing_attributions_rebuilds_without_reimport(
+        self, tmp_path: Path
+    ) -> None:
+        """When usage exists but attributions are missing, rebuild attributions
+        without re-importing host usage data (#1505)."""
+        from unittest.mock import patch
+
+        output_dir = tmp_path / "token_economy"
+        output_dir.mkdir()
+
+        # Write usage data as if a previous import succeeded
+        usage_file = output_dir / "session_usage.jsonl"
+        usage_file.write_text(
+            json.dumps(
+                {
+                    "session_id": "s1",
+                    "input_tokens": 100,
+                    "output_tokens": 400,
+                    "duration_minutes": 10,
+                    "project_path": "/tmp/test",
+                    "imported_at": "2026-03-20T10:00:00Z",
+                    "source_hash": "abc123",
+                }
+            )
+            + "\n"
+        )
+        # No attributions file — simulates a crashed previous import
+
+        with (
+            patch("bid_euchre.ops.token_economy.import_usage_data") as mock_import,
+            patch("bid_euchre.ops.token_economy.attribute_sessions") as mock_attr,
+        ):
+            _ensure_imported(output_dir)
+
+        # attribute_sessions should be called to rebuild attributions
+        mock_attr.assert_called_once_with(output_dir=output_dir)
+        # import_usage_data should NOT be called — usage data already exists
+        mock_import.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
