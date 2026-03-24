@@ -13,14 +13,14 @@
     Top-level context variables (passed by the route handler):
         link_uuid    — player's game link UUID
         nickname     — player's (HTML-escaped) display name
-        phase        — overall game phase:
-                         "nickname"     — need nickname input
-                         "model_select" — choosing AI opponent
-                         "auction"      — bidding in progress
-                         "trick_play"   — playing cards
-                         "hand_result"  — between hands, showing result
-                         "match_result" — match complete, win/loss screen
-                         "redeal"       — all-pass redeal notification
+        phase        — overall game phase (mapped from engine state by the route):
+                         "nickname"     — need nickname input     (player.nickname is None)
+                         "model_select" — choosing AI opponent    (no active match)
+                         "auction"      — bidding in progress     (hand.phase == "auction")
+                         "trick_play"   — playing cards           (hand.phase == "trick_play")
+                         "hand_result"  — between hands           (hand.phase == "complete")
+                         "match_result" — match complete          (state.status == "complete")
+                         "redeal"       — all-pass redeal         (hand.phase == "redeal")
 
     Each phase includes the relevant partials. The #game-board div is the
     primary HTMX swap target for all game-action responses.
