@@ -37,6 +37,10 @@ MAX_AUTO_DISPATCH_PER_CYCLE: int = 2
 STALL_THRESHOLD_MINUTES: int = 10
 STALL_CONSECUTIVE_CYCLES: int = 2
 
+# Escalation: unacked alerts older than this are escalated to urgent priority.
+# Default is 2 monitor cycles at 3 min each.
+ESCALATION_AGE_MINUTES: int = 6
+
 # Severity levels for findings.
 SEVERITY_INFO = "info"
 SEVERITY_WARN = "warn"
@@ -413,6 +417,76 @@ def check_idle_lanes(
                     details={"lane_id": lane_id},
                 )
             )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Escalation check — unacked alerts from previous cycles
+# ---------------------------------------------------------------------------
+
+
+def check_escalations(
+    *,
+    bus_root: Path | None = None,
+    events_dir: Path | None = None,
+    max_age_minutes: int = ESCALATION_AGE_MINUTES,
+) -> list[MonitorFinding]:
+    """Check for unacked ops→orchestrator alerts and escalate if stale.
+
+    Calls :func:`~bid_euchre.ops.message_bus.escalate_unacked` to find
+    outbound ``supervisor_alert`` messages from ``ops`` to ``orchestrator``
+    that remain unacknowledged after *max_age_minutes*.  For each such
+    message an urgent escalation is created by the message bus.
+
+    Args:
+        bus_root: Override for the message bus root directory.
+        events_dir: Override for the events directory (for testing).
+        max_age_minutes: Age threshold in minutes before escalation fires.
+
+    Returns:
+        List of findings — one per escalation sent plus a summary.
+    """
+    findings: list[MonitorFinding] = []
+
+    try:
+        from bid_euchre.ops.message_bus import escalate_unacked
+
+        escalation_ids = escalate_unacked(
+            sender_lane="ops",
+            recipient_lane="orchestrator",
+            max_age_minutes=max_age_minutes,
+            bus_root=bus_root,
+            events_dir=events_dir,
+        )
+    except Exception as exc:
+        findings.append(
+            MonitorFinding(
+                category="escalation",
+                severity=SEVERITY_WARN,
+                summary=f"Could not check for unacked alerts: {exc}",
+            )
+        )
+        return findings
+
+    if escalation_ids:
+        logger.warning("Escalated %d unacked alerts to P0", len(escalation_ids))
+        findings.append(
+            MonitorFinding(
+                category="escalation",
+                severity=SEVERITY_HIGH,
+                summary=(f"Escalated {len(escalation_ids)} unacked alert(s) to urgent"),
+                details={"escalation_ids": escalation_ids},
+            )
+        )
+    else:
+        findings.append(
+            MonitorFinding(
+                category="escalation",
+                severity=SEVERITY_INFO,
+                summary="No unacked alerts to escalate.",
+            )
+        )
 
     return findings
 
@@ -1582,6 +1656,7 @@ def run_monitoring_cycle(
     """Run a single monitoring sweep.
 
     Collects findings from:
+    0. Escalation check — escalate unacked alerts from previous cycles
     1. Lane pool health snapshot
     2. Open PR status and CI-ready detection (via ``gh``)
     3. Stale dispatched packet detection
@@ -1607,6 +1682,9 @@ def run_monitoring_cycle(
         List of all findings from the sweep.
     """
     findings: list[MonitorFinding] = []
+
+    # 0. Escalation check — escalate unacked alerts from previous cycles
+    findings.extend(check_escalations())
 
     # 1. Lane health
     findings.extend(check_lane_health(runtime_dir))
