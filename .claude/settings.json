@@ -34,7 +34,6 @@
         ]
       },
       {
-        "matcher": "worktree-sync",
         "hooks": [
           {
             "type": "command",

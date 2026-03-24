@@ -4,9 +4,13 @@
 # state, never deletes branches, never touches non-steward worktrees.
 # See: .claude/rules/75_worktree_protection.md, GitHub issue #1208.
 #
-# Triggered by SessionStart hook with "worktree-sync" matcher.
+# Triggered by SessionStart hook (fires on all session starts: init, clear,
+# compact).  Must NEVER exit non-zero — a failing SessionStart hook leaves
+# the session at a blank prompt with 0 tokens and no context.
 
-set -euo pipefail
+# Safety: guarantee exit 0 on ANY error.  SessionStart hooks that exit
+# non-zero break the session (blank prompt, 0 tokens, no /start-task pickup).
+trap 'exit 0' ERR
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 LOG_PREFIX="[session-sync]"
@@ -45,8 +49,12 @@ fi
 # Check if current branch has an open PR (skip if so — active work).
 # Fail closed: if gh is unavailable or auth fails, skip sync rather than
 # risk resetting a branch that has an open PR we can't see.
-PR_STATE="$(gh pr view "$CURRENT_BRANCH" --repo Questuart/Bid-Euchre --json state --jq '.state' 2>/dev/null)" || {
-  echo >&2 "${LOG_PREFIX} WARNING: Could not query PR state (gh unavailable or auth error) — skipping auto-sync."
+#
+# Use `timeout 5` to cap the network call — without it, a slow GitHub API
+# response can exhaust the hook's 15s timeout and kill the whole hook,
+# bypassing all || guards and leaving the session broken.
+PR_STATE="$(timeout 5 gh pr view "$CURRENT_BRANCH" --repo Questuart/Bid-Euchre --json state --jq '.state' 2>/dev/null)" || {
+  echo >&2 "${LOG_PREFIX} WARNING: Could not query PR state (gh unavailable, auth error, or timeout) — skipping auto-sync."
   exit 0
 }
 

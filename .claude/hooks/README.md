@@ -179,7 +179,8 @@ meaningful work.
 Hooks are registered across two files:
 
 **`.claude/settings.json`** (committed, shared):
-- `SessionStart` → `compact-context.sh`, `session-sync-worktree.sh`
+- `SessionStart` (compact) → `compact-context.sh`
+- `SessionStart` (all) → `session-sync-worktree.sh` (no matcher — fires on init, clear, compact)
 - `PreToolUse` (Edit|Write) → `rule-loader.sh`
 - `PreToolUse` (Bash) → `pre-bash-dispatch.sh` (consolidated dispatcher)
 - `PostToolUse` (Write|Edit) → `post-write-check.sh`
