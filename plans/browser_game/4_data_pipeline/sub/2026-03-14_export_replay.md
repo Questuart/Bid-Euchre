@@ -164,4 +164,4 @@ These are noted for context but explicitly deferred:
 | #1538 | `export_hosted_decisions` CLI script |
 | #1545 | `validate_replay` JSONL correctness verifier |
 
-Validation: 233/233 tests pass in `tests/unit/hosted_play/`.
+Validation: all hosted_play tests pass (`tests/unit/hosted_play/`).
