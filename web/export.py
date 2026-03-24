@@ -8,7 +8,7 @@ JSONL-exportable dict format defined in SP-4-01.  Also provides
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import timezone
 from pathlib import Path
 from typing import Optional
@@ -264,9 +264,13 @@ def _parse_jsonl(
     return records
 
 
-def _card_tuples(card_list: list) -> set[tuple[str, str]]:
-    """Convert ``[[suit, rank], ...]`` to a set of ``(suit, rank)``."""
-    return {(c[0], c[1]) for c in card_list}
+def _card_tuples(card_list: list) -> list[tuple[str, str]]:
+    """Convert ``[[suit, rank], ...]`` to a list of ``(suit, rank)`` tuples.
+
+    Returns a list (not a set) so that duplicate cards in a double-deck
+    game are preserved.
+    """
+    return [(c[0], c[1]) for c in card_list]
 
 
 def _plays_from_list(plays_data: list) -> list[tuple[int, Card]]:
@@ -289,15 +293,16 @@ def _validate_hand_group(
 
     # --- 1. Deal regeneration -------------------------------------------------
     dealt_hands = generate_deal(match_seed, deal_id)
-    dealt_human_set = {(c.suit, c.rank) for c in dealt_hands[_HUMAN_SEAT]}
+    dealt_human_counts = Counter((c.suit, c.rank) for c in dealt_hands[_HUMAN_SEAT])
 
     gs_first = first_rec.get("game_state", {})
     if "human_hand" in gs_first and gs_first["human_hand"]:
-        logged_human = _card_tuples(gs_first["human_hand"])
-        if not logged_human.issubset(dealt_human_set):
-            extra = logged_human - dealt_human_set
+        logged_human_counts = Counter(_card_tuples(gs_first["human_hand"]))
+        # Each logged card must not exceed the dealt multiplicity (multiset subset).
+        extra = logged_human_counts - dealt_human_counts
+        if extra:
             errors.append(
-                f"{prefix}: human hand contains cards not in dealt hand: {extra}"
+                f"{prefix}: human hand contains cards not in dealt hand: {dict(extra)}"
             )
 
     # --- 2 & 3. Per-decision legality checks ----------------------------------
