@@ -34,7 +34,10 @@ logger = logging.getLogger("ops.idle_detector")
 DEFAULT_THRESHOLD_MINUTES = 90
 
 # Event types that reset the idle timer.  These represent genuine fleet-level
-# progress, not infrastructure bookkeeping.
+# progress, not infrastructure bookkeeping.  Every type here MUST be in
+# VALID_EVENT_TYPES (events.py) AND emitted by at least one production path.
+# The subset-containment test (test_ops_idle_detector.py) enforces the first
+# invariant; see #1588 for the emission audit that verified the second.
 MEANINGFUL_EVENT_TYPES = frozenset(
     {
         # Task lifecycle
@@ -48,9 +51,7 @@ MEANINGFUL_EVENT_TYPES = frozenset(
         # Review & PR signals
         "review_outcome",
         "review_verdict",
-        # Session lifecycle
-        "session_started",
-        # Skill / snapshot events that represent deliberate work
+        # Skill events that represent deliberate work
         "skill_promoted",
     }
 )
