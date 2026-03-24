@@ -648,3 +648,62 @@ class TestEdgeCases:
             data={"turn_number": 0, "card_index": 0},
         )
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# XSS prevention (issue #1438)
+# ---------------------------------------------------------------------------
+
+
+class TestXSSPrevention:
+    """Verify user-supplied nicknames are HTML-escaped in responses."""
+
+    def test_nickname_html_escaped_in_set_nickname(self, client):
+        """set_nickname() must escape HTML in the nickname."""
+        link_uuid = _create_game(client)
+        xss_payload = '<script>alert("xss")</script>'
+        resp = _set_nickname(client, link_uuid, xss_payload)
+        assert resp.status_code == 200
+        # Raw script tag must NOT appear in the response
+        assert "<script>" not in resp.text
+        # Escaped form should appear
+        assert "&lt;script&gt;" in resp.text
+
+    def test_nickname_html_escaped_in_game_page(self, client):
+        """game_page() must escape HTML in the stored nickname."""
+        link_uuid = _create_game(client)
+        xss_payload = '<img src=x onerror="alert(1)">'
+        _set_nickname(client, link_uuid, xss_payload)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Raw tag must NOT appear
+        assert '<img src=x onerror="alert(1)">' not in resp.text
+        assert "&lt;img" in resp.text
+
+    def test_nickname_html_escaped_in_new_match(self, client):
+        """new_match() must escape HTML in the stored nickname."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid, "<b>bold</b>")
+        resp = client.post(f"/play/{link_uuid}/new-match")
+        assert resp.status_code == 200
+        assert "<b>bold</b>" not in resp.text
+        assert "&lt;b&gt;" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# hx-post URL interpolation (issue #1439)
+# ---------------------------------------------------------------------------
+
+
+class TestHxPostUrl:
+    """Verify hx-post attribute contains the correct interpolated URL."""
+
+    def test_hx_post_contains_link_uuid(self, client):
+        """The nickname form hx-post must include the actual link_uuid."""
+        link_uuid = _create_game(client)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # The hx-post attribute should contain the real UUID, not the
+        # literal placeholder "{link_uuid}"
+        assert f'hx-post="/play/{link_uuid}/nickname"' in resp.text
+        assert "{link_uuid}" not in resp.text

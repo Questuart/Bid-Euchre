@@ -10,6 +10,7 @@ no rule/scoring logic lives here.
 
 from __future__ import annotations
 
+import html
 import json
 import random
 import uuid
@@ -216,7 +217,7 @@ async def game_page(request: Request, link_uuid: str):
                 "<html><body>"
                 "<h2>Enter your nickname</h2>"
                 f'<form method="post" action="/play/{link_uuid}/nickname"'
-                ' hx-post="/play/{link_uuid}/nickname" hx-target="#main">'
+                f' hx-post="/play/{link_uuid}/nickname" hx-target="#main">'
                 '<input name="nickname" required>'
                 '<button type="submit">Set Nickname</button>'
                 "</form>"
@@ -241,7 +242,7 @@ async def game_page(request: Request, link_uuid: str):
             )
             return HTMLResponse(
                 "<html><body>"
-                f"<h2>Welcome, {player.nickname}!</h2>"
+                f"<h2>Welcome, {html.escape(player.nickname)}!</h2>"
                 f'<form method="post" action="/play/{link_uuid}/select-ai">'
                 f'<select name="model_id">{options}</select>'
                 '<button type="submit">Start Match</button>'
@@ -256,7 +257,7 @@ async def game_page(request: Request, link_uuid: str):
         visible = engine.get_visible_state(state)
         return HTMLResponse(
             "<html><body>"
-            f"<h2>Game Board — {player.nickname}</h2>"
+            f"<h2>Game Board — {html.escape(player.nickname)}</h2>"
             f"<pre>{json.dumps(visible, indent=2)}</pre>"
             "</body></html>"
         )
@@ -288,7 +289,7 @@ async def set_nickname(
             for m in models
         )
         return HTMLResponse(
-            f"<h2>Welcome, {nickname}!</h2>"
+            f"<h2>Welcome, {html.escape(nickname)}!</h2>"
             f'<form method="post" action="/play/{link_uuid}/select-ai">'
             f'<select name="model_id">{options}</select>'
             '<button type="submit">Start Match</button>'
@@ -578,7 +579,7 @@ async def new_match(
             for m in models
         )
         return HTMLResponse(
-            f"<h2>New Match — {player.nickname}</h2>"
+            f"<h2>New Match — {html.escape(player.nickname)}</h2>"
             f'<form method="post" action="/play/{link_uuid}/select-ai">'
             f'<select name="model_id">{options}</select>'
             '<button type="submit">Start Match</button>'
