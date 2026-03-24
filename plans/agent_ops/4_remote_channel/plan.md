@@ -54,7 +54,7 @@ treats the remote channel as a thin transport into `orchestrator`.
 
 | Slice | Goal | Status | Batch | Depends On |
 |-------|------|--------|-------|------------|
-| `Platform-8a` | Channel preflight, Telegram transport skeleton, kill/mute/fallback hooks | READY FOR SCOPE LOCK | E | Phase 3, Amendment A5 |
+| `Platform-8a` | Channel preflight, Telegram transport skeleton, kill/mute/fallback hooks | READY FOR SCOPE LOCK | E | Phase 3, Amendment A5, SP-4-05 |
 | `Platform-8b` | Repo-owned audit trail for inbound/outbound remote exchanges | READY FOR SCOPE LOCK | E | Platform-3, Platform-8a |
 | `Platform-9a` | Idle-attention alerts and remote acknowledgement loop | READY FOR SCOPE LOCK | E | Platform-6, Platform-8b |
 | `Platform-9b` | Away-from-desk queue-moving supervision through `orchestrator` | READY FOR SCOPE LOCK | E | Platform-2, Platform-8b, Platform-9a |
@@ -107,10 +107,10 @@ Before treating Phase 5 as ready, verify Batch E (Platform-8 + Platform-9):
 | ID | Title | Status | File |
 |----|-------|--------|------|
 | SP-4-01 | Platform-8 scope lock | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` |
-| SP-4-02 | Remote-ops preflight hardening | in_progress | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` |
+| SP-4-02 | Remote-ops preflight hardening | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` |
 | SP-4-03 | Token economy observability and dashboard | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` |
-| SP-4-04 | Platform-8a Telegram transport configuration | in_progress | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` |
-| SP-4-05 | Reactive control-loop hardening | proposed | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` |
+| SP-4-04 | Platform-8a Telegram transport configuration | completed | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` |
+| SP-4-05 | Reactive control-loop hardening | in_progress | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` |
 
 ## Step Sequence
 
