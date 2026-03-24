@@ -15,6 +15,7 @@ from bid_euchre.ops.monitor import (
     SEVERITY_WARN,
     MonitorFinding,
     _default_stall_state_path,
+    _detect_active_work,
     _match_approval_prompt,
     _save_stall_state,
     check_approval_stalls,
@@ -1946,3 +1947,213 @@ class TestMatchApprovalPrompt:
         content = "prompt\n  [Y]es, always allow\n"
         result = _match_approval_prompt(content)
         assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# _detect_active_work tests
+# ---------------------------------------------------------------------------
+
+
+class TestDetectActiveWork:
+    """Tests for the _detect_active_work helper."""
+
+    def test_detects_spinner_glyph(self) -> None:
+        content = "some output\nprocessing files\n⏺ Running Bash(make check)…\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_braille_spinner(self) -> None:
+        content = "working\n⠹ Building…\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_duration_counter_m_s(self) -> None:
+        content = "output\nRunning tests  1m 23s\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_duration_counter_colon(self) -> None:
+        content = "output\nElapsed: 0:45\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_seconds_counter(self) -> None:
+        content = "output\nCompleted in 12s\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_running_ellipsis(self) -> None:
+        content = "output\nRunning… tests\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_running_dots(self) -> None:
+        content = "output\nRunning...\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_timeout_indicator(self) -> None:
+        content = "output\ntimeout --signal=TERM 300\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_tool_execution_progress(self) -> None:
+        content = "output\nBash(make check-quiet)...\n"
+        assert _detect_active_work(content) is True
+
+    def test_no_match_normal_output(self) -> None:
+        content = "Running tests...\nPASSED 42 tests in 3.2s\nAll checks green.\n"
+        # "Running..." matches — but that's intentional, it means active work.
+        # Let's use content without active indicators.
+        content = "PASSED 42 tests in 3.2s\nAll checks green.\nDone.\n"
+        assert _detect_active_work(content) is False
+
+    def test_no_match_approval_prompt_only(self) -> None:
+        """An approval prompt without spinners is NOT active work."""
+        content = (
+            "Working on implementation...\n"
+            "  Allow Bash(git status) [Y]es, always / [N]o\n"
+            ">\n"
+        )
+        assert _detect_active_work(content) is False
+
+    def test_only_checks_tail_lines(self) -> None:
+        """Activity indicators early in the pane are ignored."""
+        # Put a spinner far from the bottom with 10+ empty/normal lines after
+        lines = ["⏺ Running Bash(make check)…"]
+        lines.extend(["normal output"] * 10)
+        lines.append("Done.")
+        content = "\n".join(lines) + "\n"
+        assert _detect_active_work(content) is False
+
+
+# ---------------------------------------------------------------------------
+# check_approval_stalls with spinner-activity detection
+# ---------------------------------------------------------------------------
+
+
+class TestApprovalStallsWithSpinner:
+    """Tests that active lanes are not flagged as approval-stalled."""
+
+    def test_spinner_active_lane_not_flagged(self, tmp_path: Path) -> None:
+        """A lane with a spinner should not be flagged even if approval text exists."""
+        pane_content = {
+            "author-a": (
+                "Working on implementation...\n"
+                "  Allow Bash(git status) [Y]es, always / [N]o\n"
+                "Some more output\n"
+                "⏺ Running Bash(make check-quiet)…\n"
+                "  1m 23s\n"
+            ),
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        notifications: list[tuple[str, str, str]] = []
+
+        def notify_fn(lane_id: str, prompt_text: str, target: str) -> None:
+            notifications.append((lane_id, prompt_text, target))
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:platform.1",
+        ):
+            findings = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=notify_fn,
+            )
+
+        assert len(findings) == 0
+        assert len(notifications) == 0
+
+    def test_no_spinner_still_flags_approval(self, tmp_path: Path) -> None:
+        """A lane without a spinner but with an approval prompt is still flagged."""
+        pane_content = {
+            "author-b": (
+                "Working on implementation...\n"
+                "  Allow Bash(git status) [Y]es, always / [N]o\n"
+                ">\n"
+            ),
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:platform.2",
+        ):
+            findings = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=lambda *_: None,
+            )
+
+        assert len(findings) == 1
+        assert findings[0].category == "approval_stall"
+        assert "author-b" in findings[0].summary
+
+    def test_make_check_with_spinner_not_flagged(self, tmp_path: Path) -> None:
+        """A lane running make check-quiet with active spinner is not flagged."""
+        pane_content = {
+            "flex-a": (
+                "$ make check-quiet\nruff check passed\npytest running...\n⠹ Running…\n"
+            ),
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:flex.0",
+        ):
+            findings = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=lambda *_: None,
+            )
+
+        assert len(findings) == 0
+
+    def test_spinner_clears_then_approval_detected(self, tmp_path: Path) -> None:
+        """After spinner stops, an approval prompt is detected correctly."""
+        # First call: lane active with spinner
+        active_content = {
+            "author-c": "Working...\n⏺ Running Bash(make check)…\n",
+        }
+        # Second call: spinner gone, prompt visible
+        stalled_content = {
+            "author-c": (
+                "Done with check.\n  Allow Bash(git push) [Y]es, always / [N]o\n>\n"
+            ),
+        }
+
+        call_count = {"n": 0}
+
+        def capture_fn(lane_id: str) -> str | None:
+            if call_count["n"] == 0:
+                return active_content.get(lane_id)
+            return stalled_content.get(lane_id)
+
+        notifications: list[tuple[str, str, str]] = []
+
+        def notify_fn(lane_id: str, prompt_text: str, target: str) -> None:
+            notifications.append((lane_id, prompt_text, target))
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:platform.3",
+        ):
+            # First check — spinner active, no findings
+            findings1 = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=notify_fn,
+            )
+            assert len(findings1) == 0
+
+            # Second check — spinner gone, prompt detected
+            call_count["n"] = 1
+            findings2 = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=notify_fn,
+            )
+            assert len(findings2) == 1
+            assert "author-c" in findings2[0].summary
+            assert len(notifications) == 1

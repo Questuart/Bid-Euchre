@@ -791,6 +791,25 @@ def check_stalled_lanes(
 # Approval-stall detection: lanes blocked on tool-approval prompts
 # ---------------------------------------------------------------------------
 
+#: Characters and patterns that indicate a lane is actively working (spinner,
+#: progress indicators).  Presence of these in the last few pane lines means
+#: the lane is NOT stalled — any approval-prompt text is historical noise.
+_SPINNER_GLYPHS: frozenset[str] = frozenset("✶✻✽✢⏺✳⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
+_ACTIVE_WORK_PATTERNS: list[re.Pattern[str]] = [
+    # Claude Code spinner status line: "⏺ Running…", "✻ Bash(…"
+    re.compile(r"[✶✻✽✢⏺✳⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]"),
+    # Duration counters (e.g. "1m 23s", "0:45", "12s" but NOT "3.2s")
+    re.compile(r"\d+m\s+\d+s|\d+:\d{2}(?!.*test)|(?<![.\d])\d+s\b"),
+    # Running / timeout indicators
+    re.compile(r"Running[…\.]|timeout", re.IGNORECASE),
+    # Tool execution progress (not prompts — these appear inline during runs)
+    re.compile(r"(?:Bash|Edit|Read|Write|Grep|Glob)\(.*\.\.\.", re.IGNORECASE),
+]
+
+#: Number of trailing pane lines to scan for activity indicators.
+_ACTIVITY_TAIL_LINES: int = 5
+
 #: Regex patterns that match Claude Code tool-approval / elicitation prompts.
 #: Each is compiled once at import time for efficiency.
 _APPROVAL_PATTERNS: list[re.Pattern[str]] = [
@@ -859,6 +878,37 @@ def _capture_pane_content(
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
     return None
+
+
+def _detect_active_work(content: str) -> bool:
+    """Check the tail of pane content for spinner / progress indicators.
+
+    Only the last ``_ACTIVITY_TAIL_LINES`` non-empty lines are checked, since
+    spinners and progress indicators appear at the bottom of the pane where
+    current activity is displayed.
+
+    Args:
+        content: The captured pane text.
+
+    Returns:
+        True if the lane appears to be actively working (spinner, running
+        indicator, or progress counter detected).
+    """
+    lines = content.splitlines()
+    # Grab the last N non-empty lines
+    tail: list[str] = []
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped:
+            tail.append(stripped)
+            if len(tail) >= _ACTIVITY_TAIL_LINES:
+                break
+
+    for line in tail:
+        for pattern in _ACTIVE_WORK_PATTERNS:
+            if pattern.search(line):
+                return True
+    return False
 
 
 def _match_approval_prompt(content: str) -> str | None:
@@ -945,6 +995,12 @@ def check_approval_stalls(
             _capture_fn=_capture_fn,
         )
         if content is None:
+            continue
+
+        # If the lane shows active-work indicators (spinner, progress
+        # counters, etc.), it is executing — any approval-prompt text in the
+        # pane is historical noise, not a real stall.
+        if _detect_active_work(content):
             continue
 
         prompt_text = _match_approval_prompt(content)
