@@ -1463,14 +1463,15 @@ def refresh_worker(
         lane_id, tmux_session=tmux_session, runtime_dir=runtime_dir
     )
     if not clear_result.executed:
-        # Reset succeeded but clear failed — report partial success
+        # Reset succeeded but clear failed — treat as failed refresh
+        # so callers don't assume the lane is ready for new work.
         return PoolAction(
             action="refresh",
             lane_id=lane_id,
             reason=(
                 f"Worktree reset OK but session clear failed: {clear_result.reason}"
             ),
-            executed=True,
+            executed=False,
             error="clear_failed",
         )
 

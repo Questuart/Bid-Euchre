@@ -2946,13 +2946,13 @@ class TestRefreshWorker:
     @patch(f"{_WORKER_POOL}.clear_session")
     @patch(f"{_WORKER_POOL}.reset_worktree")
     @patch(f"{_WORKER_POOL}._get_lane_task_id")
-    def test_refresh_clear_fails_partial_success(
+    def test_refresh_clear_fails_is_failed(
         self,
         mock_task: MagicMock,
         mock_reset: MagicMock,
         mock_clear: MagicMock,
     ) -> None:
-        """Reset succeeds but clear fails → partial success (executed=True)."""
+        """Reset succeeds but clear fails → treated as failed refresh (#1428)."""
         mock_task.return_value = None
         mock_reset.return_value = PoolAction(
             action="reset_worktree",
@@ -2968,9 +2968,9 @@ class TestRefreshWorker:
             error="clear_failed",
         )
         result = refresh_worker("author-a")
-        assert result.executed is True
+        assert result.executed is False
         assert result.error == "clear_failed"
-        assert "reset ok" in result.reason.lower()
+        assert "session clear failed" in result.reason.lower()
 
     @patch(f"{_WORKER_POOL}.clear_session")
     @patch(f"{_WORKER_POOL}.reset_worktree")
