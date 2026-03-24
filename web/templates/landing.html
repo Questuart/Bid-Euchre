@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Bid Euchre — Play Online{% endblock %}
+
+{% block content %}
+<div style="text-align:center; padding:3rem 1rem;">
+    <h2 style="font-size:2rem; margin-bottom:0.5rem;">Bid Euchre</h2>
+    <p style="color:var(--color-text-muted, #bdbdbd); margin-bottom:2rem; font-size:1.1rem;">
+        Double-deck, 10-to-Ace, with bowers. Play against AI opponents.
+    </p>
+    <form method="post" action="/new">
+        <button type="submit" class="btn btn--play-again">Start a New Game</button>
+    </form>
+</div>
+{% endblock %}
