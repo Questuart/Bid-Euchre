@@ -4467,6 +4467,39 @@ class TestCmdLanePeek:
         captured = capsys.readouterr()
         assert "timed out" in captured.err
 
+    def test_peek_json_output(
+        self, runtime_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--json flag emits valid JSON with lane and content keys."""
+        from unittest.mock import MagicMock, patch
+
+        import ops
+
+        mock_result = MagicMock(returncode=0, stdout="line1\nline2\n")
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch(
+                "bid_euchre.ops.worker_pool._resolve_tmux_target",
+                return_value="steward:platform.1",
+            ),
+        ):
+            rc = ops.main(
+                [
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--json",
+                    "lane",
+                    "peek",
+                    "author-a",
+                ]
+            )
+        assert rc == 0
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["lane"] == "author-a"
+        assert "line1" in data["content"]
+        assert "line2" in data["content"]
+
     def test_peek_parser_registered(self) -> None:
         """The 'lane peek' subparser is registered in build_parser."""
         import ops
