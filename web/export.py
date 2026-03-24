@@ -166,12 +166,14 @@ def export_decisions(
     if human_only:
         query = query.filter(Decision.actor_type == "human")
 
-    # Order deterministically for reproducible exports
-    query = query.order_by(Decision.match_id, Decision.hand_id, Decision.turn_number)
+    # Order by logical hand number (not internal hand_id FK) for
+    # deterministic, semantically meaningful output (#1537).
+    query = query.order_by(Decision.match_id, Hand.hand_number, Decision.turn_number)
 
     count = 0
     with open(output_path, "w") as f:
-        for decision_row, match_row, hand_row in query:
+        # Stream results to avoid materializing all rows in memory (#1546).
+        for decision_row, match_row, hand_row in query.yield_per(500):
             record = decision_to_jsonl(decision_row, match_row, hand_row)
             f.write(json.dumps(record) + "\n")
             count += 1
