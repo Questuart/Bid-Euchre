@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.ops.message_bus import (
     VALID_MESSAGE_PRIORITIES,
     VALID_MESSAGE_STATUSES,
