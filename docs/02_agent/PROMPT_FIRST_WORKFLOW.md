@@ -53,7 +53,7 @@ uv run python scripts/internal/ops.py dashboard --json # machine-readable
 ```
 
 The dashboard shows:
-- **Foreground lanes** — orchestrator, ops, review, issues (your primary view)
+- **Foreground lanes** — orchestrator, ops, review, analyst (your primary view)
 - **Background lanes** — author-a/b/c/d/scratch (summarized, not foregrounded)
 - **Attention items** — lanes needing your intervention
 - **Inbox highlights** — unacknowledged messages
@@ -93,7 +93,7 @@ Invoke them with `/skill-name` in the appropriate lane.
 | `/debugging-ci` | ops, author | CI failure diagnosis runbook |
 | `/recovering-context` | any | Session start context recovery |
 | `/planning-code-first` | any | Code-grounded implementation planning |
-| `/triaging-issues` | issues | Issue dedup and filing |
+| `/triaging-issues` | analyst | Issue dedup, packaging, and filing |
 | `/review-plan` | any | Independent plan review |
 
 ## Lane Responsibilities
@@ -103,7 +103,7 @@ Invoke them with `/skill-name` in the appropriate lane.
 | **orchestrator** | Single intake point; task creation and delegation | Foreground | Unrestricted |
 | **ops** | Monitoring, health checks, CI/PR status, attention routing | Foreground | Enforced: no Edit/Write/Agent |
 | **review** | Independent code review; structured findings | Foreground | Enforced: read-only allowlist |
-| **issues** | Issue triage and dedup; never implements fixes | Foreground | Enforced: read-only + Bash allowlist |
+| **analyst** | Planning, issue packaging, and restart handoffs | Foreground | Enforced: no hidden Agent recursion |
 | **author-a** | Primary implementation; multi-file features, plan steps | Background | Unrestricted |
 | **author-b** | Secondary implementation; parallel independent work | Background | Unrestricted |
 | **author-c/d** | Overflow implementation; intentionally separate work | Background | Unrestricted |

@@ -33,7 +33,8 @@ Before entering the main dispatch loop:
    ```bash
    uv run python scripts/internal/ops.py lane refresh --all-idle
    ```
-5. Triage inbox and open issues
+5. Triage inbox and open issues; route ambiguous or multi-PR shaping work to
+   `steward-analyst`
 6. Define Wave 1 candidates
 
 ## Primary Goal
@@ -110,6 +111,26 @@ Rules:
 - Prefer small, mergeable PRs over large speculative changes
 - Only dispatch work with clear file-scope ownership
 - One active writer per overlapping file set
+
+## Analyst Routing
+
+Use `steward-analyst` when work needs deeper shaping before execution:
+
+- new sub-plans or major plan refreshes
+- unclear implementation seams
+- tests, gates, or smoke boundaries that are not obvious
+- complex issue bundles that need richer evidence and PR decomposition
+- restart or end-of-run handoffs
+- plan/checkpoint/task-list drift relative to repo state
+
+Expected analyst outputs:
+
+- sub-plan or execution brief
+- validation commands and gates
+- risks and smoke-test boundaries
+- issue package or issue update draft
+- PR roadmap / safe-parallelism guidance
+- restart-ready handoff
 
 ## Lane Discipline
 
@@ -200,7 +221,7 @@ For each issue, classify quickly:
 
 If actionable, in scope, and file-scope isolated: create or route work
 without waiting for user confirmation. If it changes platform scope or
-governance, record that before dispatching.
+governance, route it through `steward-analyst` before dispatching.
 
 ## Task-List Maintenance
 
@@ -227,6 +248,7 @@ Maintain concise session notes. Explicitly track:
 - Which tracks remain active
 - Newly triaged GitHub issues
 - Which issues were dispatched vs deferred and why
+- Whether `steward-analyst` left a restart-ready handoff for the next session
 
 Periodically use `/check-in` to summarize current state.
 

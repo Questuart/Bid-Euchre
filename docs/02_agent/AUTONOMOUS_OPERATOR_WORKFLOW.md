@@ -173,11 +173,12 @@ Target dashboard-first layout (governed follow-on target):
 | 1 | `orchestrator` | 1 | Single human-facing intake/delegation lane |
 | 2 | `ops` | 1 | Supervisor / health / recovery lane |
 | 3 | `review` | 1 | Review / validation lane |
-| 4 | `issues` | 1 (optional) | Scheduled triage lane |
+| 4 | `analyst` | 1 (optional) | Planning, issue packaging, and handoff lane |
 
 `author-*` lanes remain available as background workers and should be
 resumable/inspectable by lane name rather than requiring them all to stay
-foreground panes at all times.
+foreground panes at all times. The optional `analyst` lane is a service lane,
+not a normal user-ingress lane.
 
 Custom session name:
 
