@@ -989,3 +989,151 @@ class TestValidateReplay:
         errors = validate_replay(path)
         # No trick winner errors
         assert not any("winner mismatch" in e for e in errors)
+
+    def test_double_deck_duplicate_cards_accepted(self, tmp_path):
+        """Hands with duplicate cards (double deck) must not false-negative.
+
+        Regression test for #1550: set() comparison collapsed duplicates,
+        causing valid hands with two copies of the same card to fail
+        deal-regeneration checks.
+
+        Uses seed=1, deal_id=1 where seat 0 is dealt two Club Jacks.
+        """
+        # seed=1, deal_id=1 → seat 0 has two C-J (Club Jack)
+        dup_seed = 1
+        dup_deal_id = 1
+        dup_match_uuid = "dupdup00-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+        # Full 10-card hand including duplicates (from generate_deal(1, 1))
+        dup_human_hand = [
+            ["D", "A"],
+            ["H", "T"],
+            ["C", "J"],
+            ["S", "Q"],
+            ["C", "K"],
+            ["D", "T"],
+            ["H", "Q"],
+            ["S", "A"],
+            ["C", "J"],  # second copy of Club Jack
+            ["C", "Q"],
+        ]
+
+        dup_game_state = {
+            "status": "active",
+            "winner": None,
+            "phase": "auction",
+            "dealer_seat": 0,
+            "current_seat": 1,
+            "turn_number": 0,
+            "human_hand": dup_human_hand,
+            "auction": [],
+            "contract_type": None,
+            "trump": None,
+            "current_trick": None,
+            "completed_tricks": [],
+            "tricks_team0": 0,
+            "tricks_team1": 0,
+        }
+
+        records = [
+            {
+                "schema_version": 1,
+                "event": "hosted_decision",
+                "match_uuid": dup_match_uuid,
+                "match_seed": dup_seed,
+                "hand_number": 1,
+                "deal_id": dup_deal_id,
+                "dealer_seat": 0,
+                "turn_number": 0,
+                "seat": 1,
+                "phase": "bid",
+                "actor_type": "ai",
+                "decision_source": "heuristic",
+                "ai_model": "heuristic",
+                "legal_actions": [{"n": 0}],
+                "chosen_action": {"n": 0},
+                "game_state": dup_game_state,
+                "decision_time_ms": 100,
+                "timestamp": "2026-03-24T06:00:00+00:00",
+            },
+        ]
+
+        path = tmp_path / "double_deck.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        assert (
+            errors == []
+        ), f"Valid hand with duplicate cards should pass, got: {errors}"
+
+    def test_double_deck_extra_duplicate_detected(self, tmp_path):
+        """Three copies of a card (impossible in double deck) must be caught.
+
+        The multiset comparison must detect that the logged hand claims more
+        copies of a card than the dealt hand contains.
+        """
+        dup_seed = 1
+        dup_deal_id = 1
+        dup_match_uuid = "triples0-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+        # Tampered hand: THREE Club Jacks (dealt hand only has two)
+        bad_human_hand = [
+            ["D", "A"],
+            ["H", "T"],
+            ["C", "J"],
+            ["S", "Q"],
+            ["C", "K"],
+            ["D", "T"],
+            ["H", "Q"],
+            ["C", "J"],  # second copy (valid)
+            ["C", "J"],  # third copy (invalid!)
+            ["C", "Q"],
+        ]
+
+        bad_game_state = {
+            "status": "active",
+            "winner": None,
+            "phase": "auction",
+            "dealer_seat": 0,
+            "current_seat": 1,
+            "turn_number": 0,
+            "human_hand": bad_human_hand,
+            "auction": [],
+            "contract_type": None,
+            "trump": None,
+            "current_trick": None,
+            "completed_tricks": [],
+            "tricks_team0": 0,
+            "tricks_team1": 0,
+        }
+
+        records = [
+            {
+                "schema_version": 1,
+                "event": "hosted_decision",
+                "match_uuid": dup_match_uuid,
+                "match_seed": dup_seed,
+                "hand_number": 1,
+                "deal_id": dup_deal_id,
+                "dealer_seat": 0,
+                "turn_number": 0,
+                "seat": 1,
+                "phase": "bid",
+                "actor_type": "ai",
+                "decision_source": "heuristic",
+                "ai_model": "heuristic",
+                "legal_actions": [{"n": 0}],
+                "chosen_action": {"n": 0},
+                "game_state": bad_game_state,
+                "decision_time_ms": 100,
+                "timestamp": "2026-03-24T06:00:00+00:00",
+            },
+        ]
+
+        path = tmp_path / "triple_deck.jsonl"
+        _write_jsonl(path, records)
+
+        errors = validate_replay(path)
+        assert any(
+            "not in dealt hand" in e for e in errors
+        ), f"Three copies should be caught, got: {errors}"
