@@ -3,7 +3,7 @@
 The pre-bash-dispatch.sh and post-bash-dispatch.sh scripts consolidate
 multiple hooks into single invocations to reduce TUI noise.  These tests
 verify:
-  - Normal commands pass through with suppressOutput
+  - Normal commands produce no stdout (PreToolUse has no suppressOutput)
   - Blocking commands propagate exit code 2
   - Rule-loader context injection works through the dispatcher
   - PostToolUse dispatcher suppresses TUI notification for non-matching commands
@@ -58,14 +58,14 @@ class TestPreBashDispatch:
 
     SCRIPT = "pre-bash-dispatch.sh"
 
-    def test_normal_command_passes_with_suppress(self) -> None:
-        """A safe command should pass through with suppressOutput."""
-        rc, _raw, out = _run_hook(
+    def test_normal_command_produces_no_stdout(self) -> None:
+        """A safe command should produce no stdout (PreToolUse has no suppressOutput)."""
+        rc, raw, out = _run_hook(
             self.SCRIPT, {"tool_name": "Bash", "tool_input": {"command": "ls -la"}}
         )
         assert rc == 0
-        assert out is not None
-        assert out.get("suppressOutput") is True
+        assert raw == ""
+        assert out is None
 
     def test_dangerous_worktree_command_blocks(self) -> None:
         """Dangerous worktree operations should block with exit 2."""
@@ -92,7 +92,7 @@ class TestPreBashDispatch:
         assert "BLOCKED" in raw
 
     def test_rule_loader_context_injection(self) -> None:
-        """Rule-loader should inject context when matching notebook paths."""
+        """Rule-loader should inject additionalContext for matching paths."""
         # Clear any loaded-rules sentinel so the rule-loader triggers
         runtime_dir = HOOKS_DIR.parents[1] / ".claude" / "runtime"
         for sentinel in runtime_dir.glob(".loaded_rules_*"):
@@ -107,9 +107,48 @@ class TestPreBashDispatch:
         )
         assert rc == 0
         assert out is not None
-        assert out.get("suppressOutput") is True
         # Rule-loader should have injected context for notebook paths
         assert out.get("additionalContext") is not None
+        # PreToolUse hooks should NOT include suppressOutput (not a valid field)
+        assert "suppressOutput" not in out
+
+
+class TestRuleLoaderDirect:
+    """rule-loader.sh produces no stdout for non-matching PreToolUse paths."""
+
+    SCRIPT = "rule-loader.sh"
+
+    def test_non_matching_path_produces_no_stdout(self) -> None:
+        """Non-matching paths should produce no stdout to avoid TUI noise."""
+        rc, raw, out = _run_hook(
+            self.SCRIPT,
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/some/unrelated/file.py"},
+            },
+        )
+        assert rc == 0
+        assert raw == ""
+        assert out is None
+
+    def test_matching_path_has_no_suppress_output(self) -> None:
+        """Matching paths should return additionalContext but not suppressOutput."""
+        # Clear sentinels
+        runtime_dir = HOOKS_DIR.parents[1] / ".claude" / "runtime"
+        for sentinel in runtime_dir.glob(".loaded_rules_*"):
+            sentinel.unlink(missing_ok=True)
+
+        rc, _raw, out = _run_hook(
+            self.SCRIPT,
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "notebooks/analysis.py"},
+            },
+        )
+        assert rc == 0
+        assert out is not None
+        assert out.get("additionalContext") is not None
+        assert "suppressOutput" not in out
 
 
 class TestPostBashDispatch:

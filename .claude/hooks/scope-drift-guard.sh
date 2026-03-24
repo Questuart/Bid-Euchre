@@ -18,14 +18,12 @@ INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
 
 if [ -z "$COMMAND" ]; then
-  echo '{"suppressOutput": true}'
   exit 0
 fi
 
 # Only guard on direct "git commit" commands (not quoted inside tmux etc.)
 TRIMMED="${COMMAND#"${COMMAND%%[![:space:]]*}"}"
 if [[ "$TRIMMED" != "git commit"* ]]; then
-  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -54,7 +52,6 @@ fi
 
 if [ -z "$LANE_ID" ]; then
   # Cannot determine lane — skip enforcement silently
-  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -93,7 +90,6 @@ print(json.dumps(verdict.to_dict()))
 
 if [ -z "$RESULT" ]; then
   # Python invocation failed — don't block work
-  echo '{"suppressOutput": true}'
   exit 0
 fi
 
