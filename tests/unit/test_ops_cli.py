@@ -4330,6 +4330,163 @@ class TestCmdReviewCheck:
         assert "review-check" in msg_data["summary"]
 
 
+class TestCmdLanePeek:
+    """Tests for the 'lane peek' subcommand (tmux pane capture)."""
+
+    def test_peek_success(
+        self, runtime_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Successful peek prints captured pane content."""
+        from unittest.mock import MagicMock, patch
+
+        import ops
+
+        mock_result = MagicMock(returncode=0, stdout="line1\nline2\nline3\n")
+        with (
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+            patch(
+                "bid_euchre.ops.worker_pool._resolve_tmux_target",
+                return_value="steward:platform.1",
+            ),
+        ):
+            rc = ops.main(
+                ["--runtime-dir", str(runtime_dir), "lane", "peek", "author-a"]
+            )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "line1" in captured.out
+        assert "line3" in captured.out
+        # Verify tmux capture-pane was called with correct args
+        call_args = mock_run.call_args[0][0]
+        assert call_args[0] == "tmux"
+        assert call_args[1] == "capture-pane"
+        assert "-t" in call_args
+        assert "steward:platform.1" in call_args
+        assert "-p" in call_args
+
+    def test_peek_custom_lines(
+        self, runtime_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--lines flag is passed to tmux as negative scroll offset."""
+        from unittest.mock import MagicMock, patch
+
+        import ops
+
+        mock_result = MagicMock(returncode=0, stdout="output\n")
+        with (
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+            patch(
+                "bid_euchre.ops.worker_pool._resolve_tmux_target",
+                return_value="steward:author-a",
+            ),
+        ):
+            rc = ops.main(
+                [
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "lane",
+                    "peek",
+                    "author-a",
+                    "--lines",
+                    "200",
+                ]
+            )
+        assert rc == 0
+        call_args = mock_run.call_args[0][0]
+        assert "-S" in call_args
+        s_idx = call_args.index("-S")
+        assert call_args[s_idx + 1] == "-200"
+
+    def test_peek_tmux_failure(
+        self, runtime_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Non-zero tmux exit prints error to stderr and returns 1."""
+        from unittest.mock import MagicMock, patch
+
+        import ops
+
+        mock_result = MagicMock(
+            returncode=1, stdout="", stderr="can't find pane: author-a"
+        )
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch(
+                "bid_euchre.ops.worker_pool._resolve_tmux_target",
+                return_value="steward:author-a",
+            ),
+        ):
+            rc = ops.main(
+                ["--runtime-dir", str(runtime_dir), "lane", "peek", "author-a"]
+            )
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "Error" in captured.err
+
+    def test_peek_tmux_not_found(
+        self, runtime_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """FileNotFoundError (tmux missing) prints error and returns 1."""
+        from unittest.mock import patch
+
+        import ops
+
+        with (
+            patch("subprocess.run", side_effect=FileNotFoundError("tmux")),
+            patch(
+                "bid_euchre.ops.worker_pool._resolve_tmux_target",
+                return_value="steward:author-a",
+            ),
+        ):
+            rc = ops.main(
+                ["--runtime-dir", str(runtime_dir), "lane", "peek", "author-a"]
+            )
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "not installed" in captured.err
+
+    def test_peek_tmux_timeout(
+        self, runtime_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """TimeoutExpired prints error and returns 1."""
+        import subprocess as sp
+        from unittest.mock import patch
+
+        import ops
+
+        with (
+            patch("subprocess.run", side_effect=sp.TimeoutExpired("tmux", 5)),
+            patch(
+                "bid_euchre.ops.worker_pool._resolve_tmux_target",
+                return_value="steward:author-a",
+            ),
+        ):
+            rc = ops.main(
+                ["--runtime-dir", str(runtime_dir), "lane", "peek", "author-a"]
+            )
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "timed out" in captured.err
+
+    def test_peek_parser_registered(self) -> None:
+        """The 'lane peek' subparser is registered in build_parser."""
+        import ops
+
+        parser = ops.build_parser()
+        # Parsing should succeed — not raise SystemExit
+        args = parser.parse_args(["lane", "peek", "flex-a"])
+        assert args.lane_id == "flex-a"
+        assert args.lines == 80  # default
+
+    def test_peek_parser_custom_lines(self) -> None:
+        """The --lines argument is parsed correctly."""
+        import ops
+
+        parser = ops.build_parser()
+        args = parser.parse_args(["lane", "peek", "author-b", "--lines", "500"])
+        assert args.lane_id == "author-b"
+        assert args.lines == 500
+
+
 class TestBusRootRegression:
     """Regression: ops.py must use shared_bus_root() — not worktree-local paths.
 
