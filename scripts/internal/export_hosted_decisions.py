@@ -34,11 +34,20 @@ import json
 import sys
 from pathlib import Path
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+try:
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
 
-from web.db import Decision, Hand, Match, init_engine, make_session_factory
-from web.export import decision_to_jsonl
+    from web.db import Decision, Hand, Match, init_engine, make_session_factory
+    from web.export import decision_to_jsonl
+except ImportError as exc:
+    print(
+        "Error: missing dependencies for export CLI.\n"
+        "Install the web extras:  uv sync --extra web\n"
+        f"  ({exc})",
+        file=sys.stderr,
+    )
+    raise SystemExit(1) from exc
 
 
 def _build_query(
@@ -55,7 +64,7 @@ def _build_query(
         select(Decision, Match, Hand)
         .join(Match, Decision.match_id == Match.id)
         .join(Hand, Decision.hand_id == Hand.id)
-        .order_by(Decision.match_id, Decision.hand_id, Decision.turn_number)
+        .order_by(Decision.match_id, Hand.hand_number, Decision.turn_number)
     )
 
     if match_uuid is not None:
@@ -95,11 +104,11 @@ def export_decisions(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     stmt = _build_query(match_uuid=match_uuid, human_only=human_only)
-    rows = session.execute(stmt).all()
+    result = session.execute(stmt).yield_per(500)
 
     count = 0
     with open(output_path, "w") as fh:
-        for decision_row, match_row, hand_row in rows:
+        for decision_row, match_row, hand_row in result:
             record = decision_to_jsonl(decision_row, match_row, hand_row)
             fh.write(json.dumps(record) + "\n")
             count += 1
@@ -142,8 +151,18 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
     db_path: Path = args.db
+    output_path: Path = args.output
+
     if not db_path.exists():
         print(f"Error: database not found: {db_path}", file=sys.stderr)
+        return 1
+
+    if db_path.resolve() == output_path.resolve():
+        print(
+            "Error: --output resolves to the same path as --db; "
+            "refusing to overwrite the source database.",
+            file=sys.stderr,
+        )
         return 1
 
     database_url = f"sqlite:///{db_path.resolve()}"
@@ -154,14 +173,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         count = export_decisions(
             session,
-            args.output,
+            output_path,
             match_uuid=args.match_uuid,
             human_only=args.human_only,
         )
     finally:
         session.close()
 
-    print(f"{count} records exported to {args.output}")
+    print(f"{count} records exported to {output_path}")
     return 0
 
 

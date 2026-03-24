@@ -267,7 +267,7 @@ class TestExportDecisions:
         assert record["actor_type"] == "human"
 
     def test_deterministic_ordering(self, session, tmp_path):
-        """Records are ordered by match_id, hand_id, turn_number."""
+        """Records are ordered by match_id, hand_number, turn_number."""
         player = _make_player(session)
         match = _make_match(session, player)
         hand = _make_hand(session, match)
@@ -282,6 +282,26 @@ class TestExportDecisions:
         lines = output.read_text().strip().split("\n")
         turns = [json.loads(line)["turn_number"] for line in lines]
         assert turns == [0, 1, 2]
+
+    def test_ordering_by_hand_number(self, session, tmp_path):
+        """Decisions are ordered by logical hand_number, not hand PK."""
+        player = _make_player(session)
+        match = _make_match(session, player)
+        # Create hands with non-sequential hand_numbers inserted out of order
+        hand3 = _make_hand(session, match, hand_number=3)
+        hand1 = _make_hand(session, match, hand_number=1)
+        hand2 = _make_hand(session, match, hand_number=2)
+        _make_decision(session, match, hand3, turn_number=0, seat=0)
+        _make_decision(session, match, hand1, turn_number=0, seat=0)
+        _make_decision(session, match, hand2, turn_number=0, seat=0)
+        session.commit()
+
+        output = tmp_path / "hand_order.jsonl"
+        export_decisions(session, output)
+
+        lines = output.read_text().strip().split("\n")
+        hand_numbers = [json.loads(line)["hand_number"] for line in lines]
+        assert hand_numbers == [1, 2, 3]
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +342,22 @@ class TestMainCLI:
 
         lines = output.read_text().strip().split("\n")
         assert len(lines) == 2
+
+    def test_overwrite_guard_rejects_same_path(self, tmp_path):
+        """--output same as --db should return exit code 1."""
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+        code = main(["--db", str(db_path), "--output", str(db_path)])
+        assert code == 1
+
+    def test_overwrite_guard_rejects_symlink(self, tmp_path):
+        """--output symlink pointing to --db should return exit code 1."""
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+        link_path = tmp_path / "link.db"
+        link_path.symlink_to(db_path)
+        code = main(["--db", str(db_path), "--output", str(link_path)])
+        assert code == 1
 
     def test_help_flag(self, capsys):
         """--help should exit with code 0."""
