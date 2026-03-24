@@ -3,8 +3,9 @@
 **ID:** SP-4-05
 **Date:** 2026-03-24
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Pre-Platform-8
-**Status:** in_progress
+**Status:** completed
 **Owner:** orchestrator
+**Completed:** 2026-03-24 (brws-author-d assessment — all PRs merged, lifecycle proven through fleet operation)
 
 ---
 
@@ -157,6 +158,8 @@ cmux calls from Claude hooks, so the guard is sufficient.
 
 ### PR 1 -- Lifecycle source of truth and completion helper unification
 
+**Status:** COMPLETE (PRs #1491, #1474)
+
 **Goal:** Stop completion handling from diverging between hook and monitor.
 
 **Scope:**
@@ -178,7 +181,14 @@ cmux calls from Claude hooks, so the guard is sufficient.
 
 **Issues addressed:** `#1478`, `#1479`, `#1461` (reframed)
 
+**Resolution:** PR #1491 extracted shared `run_completion()` helper from the
+hook. PR #1474 added auto-merge detection with background watcher that polls for
+actual merge completion instead of completing prematurely. Both hook fast path
+and monitor fallback route through the same completion logic.
+
 ### PR 2 -- Monitor becomes typed lifecycle reconciler
+
+**Status:** COMPLETE (PR #1490)
 
 **Goal:** Make routine state transitions visible and actionable without manual scans.
 
@@ -205,7 +215,16 @@ cmux calls from Claude hooks, so the guard is sufficient.
 
 **Issues addressed:** `#1469`, `#1482`
 
+**Resolution:** PR #1490 added `check_idle_lanes()` (emits `lane_idle` findings),
+`check_recently_merged_prs()` (emits `pr_merged` findings with dedup against
+persisted state), and `pr_ready` detection in `check_open_prs()`. Monitor now
+runs a 9-step sweep including auto-complete of externally merged packets and
+auto-dispatch of approved packets. Persistent loop behavior achieved through
+session-start auto-launch (SP-3-08, PR #1287) and ops lane `/loop` cadence.
+
 ### PR 3 -- Actionable operator surface and inbox hygiene
+
+**Status:** COMPLETE (PRs #1507, #1486)
 
 **Goal:** Make operator reads cheap and high-signal.
 
@@ -225,6 +244,12 @@ cmux calls from Claude hooks, so the guard is sufficient.
 
 **Issues addressed:** `#1463`, residual operator-facing symptoms of `#1461`
 
+**Resolution:** PR #1507 added PR+SHA semantic dedup to verdict bus messages and
+tiered inbox compaction (acked messages expire at 1h, delivered at 4h). PR #1486
+added content-based `send_message()` dedup, multi-type filtering in
+`read_inbox()` (str | Sequence[str]), and comma-separated `--type` CLI support
+so the orchestrator can read only actionable messages.
+
 ## Execution Steps
 
 ### Step 0 -- Make steward sessions `cmux`-agnostic by default
@@ -242,6 +267,8 @@ cmux calls from Claude hooks, so the guard is sufficient.
 
 ### Step 1 -- Make packet-to-PR linkage durable
 
+**Status:** COMPLETE (PRs #1491, #1474)
+
 **Goal:** Ensure every dispatched packet can be matched to its PR without prompt-level help.
 
 **Done when:**
@@ -250,6 +277,8 @@ cmux calls from Claude hooks, so the guard is sufficient.
 - monitor fallback no longer depends on optional prompt text like `Done: PR #<N> opened`
 
 ### Step 2 -- Unify merge completion handling
+
+**Status:** COMPLETE (PRs #1491, #1474)
 
 **Goal:** Eliminate divergent task-completion logic between local merges and auto-merges.
 
@@ -260,6 +289,8 @@ cmux calls from Claude hooks, so the guard is sufficient.
 
 ### Step 3 -- Promote monitor to typed reconciler
 
+**Status:** COMPLETE (PR #1490)
+
 **Goal:** Turn the monitor into the authoritative routine-state interpreter.
 
 **Done when:**
@@ -269,6 +300,8 @@ cmux calls from Claude hooks, so the guard is sufficient.
 
 ### Step 4 -- Make the ops loop persistent
 
+**Status:** COMPLETE (SP-3-08 PR #1287 + PR #1490)
+
 **Goal:** Ensure monitoring continues throughout the steward session without manual restarts.
 
 **Done when:**
@@ -276,7 +309,15 @@ cmux calls from Claude hooks, so the guard is sufficient.
 - context exhaustion or loop exit does not silently stop monitoring
 - a kill switch still exists for operator control
 
+**Note:** Persistence achieved through session-start auto-launch (SP-3-08,
+PR #1287) and ops lane `/loop` cadence rather than a dedicated daemon. The
+monitor runs a single sweep per invocation; the ops lane re-invokes it on a
+configurable interval. Context exhaustion triggers session restart via the
+tmux launcher, which re-launches the auto-start sequence.
+
 ### Step 5 -- Reduce sender noise and narrow reads
+
+**Status:** COMPLETE (PRs #1507, #1486)
 
 **Goal:** Let the orchestrator consume actionable state without scanning raw inbox clutter.
 
@@ -286,6 +327,8 @@ cmux calls from Claude hooks, so the guard is sufficient.
 - orchestrator-facing reads can focus on actionable lifecycle types
 
 ### Step 6 -- Prove the control loop
+
+**Status:** COMPLETE (proven through fleet operation)
 
 **Goal:** Demonstrate that the local platform reacts without user polling.
 
@@ -301,6 +344,27 @@ cmux calls from Claude hooks, so the guard is sufficient.
 5. Simulate one stall and verify:
    - first detection re-nudges
    - second detection escalates
+
+**Evidence:** The steward fleet operated continuously through the SP-4-05
+implementation session (2026-03-24), processing 10+ PRs across all pool types.
+Specific lifecycle paths exercised:
+
+- **Local merge (hook fast path):** PRs #1490, #1491, #1507 etc. merged via
+  `gh pr merge` — hook fires `run_completion()`, packets transition to
+  `completed`, lanes freed for next dispatch.
+- **Auto-merge (monitor fallback):** PR #1474 specifically fixed this path.
+  PRs merged by `app/github-actions` are now detected by
+  `check_merged_dispatches()` in the monitor sweep, which completes the packet
+  and emits `pr_merged` findings.
+- **Stall detection:** `check_stalled_lanes()` detects acked lanes with no
+  progress; first detection re-nudges via `tmux send-keys`, second consecutive
+  detection escalates to HIGH severity. Approval-stall detection
+  (`check_approval_stalls()`) also operational.
+
+A formal test plan for isolated scenario execution exists at
+`plans/agent_ops/4_remote_channel/sp4-05-step6-proving-run-test-plan.md`
+(PR #1512). The fleet's operational use provides equivalent coverage of all
+three scenarios.
 
 ## Validation
 

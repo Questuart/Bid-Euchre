@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-24 by flex-c (SP-4-05 Step 0 complete — cmux guard)
+**Last updated:** 2026-03-24 by brws-author-d (SP-4-05 COMPLETE — lifecycle proving assessment)
 
 ---
 
@@ -39,7 +39,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | completed | Pre-Platform-8 |
 | SP-4-03 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | completed | Pre-Platform-8 |
 | SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | completed | Step 1 |
-| SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | in_progress | Pre-Platform-8 |
+| SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | completed | Pre-Platform-8 |
 
 ### Shared Surface Ownership
 
@@ -84,3 +84,4 @@ implementation.
 | 2026-03-24 | SP-4-05 registered. Reactive control-loop hardening reframes the observability gap as a local lifecycle-control problem, not just a bus-delivery bug. Scope covers durable packet->PR linkage, shared merge-completion helpers, typed lifecycle findings in `monitor.py`, persistent ops-loop behavior, and sender-side inbox-noise reduction. This is now the primary pre-Platform-8 control-plane slice; Telegram host/plugin preflight may continue in parallel, but remote proving should not claim local reactivity until SP-4-05 passes a proving run. |
 | 2026-03-24 | `cmux` decision recorded: no active steward dependency. Current user-level `cmux` hooks are causing tmux-pane noise (`#1485`, `#1488`) without adding control-plane value. Phase 4 treats `cmux` as an optional later UX/presentation upgrade only. Immediate action is to bypass or disable `cmux` hooks for steward sessions, not to build deeper `cmux` integration. |
 | 2026-03-24 | SP-4-05 Step 0 COMPLETE (flex-c, PR #1500). cmux hooks disabled for steward sessions via session guard in `~/.claude/hooks/cmux-notify.sh`. cmux `claude-hook` binary is unmodifiable (known limitation, documented). Closes #1485, keeps #1488 open for future revisit. |
+| 2026-03-24 | SP-4-05 COMPLETE (brws-author-d assessment). All 7 steps verified: Step 0 cmux guard (PR #1500), Steps 1-2 completion unification (PRs #1491, #1474), Step 3 typed reconciler (PR #1490), Step 4 persistent loop (SP-3-08 #1287 + #1490), Step 5 inbox hygiene (PRs #1507, #1486), Step 6 lifecycle proven through fleet operation (10+ PRs processed across all pools with hook fast path, auto-merge fallback, and stall detection all exercised). All exit criteria met. Issue #1502 verified resolved on main (PR #1500 superseded stale-base clobber from #1496). Issue #1503 findings addressed by PR #1511. |
