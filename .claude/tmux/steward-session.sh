@@ -52,7 +52,7 @@ if [ -z "$CLAUDE_BIN" ]; then
 fi
 
 # Telegram channel configuration (Platform-8a).
-# Set STEWARD_TELEGRAM_ENABLED=1 to add --channels telegram to the
+# Set STEWARD_TELEGRAM_ENABLED=1 to add the Telegram channel plugin to the
 # orchestrator pane.  Default is 0 (disabled / tmux-only).
 # Only the orchestrator lane gets the channel flag — author lanes remain
 # tmux-only per SP-4-01 key decisions.
@@ -316,11 +316,11 @@ write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/s
 # Orchestrator channel flags (Platform-8a)
 # ---------------------------------------------------------------------------
 # When STEWARD_TELEGRAM_ENABLED=1 the orchestrator pane gets
-# --channels telegram so the Channels plugin connects on boot.
+# --channels so the Telegram plugin connects on boot.
 # All other panes launch without --channels (tmux-only).
 ORCH_CHANNEL_FLAGS=""
 if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
-    ORCH_CHANNEL_FLAGS="--channels telegram"
+    ORCH_CHANNEL_FLAGS="--channels plugin:telegram@claude-plugins-official"
     export STEWARD_CHANNELS="telegram"
 fi
 
