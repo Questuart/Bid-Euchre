@@ -20,9 +20,11 @@ from bid_euchre.ops.monitor import (
     _save_stall_state,
     check_approval_stalls,
     check_auto_dispatch,
+    check_idle_lanes,
     check_lane_health,
     check_merged_dispatches,
     check_open_prs,
+    check_recently_merged_prs,
     check_stale_dispatches,
     check_stalled_lanes,
     format_findings_json,
@@ -2157,3 +2159,304 @@ class TestApprovalStallsWithSpinner:
             assert len(findings2) == 1
             assert "author-c" in findings2[0].summary
             assert len(notifications) == 1
+
+
+# ---------------------------------------------------------------------------
+# check_idle_lanes tests
+# ---------------------------------------------------------------------------
+
+
+class TestCheckIdleLanes:
+    """Tests for idle lane detection."""
+
+    def test_reports_idle_lanes(self, tmp_path: Path) -> None:
+        """Idle lanes with live tmux are reported."""
+        worker_idle = MagicMock()
+        worker_idle.lane_id = "author-b"
+        worker_idle.pool_status = "idle"
+        worker_idle.tmux_alive = True
+
+        worker_active = MagicMock()
+        worker_active.lane_id = "author-a"
+        worker_active.pool_status = "active"
+        worker_active.tmux_alive = True
+
+        pool_mock = MagicMock()
+        pool_mock.workers = [worker_idle, worker_active]
+
+        with patch(
+            "bid_euchre.ops.worker_pool.take_pool_snapshot",
+            return_value=pool_mock,
+        ):
+            findings = check_idle_lanes(tmp_path)
+
+        idle_findings = [f for f in findings if f.category == "lane_idle"]
+        assert len(idle_findings) == 1
+        assert "author-b" in idle_findings[0].summary
+        assert idle_findings[0].severity == SEVERITY_INFO
+
+    def test_no_idle_lanes(self, tmp_path: Path) -> None:
+        """No findings when all lanes are active."""
+        worker = MagicMock()
+        worker.lane_id = "author-a"
+        worker.pool_status = "active"
+        worker.tmux_alive = True
+
+        pool_mock = MagicMock()
+        pool_mock.workers = [worker]
+
+        with patch(
+            "bid_euchre.ops.worker_pool.take_pool_snapshot",
+            return_value=pool_mock,
+        ):
+            findings = check_idle_lanes(tmp_path)
+
+        assert len(findings) == 0
+
+    def test_idle_lane_with_dead_tmux_not_reported(self, tmp_path: Path) -> None:
+        """Idle lanes with dead tmux panes are not reported as available."""
+        worker = MagicMock()
+        worker.lane_id = "author-c"
+        worker.pool_status = "idle"
+        worker.tmux_alive = False
+
+        pool_mock = MagicMock()
+        pool_mock.workers = [worker]
+
+        with patch(
+            "bid_euchre.ops.worker_pool.take_pool_snapshot",
+            return_value=pool_mock,
+        ):
+            findings = check_idle_lanes(tmp_path)
+
+        assert len(findings) == 0
+
+    def test_multiple_idle_lanes(self, tmp_path: Path) -> None:
+        """Multiple idle lanes each produce a finding."""
+        workers = []
+        for lid in ["author-a", "flex-a", "brws-author-b"]:
+            w = MagicMock()
+            w.lane_id = lid
+            w.pool_status = "idle"
+            w.tmux_alive = True
+            workers.append(w)
+
+        pool_mock = MagicMock()
+        pool_mock.workers = workers
+
+        with patch(
+            "bid_euchre.ops.worker_pool.take_pool_snapshot",
+            return_value=pool_mock,
+        ):
+            findings = check_idle_lanes(tmp_path)
+
+        assert len(findings) == 3
+        lane_ids = {f.details["lane_id"] for f in findings}
+        assert lane_ids == {"author-a", "flex-a", "brws-author-b"}
+
+    def test_handles_snapshot_failure(self, tmp_path: Path) -> None:
+        """Gracefully handles pool snapshot failure."""
+        with patch(
+            "bid_euchre.ops.worker_pool.take_pool_snapshot",
+            side_effect=RuntimeError("no registry"),
+        ):
+            findings = check_idle_lanes(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "idle" in findings[0].summary.lower()
+
+
+# ---------------------------------------------------------------------------
+# check_recently_merged_prs tests
+# ---------------------------------------------------------------------------
+
+
+class TestCheckRecentlyMergedPRs:
+    """Tests for recently merged PR detection."""
+
+    def test_reports_new_merges(self, tmp_path: Path) -> None:
+        """Newly merged PRs are reported as findings."""
+        prs = [
+            {
+                "number": 100,
+                "title": "Fix scoring",
+                "headRefName": "fix/scoring",
+                "mergedAt": "2026-03-23T10:00:00Z",
+            },
+            {
+                "number": 101,
+                "title": "Add feature",
+                "headRefName": "feat/new",
+                "mergedAt": "2026-03-23T11:00:00Z",
+            },
+        ]
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = json.dumps(prs)
+
+        with patch("subprocess.run", return_value=result):
+            findings = check_recently_merged_prs(tmp_path)
+
+        merged = [f for f in findings if f.category == "pr_merged"]
+        assert len(merged) == 2
+        nums = {f.details["pr"] for f in merged}
+        assert nums == {100, 101}
+
+    def test_deduplicates_across_cycles(self, tmp_path: Path) -> None:
+        """Previously seen merges are not re-reported."""
+        # Seed the state with PR #100 already seen
+        state_path = tmp_path / "merged_pr_state.json"
+        state_path.write_text(json.dumps({"seen": [100]}) + "\n")
+
+        prs = [
+            {
+                "number": 100,
+                "title": "Fix scoring",
+                "headRefName": "fix/scoring",
+                "mergedAt": "2026-03-23T10:00:00Z",
+            },
+            {
+                "number": 102,
+                "title": "New PR",
+                "headRefName": "feat/new",
+                "mergedAt": "2026-03-23T12:00:00Z",
+            },
+        ]
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = json.dumps(prs)
+
+        with patch("subprocess.run", return_value=result):
+            findings = check_recently_merged_prs(tmp_path)
+
+        merged = [f for f in findings if f.category == "pr_merged"]
+        assert len(merged) == 1
+        assert merged[0].details["pr"] == 102
+
+    def test_persists_state(self, tmp_path: Path) -> None:
+        """Seen PR numbers are persisted after a cycle."""
+        prs = [
+            {
+                "number": 200,
+                "title": "PR 200",
+                "headRefName": "feat/200",
+                "mergedAt": "2026-03-23T10:00:00Z",
+            },
+        ]
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = json.dumps(prs)
+
+        with patch("subprocess.run", return_value=result):
+            check_recently_merged_prs(tmp_path)
+
+        state_path = tmp_path / "merged_pr_state.json"
+        assert state_path.exists()
+        state = json.loads(state_path.read_text())
+        assert 200 in state["seen"]
+
+    def test_no_merged_prs(self, tmp_path: Path) -> None:
+        """No findings when no PRs are merged."""
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = "[]"
+
+        with patch("subprocess.run", return_value=result):
+            findings = check_recently_merged_prs(tmp_path)
+
+        assert len(findings) == 0
+
+    def test_handles_gh_failure(self, tmp_path: Path) -> None:
+        """Gracefully handles gh command failure."""
+        result = MagicMock()
+        result.returncode = 1
+        result.stderr = "auth error"
+        result.stdout = ""
+
+        with patch("subprocess.run", return_value=result):
+            findings = check_recently_merged_prs(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "failed" in findings[0].summary
+
+
+# ---------------------------------------------------------------------------
+# check_open_prs — pr_ready detection tests
+# ---------------------------------------------------------------------------
+
+
+class TestCheckOpenPRsReady:
+    """Tests for CI-ready PR detection in check_open_prs."""
+
+    def test_flags_pr_with_all_green_checks(self) -> None:
+        """PR with all checks passing is flagged as pr_ready."""
+        prs = [
+            {
+                "number": 50,
+                "title": "Good PR",
+                "headRefName": "feat/good",
+                "mergeable": "MERGEABLE",
+                "statusCheckRollup": [
+                    {"name": "tests", "conclusion": "SUCCESS", "status": "COMPLETED"},
+                    {"name": "lint", "conclusion": "SUCCESS", "status": "COMPLETED"},
+                ],
+            }
+        ]
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = json.dumps(prs)
+
+        with patch("subprocess.run", return_value=result):
+            findings = check_open_prs()
+
+        ready = [f for f in findings if f.category == "pr_ready"]
+        assert len(ready) == 1
+        assert "#50" in ready[0].summary
+        assert ready[0].severity == SEVERITY_WARN
+
+    def test_does_not_flag_pr_with_failing_checks(self) -> None:
+        """PR with failing checks is NOT flagged as pr_ready."""
+        prs = [
+            {
+                "number": 51,
+                "title": "Broken PR",
+                "headRefName": "feat/broken",
+                "mergeable": "MERGEABLE",
+                "statusCheckRollup": [
+                    {"name": "tests", "conclusion": "FAILURE", "status": "COMPLETED"},
+                    {"name": "lint", "conclusion": "SUCCESS", "status": "COMPLETED"},
+                ],
+            }
+        ]
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = json.dumps(prs)
+
+        with patch("subprocess.run", return_value=result):
+            findings = check_open_prs()
+
+        ready = [f for f in findings if f.category == "pr_ready"]
+        assert len(ready) == 0
+
+    def test_does_not_flag_pr_with_no_checks(self) -> None:
+        """PR with no checks is NOT flagged as pr_ready."""
+        prs = [
+            {
+                "number": 52,
+                "title": "No checks PR",
+                "headRefName": "feat/noci",
+                "mergeable": "MERGEABLE",
+                "statusCheckRollup": [],
+            }
+        ]
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = json.dumps(prs)
+
+        with patch("subprocess.run", return_value=result):
+            findings = check_open_prs()
+
+        ready = [f for f in findings if f.category == "pr_ready"]
+        assert len(ready) == 0

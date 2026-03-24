@@ -247,6 +247,27 @@ def check_open_prs() -> list[MonitorFinding]:
                 )
             )
 
+        # Check for all-green CI (PR ready for merge)
+        all_complete = checks and all(
+            c.get("conclusion") == "SUCCESS" or c.get("status") == "COMPLETED"
+            for c in checks
+        )
+        # Only flag as ready if there are actual checks AND none failing
+        if all_complete and not failing:
+            findings.append(
+                MonitorFinding(
+                    category="pr_ready",
+                    severity=SEVERITY_WARN,
+                    summary=(f"PR #{pr_num} CI green, ready for merge: {title}"),
+                    details={
+                        "pr": pr_num,
+                        "title": title,
+                        "branch": pr.get("headRefName"),
+                        "checks_passed": len(checks),
+                    },
+                )
+            )
+
     # Summary
     findings.append(
         MonitorFinding(
@@ -337,6 +358,172 @@ def check_stale_dispatches(
                     },
                 )
             )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Idle lane detection
+# ---------------------------------------------------------------------------
+
+
+def check_idle_lanes(
+    runtime_dir: Path | None = None,
+) -> list[MonitorFinding]:
+    """Detect lanes that are idle and available for dispatch.
+
+    A lane is considered idle when it has ``pool_status == "idle"`` or has
+    no current task assigned.  These lanes are immediately available for
+    new work and the orchestrator should be notified so it can dispatch.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        List of findings for idle lanes.
+    """
+    findings: list[MonitorFinding] = []
+
+    try:
+        from bid_euchre.ops.worker_pool import take_pool_snapshot
+
+        pool = take_pool_snapshot(runtime_dir)
+    except Exception as exc:
+        findings.append(
+            MonitorFinding(
+                category="lane_idle",
+                severity=SEVERITY_WARN,
+                summary=f"Could not check for idle lanes: {exc}",
+            )
+        )
+        return findings
+
+    idle_lanes: list[str] = []
+    for worker in pool.workers:
+        if worker.pool_status == "idle" and worker.tmux_alive:
+            idle_lanes.append(worker.lane_id)
+
+    if idle_lanes:
+        for lane_id in idle_lanes:
+            findings.append(
+                MonitorFinding(
+                    category="lane_idle",
+                    severity=SEVERITY_INFO,
+                    summary=f"Lane {lane_id!r} idle and available for dispatch",
+                    details={"lane_id": lane_id},
+                )
+            )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Recently merged PR detection
+# ---------------------------------------------------------------------------
+
+
+def check_recently_merged_prs(
+    runtime_dir: Path | None = None,
+) -> list[MonitorFinding]:
+    """Detect PRs that have been merged recently.
+
+    Queries ``gh pr list --state merged`` and compares against a persisted
+    set of already-reported merged PR numbers.  Only new merges since the
+    last cycle produce findings.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        List of findings for newly merged PRs.
+    """
+    findings: list[MonitorFinding] = []
+
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+
+    state_path = runtime_dir / "merged_pr_state.json"
+
+    # Load previously seen merged PRs
+    try:
+        seen: set[int] = set(json.loads(state_path.read_text()).get("seen", []))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        seen = set()
+
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                "merged",
+                "--json",
+                "number,title,headRefName,mergedAt",
+                "--limit",
+                "10",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            findings.append(
+                MonitorFinding(
+                    category="pr_merged",
+                    severity=SEVERITY_WARN,
+                    summary=f"gh pr list --state merged failed: {result.stderr[:200]}",
+                )
+            )
+            return findings
+
+        prs = json.loads(result.stdout) if result.stdout.strip() else []
+    except (
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
+        findings.append(
+            MonitorFinding(
+                category="pr_merged",
+                severity=SEVERITY_WARN,
+                summary=f"Could not check merged PRs: {exc}",
+            )
+        )
+        return findings
+
+    new_merged_numbers: set[int] = set()
+    for pr in prs:
+        pr_num = pr.get("number")
+        if pr_num is None:
+            continue
+        new_merged_numbers.add(pr_num)
+
+        if pr_num not in seen:
+            title = pr.get("title", "?")
+            branch = pr.get("headRefName", "?")
+            findings.append(
+                MonitorFinding(
+                    category="pr_merged",
+                    severity=SEVERITY_INFO,
+                    summary=f"PR #{pr_num} merged: {title} ({branch})",
+                    details={
+                        "pr": pr_num,
+                        "title": title,
+                        "branch": branch,
+                        "merged_at": pr.get("mergedAt"),
+                    },
+                )
+            )
+
+    # Persist the current set of seen merged PRs (keep up to last 50)
+    updated_seen = sorted(seen | new_merged_numbers)[-50:]
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps({"seen": updated_seen}) + "\n")
+    except OSError:
+        pass  # Best-effort persistence
 
     return findings
 
@@ -1396,12 +1583,14 @@ def run_monitoring_cycle(
 
     Collects findings from:
     1. Lane pool health snapshot
-    2. Open PR status (via ``gh``)
+    2. Open PR status and CI-ready detection (via ``gh``)
     3. Stale dispatched packet detection
-    4. Stalled lane detection (acked but idle), with optional recovery
-    5. Approval-stall detection (lanes blocked on tool-approval prompts)
-    6. Auto-complete dispatched packets whose PRs were merged externally
-    7. Auto-dispatch approved packets to idle lanes
+    4. Idle lane detection (available for dispatch)
+    5. Stalled lane detection (acked but idle), with optional recovery
+    6. Approval-stall detection (lanes blocked on tool-approval prompts)
+    7. Recently merged PR detection (new merges since last cycle)
+    8. Auto-complete dispatched packets whose PRs were merged externally
+    9. Auto-dispatch approved packets to idle lanes
 
     Optionally sends a summary to the orchestrator inbox.
 
@@ -1422,7 +1611,7 @@ def run_monitoring_cycle(
     # 1. Lane health
     findings.extend(check_lane_health(runtime_dir))
 
-    # 2. Open PRs and CI
+    # 2. Open PRs, CI status, and CI-ready detection
     if not skip_pr_check:
         findings.extend(check_open_prs())
 
@@ -1431,21 +1620,28 @@ def run_monitoring_cycle(
         check_stale_dispatches(runtime_dir, stale_minutes=stale_minutes, now=now)
     )
 
-    # 4. Stalled lane detection (acked dispatches with no progress)
+    # 4. Idle lane detection
+    findings.extend(check_idle_lanes(runtime_dir))
+
+    # 5. Stalled lane detection (acked dispatches with no progress)
     findings.extend(check_stalled_lanes(runtime_dir, now=now, no_recovery=no_recovery))
 
-    # 5. Approval-stall detection (lanes blocked on approval prompts)
+    # 6. Approval-stall detection (lanes blocked on approval prompts)
     findings.extend(check_approval_stalls(runtime_dir=runtime_dir))
 
-    # 6. Auto-complete dispatched packets whose PRs were merged externally
+    # 7. Recently merged PRs (new since last cycle)
+    if not skip_pr_check:
+        findings.extend(check_recently_merged_prs(runtime_dir))
+
+    # 8. Auto-complete dispatched packets whose PRs were merged externally
     if not skip_pr_check:
         findings.extend(check_merged_dispatches(runtime_dir))
 
-    # 7. Auto-dispatch approved packets to idle lanes
+    # 9. Auto-dispatch approved packets to idle lanes
     if not no_auto_dispatch:
         findings.extend(check_auto_dispatch(runtime_dir, current_findings=findings))
 
-    # 8. Notify orchestrator
+    # 10. Notify orchestrator
     if notify_orchestrator:
         _send_findings_to_orchestrator(findings)
 
