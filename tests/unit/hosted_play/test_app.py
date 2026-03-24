@@ -44,6 +44,28 @@ class TestCreateApp:
         middleware_classes = [m.cls for m in app.user_middleware]
         assert CORSMiddleware in middleware_classes
 
+    def test_cors_honors_configured_origins(self, tmp_path):
+        """CORS middleware should use allowed_origins from config, not hardcoded '*'."""
+        db_path = tmp_path / "test.db"
+        config = HostedPlayConfig(
+            database_url=f"sqlite:///{db_path}",
+            allowed_origins=["https://app.example.com", "https://staging.example.com"],
+        )
+        app = create_app(config=config)
+        cors_mw = [m for m in app.user_middleware if m.cls is CORSMiddleware]
+        assert len(cors_mw) == 1
+        assert cors_mw[0].kwargs["allow_origins"] == [
+            "https://app.example.com",
+            "https://staging.example.com",
+        ]
+
+    def test_cors_default_wildcard(self, tmp_path):
+        """Default config (no ALLOWED_ORIGINS) should still produce ['*']."""
+        app = _make_app(tmp_path)
+        cors_mw = [m for m in app.user_middleware if m.cls is CORSMiddleware]
+        assert len(cors_mw) == 1
+        assert cors_mw[0].kwargs["allow_origins"] == ["*"]
+
 
 # ---------------------------------------------------------------------------
 # Lifespan — app.state

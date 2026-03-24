@@ -71,10 +71,11 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS — permissive for development; tighten in production
+    # CORS — honor configured origins (defaults to ["*"] for dev)
+    cfg = get_config()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cfg.allowed_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
