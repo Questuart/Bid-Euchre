@@ -1350,11 +1350,58 @@ def detect_anti_patterns(*, output_dir: Path | None = None) -> list[AntiPattern]
 
 
 # ---------------------------------------------------------------------------
+# Auto-import — populate store on first dashboard access or when stale
+# ---------------------------------------------------------------------------
+
+#: Maximum age of the session store before auto-reimport (seconds).
+_STALE_THRESHOLD_SECONDS = 3600  # 1 hour
+
+
+def _is_store_stale(output_dir: Path) -> bool:
+    """Check whether the session store needs a refresh.
+
+    Returns True when the store doesn't exist, is empty, or the JSONL file
+    hasn't been modified within :data:`_STALE_THRESHOLD_SECONDS`.
+    """
+    usage_file = output_dir / "session_usage.jsonl"
+    if not usage_file.exists() or usage_file.stat().st_size == 0:
+        return True
+    age = datetime.now(timezone.utc).timestamp() - usage_file.stat().st_mtime
+    return age > _STALE_THRESHOLD_SECONDS
+
+
+def _ensure_imported(output_dir: Path) -> None:
+    """Auto-import usage data if the store is empty or stale.
+
+    Runs ``import_usage_data`` followed by ``attribute_sessions`` so that
+    both ``session_usage.jsonl`` and ``session_attributions.jsonl`` are
+    populated.  This is best-effort — failures are logged and swallowed
+    so the dashboard never crashes due to import issues.
+    """
+    if not _is_store_stale(output_dir):
+        return
+
+    try:
+        result = import_usage_data(output_dir=output_dir)
+        if result.sessions_imported > 0 or result.sessions_skipped > 0:
+            attribute_sessions(output_dir=output_dir)
+        logger.info(
+            "Auto-imported token economy data: %d new, %d skipped",
+            result.sessions_imported,
+            result.sessions_skipped,
+        )
+    except Exception as exc:
+        logger.debug("Auto-import failed (best-effort): %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Dashboard surface — JSON-serializable token economy snapshot
 # ---------------------------------------------------------------------------
 
 
-def dashboard_token_economy(*, output_dir: Path | None = None) -> dict[str, Any]:
+def dashboard_token_economy(
+    *, output_dir: Path | None = None, auto_import: bool = True
+) -> dict[str, Any]:
     """Build a dashboard-ready dict with token economy sections.
 
     Returns a JSON-serializable dict containing:
@@ -1364,18 +1411,28 @@ def dashboard_token_economy(*, output_dir: Path | None = None) -> dict[str, Any]
     - ``throughput``: throughput-normalized metrics
     - ``anti_patterns``: detected anti-patterns
 
-    Returns an empty dict (``{}``) when no usage data is imported,
-    ensuring the dashboard renders cleanly without token data.
+    When *auto_import* is True (the default), auto-imports usage data from
+    ``~/.claude/usage-data/`` when the store is empty or stale (older than
+    1 hour).  Returns an empty dict (``{}``) when no usage data is available
+    even after import.
 
     Parameters
     ----------
     output_dir
         Path to the token economy store. Defaults to repo runtime path.
+    auto_import
+        If True, automatically run ``import_usage_data`` + ``attribute_sessions``
+        when the store is empty or stale.  Set to False in tests to avoid
+        reading real system usage data.
     """
     try:
         resolved_output = _resolve_output_dir(output_dir)
     except ValueError:
         return {}
+
+    # Auto-import: populate store if empty or stale
+    if auto_import:
+        _ensure_imported(resolved_output)
 
     sessions = _load_sessions(resolved_output)
     if not sessions:

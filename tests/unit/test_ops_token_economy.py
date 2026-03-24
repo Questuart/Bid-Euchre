@@ -29,6 +29,7 @@ from bid_euchre.ops.token_economy import (
     ThroughputMetrics,
     UsageSummary,
     _is_session_complete,
+    _is_store_stale,
     attribute_sessions,
     dashboard_token_economy,
     detect_anti_patterns,
@@ -1230,7 +1231,7 @@ class TestDashboardTokenEconomy:
         ]
         _write_attributions(output_dir, attributions)
 
-        result = dashboard_token_economy(output_dir=output_dir)
+        result = dashboard_token_economy(output_dir=output_dir, auto_import=False)
 
         assert isinstance(result, dict)
         assert "overview" in result
@@ -1256,7 +1257,7 @@ class TestDashboardTokenEconomy:
 
     def test_dashboard_empty_store(self, output_dir: Path) -> None:
         """Dashboard returns empty dict when no data exists."""
-        result = dashboard_token_economy(output_dir=output_dir)
+        result = dashboard_token_economy(output_dir=output_dir, auto_import=False)
         assert result == {}
 
     def test_dashboard_null_safe(self, output_dir: Path) -> None:
@@ -1270,7 +1271,7 @@ class TestDashboardTokenEconomy:
         ]
         _write_sessions(output_dir, sessions)
 
-        result = dashboard_token_economy(output_dir=output_dir)
+        result = dashboard_token_economy(output_dir=output_dir, auto_import=False)
 
         assert result["overview"]["session_count"] == 1
         assert result["overview"]["total_tokens"] == 0
@@ -1288,7 +1289,7 @@ class TestDashboardTokenEconomy:
         ]
         _write_sessions(output_dir, sessions)
 
-        result = dashboard_token_economy(output_dir=output_dir)
+        result = dashboard_token_economy(output_dir=output_dir, auto_import=False)
 
         assert len(result["anti_patterns"]) > 0
         assert result["anti_patterns"][0]["pattern_id"] == "verbosity_waste"
@@ -1347,7 +1348,7 @@ class TestDashboardTokenEconomy:
         ]
         _write_attributions(output_dir, attributions)
 
-        result = dashboard_token_economy(output_dir=output_dir)
+        result = dashboard_token_economy(output_dir=output_dir, auto_import=False)
 
         # The zero-commit lane should appear in top_lanes with
         # tokens_per_commit=0.0, NOT None
@@ -1359,6 +1360,71 @@ class TestDashboardTokenEconomy:
             f"Expected 0.0, got {zero_lane['tokens_per_commit']!r} — "
             "zero values must not be filtered to None (issue #1420)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Auto-import / staleness tests
+# ---------------------------------------------------------------------------
+
+
+class TestAutoImport:
+    """Verify _is_store_stale and auto_import flag behavior."""
+
+    def test_stale_when_no_file(self, tmp_path: Path) -> None:
+        """Empty directory is stale."""
+        assert _is_store_stale(tmp_path) is True
+
+    def test_stale_when_empty_file(self, tmp_path: Path) -> None:
+        """Zero-byte JSONL is stale."""
+        (tmp_path / "session_usage.jsonl").write_text("")
+        assert _is_store_stale(tmp_path) is True
+
+    def test_not_stale_when_recent(self, tmp_path: Path) -> None:
+        """Recently written JSONL is not stale."""
+        (tmp_path / "session_usage.jsonl").write_text('{"session_id":"s1"}\n')
+        assert _is_store_stale(tmp_path) is False
+
+    def test_auto_import_populates_from_source(self, tmp_path: Path) -> None:
+        """dashboard_token_economy with auto_import reads from source dir.
+
+        Creates a fake usage-data source and verifies the dashboard
+        auto-imports it.
+        """
+        from unittest.mock import patch
+
+        # Set up a fake source with one session
+        usage_dir = tmp_path / "usage-data"
+        (usage_dir / "session-meta").mkdir(parents=True)
+        meta = {
+            "session_id": "auto-001",
+            "input_tokens": 100,
+            "output_tokens": 400,
+            "duration_minutes": 10,
+            "lines_added": 10,
+            "lines_removed": 2,
+            "git_commits": 1,
+            "start_time": "2026-03-20T10:00:00Z",
+            "project_path": "/tmp/test",
+        }
+        (usage_dir / "session-meta" / "auto-001.json").write_text(json.dumps(meta))
+
+        output_dir = tmp_path / "token_economy"
+        output_dir.mkdir()
+
+        # Patch DEFAULT_USAGE_DIR so auto-import reads from our fake source
+        with patch("bid_euchre.ops.token_economy.DEFAULT_USAGE_DIR", usage_dir):
+            result = dashboard_token_economy(output_dir=output_dir, auto_import=True)
+
+        assert result != {}, "Auto-import should populate the store"
+        assert result["overview"]["session_count"] == 1
+        assert result["overview"]["total_tokens"] == 500
+
+    def test_auto_import_false_skips_import(self, tmp_path: Path) -> None:
+        """auto_import=False returns empty dict from empty store."""
+        output_dir = tmp_path / "token_economy"
+        output_dir.mkdir()
+        result = dashboard_token_economy(output_dir=output_dir, auto_import=False)
+        assert result == {}
 
 
 # ---------------------------------------------------------------------------
