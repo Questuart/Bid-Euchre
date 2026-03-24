@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-24 by flex-b (close SP-4-04 — Telegram transport complete)
+**Last updated:** 2026-03-24 by flex-a (close SP-4-02 — preflight hardening complete)
 
 ---
 
@@ -25,7 +25,7 @@
 | SP-3-07 | Bidirectional message bus across all steward lanes | Post-Phase-3 transition: message bus wiring for 16-lane layout | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1276) |
 | SP-3-08 | Monitoring cycle with session-start auto-launch | Post-Phase-3 transition: ops monitoring cycle and auto-launch | completed | orchestrator | _(no sub-plan file — single-PR scope)_ | 2026-03-23 | 2026-03-23 (PR #1277) |
 | SP-4-01 | Platform-8 scope lock | Phase 4, Platform-8 scope lock and sub-plan registration | completed | author-scratch | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | 2026-03-23 | 2026-03-23 |
-| SP-4-02 | Remote-ops preflight hardening | Phase 4, Pre-Platform-8 operational hardening | in_progress | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | 2026-03-23 | — |
+| SP-4-02 | Remote-ops preflight hardening | Phase 4, Pre-Platform-8 operational hardening | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | 2026-03-23 | 2026-03-24 (~20 PRs; all 6 steps complete, all exit criteria met) |
 | SP-4-03 | Token economy observability and dashboard | Phase 4, Pre-Platform-8 token observability | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | 2026-03-23 | 2026-03-23 (baseline report at `plans/sessions/2026-03-23_token-economy-baseline.md`; live dashboard integration is partial — follow-up needed) |
 | SP-4-04 | Platform-8a Telegram transport configuration | Phase 4, Platform-8a transport proving | completed | flex-a | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | 2026-03-23 | 2026-03-24 (PRs #1436, #1451, #1452; proven end-to-end) |
 
@@ -34,9 +34,9 @@
 | Status | Count |
 |--------|-------|
 | proposed | 0 |
-| in_progress | 1 |
+| in_progress | 0 |
 | blocked | 0 |
-| completed | 16 |
+| completed | 17 |
 | abandoned | 0 |
 | superseded | 1 |
 

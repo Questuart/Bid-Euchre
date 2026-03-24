@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-24 by flex-b (close SP-4-04 — Telegram transport proven end-to-end)
+**Last updated:** 2026-03-24 by flex-a (close SP-4-02 — preflight hardening complete)
 
 ---
 
@@ -36,7 +36,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
 | SP-4-01 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8-scope-lock.md` | completed | Step 0 |
-| SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | in_progress | Pre-Platform-8 |
+| SP-4-02 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_remote-ops-preflight-hardening.md` | completed | Pre-Platform-8 |
 | SP-4-03 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_token-economy-observability-and-dashboard.md` | completed | Pre-Platform-8 |
 | SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | completed | Step 1 |
 
@@ -77,3 +77,4 @@ implementation.
 | 2026-03-23 | SP-4-04 Step 2 (author-a): Telegram config added to tmux launcher. `STEWARD_TELEGRAM_ENABLED` env var (default 0) controls kill switch. When enabled, appends `--channels telegram` to orchestrator pane only. `STEWARD_CHANNELS` exported for orchestrator. Author lanes remain tmux-only. |
 | 2026-03-23 | Governance reconciliation (author-scratch): Fixed sub_plan_registry.md vs checkpoints.md disagreement — SP-4-03 updated to `completed` (baseline report done; live dashboard integration partial, follow-up needed), SP-4-04 updated to `in_progress` with owner `flex-a`. SP-4-04 Steps 3-5 marked BLOCKED on user-side Telegram preflight. |
 | 2026-03-24 | SP-4-04 COMPLETE (flex-b). Telegram transport proven end-to-end. All 5 core steps done: preflight (claude >=2.1.80, plugin installed), plugin config (PRs #1436, #1451, #1452), pairing proof (user 8122530898), permission relay (messages flow both ways through orchestrator), kill switch (STEWARD_TELEGRAM_ENABLED env var override + auto-detect). Step 6 (registry integration) deferred — optional dashboard indicator, not blocking. Phase Step 1 (Platform-8a) marked COMPLETE. |
+| 2026-03-24 | SP-4-02 COMPLETE (flex-a assessment). All 6 steps materially done: lifecycle proven (#1286, #1293, #1304, #1362), backlog cleaned (#1383), stall recovery (#1340, #1368, #1434), scope enforcement (#1375, #1395, #1400), reset/clear validated (#1350, #1369, #1373, #1386, #1389, #1411, #1425), auto-dispatch (#1374, #1387). Total: ~20 PRs (vs estimated 5-9). All exit criteria met. |
