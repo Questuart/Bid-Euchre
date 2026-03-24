@@ -21,7 +21,6 @@ INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
 
 if [ -z "$COMMAND" ]; then
-  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -37,7 +36,6 @@ fi
 # block legitimate non-merge commands.
 TRIMMED="${COMMAND#"${COMMAND%%[![:space:]]*}"}"
 if [[ "$TRIMMED" != "gh pr merge"* ]]; then
-  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -185,6 +183,5 @@ BLOCK
   exit 2
 fi
 
-# All checks passed — allow the merge
-echo '{"suppressOutput": true}'
+# All checks passed — allow the merge (exit silently)
 exit 0

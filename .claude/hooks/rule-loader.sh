@@ -25,14 +25,13 @@ case "$TOOL_NAME" in
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
     ;;
   *)
-    # No match — exit with empty response
-    echo '{"suppressOutput": true}'
+    # No match — exit silently (no stdout = no TUI notification for PreToolUse)
     exit 0
     ;;
 esac
 
 if [ -z "$FILE_PATH" ]; then
-  echo '{"suppressOutput": true}'
+  # No file path — exit silently (no stdout = no TUI notification for PreToolUse)
   exit 0
 fi
 
@@ -69,9 +68,8 @@ if echo "$FILE_PATH" | grep -q 'gh pr'; then
   RULES_TO_LOAD+=("40_prs.md" "60_review_gate.md")
 fi
 
-# No rules matched
+# No rules matched — exit silently
 if [ ${#RULES_TO_LOAD[@]} -eq 0 ]; then
-  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -95,9 +93,8 @@ for rule in "${RULES_TO_LOAD[@]}"; do
   fi
 done
 
-# Nothing new to load
+# Nothing new to load — exit silently
 if [ ${#NEW_RULES[@]} -eq 0 ]; then
-  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -112,10 +109,9 @@ for rule in "${NEW_RULES[@]}"; do
   fi
 done
 
-# Output additionalContext JSON
+# Output additionalContext JSON (PreToolUse schema — no suppressOutput field)
 if [ -n "$CONTEXT" ]; then
   # Use jq to safely encode the content as JSON
-  echo "$CONTEXT" | jq -Rs '{additionalContext: ., suppressOutput: true}' 2>/dev/null || echo '{"suppressOutput": true}'
-else
-  echo '{"suppressOutput": true}'
+  echo "$CONTEXT" | jq -Rs '{additionalContext: .}' 2>/dev/null || true
 fi
+# If no context or jq fails, exit silently (no stdout = no TUI notification)

@@ -1,8 +1,11 @@
-"""Tests for PreToolUse hook suppressOutput on happy paths.
+"""Tests for PreToolUse hook silent exit on happy paths.
 
-Each PreToolUse hook must output {"suppressOutput": true} on its exit-0
-code paths to avoid noisy "Async hook PreToolUse completed" messages.
-Blocking paths (exit 2) must NOT emit suppressOutput.
+PreToolUse hooks must produce NO stdout on their exit-0 code paths to
+avoid noisy "Async hook PreToolUse completed" messages.  Unlike PostToolUse
+hooks, PreToolUse hooks have no suppressOutput field — any stdout triggers
+Claude Code's default completion notification.
+
+Blocking paths (exit 2) may emit free-form text to explain the block.
 """
 
 from __future__ import annotations
@@ -16,10 +19,10 @@ HOOKS_DIR = Path(__file__).resolve().parents[2] / ".claude" / "hooks"
 
 def _run_hook(
     script: str, payload: dict, env_override: dict | None = None
-) -> tuple[int, dict | None]:
+) -> tuple[int, str, dict | None]:
     """Run a hook script with JSON payload on stdin.
 
-    Returns (exit_code, parsed_json_or_None).
+    Returns (exit_code, raw_stdout, parsed_json_or_None).
     """
     import os
 
@@ -44,90 +47,82 @@ def _run_hook(
         except json.JSONDecodeError:
             pass  # Blocking paths emit free-form text, not JSON
 
-    return result.returncode, parsed
+    return result.returncode, stdout, parsed
 
 
-class TestRuleLoaderSuppressOutput:
-    """rule-loader.sh must emit suppressOutput on all exit-0 paths."""
+class TestRuleLoaderSilentExit:
+    """rule-loader.sh must emit NO stdout on all exit-0 non-matching paths."""
 
     SCRIPT = "rule-loader.sh"
 
-    def test_unmatched_tool_emits_suppress(self) -> None:
-        """Glob tool doesn't match any case arm."""
-        rc, out = _run_hook(self.SCRIPT, {"tool_name": "Glob", "tool_input": {}})
+    def test_unmatched_tool_produces_no_stdout(self) -> None:
+        """Glob tool doesn't match any case arm — should be silent."""
+        rc, raw, _out = _run_hook(self.SCRIPT, {"tool_name": "Glob", "tool_input": {}})
         assert rc == 0
-        assert out is not None
-        assert out.get("suppressOutput") is True
+        assert raw == ""
 
-    def test_empty_file_path_emits_suppress(self) -> None:
-        """Read with empty file_path triggers early exit."""
-        rc, out = _run_hook(
+    def test_empty_file_path_produces_no_stdout(self) -> None:
+        """Read with empty file_path triggers early exit — should be silent."""
+        rc, raw, _out = _run_hook(
             self.SCRIPT, {"tool_name": "Read", "tool_input": {"file_path": ""}}
         )
         assert rc == 0
-        assert out is not None
-        assert out.get("suppressOutput") is True
+        assert raw == ""
 
-    def test_no_rules_matched_emits_suppress(self) -> None:
-        """Read on a path that doesn't trigger any rule pattern."""
-        rc, out = _run_hook(
+    def test_no_rules_matched_produces_no_stdout(self) -> None:
+        """Read on a path that doesn't trigger any rule pattern — should be silent."""
+        rc, raw, _out = _run_hook(
             self.SCRIPT,
             {"tool_name": "Read", "tool_input": {"file_path": "/tmp/unrelated.txt"}},
         )
         assert rc == 0
-        assert out is not None
-        assert out.get("suppressOutput") is True
+        assert raw == ""
 
 
-class TestPreWorktreeCleanupSuppressOutput:
-    """pre-worktree-cleanup.sh must emit suppressOutput on non-matching paths."""
+class TestPreWorktreeCleanupSilentExit:
+    """pre-worktree-cleanup.sh must produce no stdout on non-matching paths."""
 
     SCRIPT = "pre-worktree-cleanup.sh"
 
-    def test_empty_command_emits_suppress(self) -> None:
-        """Non-Bash tool input (no command field)."""
-        rc, out = _run_hook(self.SCRIPT, {"tool_name": "Read", "tool_input": {}})
+    def test_empty_command_produces_no_stdout(self) -> None:
+        """Non-Bash tool input (no command field) — should be silent."""
+        rc, raw, _out = _run_hook(self.SCRIPT, {"tool_name": "Read", "tool_input": {}})
         assert rc == 0
-        assert out is not None
-        assert out.get("suppressOutput") is True
+        assert raw == ""
 
-    def test_safe_command_emits_suppress(self) -> None:
-        """Safe bash command that doesn't match any dangerous pattern."""
-        rc, out = _run_hook(
+    def test_safe_command_produces_no_stdout(self) -> None:
+        """Safe bash command that doesn't match any dangerous pattern — silent."""
+        rc, raw, _out = _run_hook(
             self.SCRIPT, {"tool_name": "Bash", "tool_input": {"command": "ls -la"}}
         )
         assert rc == 0
-        assert out is not None
-        assert out.get("suppressOutput") is True
+        assert raw == ""
 
     def test_dangerous_command_blocks_without_suppress(self) -> None:
-        """Dangerous worktree command should block (exit 2) without suppressOutput."""
-        rc, out = _run_hook(
+        """Dangerous worktree command should block (exit 2) with text."""
+        rc, raw, _out = _run_hook(
             self.SCRIPT,
             {"tool_name": "Bash", "tool_input": {"command": "git worktree prune"}},
         )
         assert rc == 2
-        # Blocking path emits human-readable text, not JSON with suppressOutput
-        assert out is None or out.get("suppressOutput") is not True
+        assert "BLOCKED" in raw
 
 
-class TestPreMergeReviewGuardSuppressOutput:
-    """pre-merge-review-guard.sh must emit suppressOutput on non-merge commands."""
+class TestPreMergeReviewGuardSilentExit:
+    """pre-merge-review-guard.sh must produce no stdout on non-merge commands."""
 
     SCRIPT = "pre-merge-review-guard.sh"
 
-    def test_empty_command_emits_suppress(self) -> None:
-        """Non-Bash tool input (no command field)."""
-        rc, out = _run_hook(self.SCRIPT, {"tool_name": "Read", "tool_input": {}})
+    def test_empty_command_produces_no_stdout(self) -> None:
+        """Non-Bash tool input (no command field) — should be silent."""
+        rc, raw, _out = _run_hook(self.SCRIPT, {"tool_name": "Read", "tool_input": {}})
         assert rc == 0
-        assert out is not None
-        assert out.get("suppressOutput") is True
+        assert raw == ""
 
-    def test_non_merge_command_emits_suppress(self) -> None:
-        """Regular bash command that isn't gh pr merge."""
-        rc, out = _run_hook(
+    def test_non_merge_command_produces_no_stdout(self) -> None:
+        """Regular bash command that isn't gh pr merge — should be silent."""
+        rc, raw, _out = _run_hook(
             self.SCRIPT, {"tool_name": "Bash", "tool_input": {"command": "git status"}}
         )
         assert rc == 0
-        assert out is not None
-        assert out.get("suppressOutput") is True
+        assert raw == ""

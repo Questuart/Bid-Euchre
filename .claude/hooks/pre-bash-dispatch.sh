@@ -79,6 +79,7 @@ if [ -x "$HOOKS_DIR/rule-loader.sh" ]; then
     fi
 fi
 
-# All guards passed, no context to inject
-echo '{"suppressOutput": true}'
+# All guards passed, no context to inject — exit silently.
+# PreToolUse hooks have no suppressOutput field; any stdout triggers
+# Claude Code's "Async hook PreToolUse completed" TUI notification.
 exit 0
