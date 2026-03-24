@@ -761,3 +761,77 @@ class TestDashboardIntegration:
         text = format_dashboard_text(view, now=now)
         assert "Inbox" in text
         assert "unacked" in text
+
+
+# ---------------------------------------------------------------------------
+# Tests: --watch flag CLI integration
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardWatchFlag:
+    """Tests for the --watch / --interval CLI flags on cmd_dashboard."""
+
+    def test_watch_args_parsed(self) -> None:
+        """--watch and --interval are accepted by the argument parser."""
+        import subprocess
+
+        result = subprocess.run(
+            ["uv", "run", "python", "scripts/internal/ops.py", "dashboard", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert "--watch" in result.stdout
+        assert "--interval" in result.stdout
+
+    def test_single_shot_runs_via_cli(self) -> None:
+        """Without --watch, dashboard prints once and exits with rc=0."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "dashboard",
+                "--no-probe",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        assert "Steward Dashboard" in result.stdout
+
+    def test_watch_flag_accepted(self) -> None:
+        """--watch -w and --interval are accepted without error.
+
+        We start watch mode with a short interval and send SIGINT after
+        one iteration to verify the loop starts and exits cleanly.
+        """
+        import signal
+        import subprocess
+        import time as time_mod
+
+        proc = subprocess.Popen(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "dashboard",
+                "--no-probe",
+                "--watch",
+                "--interval",
+                "1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        # Give it time to print one iteration
+        time_mod.sleep(2)
+        proc.send_signal(signal.SIGINT)
+        stdout, _ = proc.communicate(timeout=5)
+        output = stdout.decode()
+        assert "Steward Dashboard" in output
+        assert "Refreshing every 1s" in output
