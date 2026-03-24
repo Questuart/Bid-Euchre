@@ -255,6 +255,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/deterministic_prechecks.py` | Fast deterministic code checks (merge markers, RNG, imports) |
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/internal/evaluate_gate_x3.py` | R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle) |
+| `scripts/internal/export_hosted_decisions.py` | CLI wrapper for exporting hosted-play decisions to JSONL (SP-4-01 schema) |
 | `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
 | `scripts/internal/generate_action_value_dataset.py` | Counterfactual action-value dataset generator (R1.5) |
 | `scripts/internal/generate_advance_check.py` | Arc D v2 advance check generator (hypothesis + sufficiency + canary evaluation) |
