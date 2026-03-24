@@ -2325,3 +2325,248 @@ class TestReadInboxPrioritized:
         # read_inbox returns most-recent first; our function preserves that order
         returned_ids = [m["message_id"] for m in p1]
         assert returned_ids == list(reversed(ids))
+
+
+# ---------------------------------------------------------------------------
+# Priority-aware TTL and compaction (#1571 Phase 2a)
+# ---------------------------------------------------------------------------
+
+
+class TestPriorityAwareTTL:
+    """Test that urgent messages survive TTL auto-expiry."""
+
+    def test_urgent_messages_survive_ttl_expiry(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """P0 (urgent) messages are never auto-expired by TTL, even when past deadline."""
+        msg = create_message(
+            "ops",
+            "target",
+            "escalation",
+            "Critical alert",
+            priority="urgent",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Time well past the 1s TTL
+        future_time = time.time() + 100
+        inbox = read_inbox("target", bus_root, now=future_time)
+        found = [m for m in inbox if m["message_id"] == msg.message_id]
+        assert len(found) == 1
+        assert found[0]["status"] == "pending"  # NOT expired
+
+    def test_normal_messages_still_expire(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Non-urgent messages with TTL are still expired normally."""
+        msg = create_message(
+            "ops",
+            "target",
+            "assignment",
+            "Normal task",
+            priority="normal",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        future_time = time.time() + 100
+        inbox = read_inbox("target", bus_root, now=future_time)
+        found = [m for m in inbox if m["message_id"] == msg.message_id]
+        assert len(found) == 1
+        assert found[0]["status"] == "expired"
+
+    def test_high_priority_messages_still_expire(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """High-priority messages are NOT exempt from TTL (only urgent is)."""
+        msg = create_message(
+            "ops",
+            "target",
+            "assignment",
+            "High task",
+            priority="high",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        future_time = time.time() + 100
+        inbox = read_inbox("target", bus_root, now=future_time)
+        found = [m for m in inbox if m["message_id"] == msg.message_id]
+        assert len(found) == 1
+        assert found[0]["status"] == "expired"
+
+
+class TestPriorityAwareCompaction:
+    """Test priority-aware retention in compact_inbox."""
+
+    def test_unresolved_urgent_survives_compaction(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Unresolved urgent (P0) messages are always kept during compaction."""
+        msg = create_message(
+            "ops",
+            "lane-a",
+            "escalation",
+            "Critical unresolved",
+            priority="urgent",
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Time far in the future — well past any retention
+        future_time = time.time() + (48 * 3600)
+        result = compact_inbox("lane-a", bus_root, now=future_time)
+        assert result["removed"] == 0
+        assert result["after"] == 1
+
+        inbox = read_inbox("lane-a", bus_root, auto_expire=False, auto_compact=False)
+        assert len(inbox) == 1
+        assert inbox[0]["summary"] == "Critical unresolved"
+
+    def test_resolved_urgent_can_be_purged(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Resolved urgent messages follow normal retention (not always-kept)."""
+        msg = create_message(
+            "ops",
+            "lane-a",
+            "escalation",
+            "Resolved urgent",
+            priority="urgent",
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "lane-a", bus_root, events_dir=events_dir)
+        resolve_message(msg.message_id, "lane-a", bus_root, events_dir=events_dir)
+
+        # Past terminal retention
+        future_time = time.time() + (COMPACT_TERMINAL_MAX_AGE_HOURS * 3600) + 60
+        result = compact_inbox("lane-a", bus_root, now=future_time, tiered=True)
+        assert result["removed"] == 1
+
+    def test_unacked_high_messages_survive_compaction(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Unacked high-priority (P1) messages get 24h retention during compaction."""
+        msg = create_message(
+            "ops",
+            "lane-a",
+            "assignment",
+            "Important task",
+            priority="high",
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Time at 5 hours — past normal handled (4h) but within high's 24h
+        future_time = time.time() + (5 * 3600)
+        result = compact_inbox("lane-a", bus_root, now=future_time, tiered=True)
+        # Pending message with high priority — always kept (not purgeable)
+        assert result["removed"] == 0
+        assert result["after"] == 1
+
+    def test_unacked_high_pending_survives_past_default_handled_retention(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Pending high-priority messages are kept even past normal handled retention.
+
+        Note: pending messages are not purgeable, so this confirms the
+        priority-aware path handles the 'pending' status correctly in the
+        'not in purgeable' branch, which fires before priority checks on
+        acked/terminal statuses.
+        """
+        msg = create_message(
+            "ops",
+            "lane-a",
+            "assignment",
+            "High priority pending",
+            priority="high",
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Far future
+        future_time = time.time() + (48 * 3600)
+        result = compact_inbox("lane-a", bus_root, now=future_time, tiered=True)
+        assert result["removed"] == 0
+
+
+class TestEscalationBypassesDedup:
+    """Test that escalation messages bypass content-based dedup."""
+
+    def test_escalation_bypasses_dedup(self, bus_root: Path, events_dir: Path) -> None:
+        """Two escalation messages with same content are both delivered."""
+        msg1 = create_message(
+            "ops",
+            "orchestrator",
+            "escalation",
+            "Alert unacked",
+            priority="urgent",
+        )
+        msg2 = create_message(
+            "ops",
+            "orchestrator",
+            "escalation",
+            "Alert unacked",
+            priority="urgent",
+        )
+        mid1 = send_message(msg1, bus_root, events_dir=events_dir, deduplicate=True)
+        mid2 = send_message(msg2, bus_root, events_dir=events_dir, deduplicate=True)
+
+        assert mid1 != mid2  # Both delivered despite same content
+
+        inbox = read_inbox(
+            "orchestrator", bus_root, auto_expire=False, auto_compact=False
+        )
+        assert len(inbox) == 2
+
+    def test_non_escalation_still_deduped(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Non-escalation messages are still subject to content dedup."""
+        msg1 = create_message(
+            "review",
+            "orchestrator",
+            "progress",
+            "Verdict PR #42",
+        )
+        msg2 = create_message(
+            "review",
+            "orchestrator",
+            "progress",
+            "Verdict PR #42",
+        )
+        mid1 = send_message(msg1, bus_root, events_dir=events_dir)
+        mid2 = send_message(msg2, bus_root, events_dir=events_dir, deduplicate=True)
+
+        # Second send is deduped — returns existing ID
+        assert mid2 == mid1
+
+        inbox = read_inbox(
+            "orchestrator", bus_root, auto_expire=False, auto_compact=False
+        )
+        assert len(inbox) == 1
+
+    def test_escalation_without_dedup_flag_unaffected(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """When deduplicate=False (default), escalation messages work normally."""
+        msg1 = create_message(
+            "ops",
+            "orchestrator",
+            "escalation",
+            "Alert",
+            priority="urgent",
+        )
+        msg2 = create_message(
+            "ops",
+            "orchestrator",
+            "escalation",
+            "Alert",
+            priority="urgent",
+        )
+        mid1 = send_message(msg1, bus_root, events_dir=events_dir)
+        mid2 = send_message(msg2, bus_root, events_dir=events_dir)
+
+        assert mid1 != mid2
+        inbox = read_inbox(
+            "orchestrator", bus_root, auto_expire=False, auto_compact=False
+        )
+        assert len(inbox) == 2
