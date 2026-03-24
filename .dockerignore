@@ -1,0 +1,43 @@
+# Keep Docker context minimal — only src/, web/, pyproject.toml, uv.lock needed.
+
+# Version control
+.git/
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Data and experiment outputs (never ship)
+data/
+experiments/
+notebooks/
+
+# Development tooling
+tests/
+scripts/
+docs/
+plans/
+plots/
+
+# IDE / editor
+.vscode/
+.cursor/
+.idea/
+
+# Claude Code / agent infrastructure
+.claude/
+CLAUDE.md
+MEMORY.md
+
+# OS files
+.DS_Store
+*.log
+
+# Docker (prevent recursive context)
+Dockerfile
+.dockerignore
