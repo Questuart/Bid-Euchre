@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.control_plane import (
+    CAT_AUDIT_EXCHANGE,
     STATE_ACKED,
     STATE_CLEARED,
     STATE_OPEN,
@@ -25,6 +26,7 @@ from bid_euchre.ops.control_plane import (
     derive_items,
     format_status_json,
     format_status_text,
+    items_from_audit_records,
     items_from_monitor_findings,
     items_from_task_packets,
     items_from_unacked_messages,
@@ -1356,3 +1358,234 @@ class TestReconcileWithMonitorObjects:
         )
         target = [i for i in status2.items if i.lane_id == "author-a"]
         assert target[0].state == STATE_ACKED
+
+
+# ---------------------------------------------------------------------------
+# Derivation: audit trail records
+# ---------------------------------------------------------------------------
+
+
+def _audit_record(
+    direction: str = "inbound",
+    chat_id: str = "123",
+    sender: str = "operator",
+    exchange_type: str = "message",
+    content_preview: str = "Hello",
+    ts: str = "2026-03-24T07:00:00+00:00",
+    exchange_id: str = "ex-1",
+) -> dict:
+    return {
+        "exchange_id": exchange_id,
+        "timestamp": ts,
+        "direction": direction,
+        "channel_source": "telegram",
+        "sender_identity": sender,
+        "exchange_type": exchange_type,
+        "content_hash": "abc123",
+        "content_preview": content_preview,
+        "chat_id": chat_id,
+        "message_id": "1",
+        "metadata": {},
+    }
+
+
+class TestItemsFromAuditRecords:
+    def test_unanswered_inbound_produces_item(self):
+        records = [_audit_record(direction="inbound")]
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 1
+        assert items[0].category == CAT_AUDIT_EXCHANGE
+        assert items[0].source == "audit_trail"
+        assert "operator" in items[0].summary
+
+    def test_answered_inbound_no_item(self):
+        records = [
+            _audit_record(
+                direction="inbound",
+                ts="2026-03-24T07:00:00+00:00",
+                exchange_id="in-1",
+            ),
+            _audit_record(
+                direction="outbound",
+                ts="2026-03-24T07:01:00+00:00",
+                exchange_type="reply",
+                sender="orchestrator",
+                exchange_id="out-1",
+            ),
+        ]
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 0
+
+    def test_recent_inbound_below_threshold(self):
+        records = [
+            _audit_record(
+                direction="inbound",
+                ts="2026-03-24T07:58:00+00:00",
+            )
+        ]
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 0
+
+    def test_severity_warn_under_30min(self):
+        records = [
+            _audit_record(
+                direction="inbound",
+                ts="2026-03-24T07:50:00+00:00",
+                chat_id="a",
+            )
+        ]
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert items[0].severity == "warn"
+
+    def test_severity_high_over_30min(self):
+        records = [
+            _audit_record(
+                direction="inbound",
+                ts="2026-03-24T07:15:00+00:00",
+                chat_id="b",
+            )
+        ]
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert items[0].severity == "high"
+
+    def test_multi_chat_independent(self):
+        records = [
+            _audit_record(direction="inbound", chat_id="A", exchange_id="a-in"),
+            _audit_record(
+                direction="outbound",
+                chat_id="A",
+                ts="2026-03-24T07:01:00+00:00",
+                exchange_type="reply",
+                exchange_id="a-out",
+            ),
+            _audit_record(direction="inbound", chat_id="B", exchange_id="b-in"),
+        ]
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 1
+        assert items[0].details["chat_id"] == "B"
+
+    def test_empty_records(self):
+        items = items_from_audit_records(
+            [], now_iso=NOW_ISO, unanswered_threshold_minutes=5
+        )
+        assert items == []
+
+    def test_outbound_only_no_item(self):
+        records = [
+            _audit_record(direction="outbound", exchange_type="reply"),
+        ]
+        items = items_from_audit_records(
+            records,
+            now_iso="2026-03-24T08:00:00+00:00",
+            unanswered_threshold_minutes=5,
+        )
+        assert len(items) == 0
+
+    def test_stable_ids(self):
+        records = [_audit_record(direction="inbound", chat_id="X")]
+        items1 = items_from_audit_records(records, now_iso="2026-03-24T08:00:00+00:00")
+        items2 = items_from_audit_records(records, now_iso="2026-03-24T08:00:00+00:00")
+        assert items1[0].item_id == items2[0].item_id
+
+
+class TestDeriveItemsWithAudit:
+    def test_audit_records_in_derive_items(self):
+        records = [_audit_record(direction="inbound", ts="2026-03-24T07:00:00+00:00")]
+        items = derive_items(
+            audit_records=records,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+        audit_items = [i for i in items if i.category == CAT_AUDIT_EXCHANGE]
+        assert len(audit_items) == 1
+
+    def test_audit_combined_with_other_sources(self):
+        findings = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane dead",
+                details={"lane_id": "a"},
+            )
+        ]
+        records = [_audit_record(direction="inbound", ts="2026-03-24T07:00:00+00:00")]
+        items = derive_items(
+            monitor_findings=findings,
+            audit_records=records,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+        sources = {i.source for i in items}
+        assert "monitor" in sources
+        assert "audit_trail" in sources
+
+
+class TestReconcileWithAudit:
+    def test_reconcile_with_audit_records(self, tmp_path: Path):
+        records = [_audit_record(direction="inbound", ts="2026-03-24T07:00:00+00:00")]
+        status = reconcile(
+            runtime_dir=tmp_path,
+            audit_records=records,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+        audit_items = [i for i in status.items if i.category == CAT_AUDIT_EXCHANGE]
+        assert len(audit_items) == 1
+        assert status.cycle_count == 1
+
+    def test_reconcile_audit_clears_when_answered(self, tmp_path: Path):
+        # Cycle 1: unanswered inbound
+        records = [_audit_record(direction="inbound", ts="2026-03-24T07:00:00+00:00")]
+        status1 = reconcile(
+            runtime_dir=tmp_path,
+            audit_records=records,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+        assert len(status1.open_items) == 1
+
+        # Cycle 2: now answered
+        records_answered = [
+            _audit_record(
+                direction="inbound",
+                ts="2026-03-24T07:00:00+00:00",
+                exchange_id="in-1",
+            ),
+            _audit_record(
+                direction="outbound",
+                ts="2026-03-24T07:30:00+00:00",
+                exchange_type="reply",
+                exchange_id="out-1",
+            ),
+        ]
+        status2 = reconcile(
+            runtime_dir=tmp_path,
+            audit_records=records_answered,
+            now_iso="2026-03-24T08:00:00+00:00",
+        )
+        # The unanswered item from cycle 1 should be auto-cleared
+        open_audit = [
+            i
+            for i in status2.items
+            if i.category == CAT_AUDIT_EXCHANGE and i.state == "open"
+        ]
+        assert len(open_audit) == 0
