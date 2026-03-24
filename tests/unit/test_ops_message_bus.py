@@ -34,11 +34,13 @@ from bid_euchre.ops.message_bus import (
     ack_message,
     append_message,
     bulk_ack_messages,
+    check_ack_status,
     check_dead_letters,
     check_expired,
     compact_all_inboxes,
     compact_inbox,
     create_message,
+    escalate_unacked,
     import_native_inbox,
     inbox_stats,
     mark_delivered,
@@ -1920,3 +1922,196 @@ class TestAutoCompaction:
         # so auto-compact doesn't fire — messages remain
         inbox = read_inbox(lane, bus_root, auto_compact=True, now=future)
         assert len(inbox) == 5
+
+
+# ---------------------------------------------------------------------------
+# check_ack_status
+# ---------------------------------------------------------------------------
+
+
+class TestCheckAckStatus:
+    """Test check_ack_status() helper for sender-side ack verification."""
+
+    def test_pending_status(self, bus_root: Path, events_dir: Path) -> None:
+        """A newly sent message should report 'pending' status."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        status = check_ack_status(msg.message_id, "orch", bus_root)
+        assert status == "pending"
+
+    def test_acked_status(self, bus_root: Path, events_dir: Path) -> None:
+        """After ack, check_ack_status should return 'acked'."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "orch", bus_root, events_dir=events_dir)
+
+        status = check_ack_status(msg.message_id, "orch", bus_root)
+        assert status == "acked"
+
+    def test_resolved_status(self, bus_root: Path, events_dir: Path) -> None:
+        """After resolve, check_ack_status should return 'resolved'."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "orch", bus_root, events_dir=events_dir)
+        resolve_message(msg.message_id, "orch", bus_root, events_dir=events_dir)
+
+        status = check_ack_status(msg.message_id, "orch", bus_root)
+        assert status == "resolved"
+
+    def test_delivered_status(self, bus_root: Path, events_dir: Path) -> None:
+        """After mark_delivered, check_ack_status should return 'delivered'."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+        mark_delivered(msg.message_id, "orch", bus_root, events_dir=events_dir)
+
+        status = check_ack_status(msg.message_id, "orch", bus_root)
+        assert status == "delivered"
+
+    def test_not_found_returns_none(self, bus_root: Path) -> None:
+        """Looking up a non-existent message returns None."""
+        status = check_ack_status("nonexistent_id", "orch", bus_root)
+        assert status is None
+
+    def test_wrong_lane_returns_none(self, bus_root: Path, events_dir: Path) -> None:
+        """Message sent to lane A is not found in lane B."""
+        msg = create_message("ops", "orch", "progress", "Status update")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        status = check_ack_status(msg.message_id, "author-a", bus_root)
+        assert status is None
+
+
+# ---------------------------------------------------------------------------
+# escalate_unacked
+# ---------------------------------------------------------------------------
+
+
+class TestEscalateUnacked:
+    """Test escalate_unacked() helper for SLA-based escalation."""
+
+    def test_escalates_old_unacked_message(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Unacked messages past the SLA should produce escalation messages."""
+        msg = create_message("ops", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # max_age_minutes=0 means any message is past SLA immediately
+        escalation_ids = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(escalation_ids) == 1
+
+        # Verify escalation message exists in recipient inbox
+        inbox = read_inbox("orch", bus_root, auto_expire=False)
+        escalation = [m for m in inbox if m["message_id"] == escalation_ids[0]]
+        assert len(escalation) == 1
+        assert escalation[0]["priority"] == "urgent"
+        assert escalation[0]["message_type"] == "escalation"
+        assert escalation[0]["parent_message_id"] == msg.message_id
+
+    def test_skips_acked_messages(self, bus_root: Path, events_dir: Path) -> None:
+        """Acked messages should not be escalated."""
+        msg = create_message("ops", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "orch", bus_root, events_dir=events_dir)
+
+        escalation_ids = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(escalation_ids) == 0
+
+    def test_skips_resolved_messages(self, bus_root: Path, events_dir: Path) -> None:
+        """Resolved messages should not be escalated."""
+        msg = create_message("ops", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "orch", bus_root, events_dir=events_dir)
+        resolve_message(msg.message_id, "orch", bus_root, events_dir=events_dir)
+
+        escalation_ids = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(escalation_ids) == 0
+
+    def test_skips_messages_from_other_senders(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Only messages from the specified sender should be escalated."""
+        msg = create_message("author-a", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Escalate from ops — should find nothing since msg is from author-a
+        escalation_ids = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(escalation_ids) == 0
+
+    def test_skips_young_messages(self, bus_root: Path, events_dir: Path) -> None:
+        """Messages not yet past the SLA should not be escalated."""
+        msg = create_message("ops", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # High max_age means the fresh message is too young
+        escalation_ids = escalate_unacked(
+            "ops",
+            "orch",
+            max_age_minutes=9999,
+            bus_root=bus_root,
+            events_dir=events_dir,
+        )
+        assert len(escalation_ids) == 0
+
+    def test_does_not_escalate_escalation_messages(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Escalation messages themselves should never be re-escalated."""
+        # Send a normal message and escalate it
+        msg = create_message("ops", "orch", "progress", "Check status")
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        first_escalation = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(first_escalation) == 1
+
+        # Now escalate again — only the original message should fire,
+        # not the escalation message itself. But the original is still
+        # pending, so it escalates again (just not the escalation).
+        second_escalation = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        # Should still escalate the original (it's still unacked)
+        assert len(second_escalation) == 1
+        # But the escalation message IDs should be different
+        assert second_escalation[0] != first_escalation[0]
+
+    def test_multiple_unacked_messages(self, bus_root: Path, events_dir: Path) -> None:
+        """Multiple unacked messages should each get an escalation."""
+        msg1 = create_message("ops", "orch", "progress", "Task A")
+        msg2 = create_message("ops", "orch", "assignment", "Task B")
+        send_message(msg1, bus_root, events_dir=events_dir)
+        send_message(msg2, bus_root, events_dir=events_dir)
+
+        escalation_ids = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(escalation_ids) == 2
+
+    def test_mixed_acked_and_unacked(self, bus_root: Path, events_dir: Path) -> None:
+        """Only unacked messages get escalated when mixed with acked."""
+        msg1 = create_message("ops", "orch", "progress", "Acked task")
+        msg2 = create_message("ops", "orch", "assignment", "Unacked task")
+        send_message(msg1, bus_root, events_dir=events_dir)
+        send_message(msg2, bus_root, events_dir=events_dir)
+        ack_message(msg1.message_id, "orch", bus_root, events_dir=events_dir)
+
+        escalation_ids = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+        assert len(escalation_ids) == 1
+
+        # Verify the escalation references the unacked message
+        inbox = read_inbox("orch", bus_root, auto_expire=False, limit=100)
+        esc = [m for m in inbox if m["message_id"] == escalation_ids[0]]
+        assert esc[0]["parent_message_id"] == msg2.message_id
