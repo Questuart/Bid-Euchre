@@ -950,6 +950,16 @@ def _load_attributions(output_dir: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _is_session_complete(rec: dict[str, Any]) -> bool:
+    """Return True if a session has completion markers.
+
+    A session is considered complete if it has a non-None ``duration_minutes``
+    field.  In-progress sessions lack this value because Claude computes
+    duration only when the session ends.
+    """
+    return rec.get("duration_minutes") is not None
+
+
 @dataclass
 class UsageSummary:
     """Aggregate usage summary across all imported sessions."""
@@ -975,16 +985,27 @@ class UsageSummary:
     tokens_per_hour: float = 0.0
 
 
-def usage_summary(*, output_dir: Path | None = None) -> UsageSummary:
+def usage_summary(
+    *,
+    output_dir: Path | None = None,
+    exclude_incomplete: bool = False,
+) -> UsageSummary:
     """Compute aggregate usage summary across all sessions.
 
     Parameters
     ----------
     output_dir
         Path to the token economy store. Defaults to repo runtime path.
+    exclude_incomplete
+        When True, skip sessions that lack completion markers (e.g. no
+        ``duration_minutes``).  Useful for throughput ratios where in-progress
+        sessions would skew denominators.
     """
     resolved_output = _resolve_output_dir(output_dir)
     sessions = _load_sessions(resolved_output)
+
+    if exclude_incomplete:
+        sessions = [s for s in sessions if _is_session_complete(s)]
 
     if not sessions:
         return UsageSummary()
@@ -1114,13 +1135,16 @@ class ThroughputMetrics:
 def throughput_summary(*, output_dir: Path | None = None) -> ThroughputMetrics:
     """Compute throughput-normalized token metrics.
 
+    Excludes incomplete sessions (those lacking ``duration_minutes``) so
+    that in-progress work does not skew ratio denominators.
+
     Parameters
     ----------
     output_dir
         Path to the token economy store. Defaults to repo runtime path.
     """
     resolved_output = _resolve_output_dir(output_dir)
-    s = usage_summary(output_dir=resolved_output)
+    s = usage_summary(output_dir=resolved_output, exclude_incomplete=True)
 
     m = ThroughputMetrics(
         total_sessions=s.session_count,
@@ -1287,6 +1311,10 @@ def detect_anti_patterns(*, output_dir: Path | None = None) -> list[AntiPattern]
     - read_amplification: high assistant/user message ratio
     - fragmentation: many short sessions
 
+    Incomplete sessions (those lacking ``duration_minutes``) are excluded —
+    in-progress work has unknown commit/duration data and would produce
+    misleading anti-pattern signals.
+
     Parameters
     ----------
     output_dir
@@ -1299,10 +1327,12 @@ def detect_anti_patterns(*, output_dir: Path | None = None) -> list[AntiPattern]
     """
     resolved_output = _resolve_output_dir(output_dir)
     sessions = _load_sessions(resolved_output)
+    # Exclude incomplete sessions — unknown commit/duration data skews checks
+    sessions = [s for s in sessions if _is_session_complete(s)]
     if not sessions:
         return []
 
-    s = usage_summary(output_dir=resolved_output)
+    s = usage_summary(output_dir=resolved_output, exclude_incomplete=True)
 
     checks: list[AntiPattern | None] = [
         _check_verbosity_waste(s),
