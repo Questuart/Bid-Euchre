@@ -1197,6 +1197,32 @@ class TestTTLAutoExpireOnRead:
         assert len(inbox) == 1
         assert inbox[0]["status"] == "resolved"
 
+    def test_auto_expire_skips_acked_messages(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Acked messages must not be auto-expired — acked→expired is invalid.
+
+        Regression test for #1596: _expire_stale_on_read() crashed with
+        ValueError when it encountered an acked message past its TTL,
+        because acked→expired is not a valid transition.
+        """
+        msg = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Acked task",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "target", bus_root, events_dir=events_dir)
+
+        # Read well past the TTL — must NOT raise ValueError
+        future_time = time.time() + 100  # well past 1s TTL
+        inbox = read_inbox("target", bus_root, now=future_time)
+        acked = [m for m in inbox if m["message_id"] == msg.message_id]
+        assert len(acked) == 1
+        assert acked[0]["status"] == "acked"
+
     def test_no_ttl_never_auto_expires(self, bus_root: Path, events_dir: Path) -> None:
         """Messages with ttl_seconds=None are never auto-expired on read."""
         msg = create_message(

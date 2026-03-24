@@ -421,10 +421,10 @@ def _expire_stale_on_read(
     Only non-terminal messages with a numeric ``ttl_seconds`` are checked.
     """
     current_time = now if now is not None else time.time()
-    terminal = {"resolved", "expired", "dead_lettered"}
+    skip = {"resolved", "expired", "dead_lettered", "acked"}
 
     for mid, rec in list(by_id.items()):
-        if rec.get("status") in terminal:
+        if rec.get("status") in skip:
             continue
         ttl = rec.get("payload", {}).get("ttl_seconds")
         if ttl is None:
