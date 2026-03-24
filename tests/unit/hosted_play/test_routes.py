@@ -424,8 +424,9 @@ class TestMatchResume:
         # Resume — GET the page
         resp = client.get(f"/play/{link_uuid}")
         assert resp.status_code == 200
-        # Should show game board with state data
-        assert "score_human" in resp.text or "Game Board" in resp.text
+        # Should show game board with score bar from templates
+        assert "game-board" in resp.text
+        assert "score-bar" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -831,8 +832,9 @@ class TestXSSPrevention:
         # Do NOT set a nickname — player.nickname remains None
         resp = client.post(f"/play/{link_uuid}/new-match")
         assert resp.status_code == 200
-        assert "New Match" in resp.text
-        assert "Player" in resp.text
+        # Template renders model selection with fallback nickname "Player"
+        assert "Welcome, Player!" in resp.text
+        assert "model-select" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -1098,7 +1100,7 @@ class TestRefreshResumeSafety:
             )
 
         # The GET response contains game board data from persisted state
-        assert "score_human" in resp.text or "Game Board" in resp.text
+        assert "game-board" in resp.text and "score-bar" in resp.text
         session2.close()
 
     # ---- 2. Refresh mid-trick --------------------------------------------
@@ -1143,7 +1145,7 @@ class TestRefreshResumeSafety:
             )
 
         # The GET response shows the game board, not an error page
-        assert "score_human" in resp.text or "Game Board" in resp.text
+        assert "game-board" in resp.text and "score-bar" in resp.text
 
         # Match state is self-consistent: round-trip serialize/deserialize
         engine2 = MatchEngine(
@@ -1242,7 +1244,7 @@ class TestRefreshResumeSafety:
             assert state_after.winner in ("human", "ai")
 
         # GET rendered the persisted state, not stale or error
-        assert "score_human" in resp.text or "Game Board" in resp.text
+        assert "game-board" in resp.text and "score-bar" in resp.text
         session_after.close()
 
     # ---- 4a. Double-click bid → idempotent -------------------------------
@@ -1425,7 +1427,7 @@ class TestRefreshResumeSafety:
         assert state_after.score_human == score_h
         assert state_after.score_ai == score_ai
         assert state_after.hands_played == hands_played
-        assert "score_human" in resp_return.text or "Game Board" in resp_return.text
+        assert "game-board" in resp_return.text and "score-bar" in resp_return.text
         session_after.close()
 
     # ---- 5b. Completed match → return shows result -----------------------
