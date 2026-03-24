@@ -88,6 +88,27 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def normalize_timestamp(ts: str) -> str:
+    """Normalize an ISO 8601 timestamp to UTC with ``+00:00`` offset.
+
+    Handles common variants:
+    - ``"2026-03-24T06:00:00Z"`` → ``"2026-03-24T06:00:00+00:00"``
+    - ``"2026-03-24T06:00:00+00:00"`` → unchanged
+    - ``"2026-03-24T06:00:00"`` → treated as UTC, adds ``+00:00``
+
+    Returns the input unchanged if parsing fails.
+    """
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        # Treat naive datetimes as UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        # Convert to UTC and format with +00:00
+        return dt.astimezone(timezone.utc).isoformat()
+    except (ValueError, AttributeError):
+        return ts
+
+
 # Regex for extracting attributes from a <channel ...> XML-style tag.
 # Matches key="value" pairs (double-quoted only, no nested quotes).
 _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
@@ -103,6 +124,10 @@ def parse_channel_tag(tag_text: str) -> dict[str, str]:
 
     The closing ``>`` is optional (self-closing ``/>`` is also accepted).
 
+    Only attributes within the opening ``<channel ... >`` tag are parsed.
+    Any body text after the closing ``>`` is ignored, preventing false
+    matches from quoted strings in message content.
+
     Args:
         tag_text: Raw tag text, e.g. from a system-reminder message.
 
@@ -113,6 +138,11 @@ def parse_channel_tag(tag_text: str) -> dict[str, str]:
     tag_text = tag_text.strip()
     if not tag_text.startswith("<channel"):
         return {}
+    # Limit parsing to the opening tag only (up to first '>') to avoid
+    # extracting key="value" patterns from body text.
+    gt_pos = tag_text.find(">")
+    if gt_pos >= 0:
+        tag_text = tag_text[: gt_pos + 1]
     return dict(_ATTR_RE.findall(tag_text))
 
 
@@ -381,6 +411,8 @@ def audit_inbound(
     Returns:
         The persisted :class:`AuditRecord`.
     """
+    # Normalize inbound timestamps to consistent UTC ISO 8601 format.
+    normalized_ts = normalize_timestamp(ts) if ts else ts
     record = create_record(
         direction="inbound",
         channel_source=channel_source,
@@ -390,7 +422,7 @@ def audit_inbound(
         chat_id=chat_id,
         message_id=message_id,
         metadata=metadata,
-        timestamp=ts,
+        timestamp=normalized_ts,
     )
     append_record(record, audit_dir=audit_dir)
     return record
