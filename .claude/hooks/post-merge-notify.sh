@@ -6,6 +6,11 @@
 #   2. Transitions it to "completed" status
 #   3. Sends a completion message to the orchestrator via message bus
 #
+# Handles two merge modes:
+#   - Direct merge (`gh pr merge <N> --squash`): completes immediately
+#   - Auto-merge (`gh pr merge <N> --auto --squash`): launches a background
+#     watcher that polls for actual merge, then completes (issue #1461)
+#
 # Guards:
 #   - Only fires on successful `gh pr merge` (same as post-merge-review.sh)
 #   - Deduplicates via sentinel file (one notification per PR)
@@ -35,6 +40,12 @@ fi
 
 # Extract PR number for deduplication and messaging
 PR_NUM=$(echo "$COMMAND" | grep -oE '[0-9]+' | head -1 || true)
+
+# Fallback: extract PR number from command stdout (e.g., "Merged pull request #1453")
+if [ -z "$PR_NUM" ]; then
+    PR_NUM=$(echo "$INPUT" | jq -r '.tool_response.stdout // ""' 2>/dev/null \
+        | grep -oE '#[0-9]+' | grep -oE '[0-9]+' | head -1 || true)
+fi
 
 # Dedupe guard — one notification per PR merge
 if [ -n "$PR_NUM" ]; then
@@ -74,10 +85,20 @@ if [ -z "$LANE_ID" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
     esac
 fi
 
-# Run the completion logic in Python (fire-and-forget, don't block on failure)
-# Gap B: primary lookup by PR number, fallback to lane identity
-LANE_ID="${LANE_ID:-}" PR_NUM="${PR_NUM:-unknown}" \
-uv run python -c "
+# ---------------------------------------------------------------------------
+# Completion logic (reusable function)
+# ---------------------------------------------------------------------------
+run_completion() {
+    local lane="$1"
+    local pr="$2"
+    local project_dir="${3:-${CLAUDE_PROJECT_DIR:-.}}"
+
+    # Run in the correct directory so uv finds pyproject.toml
+    (
+        cd "$project_dir" 2>/dev/null || true
+
+        LANE_ID="$lane" PR_NUM="$pr" \
+        uv run python -c "
 import os, sys
 
 lane_id = os.environ.get('LANE_ID', '')
@@ -128,6 +149,94 @@ try:
 except Exception as exc:
     print(f'post-merge-notify: message send failed: {exc}', file=sys.stderr)
 " 2>/dev/null || true
+    )
+}
+
+# ---------------------------------------------------------------------------
+# Auto-merge detection: if --auto flag is present, the PR isn't merged yet.
+# Launch a background watcher that polls for actual merge completion.
+# (Issue #1461: auto-merged PRs bypass the PostToolUse hook)
+# ---------------------------------------------------------------------------
+if [[ "$COMMAND" == *"--auto"* ]]; then
+    if [ -n "$PR_NUM" ]; then
+        # Capture values for the background subshell
+        _LANE_ID="$LANE_ID"
+        _PR_NUM="$PR_NUM"
+        _PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
+
+        (
+            # Background watcher: poll for actual merge, then send completion.
+            # Polls every 30s for up to 30 minutes (60 iterations).
+            # Self-terminates on MERGED, CLOSED, or timeout.
+            for _attempt in $(seq 1 60); do
+                sleep 30
+                STATE=$(gh pr view "$_PR_NUM" --json state --jq '.state' 2>/dev/null || echo "unknown")
+
+                if [ "$STATE" = "MERGED" ]; then
+                    # PR is actually merged — run completion logic
+                    cd "$_PROJECT_DIR" 2>/dev/null || true
+                    LANE_ID="$_LANE_ID" PR_NUM="$_PR_NUM" \
+                    uv run python -c "
+import os, sys
+
+lane_id = os.environ.get('LANE_ID', '')
+pr_num = os.environ['PR_NUM']
+
+packet_id = None
+try:
+    from bid_euchre.ops.task_queue import list_packets, transition_status
+    dispatched = list_packets(status_filter='dispatched')
+    if pr_num and pr_num != 'unknown':
+        for pkt in dispatched:
+            pkt_pr = (pkt.metadata or {}).get('pr_number')
+            if pkt_pr is not None and str(pkt_pr) == str(pr_num):
+                packet_id = pkt.packet_id
+                lane_id = lane_id or pkt.owner or ''
+                break
+    if packet_id is None and lane_id:
+        for pkt in dispatched:
+            if pkt.owner == lane_id:
+                packet_id = pkt.packet_id
+                break
+    if packet_id:
+        transition_status(packet_id, 'completed')
+except Exception as exc:
+    print(f'post-merge-watcher: task transition failed: {exc}', file=sys.stderr)
+
+from_lane = lane_id or 'unknown'
+try:
+    from bid_euchre.ops.message_bus import create_message, send_message
+    msg = create_message(
+        from_lane=from_lane,
+        to_lane='orchestrator',
+        message_type='completion',
+        summary=f'PR #{pr_num} merged (auto-merge) — task complete',
+        task_id=packet_id,
+        payload={'pr_number': pr_num, 'packet_id': packet_id, 'auto_merge': True},
+    )
+    send_message(msg)
+except Exception as exc:
+    print(f'post-merge-watcher: message send failed: {exc}', file=sys.stderr)
+" 2>/dev/null || true
+
+                    # Create sentinel after successful completion
+                    touch "/tmp/.claude-post-merge-notify-${_PR_NUM}"
+                    exit 0
+                elif [ "$STATE" = "CLOSED" ]; then
+                    # PR closed without merging — nothing to do
+                    exit 0
+                fi
+            done
+            # Timeout after 30 minutes — give up silently
+        ) </dev/null >/dev/null 2>&1 &
+    fi
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Direct merge: complete immediately (existing behavior)
+# ---------------------------------------------------------------------------
+run_completion "$LANE_ID" "${PR_NUM:-unknown}" "${CLAUDE_PROJECT_DIR:-.}"
 
 # Gap C: sentinel created AFTER successful execution so failures can retry
 if [ -n "${PR_NUM:-}" ]; then
