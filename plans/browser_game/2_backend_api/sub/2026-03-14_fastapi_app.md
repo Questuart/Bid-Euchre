@@ -2,7 +2,7 @@
 
 **ID:** SP-2-01
 **Parent:** Phase 2 — Backend API
-**Status:** proposed
+**Status:** completed
 **Governing plan:** `plans/browser_game/governing_plan.md`
 **Created:** 2026-03-14
 
@@ -212,4 +212,6 @@ uv run python -m pytest tests/unit/hosted_play/test_routes.py -v
 
 ## Outcome
 
-_To be filled after implementation._
+- Result: COMPLETE
+- PRs: #1430 (DB models, AI manager, schema), #1435 (routes, templates, tests)
+- Notes: All 9 planned files created. 8 route handlers with HTMX partial responses. 17 integration tests covering all 10 required scenarios plus 7 edge cases. V1 limitation: AI decision logging uses placeholders for legal_actions/game_state. `make check-quiet` green.

@@ -14,22 +14,27 @@
 | Step 0: Read sub-plan SP-2-01 and verify Phase 1 complete | COMPLETE | 2026-03-23 | brws-author-b | Phase 1 CLOSED (PRs #1380, #1392, #1402). MatchEngine API verified against SP-2-01 route handler requirements. |
 | Step 1: Implement DB models and schema init (`db.py`, `schema.sql`) | COMPLETE | 2026-03-23 | brws-author-b | PR #1430. SQLAlchemy models + config + schema. |
 | Step 2: Implement AI manager (`ai_manager.py`) | COMPLETE | 2026-03-23 | brws-author-b | PR #1430. Config-backed heuristic + hybrid_olsa roster. |
-| Step 3: Implement FastAPI app and routes (`app.py`, `routes.py`) | IN_PROGRESS | 2026-03-24 | brws-author-b | 8 route handlers with idempotent submissions. |
-| Step 4: Implement decision logging in routes | IN_PROGRESS | 2026-03-24 | brws-author-b | Human decisions logged with full detail; AI decisions with placeholders (V1 limitation). |
-| Step 5: Write integration tests | IN_PROGRESS | 2026-03-24 | brws-author-b | 17 tests covering all 10 required scenarios + edge cases. |
-| Step 6: Run validation | IN_PROGRESS | 2026-03-24 | brws-author-b | 17/17 tests passing, `make check-quiet` green. |
+| Step 3: Implement FastAPI app and routes (`app.py`, `routes.py`) | COMPLETE | 2026-03-24 | brws-author-b | PR #1435. 8 route handlers with idempotent submissions. |
+| Step 4: Implement decision logging in routes | COMPLETE | 2026-03-24 | brws-author-b | PR #1435. Human decisions logged with full detail; AI decisions with placeholders (V1 limitation). |
+| Step 5: Write integration tests | COMPLETE | 2026-03-24 | brws-author-b | PR #1435. 17 tests covering all 10 required scenarios + edge cases. |
+| Step 6: Run validation | COMPLETE | 2026-03-24 | brws-author-b | PR #1435. 17/17 tests passing, `make check-quiet` green. |
 
 ## Active Sub-Plans
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
-| SP-2-01 | `2_backend_api/sub/2026-03-14_fastapi_app.md` | in_progress | Steps 3-6 |
+| SP-2-01 | `2_backend_api/sub/2026-03-14_fastapi_app.md` | completed | Steps 0-6 (all COMPLETE) |
 
 ## Blockers
 
 - [x] ~~Phase 1 not complete.~~ Phase 1 CLOSED 2026-03-23 (PRs #1380, #1392, #1402).
 
 ## Session Log
+
+### 2026-03-24 — brws-author-a (Phase 2 closure)
+- Closed: Phase 2 COMPLETE. All steps (0-6) marked COMPLETE. SP-2-01 completed.
+- PR #1435 merged — FastAPI app, routes, DB models, AI manager, decision logging, 17 integration tests.
+- Phase 3 (Frontend Product) is now unblocked.
 
 ### 2026-03-24 — brws-author-b
 - Completed: Steps 3-6 — Route handlers, decision logging, integration tests, validation.
