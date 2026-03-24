@@ -595,7 +595,7 @@ def format_dashboard_text(
             lines.append("  Top lanes:")
             for tl in top_lanes[:3]:
                 tpc = tl.get("tokens_per_commit")
-                tpc_str = f"{tpc:,.0f} tok/commit" if tpc else "—"
+                tpc_str = f"{tpc:,.0f} tok/commit" if tpc is not None else "—"
                 lines.append(
                     f"    {tl['lane_id']:<18s} {tl['total_tokens']:>10,d} tok"
                     f"  {tpc_str}"

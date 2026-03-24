@@ -491,6 +491,51 @@ class TestFormatDashboardText:
         assert "Tasks: 3 active, 1 blocked" in text
         assert "Task Queue: 2 packets" in text
 
+    def test_token_economy_zero_tokens_per_commit(self) -> None:
+        """Zero tokens_per_commit should render as '0 tok/commit', not '—'."""
+        now = datetime(2026, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
+        view = DashboardView(
+            generated_at=now.isoformat(),
+            foreground=DashboardSection(title="Foreground Lanes", lanes=[]),
+            background=DashboardSection(title="Background Lanes", lanes=[]),
+            token_economy={
+                "overview": {
+                    "total_tokens": 100_000,
+                    "session_count": 5,
+                    "total_git_commits": 3,
+                    "tokens_per_hour": 5000,
+                    "output_input_ratio": 2.1,
+                    "net_lines": 42,
+                },
+                "top_lanes": [
+                    {
+                        "lane_id": "author-a",
+                        "total_tokens": 50_000,
+                        "tokens_per_commit": 0.0,
+                    },
+                    {
+                        "lane_id": "author-b",
+                        "total_tokens": 30_000,
+                        "tokens_per_commit": 15_000.0,
+                    },
+                    {
+                        "lane_id": "author-c",
+                        "total_tokens": 20_000,
+                        "tokens_per_commit": None,
+                    },
+                ],
+            },
+        )
+        text = format_dashboard_text(view, now=now)
+        # Zero should show as "0 tok/commit", not "—"
+        assert "0 tok/commit" in text
+        # None should show as "—"
+        lines = text.split("\n")
+        author_c_line = [l for l in lines if "author-c" in l][0]
+        assert "—" in author_c_line
+        # Non-zero should show the value
+        assert "15,000 tok/commit" in text
+
 
 # ---------------------------------------------------------------------------
 # Tests: format_dashboard_json
