@@ -92,17 +92,19 @@ run_completion() {
     local lane="$1"
     local pr="$2"
     local project_dir="${3:-${CLAUDE_PROJECT_DIR:-.}}"
+    local auto_merge="${4:-false}"
 
     # Run in the correct directory so uv finds pyproject.toml
     (
         cd "$project_dir" 2>/dev/null || true
 
-        LANE_ID="$lane" PR_NUM="$pr" \
+        LANE_ID="$lane" PR_NUM="$pr" AUTO_MERGE="$auto_merge" \
         uv run python -c "
 import os, sys
 
 lane_id = os.environ.get('LANE_ID', '')
 pr_num = os.environ['PR_NUM']
+auto_merge = os.environ.get('AUTO_MERGE', 'false') == 'true'
 
 # 1. Find and complete the active dispatched task packet
 #    Primary (Gap B): look up by PR number in metadata
@@ -135,15 +137,19 @@ except Exception as exc:
 
 # 2. Send completion message to orchestrator via message bus
 from_lane = lane_id or 'unknown'
+suffix = ' (auto-merge)' if auto_merge else ''
+payload = {'pr_number': pr_num, 'packet_id': packet_id}
+if auto_merge:
+    payload['auto_merge'] = True
 try:
     from bid_euchre.ops.message_bus import create_message, send_message
     msg = create_message(
         from_lane=from_lane,
         to_lane='orchestrator',
         message_type='completion',
-        summary=f'PR #{pr_num} merged — task complete',
+        summary=f'PR #{pr_num} merged{suffix} — task complete',
         task_id=packet_id,
-        payload={'pr_number': pr_num, 'packet_id': packet_id},
+        payload=payload,
     )
     send_message(msg)
 except Exception as exc:
@@ -173,51 +179,8 @@ if [[ "$COMMAND" == *"--auto"* ]]; then
                 STATE=$(gh pr view "$_PR_NUM" --json state --jq '.state' 2>/dev/null || echo "unknown")
 
                 if [ "$STATE" = "MERGED" ]; then
-                    # PR is actually merged — run completion logic
-                    cd "$_PROJECT_DIR" 2>/dev/null || true
-                    LANE_ID="$_LANE_ID" PR_NUM="$_PR_NUM" \
-                    uv run python -c "
-import os, sys
-
-lane_id = os.environ.get('LANE_ID', '')
-pr_num = os.environ['PR_NUM']
-
-packet_id = None
-try:
-    from bid_euchre.ops.task_queue import list_packets, transition_status
-    dispatched = list_packets(status_filter='dispatched')
-    if pr_num and pr_num != 'unknown':
-        for pkt in dispatched:
-            pkt_pr = (pkt.metadata or {}).get('pr_number')
-            if pkt_pr is not None and str(pkt_pr) == str(pr_num):
-                packet_id = pkt.packet_id
-                lane_id = lane_id or pkt.owner or ''
-                break
-    if packet_id is None and lane_id:
-        for pkt in dispatched:
-            if pkt.owner == lane_id:
-                packet_id = pkt.packet_id
-                break
-    if packet_id:
-        transition_status(packet_id, 'completed')
-except Exception as exc:
-    print(f'post-merge-watcher: task transition failed: {exc}', file=sys.stderr)
-
-from_lane = lane_id or 'unknown'
-try:
-    from bid_euchre.ops.message_bus import create_message, send_message
-    msg = create_message(
-        from_lane=from_lane,
-        to_lane='orchestrator',
-        message_type='completion',
-        summary=f'PR #{pr_num} merged (auto-merge) — task complete',
-        task_id=packet_id,
-        payload={'pr_number': pr_num, 'packet_id': packet_id, 'auto_merge': True},
-    )
-    send_message(msg)
-except Exception as exc:
-    print(f'post-merge-watcher: message send failed: {exc}', file=sys.stderr)
-" 2>/dev/null || true
+                    # PR is actually merged — reuse shared completion logic
+                    run_completion "$_LANE_ID" "$_PR_NUM" "$_PROJECT_DIR" "true"
 
                     # Create sentinel after successful completion
                     touch "/tmp/.claude-post-merge-notify-${_PR_NUM}"
