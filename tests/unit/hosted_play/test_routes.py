@@ -1498,3 +1498,60 @@ class TestRefreshResumeSafety:
         # A completed match has no active match → shows model selection
         # (per game_page handler logic: no active match → model selection)
         assert "Start Match" in resp.text or "score_human" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Health & Readiness endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestHealthEndpoint:
+    """GET /health — liveness probe."""
+
+    def test_health_returns_ok(self, client):
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body == {"status": "ok"}
+
+    def test_health_content_type_json(self, client):
+        resp = client.get("/health")
+        assert "application/json" in resp.headers["content-type"]
+
+
+class TestReadyEndpoint:
+    """GET /ready — readiness probe (DB connectivity)."""
+
+    def test_ready_returns_ready(self, client):
+        """With a healthy DB, /ready returns 200."""
+        resp = client.get("/ready")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body == {"status": "ready"}
+
+    def test_ready_content_type_json(self, client):
+        resp = client.get("/ready")
+        assert "application/json" in resp.headers["content-type"]
+
+    def test_ready_returns_503_when_db_unavailable(self, client):
+        """When the DB is unreachable, /ready returns 503."""
+        from unittest.mock import MagicMock
+
+        app = client.app
+
+        # Replace session_factory with one that raises on execute
+        original_factory = app.state.session_factory
+
+        def broken_factory():
+            session = MagicMock()
+            session.execute.side_effect = Exception("DB connection failed")
+            return session
+
+        app.state.session_factory = broken_factory
+        try:
+            resp = client.get("/ready")
+            assert resp.status_code == 503
+            body = resp.json()
+            assert body == {"status": "unavailable"}
+        finally:
+            app.state.session_factory = original_factory

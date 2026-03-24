@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import text
 from starlette.templating import Jinja2Templates
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
@@ -260,6 +261,34 @@ def _render_game_board(
     ctx = _build_game_context(engine, state, link_uuid)
     ctx["request"] = request
     return templates.get_template("partials/game_board.html").render(ctx)
+
+
+# ---------------------------------------------------------------------------
+# Health / Readiness
+# ---------------------------------------------------------------------------
+
+
+@router.get("/health")
+async def health():
+    """Liveness probe — always returns 200 OK."""
+    return JSONResponse({"status": "ok"})
+
+
+@router.get("/ready")
+async def ready(request: Request):
+    """Readiness probe — checks DB connectivity.
+
+    Returns 200 if the database is reachable, 503 otherwise.
+    """
+    try:
+        session = _get_session(request)
+        try:
+            session.execute(text("SELECT 1"))
+        finally:
+            session.close()
+    except Exception:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return JSONResponse({"status": "ready"})
 
 
 # ---------------------------------------------------------------------------
