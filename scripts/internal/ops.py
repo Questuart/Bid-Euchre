@@ -1985,6 +1985,8 @@ def cmd_inbox(args: argparse.Namespace) -> int:
             lane,
             bus_root,
             status=status_filter,
+            message_type=type_filter,
+            thread_id=thread_filter,
         )
         if args.json:
             print(

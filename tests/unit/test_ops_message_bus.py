@@ -2326,6 +2326,77 @@ class TestReadInboxPrioritized:
         returned_ids = [m["message_id"] for m in p1]
         assert returned_ids == list(reversed(ids))
 
+    def test_message_type_filter_forwarded(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """message_type filter is forwarded to read_inbox."""
+        lane = "orchestrator"
+        # Send two messages with different types
+        msg1 = create_message(
+            "author-a", lane, "completion", "PR merged", priority="high"
+        )
+        send_message(msg1, bus_root, events_dir=events_dir)
+        msg2 = create_message(
+            "author-a", lane, "progress", "In progress", priority="high"
+        )
+        send_message(msg2, bus_root, events_dir=events_dir)
+
+        # Without filter — both appear
+        _, p1_all, _ = read_inbox_prioritized(
+            lane, bus_root, auto_expire=False, auto_compact=False
+        )
+        assert len(p1_all) == 2
+
+        # With type filter — only completion
+        _, p1_filtered, _ = read_inbox_prioritized(
+            lane,
+            bus_root,
+            message_type="completion",
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert len(p1_filtered) == 1
+        assert p1_filtered[0]["message_type"] == "completion"
+
+    def test_thread_id_filter_forwarded(self, bus_root: Path, events_dir: Path) -> None:
+        """thread_id filter is forwarded to read_inbox."""
+        lane = "orchestrator"
+        msg1 = create_message(
+            "author-a",
+            lane,
+            "progress",
+            "Update 1",
+            priority="normal",
+            thread_id="thread-abc",
+        )
+        send_message(msg1, bus_root, events_dir=events_dir)
+        msg2 = create_message(
+            "author-a",
+            lane,
+            "progress",
+            "Update 2",
+            priority="normal",
+            thread_id="thread-xyz",
+        )
+        send_message(msg2, bus_root, events_dir=events_dir)
+
+        # Without filter — both in P2
+        _, _, p2_all = read_inbox_prioritized(
+            lane, bus_root, auto_expire=False, auto_compact=False
+        )
+        assert len(p2_all) == 2
+
+        # With thread filter — only one
+        _, _, p2_filtered = read_inbox_prioritized(
+            lane,
+            bus_root,
+            thread_id="thread-abc",
+            auto_expire=False,
+            auto_compact=False,
+        )
+        assert len(p2_filtered) == 1
+        assert p2_filtered[0]["thread_id"] == "thread-abc"
+
 
 # ---------------------------------------------------------------------------
 # Priority-aware TTL and compaction (#1571 Phase 2a)

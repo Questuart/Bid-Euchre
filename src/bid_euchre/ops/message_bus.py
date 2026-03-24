@@ -559,6 +559,8 @@ def read_inbox_prioritized(
     bus_root: Path | None = None,
     *,
     status: str | None = "pending",
+    message_type: str | Sequence[str] | None = None,
+    thread_id: str | None = None,
     auto_expire: bool = True,
     auto_compact: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -571,11 +573,17 @@ def read_inbox_prioritized(
     - **p2** = ``normal`` / ``low`` priority messages (batch processing)
 
     Each tier list is ordered most-recent-first, matching ``read_inbox()``.
+
+    All filter parameters (``status``, ``message_type``, ``thread_id``) are
+    forwarded to :func:`read_inbox` so that callers get consistent filtering
+    regardless of whether they use the flat or prioritized API.
     """
     messages = read_inbox(
         lane_id,
         bus_root,
         status=status,
+        message_type=message_type,
+        thread_id=thread_id,
         auto_expire=auto_expire,
         auto_compact=auto_compact,
     )
