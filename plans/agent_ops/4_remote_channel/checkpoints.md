@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-23 by author-a (SP-4-03 completed)
+**Last updated:** 2026-03-23 by author-scratch (reconcile SP-4-03/SP-4-04 status)
 
 ---
 
@@ -58,6 +58,9 @@ implementation.
 - [x] ~~SP-3-05 dual-domain steward layout transition~~ — COMPLETE (2026-03-23).
   Dual-domain layout shipped in pre-proving hardening session (PRs #1281–#1294).
   Proving run passed 2026-03-23. Phase 4 scope lock is unblocked.
+- [ ] **SP-4-04 Steps 3-5** (pairing proof, permission relay proof, kill switch proof) are
+  BLOCKED on user-side Telegram preflight: Bun install, Claude auth, and bot token
+  configuration. Step 2 (launcher Telegram config) is complete (PR #1452).
 
 ## Session Log
 
@@ -71,3 +74,4 @@ implementation.
 | 2026-03-23 | SP-4-04 registered (flex-a). Platform-8a Telegram transport sub-plan: 6 steps covering preflight, plugin config, pairing proof, permission relay proof, kill switch proof, and registry integration. Steps 3-5 parallelizable after Step 2. Key constraint: orchestrator-only ingress, no audit trail (deferred to Platform-9c). |
 | 2026-03-23 | SP-4-03 completed (author-a). Baseline token economy report produced at `plans/sessions/2026-03-23_token-economy-baseline.md`. Key findings: 52.4% shipped-token rate, 10.9K tokens/commit, 71% zero-commit session rate. Top 3 waste patterns: abandoned-work churn (42.9% of tokens), wrong-approach retry (60 friction events), high-error session tax (16.8% of tokens). Pre-steward data only (2026-02-03 to 2026-03-14); per-lane attribution requires post-steward follow-up. |
 | 2026-03-23 | SP-4-04 Step 2 (author-a): Telegram config added to tmux launcher. `STEWARD_TELEGRAM_ENABLED` env var (default 0) controls kill switch. When enabled, appends `--channels telegram` to orchestrator pane only. `STEWARD_CHANNELS` exported for orchestrator. Author lanes remain tmux-only. |
+| 2026-03-23 | Governance reconciliation (author-scratch): Fixed sub_plan_registry.md vs checkpoints.md disagreement — SP-4-03 updated to `completed` (baseline report done; live dashboard integration partial, follow-up needed), SP-4-04 updated to `in_progress` with owner `flex-a`. SP-4-04 Steps 3-5 marked BLOCKED on user-side Telegram preflight. |
