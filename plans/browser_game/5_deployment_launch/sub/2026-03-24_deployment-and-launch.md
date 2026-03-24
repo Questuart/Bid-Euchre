@@ -2,7 +2,7 @@
 
 **ID:** SP-5-01
 **Parent:** Phase 5 — Deployment and Launch Validation
-**Status:** active
+**Status:** completed
 **Governing plan:** `plans/browser_game/governing_plan.md`
 **Created:** 2026-03-24
 
@@ -198,8 +198,12 @@ and session logs rather than committed code artifacts.
 
 ## Outcome
 
-_To be filled after implementation._
-
-- Result: --
-- PRs: --
-- Notes: --
+- Result: **COMPLETE** — All 7 steps shipped.
+- PRs:
+  - Step 1: PR #1638 (Dockerfile), PR #1627 (.dockerignore)
+  - Step 2: PR #1636 (render.yaml), PR #1634 (health/readiness endpoints)
+  - Step 3: PR #1625 (production config contract), PR #1629 (.env.example)
+  - Step 4: PR #1637 (Docker smoke test script)
+  - Steps 5-7: PR #1644 (launch checklist + operator runbook), PR #1646 (deployment guide)
+  - Docs: PR #1622 (Phase 5 activation), PR #1642 (Steps 1-3 checkpoint update)
+- Notes: All code artifacts and deployment documentation shipped. Actual Render deployment is an operational activity enabled by the launch checklist and deployment guide.
