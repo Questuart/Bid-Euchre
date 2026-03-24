@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from .ai_manager import AIManager
@@ -23,8 +24,8 @@ from .config import HostedPlayConfig, get_config, override_config
 from .db import create_tables, init_engine, make_session_factory
 from .routes import router as game_router
 
-# Template directory lives at web/templates/ relative to this file
-_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+_WEB_DIR = Path(__file__).resolve().parent
+_TEMPLATES_DIR = _WEB_DIR / "templates"
 
 
 @asynccontextmanager
@@ -77,6 +78,9 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Serve static assets (CSS, JS) from web/static/
+    app.mount("/static", StaticFiles(directory=str(_WEB_DIR / "static")), name="static")
 
     # Register game routes
     app.include_router(game_router)

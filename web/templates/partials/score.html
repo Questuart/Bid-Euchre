@@ -3,7 +3,7 @@
      - score_human: int — human team's total match score
      - score_ai: int — AI team's total match score
      - hands_played: int — number of completed hands
-     - contract_type: str | None — "suit", "HIGH", or "LOW" (None if auction in progress)
+     - contract_type: str | None — "suit", "high", or "low" (None if auction in progress)
      - trump: str | None — trump suit letter if contract_type == "suit"
      - winning_bid: int | None — winning bid amount (None if auction in progress)
      - bidder_seat: int | None — seat of the declarer (None if auction in progress)
@@ -39,9 +39,9 @@
         <span>Contract: {{ winning_bid }}
             {% if contract_type == "suit" and trump %}
                 {{ suit_symbols.get(trump, trump) }}
-            {% elif contract_type == "HIGH" %}
+            {% elif contract_type == "high" %}
                 High
-            {% elif contract_type == "LOW" %}
+            {% elif contract_type == "low" %}
                 Low
             {% endif %}
         </span>

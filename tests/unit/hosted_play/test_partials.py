@@ -363,7 +363,7 @@ class TestScore:
             score_human=10,
             score_ai=5,
             hands_played=2,
-            contract_type="HIGH",
+            contract_type="high",
             trump=None,
             winning_bid=7,
             bidder_seat=1,
