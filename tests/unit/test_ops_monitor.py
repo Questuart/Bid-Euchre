@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from bid_euchre.ops.monitor import (
+    ESCALATION_AGE_MINUTES,
     MAX_AUTO_DISPATCH_PER_CYCLE,
     SEVERITY_HIGH,
     SEVERITY_INFO,
@@ -20,6 +21,7 @@ from bid_euchre.ops.monitor import (
     _save_stall_state,
     check_approval_stalls,
     check_auto_dispatch,
+    check_escalations,
     check_idle_lanes,
     check_lane_health,
     check_merged_dispatches,
@@ -1170,6 +1172,159 @@ class TestCheckMergedDispatches:
         assert len(findings) == 1
         assert findings[0].severity == SEVERITY_WARN
         assert "Failed to auto-complete" in findings[0].summary
+
+
+# ---------------------------------------------------------------------------
+# check_escalations tests (#1571 Phase 2b)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckEscalations:
+    """Tests for the escalation check wired into the monitoring cycle."""
+
+    def test_no_escalation_when_no_unacked(self) -> None:
+        """Returns info finding when escalate_unacked returns empty list."""
+        with patch(
+            "bid_euchre.ops.message_bus.escalate_unacked",
+            return_value=[],
+        ):
+            findings = check_escalations()
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_INFO
+        assert findings[0].category == "escalation"
+        assert "No unacked" in findings[0].summary
+
+    def test_escalation_when_unacked_alerts_exist(self) -> None:
+        """Returns HIGH finding with escalation IDs when alerts are unacked."""
+        with patch(
+            "bid_euchre.ops.message_bus.escalate_unacked",
+            return_value=["esc-001", "esc-002"],
+        ):
+            findings = check_escalations()
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_HIGH
+        assert findings[0].category == "escalation"
+        assert "2 unacked alert(s)" in findings[0].summary
+        assert findings[0].details["escalation_ids"] == ["esc-001", "esc-002"]
+
+    def test_custom_max_age_passed_through(self) -> None:
+        """max_age_minutes parameter is forwarded to escalate_unacked."""
+        with patch(
+            "bid_euchre.ops.message_bus.escalate_unacked",
+            return_value=[],
+        ) as mock_esc:
+            check_escalations(max_age_minutes=42)
+
+        mock_esc.assert_called_once()
+        call_kwargs = mock_esc.call_args
+        assert call_kwargs[1]["max_age_minutes"] == 42
+
+    def test_custom_bus_root_passed_through(self, tmp_path: Path) -> None:
+        """bus_root parameter is forwarded to escalate_unacked."""
+        with patch(
+            "bid_euchre.ops.message_bus.escalate_unacked",
+            return_value=[],
+        ) as mock_esc:
+            check_escalations(bus_root=tmp_path)
+
+        mock_esc.assert_called_once()
+        call_kwargs = mock_esc.call_args
+        assert call_kwargs[1]["bus_root"] == tmp_path
+
+    def test_graceful_on_escalate_failure(self) -> None:
+        """Returns WARN finding when escalate_unacked raises."""
+        with patch(
+            "bid_euchre.ops.message_bus.escalate_unacked",
+            side_effect=OSError("bus root missing"),
+        ):
+            findings = check_escalations()
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert findings[0].category == "escalation"
+        assert "Could not check" in findings[0].summary
+
+    def test_default_age_minutes_matches_constant(self) -> None:
+        """Default max_age_minutes uses the ESCALATION_AGE_MINUTES constant."""
+        with patch(
+            "bid_euchre.ops.message_bus.escalate_unacked",
+            return_value=[],
+        ) as mock_esc:
+            check_escalations()
+
+        call_kwargs = mock_esc.call_args
+        assert call_kwargs[1]["max_age_minutes"] == ESCALATION_AGE_MINUTES
+
+    def test_integration_with_real_bus(self, tmp_path: Path) -> None:
+        """End-to-end: ops sends alert, don't ack, verify escalation fires."""
+        from bid_euchre.ops.message_bus import (
+            create_message,
+            send_message,
+        )
+
+        bus_root = tmp_path / "bus"
+        events_dir = tmp_path / "events"
+
+        # ops sends an alert to orchestrator
+        msg = create_message(
+            from_lane="ops",
+            to_lane="orchestrator",
+            message_type="supervisor_alert",
+            priority="high",
+            summary="3 HIGH findings",
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Run check_escalations with max_age_minutes=0 so it fires immediately
+        findings = check_escalations(
+            bus_root=bus_root,
+            events_dir=events_dir,
+            max_age_minutes=0,
+        )
+
+        # Should have escalated
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_HIGH
+        assert findings[0].category == "escalation"
+        assert len(findings[0].details["escalation_ids"]) >= 1
+
+    def test_integration_no_escalation_when_acked(self, tmp_path: Path) -> None:
+        """End-to-end: ops sends alert, ack it, verify no escalation."""
+        from bid_euchre.ops.message_bus import (
+            ack_message,
+            create_message,
+            send_message,
+        )
+
+        bus_root = tmp_path / "bus"
+        events_dir = tmp_path / "events"
+
+        # ops sends an alert to orchestrator
+        msg = create_message(
+            from_lane="ops",
+            to_lane="orchestrator",
+            message_type="supervisor_alert",
+            priority="high",
+            summary="3 HIGH findings",
+        )
+        mid = send_message(msg, bus_root, events_dir=events_dir)
+
+        # orchestrator acks it
+        ack_message(mid, "orchestrator", bus_root=bus_root)
+
+        # Run check_escalations with max_age_minutes=0
+        findings = check_escalations(
+            bus_root=bus_root,
+            events_dir=events_dir,
+            max_age_minutes=0,
+        )
+
+        # Should NOT have escalated — info finding instead
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_INFO
+        assert "No unacked" in findings[0].summary
 
 
 # ---------------------------------------------------------------------------
