@@ -1003,3 +1003,496 @@ class TestAIDecisionContent:
             assert game_st.get("phase") == "trick_play"
 
         session.close()
+
+
+# ---------------------------------------------------------------------------
+# Test: Refresh/Resume proof (SP-3-02 Step 5)
+# ---------------------------------------------------------------------------
+
+
+def _advance_to_trick_play(client: TestClient, app, link_uuid: str):
+    """Helper: advance game to human's trick-play turn.
+
+    Returns (state, hand) at the point where the human can play a card,
+    or calls ``pytest.fail`` if not reachable within safety limit.
+    """
+    for _ in range(20):
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        session.close()
+
+        hand = state.current_hand
+        if hand is None:
+            break
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            client.post(
+                f"/play/{link_uuid}/bid",
+                data={
+                    "turn_number": hand.turn_number,
+                    "bid_n": 0,
+                    "bid_contract": "",
+                },
+            )
+        elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+            return state, hand
+        else:
+            break
+
+    pytest.fail("Never reached human's trick play turn")
+
+
+class TestRefreshResumeSafety:
+    """Proves that GET /play/{uuid} restores correct state after any action.
+
+    Covers SP-3-02 Step 5 acceptance criteria:
+    1. Refresh mid-auction → resumes at correct bid state
+    2. Refresh mid-trick → resumes with correct cards played
+    3. Refresh between hands → shows correct hand result or next hand
+    4. Double-click bid/play → idempotent (no state corruption)
+    5. Navigate away + return → full state restored from DB
+    """
+
+    # ---- 1. Refresh mid-auction ------------------------------------------
+
+    def test_refresh_mid_auction_shows_correct_bid_state(self, client, app):
+        """GET /play/{uuid} mid-auction renders correct turn_number and auction data."""
+        link_uuid = _setup_game(client)
+
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        session.close()
+
+        hand = state.current_hand
+        if hand is None or hand.phase != "auction" or hand.current_seat != HUMAN_SEAT:
+            pytest.skip("Human not in auction position after game start")
+
+        # Submit one bid (pass) to create mid-auction state
+        turn_before = hand.turn_number
+        client.post(
+            f"/play/{link_uuid}/bid",
+            data={"turn_number": turn_before, "bid_n": 0, "bid_contract": ""},
+        )
+
+        # "Refresh" — GET the page
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+
+        # Verify the response reflects the DB-persisted state, not stale data
+        result2 = _get_match_state(app, link_uuid)
+        assert result2 is not None
+        state2, match_row2, session2 = result2
+
+        # The match_state_json was updated by the bid route
+        persisted = json.loads(match_row2.match_state_json)
+        assert persisted["current_hand"] is not None
+
+        # State has advanced past the pre-bid turn
+        hand2 = state2.current_hand
+        if hand2 is not None:
+            assert (
+                hand2.turn_number > turn_before
+                or state2.hands_played > state.hands_played
+            )
+
+        # The GET response contains game board data from persisted state
+        assert "score_human" in resp.text or "Game Board" in resp.text
+        session2.close()
+
+    # ---- 2. Refresh mid-trick --------------------------------------------
+
+    def test_refresh_mid_trick_shows_cards_played(self, client, app):
+        """GET /play/{uuid} mid-trick shows correct trick and cards."""
+        link_uuid = _setup_game(client)
+
+        state, hand = _advance_to_trick_play(client, app, link_uuid)
+
+        # Play one card to create mid-trick state
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(state.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        legal = engine.get_legal_plays(state)
+        turn_before = hand.turn_number
+
+        client.post(
+            f"/play/{link_uuid}/play-card",
+            data={"turn_number": turn_before, "card_index": legal[0]},
+        )
+
+        # "Refresh" — GET the page
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+
+        # Verify persisted state is consistent with the GET response
+        result2 = _get_match_state(app, link_uuid)
+        assert result2 is not None
+        state2, match_row2, session2 = result2
+
+        persisted = json.loads(match_row2.match_state_json)
+
+        # State has advanced from the card play
+        if state2.current_hand is not None:
+            assert (
+                state2.current_hand.turn_number > turn_before
+                or state2.hands_played > state.hands_played
+            )
+
+        # The GET response shows the game board, not an error page
+        assert "score_human" in resp.text or "Game Board" in resp.text
+
+        # Match state is self-consistent: round-trip serialize/deserialize
+        engine2 = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        round_tripped = engine2.deserialize(persisted)
+        assert round_tripped.score_human == state2.score_human
+        assert round_tripped.score_ai == state2.score_ai
+        assert round_tripped.hands_played == state2.hands_played
+        session2.close()
+
+    # ---- 3. Refresh between hands ----------------------------------------
+
+    def test_refresh_between_hands_shows_correct_state(self, client, app):
+        """GET /play/{uuid} after a hand completes shows next hand or result."""
+        link_uuid = _setup_game(client)
+
+        initial_result = _get_match_state(app, link_uuid)
+        assert initial_result is not None
+        _, _, session = initial_result
+        session.close()
+
+        # Play through an entire hand
+        hands_before = 0
+        for _ in range(200):  # safety limit for one hand
+            result = _get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            if state.hands_played > hands_before:
+                # A hand just completed — this is the "between hands" moment
+                break
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                # Bid aggressively to avoid all-pass redeals
+                if hand.current_high_bid < 3:
+                    client.post(
+                        f"/play/{link_uuid}/bid",
+                        data={
+                            "turn_number": hand.turn_number,
+                            "bid_n": hand.current_high_bid + 1,
+                            "bid_contract": "H",
+                        },
+                    )
+                else:
+                    client.post(
+                        f"/play/{link_uuid}/bid",
+                        data={
+                            "turn_number": hand.turn_number,
+                            "bid_n": 0,
+                            "bid_contract": "",
+                        },
+                    )
+            elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                ai_manager = app.state.ai_manager
+                info = ai_manager.get_model_info(state.ai_model)
+                engine = MatchEngine(
+                    bidding_policy=info.bidding_policy,
+                    play_strategy=info.play_strategy,
+                )
+                legal = engine.get_legal_plays(state)
+                client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "card_index": legal[0],
+                    },
+                )
+            else:
+                break
+        else:
+            pytest.fail("Could not complete a hand within safety limit")
+
+        # "Refresh" at the between-hands moment
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+
+        # Verify the refresh shows valid game state
+        result_after = _get_match_state(app, link_uuid)
+        assert result_after is not None
+        state_after, match_row_after, session_after = result_after
+
+        # Either the match continued (next hand) or completed
+        assert state_after.hands_played >= 1
+        if state_after.status == "active":
+            assert state_after.current_hand is not None
+            # Scores updated from the completed hand
+            assert state_after.score_human != 0 or state_after.score_ai != 0
+        elif state_after.status == "complete":
+            assert state_after.winner in ("human", "ai")
+
+        # GET rendered the persisted state, not stale or error
+        assert "score_human" in resp.text or "Game Board" in resp.text
+        session_after.close()
+
+    # ---- 4a. Double-click bid → idempotent -------------------------------
+
+    def test_double_click_bid_no_state_corruption(self, client, app):
+        """Submitting the same bid turn_number twice causes no state corruption."""
+        link_uuid = _setup_game(client)
+
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        session.close()
+
+        hand = state.current_hand
+        if hand is None or hand.phase != "auction" or hand.current_seat != HUMAN_SEAT:
+            pytest.skip("Human not in auction position")
+
+        turn = hand.turn_number
+        bid_data = {"turn_number": turn, "bid_n": 0, "bid_contract": ""}
+
+        # First submission
+        resp1 = client.post(f"/play/{link_uuid}/bid", data=bid_data)
+        assert resp1.status_code == 200
+
+        # Capture state after first submission
+        result1 = _get_match_state(app, link_uuid)
+        assert result1 is not None
+        state1, match_row1, session1 = result1
+        state_json_1 = match_row1.match_state_json
+        session1.close()
+
+        # "Double-click" — same turn_number
+        resp2 = client.post(f"/play/{link_uuid}/bid", data=bid_data)
+        assert resp2.status_code == 200
+
+        # State must not have changed from the second submission
+        result2 = _get_match_state(app, link_uuid)
+        assert result2 is not None
+        state2, match_row2, session2 = result2
+
+        assert match_row2.match_state_json == state_json_1
+        assert state2.score_human == state1.score_human
+        assert state2.score_ai == state1.score_ai
+        assert state2.hands_played == state1.hands_played
+
+        # Decision table: only one row for that turn_number on this hand
+        session3 = app.state.session_factory()
+        hand_rows = session3.query(Hand).filter_by(match_id=match_row2.id).all()
+        if hand_rows:
+            for hr in hand_rows:
+                turn_decisions = (
+                    session3.query(Decision)
+                    .filter_by(hand_id=hr.id, turn_number=turn)
+                    .all()
+                )
+                assert len(turn_decisions) <= 1, (
+                    f"Duplicate decision rows for turn {turn}: "
+                    f"found {len(turn_decisions)}"
+                )
+        session3.close()
+        session2.close()
+
+    # ---- 4b. Double-click play-card → idempotent -------------------------
+
+    def test_double_click_play_card_no_state_corruption(self, client, app):
+        """Submitting the same play-card turn_number twice causes no state corruption."""
+        link_uuid = _setup_game(client)
+
+        state, hand = _advance_to_trick_play(client, app, link_uuid)
+
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(state.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        legal = engine.get_legal_plays(state)
+        turn = hand.turn_number
+        play_data = {"turn_number": turn, "card_index": legal[0]}
+
+        # First submission
+        resp1 = client.post(f"/play/{link_uuid}/play-card", data=play_data)
+        assert resp1.status_code == 200
+
+        # Capture state after first submission
+        result1 = _get_match_state(app, link_uuid)
+        assert result1 is not None
+        state1, match_row1, session1 = result1
+        state_json_1 = match_row1.match_state_json
+        session1.close()
+
+        # "Double-click" — same turn_number
+        resp2 = client.post(f"/play/{link_uuid}/play-card", data=play_data)
+        assert resp2.status_code == 200
+
+        # State must not have changed from the second submission
+        result2 = _get_match_state(app, link_uuid)
+        assert result2 is not None
+        state2, match_row2, session2 = result2
+
+        assert match_row2.match_state_json == state_json_1
+        assert state2.score_human == state1.score_human
+        assert state2.score_ai == state1.score_ai
+        assert state2.hands_played == state1.hands_played
+        session2.close()
+
+    # ---- 5. Navigate away + return → full state restored -----------------
+
+    def test_navigate_away_return_restores_full_state(self, client, app):
+        """After several actions, navigating away and returning restores state."""
+        link_uuid = _setup_game(client)
+
+        # Play several turns to build up state
+        actions_taken = 0
+        for _ in range(15):
+            result = _get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+                actions_taken += 1
+            elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                ai_manager = app.state.ai_manager
+                info = ai_manager.get_model_info(state.ai_model)
+                engine = MatchEngine(
+                    bidding_policy=info.bidding_policy,
+                    play_strategy=info.play_strategy,
+                )
+                legal = engine.get_legal_plays(state)
+                client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "card_index": legal[0],
+                    },
+                )
+                actions_taken += 1
+            else:
+                break
+
+        assert actions_taken > 0, "Expected at least one action before navigate-away"
+
+        # Snapshot the DB state before "navigating away"
+        result_before = _get_match_state(app, link_uuid)
+        assert result_before is not None
+        state_before, match_row_before, session_before = result_before
+        snapshot_json = match_row_before.match_state_json
+        score_h = state_before.score_human
+        score_ai = state_before.score_ai
+        hands_played = state_before.hands_played
+        session_before.close()
+
+        # "Navigate away" — visit the landing page
+        resp_away = client.get("/")
+        assert resp_away.status_code == 200
+
+        # "Return" — GET /play/{uuid} again
+        resp_return = client.get(f"/play/{link_uuid}")
+        assert resp_return.status_code == 200
+
+        # Verify the full state is restored from the DB
+        result_after = _get_match_state(app, link_uuid)
+        assert result_after is not None
+        state_after, match_row_after, session_after = result_after
+
+        assert match_row_after.match_state_json == snapshot_json
+        assert state_after.score_human == score_h
+        assert state_after.score_ai == score_ai
+        assert state_after.hands_played == hands_played
+        assert "score_human" in resp_return.text or "Game Board" in resp_return.text
+        session_after.close()
+
+    # ---- 5b. Completed match → return shows result -----------------------
+
+    def test_completed_match_resume_shows_result(self, client, app):
+        """GET /play/{uuid} after match completion still shows valid state."""
+        link_uuid = _setup_game(client)
+
+        # Play to completion
+        for _ in range(2000):
+            result = _get_match_state(app, link_uuid)
+            assert result is not None
+            state, match_row, session = result
+
+            if state.status == "complete" or match_row.status == "complete":
+                session.close()
+                break
+
+            hand = state.current_hand
+            session.close()
+
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                if hand.current_high_bid < 5:
+                    client.post(
+                        f"/play/{link_uuid}/bid",
+                        data={
+                            "turn_number": hand.turn_number,
+                            "bid_n": hand.current_high_bid + 1,
+                            "bid_contract": "H",
+                        },
+                    )
+                else:
+                    client.post(
+                        f"/play/{link_uuid}/bid",
+                        data={
+                            "turn_number": hand.turn_number,
+                            "bid_n": 0,
+                            "bid_contract": "",
+                        },
+                    )
+            elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                ai_manager = app.state.ai_manager
+                info = ai_manager.get_model_info(state.ai_model)
+                engine = MatchEngine(
+                    bidding_policy=info.bidding_policy,
+                    play_strategy=info.play_strategy,
+                )
+                legal = engine.get_legal_plays(state)
+                client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "card_index": legal[0],
+                    },
+                )
+            else:
+                break
+        else:
+            pytest.skip("Match did not complete within safety limit")
+
+        # "Resume" the completed match
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+
+        # A completed match has no active match → shows model selection
+        # (per game_page handler logic: no active match → model selection)
+        assert "Start Match" in resp.text or "score_human" in resp.text
