@@ -38,8 +38,15 @@ if [[ "$COMMAND" != *"gh pr merge"* ]] || [[ "$EXIT_CODE" != "0" ]]; then
     exit 0
 fi
 
-# Extract PR number for deduplication and messaging
-PR_NUM=$(echo "$COMMAND" | grep -oE '[0-9]+' | head -1 || true)
+# Extract PR number for deduplication and messaging.
+# The first positional arg after "gh pr merge" can be a bare number (PR ID),
+# a branch name (e.g., "fix/issue-1234"), or a URL.  Only treat it as a PR
+# number when it is purely digits — otherwise fall back to stdout parsing.
+MERGE_ARG=$(echo "$COMMAND" | sed -n 's/.*gh pr merge[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p')
+PR_NUM=""
+if [[ "$MERGE_ARG" =~ ^[0-9]+$ ]]; then
+    PR_NUM="$MERGE_ARG"
+fi
 
 # Fallback: extract PR number from command stdout (e.g., "Merged pull request #1453")
 if [ -z "$PR_NUM" ]; then
@@ -94,7 +101,9 @@ run_completion() {
     local project_dir="${3:-${CLAUDE_PROJECT_DIR:-.}}"
     local auto_merge="${4:-false}"
 
-    # Run in the correct directory so uv finds pyproject.toml
+    # Run in the correct directory so uv finds pyproject.toml.
+    # Returns the Python exit code so callers can gate on success
+    # (e.g., skip sentinel creation on failure to allow retries).
     (
         cd "$project_dir" 2>/dev/null || true
 
@@ -105,6 +114,11 @@ import os, sys
 lane_id = os.environ.get('LANE_ID', '')
 pr_num = os.environ['PR_NUM']
 auto_merge = os.environ.get('AUTO_MERGE', 'false') == 'true'
+
+# Track whether the critical operation (task transition) failed.
+# Message send is advisory — its failure should not prevent sentinel
+# creation or block retries.
+_transition_failed = False
 
 # 1. Find and complete the active dispatched task packet
 #    Primary (Gap B): look up by PR number in metadata
@@ -134,8 +148,9 @@ try:
         transition_status(packet_id, 'completed')
 except Exception as exc:
     print(f'post-merge-notify: task transition failed: {exc}', file=sys.stderr)
+    _transition_failed = True
 
-# 2. Send completion message to orchestrator via message bus
+# 2. Send completion message to orchestrator via message bus (advisory)
 from_lane = lane_id or 'unknown'
 suffix = ' (auto-merge)' if auto_merge else ''
 payload = {'pr_number': pr_num, 'packet_id': packet_id}
@@ -154,7 +169,13 @@ try:
     send_message(msg)
 except Exception as exc:
     print(f'post-merge-notify: message send failed: {exc}', file=sys.stderr)
-" 2>/dev/null || true
+
+# Exit non-zero only when the task transition itself failed — this
+# prevents sentinel creation so the next hook invocation can retry.
+# Message send failures are logged but do not block the sentinel.
+if _transition_failed:
+    sys.exit(1)
+" 2>/dev/null
     )
 }
 
@@ -179,11 +200,11 @@ if [[ "$COMMAND" == *"--auto"* ]]; then
                 STATE=$(gh pr view "$_PR_NUM" --json state --jq '.state' 2>/dev/null || echo "unknown")
 
                 if [ "$STATE" = "MERGED" ]; then
-                    # PR is actually merged — reuse shared completion logic
-                    run_completion "$_LANE_ID" "$_PR_NUM" "$_PROJECT_DIR" "true"
-
-                    # Create sentinel after successful completion
-                    touch "/tmp/.claude-post-merge-notify-${_PR_NUM}"
+                    # PR is actually merged — reuse shared completion logic.
+                    # Only create sentinel on success so failures can retry.
+                    if run_completion "$_LANE_ID" "$_PR_NUM" "$_PROJECT_DIR" "true"; then
+                        touch "/tmp/.claude-post-merge-notify-${_PR_NUM}"
+                    fi
                     exit 0
                 elif [ "$STATE" = "CLOSED" ]; then
                     # PR closed without merging — nothing to do
@@ -199,11 +220,13 @@ fi
 # ---------------------------------------------------------------------------
 # Direct merge: complete immediately (existing behavior)
 # ---------------------------------------------------------------------------
-run_completion "$LANE_ID" "${PR_NUM:-unknown}" "${CLAUDE_PROJECT_DIR:-.}"
-
-# Gap C: sentinel created AFTER successful execution so failures can retry
-if [ -n "${PR_NUM:-}" ]; then
-    touch "/tmp/.claude-post-merge-notify-${PR_NUM}"
+# Gap C: sentinel created AFTER successful execution so failures can retry.
+# run_completion now returns non-zero on Python failure, so the sentinel is
+# only created when both task transition and message send succeed.
+if run_completion "$LANE_ID" "${PR_NUM:-unknown}" "${CLAUDE_PROJECT_DIR:-.}"; then
+    if [ -n "${PR_NUM:-}" ]; then
+        touch "/tmp/.claude-post-merge-notify-${PR_NUM}"
+    fi
 fi
 
 exit 0
