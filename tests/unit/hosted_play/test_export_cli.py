@@ -1,7 +1,8 @@
 """Tests for scripts/internal/export_hosted_decisions.py CLI.
 
-Tests the export_decisions() function and the CLI main() entry point
-using an in-memory SQLite database.
+Tests the CLI main() entry point using an in-memory SQLite database.
+The underlying export_decisions() and decision_to_jsonl() logic are tested
+in tests/unit/hosted_play/test_export.py.
 """
 
 from __future__ import annotations
@@ -11,12 +12,7 @@ import uuid
 
 import pytest
 
-# Import the CLI module's functions
-from scripts.internal.export_hosted_decisions import (
-    _build_query,
-    export_decisions,
-    main,
-)
+from scripts.internal.export_hosted_decisions import main
 from web.db import (
     Decision,
     Hand,
@@ -116,175 +112,6 @@ def _make_decision(session, match: Match, hand: Hand, **overrides) -> Decision:
 
 
 # ---------------------------------------------------------------------------
-# _build_query tests
-# ---------------------------------------------------------------------------
-
-
-class TestBuildQuery:
-    """Verify query filters work correctly."""
-
-    def test_unfiltered_returns_all(self, session):
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        _make_decision(session, match, hand, turn_number=0, actor_type="human")
-        _make_decision(session, match, hand, turn_number=1, actor_type="ai")
-        session.commit()
-
-        stmt = _build_query()
-        rows = session.execute(stmt).all()
-        assert len(rows) == 2
-
-    def test_match_uuid_filter(self, session):
-        player = _make_player(session)
-        target_uuid = str(uuid.uuid4())
-        match1 = _make_match(session, player, match_uuid=target_uuid)
-        match2 = _make_match(session, player)
-        hand1 = _make_hand(session, match1, hand_number=1)
-        hand2 = _make_hand(session, match2, hand_number=1)
-        _make_decision(session, match1, hand1, turn_number=0)
-        _make_decision(session, match2, hand2, turn_number=0)
-        session.commit()
-
-        stmt = _build_query(match_uuid=target_uuid)
-        rows = session.execute(stmt).all()
-        assert len(rows) == 1
-        assert rows[0][1].match_uuid == target_uuid
-
-    def test_human_only_filter(self, session):
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        _make_decision(session, match, hand, turn_number=0, actor_type="human")
-        _make_decision(session, match, hand, turn_number=1, actor_type="ai")
-        session.commit()
-
-        stmt = _build_query(human_only=True)
-        rows = session.execute(stmt).all()
-        assert len(rows) == 1
-        assert rows[0][0].actor_type == "human"
-
-    def test_combined_filters(self, session):
-        player = _make_player(session)
-        target_uuid = str(uuid.uuid4())
-        match1 = _make_match(session, player, match_uuid=target_uuid)
-        match2 = _make_match(session, player)
-        hand1 = _make_hand(session, match1, hand_number=1)
-        hand2 = _make_hand(session, match2, hand_number=1)
-        # Target match: one human, one AI
-        _make_decision(session, match1, hand1, turn_number=0, actor_type="human")
-        _make_decision(session, match1, hand1, turn_number=1, actor_type="ai")
-        # Other match: one human
-        _make_decision(session, match2, hand2, turn_number=0, actor_type="human")
-        session.commit()
-
-        stmt = _build_query(match_uuid=target_uuid, human_only=True)
-        rows = session.execute(stmt).all()
-        assert len(rows) == 1
-        assert rows[0][0].actor_type == "human"
-        assert rows[0][1].match_uuid == target_uuid
-
-
-# ---------------------------------------------------------------------------
-# export_decisions tests
-# ---------------------------------------------------------------------------
-
-
-class TestExportDecisions:
-    """Verify export_decisions writes correct JSONL files."""
-
-    def test_writes_jsonl_file(self, session, tmp_path):
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        _make_decision(session, match, hand, turn_number=0)
-        _make_decision(session, match, hand, turn_number=1, actor_type="ai")
-        session.commit()
-
-        output = tmp_path / "out.jsonl"
-        count = export_decisions(session, output)
-        assert count == 2
-        assert output.exists()
-
-        lines = output.read_text().strip().split("\n")
-        assert len(lines) == 2
-        for line in lines:
-            record = json.loads(line)
-            assert record["schema_version"] == 1
-
-    def test_empty_db_writes_empty_file(self, session, tmp_path):
-        session.commit()
-
-        output = tmp_path / "empty.jsonl"
-        count = export_decisions(session, output)
-        assert count == 0
-        assert output.exists()
-        assert output.read_text() == ""
-
-    def test_creates_parent_directories(self, session, tmp_path):
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        _make_decision(session, match, hand)
-        session.commit()
-
-        output = tmp_path / "nested" / "deep" / "out.jsonl"
-        count = export_decisions(session, output)
-        assert count == 1
-        assert output.exists()
-
-    def test_match_uuid_filter(self, session, tmp_path):
-        player = _make_player(session)
-        target_uuid = str(uuid.uuid4())
-        match1 = _make_match(session, player, match_uuid=target_uuid)
-        match2 = _make_match(session, player)
-        hand1 = _make_hand(session, match1, hand_number=1)
-        hand2 = _make_hand(session, match2, hand_number=1)
-        _make_decision(session, match1, hand1, turn_number=0)
-        _make_decision(session, match2, hand2, turn_number=0)
-        session.commit()
-
-        output = tmp_path / "filtered.jsonl"
-        count = export_decisions(session, output, match_uuid=target_uuid)
-        assert count == 1
-
-        record = json.loads(output.read_text().strip())
-        assert record["match_uuid"] == target_uuid
-
-    def test_human_only_filter(self, session, tmp_path):
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        _make_decision(session, match, hand, turn_number=0, actor_type="human")
-        _make_decision(session, match, hand, turn_number=1, actor_type="ai")
-        session.commit()
-
-        output = tmp_path / "human.jsonl"
-        count = export_decisions(session, output, human_only=True)
-        assert count == 1
-
-        record = json.loads(output.read_text().strip())
-        assert record["actor_type"] == "human"
-
-    def test_deterministic_ordering(self, session, tmp_path):
-        """Records are ordered by match_id, hand_id, turn_number."""
-        player = _make_player(session)
-        match = _make_match(session, player)
-        hand = _make_hand(session, match)
-        _make_decision(session, match, hand, turn_number=2, seat=2)
-        _make_decision(session, match, hand, turn_number=0, seat=0)
-        _make_decision(session, match, hand, turn_number=1, seat=1)
-        session.commit()
-
-        output = tmp_path / "ordered.jsonl"
-        export_decisions(session, output)
-
-        lines = output.read_text().strip().split("\n")
-        turns = [json.loads(line)["turn_number"] for line in lines]
-        assert turns == [0, 1, 2]
-
-
-# ---------------------------------------------------------------------------
 # CLI main() tests
 # ---------------------------------------------------------------------------
 
@@ -323,7 +150,27 @@ class TestMainCLI:
         lines = output.read_text().strip().split("\n")
         assert len(lines) == 2
 
-    def test_help_flag(self, capsys):
+    def test_creates_nested_parent_directories(self, tmp_path):
+        """CLI creates parent directories for the output path."""
+        db_path = tmp_path / "test.db"
+        engine = init_engine(f"sqlite:///{db_path}")
+        create_tables(engine)
+        factory = make_session_factory(engine)
+        sess = factory()
+
+        player = _make_player(sess)
+        match = _make_match(sess, player)
+        hand = _make_hand(sess, match)
+        _make_decision(sess, match, hand)
+        sess.commit()
+        sess.close()
+
+        output = tmp_path / "nested" / "deep" / "out.jsonl"
+        code = main(["--db", str(db_path), "--output", str(output)])
+        assert code == 0
+        assert output.exists()
+
+    def test_help_flag(self):
         """--help should exit with code 0."""
         with pytest.raises(SystemExit) as exc_info:
             main(["--help"])
