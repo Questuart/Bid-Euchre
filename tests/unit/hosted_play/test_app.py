@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.testclient import TestClient
 
 from web.ai_manager import AIManager
@@ -37,11 +38,9 @@ class TestCreateApp:
 
     def test_cors_middleware_registered(self, tmp_path):
         app = _make_app(tmp_path)
-        # CORS middleware is in the middleware stack
-        middleware_classes = [
-            type(m).__name__ for m in getattr(app, "user_middleware", [])
-        ]
-        assert "Middleware" in str(middleware_classes) or len(app.user_middleware) > 0
+        # Verify CORSMiddleware specifically (not just any middleware)
+        middleware_classes = [m.cls for m in app.user_middleware]
+        assert CORSMiddleware in middleware_classes
 
 
 # ---------------------------------------------------------------------------
@@ -83,11 +82,14 @@ class TestLifespan:
         app = _make_app(tmp_path)
         with TestClient(app):
             engine = app.state.engine
-        # After exiting the TestClient context, the engine should be disposed.
-        # Verify pool has no active connections (connections returned to pool
-        # and pool drained after dispose).
-        status = engine.pool.status()
-        assert "Checked out connections: 0" in status
+        # After exiting the TestClient context, engine.dispose() has run.
+        # Assert the pool was fully disposed — no connections remain at all,
+        # not just zero checked-out.
+        pool = engine.pool
+        assert (
+            pool.checkedout() == 0
+        ), f"Expected 0 checked-out, got {pool.checkedout()}"
+        assert pool.checkedin() == 0, f"Expected 0 checked-in, got {pool.checkedin()}"
 
 
 # ---------------------------------------------------------------------------
