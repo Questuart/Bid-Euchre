@@ -327,10 +327,13 @@ write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/s
 # When STEWARD_TELEGRAM_ENABLED=1 the orchestrator pane gets
 # --channels so the Telegram plugin connects on boot.
 # All other panes launch without --channels (tmux-only).
+# STEWARD_CHANNELS is propagated via tmux set-environment (not shell export)
+# so that panes spawned by the tmux server can read it.
 ORCH_CHANNEL_FLAGS=""
+STEWARD_CHANNELS=""
 if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
     ORCH_CHANNEL_FLAGS="--channels plugin:telegram@claude-plugins-official"
-    export STEWARD_CHANNELS="telegram"
+    STEWARD_CHANNELS="telegram"
 fi
 
 # ---------------------------------------------------------------------------
@@ -342,6 +345,15 @@ fi
 # --- Window 1: central-ops (3 panes, main-vertical) ---
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $ORCH_CHANNEL_FLAGS
+
+# Propagate channel config into the tmux session environment so all panes
+# can read it.  Shell `export` only affects the launcher process; tmux panes
+# are spawned by the tmux server and need `set-environment` instead.
+if [ -n "$STEWARD_CHANNELS" ]; then
+    tmux set-environment -t "$SESSION" STEWARD_CHANNELS "$STEWARD_CHANNELS"
+fi
+tmux set-environment -t "$SESSION" STEWARD_TELEGRAM_ENABLED "$STEWARD_TELEGRAM_ENABLED"
+
 tmux split-window -t "${SESSION}:central-ops" -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name ops --agent steward-ops
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \

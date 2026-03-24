@@ -559,12 +559,15 @@ class TestTelegramChannelConfig:
                 "--channels" not in line
             ), f"Non-orchestrator lane must not use --channels: {line}"
 
-    def test_steward_channels_exported_when_enabled(self) -> None:
-        """STEWARD_CHANNELS must be exported when STEWARD_TELEGRAM_ENABLED=1."""
+    def test_steward_channels_propagated_via_tmux(self) -> None:
+        """STEWARD_CHANNELS must be propagated via tmux set-environment, not shell export."""
         content = STEWARD_SCRIPT.read_text()
         assert (
-            'export STEWARD_CHANNELS="telegram"' in content
-        ), "STEWARD_CHANNELS must be exported as 'telegram' when enabled"
+            "tmux set-environment" in content and "STEWARD_CHANNELS" in content
+        ), "STEWARD_CHANNELS must be propagated via tmux set-environment"
+        assert (
+            "export STEWARD_CHANNELS" not in content
+        ), "STEWARD_CHANNELS must not use shell export (tmux panes don't inherit it)"
 
     def test_channel_flags_empty_by_default(self) -> None:
         """ORCH_CHANNEL_FLAGS must be empty string by default."""
