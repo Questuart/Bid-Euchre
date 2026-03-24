@@ -2419,10 +2419,51 @@ def cmd_lane(args: argparse.Namespace) -> int:
                 print("No lanes stuck on approval prompts.")
         return 1 if findings else 0
 
+    elif action == "peek":
+        import subprocess
+
+        lane_id = args.lane_id
+        lines = args.lines
+        tmux_session = "steward"
+
+        from bid_euchre.ops.worker_pool import _resolve_tmux_target
+
+        target = _resolve_tmux_target(
+            lane_id, tmux_session, runtime_dir=args.runtime_dir
+        )
+        try:
+            result = subprocess.run(
+                [
+                    "tmux",
+                    "capture-pane",
+                    "-t",
+                    target,
+                    "-p",
+                    "-S",
+                    str(-lines),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                err = result.stderr.strip()
+                print(f"Error: tmux capture-pane failed: {err}", file=sys.stderr)
+                return 1
+            print(result.stdout, end="")
+            return 0
+        except FileNotFoundError:
+            print("Error: tmux is not installed or not on PATH", file=sys.stderr)
+            return 1
+        except subprocess.TimeoutExpired:
+            print("Error: tmux capture-pane timed out", file=sys.stderr)
+            return 1
+
     else:
         print(
             "Usage: ops.py lane refresh <lane-id> | --all-idle\n"
-            "       ops.py lane check-approvals"
+            "       ops.py lane check-approvals\n"
+            "       ops.py lane peek <lane-id> [--lines N]"
         )
         return 1
 
@@ -3414,6 +3455,21 @@ def build_parser() -> argparse.ArgumentParser:
     lane_sub.add_parser(
         "check-approvals",
         help="Check for lanes stuck on tool-approval prompts",
+    )
+
+    lane_peek_parser = lane_sub.add_parser(
+        "peek",
+        help="Capture tmux pane content for a lane (large scrollback buffer)",
+    )
+    lane_peek_parser.add_argument(
+        "lane_id",
+        help="Lane ID to peek (e.g. author-a)",
+    )
+    lane_peek_parser.add_argument(
+        "--lines",
+        type=int,
+        default=80,
+        help="Number of scrollback lines to capture (default: 80)",
     )
 
     # workers (Platform-7: worker pool lifecycle management)
