@@ -1360,11 +1360,17 @@ _STALE_THRESHOLD_SECONDS = 3600  # 1 hour
 def _is_store_stale(output_dir: Path) -> bool:
     """Check whether the session store needs a refresh.
 
-    Returns True when the store doesn't exist, is empty, or the JSONL file
-    hasn't been modified within :data:`_STALE_THRESHOLD_SECONDS`.
+    Returns True when the store doesn't exist, is empty, the JSONL file
+    hasn't been modified within :data:`_STALE_THRESHOLD_SECONDS`, or the
+    attributions file is missing (indicating an incomplete previous import).
     """
     usage_file = output_dir / "session_usage.jsonl"
     if not usage_file.exists() or usage_file.stat().st_size == 0:
+        return True
+    # Treat missing attributions as stale — a previous import may have
+    # written usage data but crashed before running attribute_sessions().
+    attr_file = output_dir / "session_attributions.jsonl"
+    if not attr_file.exists() or attr_file.stat().st_size == 0:
         return True
     age = datetime.now(timezone.utc).timestamp() - usage_file.stat().st_mtime
     return age > _STALE_THRESHOLD_SECONDS
@@ -1400,7 +1406,7 @@ def _ensure_imported(output_dir: Path) -> None:
 
 
 def dashboard_token_economy(
-    *, output_dir: Path | None = None, auto_import: bool = True
+    *, output_dir: Path | None = None, auto_import: bool | None = None
 ) -> dict[str, Any]:
     """Build a dashboard-ready dict with token economy sections.
 
@@ -1411,10 +1417,14 @@ def dashboard_token_economy(
     - ``throughput``: throughput-normalized metrics
     - ``anti_patterns``: detected anti-patterns
 
-    When *auto_import* is True (the default), auto-imports usage data from
+    When *auto_import* is True, auto-imports usage data from
     ``~/.claude/usage-data/`` when the store is empty or stale (older than
-    1 hour).  Returns an empty dict (``{}``) when no usage data is available
-    even after import.
+    1 hour).  Defaults to True when *output_dir* is None (repo-default path),
+    and False when the caller supplies a custom *output_dir* to avoid importing
+    global system usage into caller-supplied stores.
+
+    Returns an empty dict (``{}``) when no usage data is available even after
+    import.
 
     Parameters
     ----------
@@ -1422,9 +1432,16 @@ def dashboard_token_economy(
         Path to the token economy store. Defaults to repo runtime path.
     auto_import
         If True, automatically run ``import_usage_data`` + ``attribute_sessions``
-        when the store is empty or stale.  Set to False in tests to avoid
-        reading real system usage data.
+        when the store is empty or stale.  Defaults to True only when
+        *output_dir* is None (the repo-default path).  Set to False in tests or
+        when providing a custom *output_dir* to avoid importing global usage data.
     """
+    # Resolve auto_import default: only auto-import into the repo-default store,
+    # never into a caller-supplied directory (which could be a test fixture or
+    # isolated store that should not receive global usage data).
+    if auto_import is None:
+        auto_import = output_dir is None
+
     try:
         resolved_output = _resolve_output_dir(output_dir)
     except ValueError:

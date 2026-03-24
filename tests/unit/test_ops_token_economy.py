@@ -1379,9 +1379,21 @@ class TestAutoImport:
         (tmp_path / "session_usage.jsonl").write_text("")
         assert _is_store_stale(tmp_path) is True
 
-    def test_not_stale_when_recent(self, tmp_path: Path) -> None:
-        """Recently written JSONL is not stale."""
+    def test_stale_when_attributions_missing(self, tmp_path: Path) -> None:
+        """Usage present but attributions missing is stale."""
         (tmp_path / "session_usage.jsonl").write_text('{"session_id":"s1"}\n')
+        assert _is_store_stale(tmp_path) is True
+
+    def test_stale_when_attributions_empty(self, tmp_path: Path) -> None:
+        """Usage present but attributions empty is stale."""
+        (tmp_path / "session_usage.jsonl").write_text('{"session_id":"s1"}\n')
+        (tmp_path / "session_attributions.jsonl").write_text("")
+        assert _is_store_stale(tmp_path) is True
+
+    def test_not_stale_when_recent(self, tmp_path: Path) -> None:
+        """Recently written JSONL with attributions is not stale."""
+        (tmp_path / "session_usage.jsonl").write_text('{"session_id":"s1"}\n')
+        (tmp_path / "session_attributions.jsonl").write_text('{"session_id":"s1"}\n')
         assert _is_store_stale(tmp_path) is False
 
     def test_auto_import_populates_from_source(self, tmp_path: Path) -> None:
