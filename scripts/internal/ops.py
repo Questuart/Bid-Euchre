@@ -2357,6 +2357,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
             task_packets=task_dicts,
             unacked_messages=inbox_msgs,
             audit_records=audit_dicts,
+            now_iso=getattr(args, "now", None),
         )
 
     # Exit 1 if any high-severity findings
@@ -3698,6 +3699,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-reconcile",
         action="store_true",
         help="Skip controller projection update (fleet_status.json) after monitor sweep",
+    )
+    monitor_parser.add_argument(
+        "--now",
+        metavar="ISO_TIMESTAMP",
+        default=None,
+        help="Override wall clock for reconcile (ISO-8601 timestamp, for testing)",
     )
 
     # fleet (SP-4-07: controller projection read-only view)
