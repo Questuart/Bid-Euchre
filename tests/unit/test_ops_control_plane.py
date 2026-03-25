@@ -1798,6 +1798,113 @@ class TestMonitorReconcileWiring:
             f"items={[i.task_id for i in loaded.items]}"
         )
 
+    def test_cli_monitor_wires_inbox_and_audit_to_reconcile(self, tmp_path: Path):
+        """CLI monitor passes inbox messages and audit records to reconcile (#1751).
+
+        Regression: cmd_monitor only passed monitor_finding_objects and
+        task_packets to reconcile(), leaving fleet_status.json blind to stale
+        urgent inbox items and unanswered remote exchanges.
+
+        This test seeds both inputs and verifies they appear in the reconciled
+        fleet status after a monitor cycle.
+        """
+        import json as _json
+        import subprocess
+
+        # Seed an urgent pending inbox message in the bus directory.
+        # Use BID_EUCHRE_BUS_DIR env var to redirect shared_bus_root().
+        bus_dir = tmp_path / "bus"
+        inbox_dir = bus_dir / "inbox"
+        inbox_dir.mkdir(parents=True)
+        urgent_msg = {
+            "message_id": "urgent-test-1751",
+            "thread_id": None,
+            "task_id": None,
+            "from_lane": "ops",
+            "to_lane": "orchestrator",
+            "message_type": "blocker",
+            "priority": "urgent",
+            "status": "pending",
+            # 30 minutes old — well past the default 10-minute threshold.
+            "created_at": "2026-03-24T21:30:00Z",
+            "acked_at": None,
+            "resolved_at": None,
+            "requires_human": False,
+            "summary": "Test urgent message for #1751",
+            "payload": {"ttl_seconds": 86400},
+            "source_transport": "bus",
+            "parent_message_id": None,
+        }
+        (inbox_dir / "orchestrator.jsonl").write_text(_json.dumps(urgent_msg) + "\n")
+
+        # Seed an unanswered inbound audit record in runtime_dir/audit_trail.
+        audit_dir = tmp_path / "audit_trail"
+        audit_dir.mkdir(parents=True)
+        inbound_record = {
+            "exchange_id": "exc-test-1751",
+            "timestamp": "2026-03-24T21:50:00Z",
+            "direction": "inbound",
+            "channel_source": "telegram",
+            "sender_identity": "user@test",
+            "exchange_type": "message",
+            "content_hash": "abc123",
+            "content_preview": "Hello from Telegram",
+            "chat_id": "chat-1751",
+            "message_id": "msg-in-1751",
+            "metadata": {},
+        }
+        (audit_dir / "remote_exchanges.jsonl").write_text(
+            _json.dumps(inbound_record) + "\n"
+        )
+
+        env = {
+            **__import__("os").environ,
+            "BID_EUCHRE_BUS_DIR": str(bus_dir),
+        }
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--runtime-dir",
+                str(tmp_path),
+                "monitor",
+                "--skip-pr-check",
+                "--no-notify",
+                "--no-recovery",
+                "--no-auto-dispatch",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+        assert result.returncode in (
+            0,
+            1,
+        ), f"Monitor crashed: stderr={result.stderr[:500]}"
+
+        loaded = load_fleet_status(tmp_path)
+        assert (
+            loaded is not None
+        ), f"reconcile() did not write fleet_status.json; stdout={result.stdout[:300]}"
+
+        # Verify the urgent inbox message surfaced as an unacked_message item.
+        unacked_items = [i for i in loaded.items if i.category == "unacked_message"]
+        assert len(unacked_items) >= 1, (
+            f"Expected unacked_message item from urgent inbox msg but found "
+            f"{len(unacked_items)}; categories={[i.category for i in loaded.items]}"
+        )
+
+        # Verify the unanswered audit record surfaced as an audit_exchange item.
+        audit_items = [i for i in loaded.items if i.category == "audit_exchange"]
+        assert len(audit_items) >= 1, (
+            f"Expected audit_exchange item from unanswered inbound but found "
+            f"{len(audit_items)}; categories={[i.category for i in loaded.items]}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Proving run 3 — persistence, deduplication, and clear lifecycle (#1678)
