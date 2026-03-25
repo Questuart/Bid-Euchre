@@ -1152,6 +1152,53 @@ class TestBulkAckMessages:
         assert len(ack_events) == 2
         assert all(ev["payload"].get("bulk") is True for ev in ack_events)
 
+    def test_bulk_ack_with_age_filter(self, bus_root: Path, events_dir: Path) -> None:
+        """Only messages older than cutoff are acked when age filter is used."""
+        from datetime import datetime, timezone
+
+        m1 = create_message("a", "target", "assignment", "Old task")
+        m2 = create_message("a", "target", "progress", "New task")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+
+        # Patch m1's created_at to be very old by rewriting the inbox
+        inbox_path = bus_root / "inbox" / "target.jsonl"
+        lines = inbox_path.read_text().strip().split("\n")
+        patched: list[str] = []
+        old_ts = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        for line in lines:
+            rec = json.loads(line)
+            if rec.get("message_id") == m1.message_id:
+                rec["created_at"] = old_ts
+            patched.append(json.dumps(rec))
+        inbox_path.write_text("\n".join(patched) + "\n")
+
+        # Cutoff: 4 hours — only m1 (very old) should match
+        cutoff_ts = datetime.now(timezone.utc).timestamp() - 4 * 3600
+
+        def older_than_cutoff(msg: dict) -> bool:
+            created = msg.get("created_at", "")
+            if not created:
+                return False
+            try:
+                ts = datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
+            except (ValueError, TypeError):
+                return False
+            return ts < cutoff_ts
+
+        acked = bulk_ack_messages(
+            "target", older_than_cutoff, bus_root, events_dir=events_dir
+        )
+        assert len(acked) == 1
+        assert acked[0]["message_id"] == m1.message_id
+
+        # m2 (new) remains pending
+        inbox = read_inbox("target", bus_root, status="pending")
+        assert len(inbox) == 1
+        assert inbox[0]["message_id"] == m2.message_id
+
 
 # ---------------------------------------------------------------------------
 # TTL auto-expire on read
