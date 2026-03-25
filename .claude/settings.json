@@ -76,6 +76,11 @@
       }
     ]
   },
+  "permissions": {
+    "allow": [
+      "Edit(.claude/skills/**/SKILL.md)"
+    ]
+  },
   "enabledPlugins": {
     "telegram@claude-plugins-official": true
   }
