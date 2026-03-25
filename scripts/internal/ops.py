@@ -2249,7 +2249,9 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     # latest monitor findings and task queue state.
     if not no_reconcile:
         try:
-            task_dicts = [_asdict(p) for p in list_packets(root=args.runtime_dir)]
+            task_dicts = [
+                _asdict(p) for p in list_packets(root=args.runtime_dir / "task_queue")
+            ]
         except Exception:
             task_dicts = None
         _reconcile(
