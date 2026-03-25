@@ -240,6 +240,12 @@ class TestDataCapturePipeline:
             human_decisions = [d for d in decisions if d.actor_type == "human"]
             assert len(human_decisions) > 0, "No human decision rows logged"
 
+            # At least one persisted play decision (not just bids)
+            human_play_decisions = [d for d in human_decisions if d.phase == "play"]
+            assert (
+                len(human_play_decisions) > 0
+            ), "No human play decision rows persisted in DB"
+
             # Verify decision row structure
             for d in human_decisions:
                 assert d.seat == HUMAN_SEAT
