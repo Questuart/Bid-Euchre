@@ -342,6 +342,8 @@ class _JNLSessionAgg:
     last_timestamp: str = ""
     cwd: str = ""
     git_branch: str = ""
+    git_commits: int = 0
+    git_pushes: int = 0
 
 
 def _scan_jsonl_file(path: Path) -> _JNLSessionAgg | None:
@@ -404,7 +406,7 @@ def _scan_jsonl_file(path: Path) -> _JNLSessionAgg | None:
                 if msg_type == "user" and not obj.get("isMeta"):
                     agg.user_message_count += 1
 
-                # Extract token data from assistant messages
+                # Extract token data and tool usage from assistant messages
                 if msg_type == "assistant":
                     agg.assistant_message_count += 1
                     msg = obj.get("message")
@@ -420,6 +422,21 @@ def _scan_jsonl_file(path: Path) -> _JNLSessionAgg | None:
                             agg.cache_read_tokens += _safe_int(
                                 usage.get("cache_read_input_tokens")
                             )
+
+                        # Count git commits/pushes from Bash tool_use blocks
+                        content = msg.get("content")
+                        if isinstance(content, list):
+                            for block in content:
+                                if (
+                                    isinstance(block, dict)
+                                    and block.get("type") == "tool_use"
+                                    and block.get("name") == "Bash"
+                                ):
+                                    cmd = (block.get("input") or {}).get("command", "")
+                                    if "git commit" in cmd:
+                                        agg.git_commits += 1
+                                    if "git push" in cmd:
+                                        agg.git_pushes += 1
 
     except OSError as exc:
         logger.warning("Cannot read JSONL file %s: %s", path, exc)
@@ -480,6 +497,8 @@ def _build_record_from_jsonl(
         assistant_message_count=agg.assistant_message_count,
         input_tokens=agg.input_tokens,
         output_tokens=agg.output_tokens,
+        git_commits=agg.git_commits if agg.git_commits > 0 else None,
+        git_pushes=agg.git_pushes if agg.git_pushes > 0 else None,
     )
 
     # Store lane_id in project_path if we inferred it from slug but
@@ -488,6 +507,37 @@ def _build_record_from_jsonl(
         rec.project_path = f"<inferred-lane:{lane_id}>"
 
     return rec
+
+
+def _purge_jsonl_records(output_dir: Path) -> int:
+    """Remove all ``project-jsonl`` records from session_usage.jsonl.
+
+    Rewrites the file in-place, keeping only records whose ``source_type``
+    is NOT ``project-jsonl``.  Returns the number of records removed.
+    """
+    usage_file = output_dir / "session_usage.jsonl"
+    if not usage_file.exists():
+        return 0
+
+    kept: list[str] = []
+    removed = 0
+    for line in usage_file.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            rec = json.loads(stripped)
+        except json.JSONDecodeError:
+            kept.append(stripped)
+            continue
+        if rec.get("source_type") == "project-jsonl":
+            removed += 1
+        else:
+            kept.append(stripped)
+
+    usage_file.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    logger.info("Purged %d project-jsonl records from store (force reimport)", removed)
+    return removed
 
 
 @dataclass
@@ -506,12 +556,14 @@ def import_project_jsonl(
     *,
     projects_dir: Path | None = None,
     output_dir: Path | None = None,
+    force: bool = False,
 ) -> ProjectImportResult:
     """Import per-project JSONL telemetry into the token economy store.
 
     Scans ``~/.claude/projects/<slug>/*.jsonl`` files produced by Claude
     v2.1.80+. Each JSONL file is streamed line-by-line to aggregate token
-    usage from assistant messages.
+    usage from assistant messages and count git commits/pushes from Bash
+    tool invocations.
 
     Parameters
     ----------
@@ -519,6 +571,10 @@ def import_project_jsonl(
         Path to ``~/.claude/projects/``. Defaults to :data:`DEFAULT_PROJECTS_DIR`.
     output_dir
         Path to the token economy output store. Defaults to repo runtime path.
+    force
+        When True, purge existing ``project-jsonl`` records from the store
+        before re-importing. Use after scanner improvements to backfill
+        fields (e.g., ``git_commits``) that earlier imports missed.
 
     Returns
     -------
@@ -543,6 +599,10 @@ def import_project_jsonl(
             directories_scanned=0,
             output_dir=str(resolved_output),
         )
+
+    # Force mode: purge existing project-jsonl records so they get re-scanned
+    if force:
+        _purge_jsonl_records(resolved_output)
 
     # Load existing session IDs for idempotent import
     existing_ids = _load_existing_ids(resolved_output)

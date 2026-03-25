@@ -2863,24 +2863,45 @@ def cmd_usage(args: argparse.Namespace) -> int:
     action = getattr(args, "usage_action", None)
 
     if action == "import":
-        from bid_euchre.ops.token_economy import import_usage_data
+        from bid_euchre.ops.token_economy import (
+            import_project_jsonl,
+            import_usage_data,
+        )
+
+        force = getattr(args, "force", False)
+        out_dir = getattr(args, "output_dir", None)
 
         result = import_usage_data(
             usage_dir=getattr(args, "usage_dir", None),
-            output_dir=getattr(args, "output_dir", None),
+            output_dir=out_dir,
         )
+
+        # Also import per-project JSONL telemetry (v2.1.80+ format)
+        jsonl_result = import_project_jsonl(output_dir=out_dir, force=force)
 
         if args.json:
             from dataclasses import asdict
 
-            print(json.dumps(asdict(result), indent=2, default=str))
+            combined = {
+                "session_meta": asdict(result),
+                "project_jsonl": asdict(jsonl_result),
+            }
+            print(json.dumps(combined, indent=2, default=str))
         else:
             print("Import complete:")
-            print(f"  Sessions imported: {result.sessions_imported}")
-            print(f"  Sessions skipped:  {result.sessions_skipped}")
-            print(f"  Sessions failed:   {result.sessions_failed}")
-            print(f"  Total sessions:    {result.total_sessions}")
-            print(f"  Output dir:        {result.output_dir}")
+            print(f"  Session-meta imported: {result.sessions_imported}")
+            print(f"  Session-meta skipped:  {result.sessions_skipped}")
+            print(f"  Session-meta failed:   {result.sessions_failed}")
+            print(f"  Session-meta total:    {result.total_sessions}")
+            print(f"  Project-JSONL imported: {jsonl_result.sessions_imported}")
+            print(f"  Project-JSONL skipped:  {jsonl_result.sessions_skipped}")
+            print(f"  Project-JSONL failed:   {jsonl_result.sessions_failed}")
+            print(f"  Project-JSONL scanned:  {jsonl_result.total_files_scanned}")
+            if force:
+                print(
+                    "  (force mode: project-jsonl records were purged and re-imported)"
+                )
+            print(f"  Output dir:            {result.output_dir}")
         return 0
 
     elif action == "attribute":
@@ -4082,6 +4103,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Output directory (default: .claude/runtime/token_economy/)",
+    )
+    usage_import_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Purge existing project-jsonl records and re-import (backfills git_commits)",
     )
 
     usage_attr_parser = usage_sub.add_parser(
