@@ -27,16 +27,19 @@
             </thead>
             <tbody>
                 {% for entry in auction %}
-                <tr>
+                {% set entry_bid_type = entry.get("bid_type", "regular") %}
+                <tr{% if entry_bid_type == "moon" %} class="bid--moon"{% elif entry_bid_type == "loner" %} class="bid--loner"{% endif %}>
                     <td>{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}</td>
                     <td>
                         {% if entry.action == "pass" %}
                             Pass
                         {% else %}
-                            {% if entry.get("bid_type", "regular") == "moon" %}
-                                Moon
-                            {% elif entry.get("bid_type", "regular") == "loner" %}
-                                Loner
+                            {% if entry_bid_type == "moon" %}
+                                🌙 Moon
+                                <span class="bid-type-badge bid-type-badge--moon">Moon</span>
+                            {% elif entry_bid_type == "loner" %}
+                                🃏 Loner
+                                <span class="bid-type-badge bid-type-badge--loner">Loner</span>
                             {% else %}
                                 {{ entry.n }}
                             {% endif %}
@@ -74,8 +77,8 @@
                 >Regular</option>
                 <option value="moon"
                     {% if bid_type|default("regular") == "loner" %}disabled{% endif %}
-                >Moon (10)</option>
-                <option value="loner">Loner (10)</option>
+                >🌙 Moon (10)</option>
+                <option value="loner">🃏 Loner (10)</option>
             </select>
 
             {# Bid level — only for regular bids #}
@@ -114,6 +117,11 @@
     <p class="bid-info">
         Current high bid: {{ current_high_bid }}
         {{ bid_type_labels.get(bid_type|default("regular"), "") }}
+        {% if bid_type|default("regular") == "moon" %}
+            <span class="bid-type-badge bid-type-badge--moon">Moon</span>
+        {% elif bid_type|default("regular") == "loner" %}
+            <span class="bid-type-badge bid-type-badge--loner">Loner</span>
+        {% endif %}
     </p>
     {% endif %}
     <p class="bid-info">Dealer: {{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</p>

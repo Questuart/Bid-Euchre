@@ -36,7 +36,15 @@
 
     {% if contract_type is not none and winning_bid is not none %}
     <div class="contract-info">
-        <span>Contract: {{ winning_bid }}
+        {% set score_bid_type = bid_type | default("regular") %}
+        <span>Contract:
+            {% if score_bid_type == "moon" %}
+                <span class="contract-bid-type contract-bid-type--moon">🌙 Moon</span>
+            {% elif score_bid_type == "loner" %}
+                <span class="contract-bid-type contract-bid-type--loner">🃏 Loner</span>
+            {% else %}
+                {{ winning_bid }}
+            {% endif %}
             {% if contract_type == "suit" and trump %}
                 {{ suit_symbols.get(trump, trump) }}
             {% elif contract_type == "high" %}

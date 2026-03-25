@@ -784,7 +784,205 @@ main {
 }
 
 /* --------------------------------------------------------------------------
-   15. Utilities
+   15. Moon / Loner — Bid Display
+   -------------------------------------------------------------------------- */
+
+:root {
+    --color-moon: #ffa000;
+    --color-moon-glow: #ffca28;
+    --color-loner: #7e57c2;
+    --color-loner-glow: #b39ddb;
+}
+
+/* Auction transcript row emphasis */
+.bid--moon td {
+    color: var(--color-moon);
+    font-weight: 700;
+}
+
+.bid--loner td {
+    color: var(--color-loner);
+    font-weight: 700;
+}
+
+/* Bid type badge (inline pill) */
+.bid-type-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-left: 0.25rem;
+}
+
+.bid-type-badge--moon {
+    background: var(--color-moon);
+    color: #000;
+}
+
+.bid-type-badge--loner {
+    background: var(--color-loner);
+    color: #fff;
+}
+
+/* Bid type selector option emphasis */
+.bid-controls select option[value="moon"] {
+    color: var(--color-moon);
+    font-weight: 700;
+}
+
+.bid-controls select option[value="loner"] {
+    color: var(--color-loner);
+    font-weight: 700;
+}
+
+/* Score bar — bid type indicator */
+.contract-bid-type {
+    font-weight: 700;
+}
+
+.contract-bid-type--moon {
+    color: var(--color-moon);
+}
+
+.contract-bid-type--loner {
+    color: var(--color-loner);
+}
+
+/* --------------------------------------------------------------------------
+   16. Moon / Loner — Scoring Feedback Banner
+   -------------------------------------------------------------------------- */
+
+/* Slide-in animation for hand result banner */
+@keyframes banner-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes banner-glow-moon {
+    0%, 100% { box-shadow: 0 0 8px rgba(255, 160, 0, 0.3); }
+    50% { box-shadow: 0 0 20px rgba(255, 160, 0, 0.6); }
+}
+
+@keyframes banner-glow-loner {
+    0%, 100% { box-shadow: 0 0 8px rgba(126, 87, 194, 0.3); }
+    50% { box-shadow: 0 0 20px rgba(126, 87, 194, 0.6); }
+}
+
+.hand-result--animated {
+    animation: banner-slide-in 0.4s ease-out;
+}
+
+.hand-result.result--moon-made {
+    border-left: 4px solid var(--color-moon);
+    animation: banner-slide-in 0.4s ease-out, banner-glow-moon 2s ease-in-out infinite;
+}
+
+.hand-result.result--moon-set {
+    border-left: 4px solid var(--color-moon);
+    opacity: 0.9;
+    animation: banner-slide-in 0.4s ease-out;
+}
+
+.hand-result.result--loner-made {
+    border-left: 4px solid var(--color-loner);
+    animation: banner-slide-in 0.4s ease-out, banner-glow-loner 2s ease-in-out infinite;
+}
+
+.hand-result.result--loner-set {
+    border-left: 4px solid var(--color-loner);
+    opacity: 0.9;
+    animation: banner-slide-in 0.4s ease-out;
+}
+
+.result--moon-made .result-title,
+.result--moon-set .result-title {
+    color: var(--color-moon);
+}
+
+.result--loner-made .result-title,
+.result--loner-set .result-title {
+    color: var(--color-loner);
+}
+
+/* Score delta emphasis in result banner */
+.score-delta {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin: 0.5rem 0;
+}
+
+.score-delta--positive {
+    color: var(--color-positive);
+}
+
+.score-delta--negative {
+    color: var(--color-negative);
+}
+
+.score-delta--moon {
+    color: var(--color-moon);
+}
+
+.score-delta--loner {
+    color: var(--color-loner);
+}
+
+/* --------------------------------------------------------------------------
+   17. AI Response Pacing
+   -------------------------------------------------------------------------- */
+
+.pacing-indicator {
+    display: none;
+    text-align: center;
+    padding: 0.75rem;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+.pacing-indicator.active {
+    display: block;
+}
+
+@keyframes pacing-dots {
+    0%, 20% { content: "."; }
+    40% { content: ".."; }
+    60%, 100% { content: "..."; }
+}
+
+.pacing-dots::after {
+    content: "";
+    animation: pacing-dots 1.5s steps(1) infinite;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .hand-result--animated,
+    .hand-result.result--moon-made,
+    .hand-result.result--moon-set,
+    .hand-result.result--loner-made,
+    .hand-result.result--loner-set {
+        animation: none;
+    }
+
+    .pacing-dots::after {
+        animation: none;
+        content: "...";
+    }
+}
+
+/* --------------------------------------------------------------------------
+   18. Utilities
    -------------------------------------------------------------------------- */
 
 .sr-only {
