@@ -13,7 +13,9 @@ and idle flag.
 
 - `[lane-id]` — Inspect a single lane (e.g., `author-a`, `flex-a`, `ops`)
 - `--all` — Scan all lanes in one pass
-- `--stuck` — Show only lanes that appear stuck (permission prompts, stalled)
+- `--stuck` — Show only lanes that appear stuck (permission prompts, stalled).
+  Runs a full `--all` scan internally, then filters output to lanes where
+  `stuck: true`. If no lanes are stuck, report "No stuck lanes detected."
 
 If no argument is given, default to `--all`.
 
@@ -159,7 +161,8 @@ Summary: 3 working, 2 idle, 1 stuck, 9 empty
 Stuck lanes: author-c (permission prompt)
 ```
 
-For `--stuck` mode, only show lanes where `stuck: true`.
+For `--stuck` mode, only show lanes where `stuck: true`. If no lanes are
+stuck, output a single line: `No stuck lanes detected.`
 
 ### Step 4 — Batch Capture Script
 
@@ -186,9 +189,26 @@ LANES=(
   "flex-c:scratch.4"
 )
 
+# Detect the lane running this script so we can skip it.
+# CLAUDE_AGENT_NAME is set per-lane (e.g. "steward-flex-b").
+# Fall back to parsing the worktree directory name.
+SELF_LANE=""
+if [[ -n "${CLAUDE_AGENT_NAME:-}" ]]; then
+  # Strip "steward-" prefix and normalise (e.g. "steward-flex-b" → "flex-b")
+  SELF_LANE="${CLAUDE_AGENT_NAME#steward-}"
+elif [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
+  SELF_LANE="$(basename "$CLAUDE_PROJECT_DIR" | sed 's/.*steward-//')"
+fi
+
 for entry in "${LANES[@]}"; do
   lane="${entry%%:*}"
   pane="${entry##*:}"
+  # Skip our own pane — its capture would just show this script running.
+  if [[ "$lane" == "$SELF_LANE" ]]; then
+    echo "=== ${lane} (${SESSION}:${pane}) === (skipped — self)"
+    echo ""
+    continue
+  fi
   echo "=== ${lane} (${SESSION}:${pane}) ==="
   tmux capture-pane -t "${SESSION}:${pane}" -p -S -50 2>/dev/null || echo "(not found)"
   echo ""
@@ -223,9 +243,10 @@ tmux capture-pane -t steward:<window>.<pane> -p -S -50 2>/dev/null
   not IDLE. It finished its last task. An IDLE lane shows only the bare prompt
   with no completion summary above it.
 
-- **Don't capture your own pane** during a batch scan — the capture will show
-  the capture command itself, creating confusion. Skip the pane where this
-  skill is running.
+- **Self-pane is auto-skipped** in the batch capture script. It detects the
+  current lane via `CLAUDE_AGENT_NAME` (or `CLAUDE_PROJECT_DIR` fallback) and
+  skips the matching entry. If you run a manual single-lane capture on your own
+  pane, the output will just show the capture command itself — avoid this.
 
 ## Relationship to Other Skills
 
