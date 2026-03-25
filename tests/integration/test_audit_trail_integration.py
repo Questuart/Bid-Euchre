@@ -752,6 +752,44 @@ class TestMcpOutboundWiring:
         assert rec.exchange_type == "edit"
         assert rec.message_id == "42"
 
+    def test_download_attachment_tool_audited(self, tmp_path: Path) -> None:
+        """MCP download_attachment tool call produces an audit record."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__download_attachment",
+            tool_args={"file_id": "AgACAgIAAxkBAAIBZ"},
+            audit_dir=tmp_path,
+        )
+        assert rec is not None
+        assert rec.direction == "outbound"
+        assert rec.exchange_type == "download_attachment"
+        assert rec.metadata.get("file_id") == "AgACAgIAAxkBAAIBZ"
+        # chat_id is optional for download_attachment
+        assert rec.chat_id == ""
+
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+
+    def test_download_attachment_with_chat_id(self, tmp_path: Path) -> None:
+        """download_attachment passes through optional chat_id if provided."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__download_attachment",
+            tool_args={"file_id": "AgACAgIAAxkBAAIBZ", "chat_id": "999"},
+            audit_dir=tmp_path,
+        )
+        assert rec is not None
+        assert rec.chat_id == "999"
+
+    def test_download_attachment_missing_file_id_returns_none(
+        self, tmp_path: Path
+    ) -> None:
+        """download_attachment without file_id is skipped."""
+        rec = audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__download_attachment",
+            tool_args={},
+            audit_dir=tmp_path,
+        )
+        assert rec is None
+
     def test_unknown_tool_returns_none(self, tmp_path: Path) -> None:
         """Non-Telegram MCP tools are silently skipped."""
         rec = audit_mcp_outbound(
@@ -805,10 +843,20 @@ class TestMcpOutboundWiring:
             tool_args={"chat_id": "123", "message_id": "2", "body": "Edited"},
             audit_dir=tmp_path,
         )
+        audit_mcp_outbound(
+            tool_name="mcp__plugin_telegram_telegram__download_attachment",
+            tool_args={"file_id": "file-seq-001"},
+            audit_dir=tmp_path,
+        )
 
         records = read_records(audit_dir=tmp_path)
-        assert len(records) == 3
-        assert [r.exchange_type for r in records] == ["reply", "react", "edit"]
+        assert len(records) == 4
+        assert [r.exchange_type for r in records] == [
+            "reply",
+            "react",
+            "edit",
+            "download_attachment",
+        ]
 
 
 # ---------------------------------------------------------------------------

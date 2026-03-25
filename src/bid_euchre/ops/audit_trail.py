@@ -378,6 +378,41 @@ def audit_edit(
     return record
 
 
+def audit_download_attachment(
+    file_id: str,
+    chat_id: str = "",
+    audit_dir: Path | None = None,
+) -> AuditRecord:
+    """Log an outbound attachment download to the audit trail.
+
+    Creates an :class:`AuditRecord` with ``direction="outbound"`` and
+    ``exchange_type="download_attachment"``, appends it, and returns it.
+
+    The ``download_attachment`` MCP tool fetches a file by ``file_id``.
+    The ``chat_id`` is optional — Telegram's ``getFile`` API does not
+    require it, but callers may supply it for traceability if known.
+
+    Args:
+        file_id: Telegram file ID being downloaded.
+        chat_id: Optional Telegram chat ID for traceability.
+        audit_dir: Override for audit trail directory.
+
+    Returns:
+        The persisted :class:`AuditRecord`.
+    """
+    record = create_record(
+        direction="outbound",
+        channel_source="telegram",
+        sender_identity="orchestrator",
+        exchange_type="download_attachment",
+        content=file_id,
+        chat_id=chat_id,
+        metadata={"file_id": file_id},
+    )
+    append_record(record, audit_dir=audit_dir)
+    return record
+
+
 # ---------------------------------------------------------------------------
 # Inbound audit wrappers
 # ---------------------------------------------------------------------------
@@ -437,6 +472,7 @@ _MCP_TOOL_MAP: dict[str, str] = {
     "mcp__plugin_telegram_telegram__reply": "reply",
     "mcp__plugin_telegram_telegram__react": "react",
     "mcp__plugin_telegram_telegram__edit_message": "edit",
+    "mcp__plugin_telegram_telegram__download_attachment": "download_attachment",
 }
 
 
@@ -462,6 +498,20 @@ def audit_mcp_outbound(
     exchange_type = _MCP_TOOL_MAP.get(tool_name)
     if exchange_type is None:
         return None
+
+    # download_attachment uses file_id, not chat_id — handle before the
+    # chat_id guard so it isn't rejected for missing chat context.
+    if exchange_type == "download_attachment":
+        file_id = str(tool_args.get("file_id", tool_args.get("fileId", "")))
+        if not file_id:
+            logger.warning("audit_mcp_outbound: no file_id in args for %s", tool_name)
+            return None
+        chat_id = str(tool_args.get("chat_id", tool_args.get("chatId", "")))
+        return audit_download_attachment(
+            file_id=file_id,
+            chat_id=chat_id,
+            audit_dir=audit_dir,
+        )
 
     chat_id = str(tool_args.get("chat_id", tool_args.get("chatId", "")))
     if not chat_id:
