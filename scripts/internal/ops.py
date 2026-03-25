@@ -2321,7 +2321,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         print(format_findings_text(findings))
 
     # Update the controller projection so fleet_status.json reflects the
-    # latest monitor findings and task queue state.
+    # latest monitor findings, task queue, inbox, and audit state.
     if not no_reconcile:
         try:
             task_dicts = [
@@ -2329,10 +2329,34 @@ def cmd_monitor(args: argparse.Namespace) -> int:
             ]
         except Exception:
             task_dicts = None
+
+        # Load unacked inbox messages for the orchestrator lane so the
+        # controller can surface stale urgent items in fleet_status.json.
+        try:
+            from bid_euchre.ops.message_bus import read_inbox
+
+            inbox_msgs = read_inbox("orchestrator", status="pending")
+            inbox_msgs += read_inbox("orchestrator", status="delivered")
+        except Exception:
+            inbox_msgs = None
+
+        # Load recent audit trail records so unanswered inbound remote
+        # exchanges are surfaced in the fleet projection.
+        try:
+            from bid_euchre.ops.audit_trail import read_records
+
+            audit_dir = args.runtime_dir / "audit_trail" if args.runtime_dir else None
+            raw_records = read_records(audit_dir=audit_dir)
+            audit_dicts = [r.to_dict() for r in raw_records]
+        except Exception:
+            audit_dicts = None
+
         _reconcile(
             runtime_dir=args.runtime_dir,
             monitor_finding_objects=findings,
             task_packets=task_dicts,
+            unacked_messages=inbox_msgs,
+            audit_records=audit_dicts,
         )
 
     # Exit 1 if any high-severity findings
