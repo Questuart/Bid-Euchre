@@ -40,6 +40,7 @@ PROTECTED_WORKTREE_NAMES = frozenset(
         "Bid-Euchre-steward-flex-b",
         "Bid-Euchre-steward-flex-c",
         # Control plane
+        "Bid-Euchre-steward-analyst",
         "Bid-Euchre-steward-review",
         "Bid-Euchre-steward-ops",
     }
@@ -898,6 +899,7 @@ _STEWARD_DIR_TO_LANE: dict[str, str] = {
     "Bid-Euchre-steward-flex-a": "flex-a",
     "Bid-Euchre-steward-flex-b": "flex-b",
     "Bid-Euchre-steward-flex-c": "flex-c",
+    "Bid-Euchre-steward-analyst": "analyst",
     "Bid-Euchre-steward-review": "review",
     "Bid-Euchre-steward-ops": "ops",
 }
@@ -946,6 +948,8 @@ def derive_lane_class(lane_id: str) -> str:
         return "ops"
     if lane_id == "review":
         return "review"
+    if lane_id == "analyst":
+        return "analyst"
     if lane_id.endswith("-scratch"):
         return "scratch"
     # author-*, brws-author-*, flex-* are all author-class lanes.
@@ -965,7 +969,7 @@ def derive_visibility(lane_id: str) -> str:
     Returns:
         ``"foreground"`` or ``"background"``.
     """
-    if lane_id in ("ops", "review", "orchestrator", "dashboard", "issues"):
+    if lane_id in ("ops", "review", "analyst", "orchestrator", "dashboard", "issues"):
         return "foreground"
     return "background"
 

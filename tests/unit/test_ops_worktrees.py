@@ -1281,6 +1281,7 @@ class TestDeriveLaneId:
             ("Bid-Euchre-steward-flex-a", "flex-a"),
             ("Bid-Euchre-steward-flex-b", "flex-b"),
             ("Bid-Euchre-steward-flex-c", "flex-c"),
+            ("Bid-Euchre-steward-analyst", "analyst"),
             ("Bid-Euchre-steward-review", "review"),
             ("Bid-Euchre-steward-ops", "ops"),
         ],
@@ -1310,6 +1311,7 @@ class TestDeriveLaneClass:
         [
             ("ops", "ops"),
             ("review", "review"),
+            ("analyst", "analyst"),
             ("author-scratch", "scratch"),
             ("author-a", "author"),
             ("author-b", "author"),
@@ -1325,7 +1327,14 @@ class TestDeriveVisibility:
     """Tests for derive_visibility()."""
 
     def test_foreground_lanes(self) -> None:
-        for lane_id in ("ops", "review", "orchestrator", "dashboard", "issues"):
+        for lane_id in (
+            "ops",
+            "review",
+            "analyst",
+            "orchestrator",
+            "dashboard",
+            "issues",
+        ):
             assert derive_visibility(lane_id) == "foreground"
 
     def test_background_lanes(self) -> None:
@@ -1364,6 +1373,7 @@ class TestRegisterAllWorktrees:
             "Bid-Euchre-steward-author",
             "Bid-Euchre-steward-author-b",
             "Bid-Euchre-steward-brws-author-a",
+            "Bid-Euchre-steward-analyst",
             "Bid-Euchre-steward-ops",
             "Bid-Euchre-steward-review",
             "Bid-Euchre-steward-flex-a",
@@ -1395,11 +1405,11 @@ class TestRegisterAllWorktrees:
         )
 
         created = [r for r in results if r.action == "created"]
-        assert len(created) == 6
+        assert len(created) == 7
 
         # Verify files were written.
         json_files = sorted(registry_dir.glob("*.json"))
-        assert len(json_files) == 6
+        assert len(json_files) == 7
 
         # Verify specific lane.
         data = json.loads((registry_dir / "author-a.json").read_text())
@@ -1410,10 +1420,10 @@ class TestRegisterAllWorktrees:
         assert data["class"] == "persistent"
         assert data["session_handle"] == "steward:author-a"
 
-    def test_ops_and_review_are_foreground(
+    def test_ops_review_analyst_are_foreground(
         self, registry_dir: Path, tmp_path: Path
     ) -> None:
-        """Ops and review lanes get foreground visibility."""
+        """Ops, review, and analyst lanes get foreground visibility."""
         git_wts = self._make_git_worktrees(tmp_path)
 
         register_all_worktrees(
@@ -1427,6 +1437,10 @@ class TestRegisterAllWorktrees:
 
         review_data = json.loads((registry_dir / "review.json").read_text())
         assert review_data["visibility"] == "foreground"
+
+        analyst_data = json.loads((registry_dir / "analyst.json").read_text())
+        assert analyst_data["visibility"] == "foreground"
+        assert analyst_data["lane_class"] == "analyst"
 
     def test_skips_already_registered(self, registry_dir: Path, tmp_path: Path) -> None:
         """Skips worktrees that already have a matching registry entry."""
@@ -1531,7 +1545,7 @@ class TestRegisterAllWorktrees:
             now_iso="2026-03-24T12:00:00+00:00",
         )
         created1 = [r for r in results1 if r.action == "created"]
-        assert len(created1) == 6
+        assert len(created1) == 7
 
         # Second run.
         results2 = register_all_worktrees(
@@ -1543,4 +1557,4 @@ class TestRegisterAllWorktrees:
         assert len(created2) == 0
         # All should be skipped (same branch).
         skipped = [r for r in results2 if r.action == "skipped"]
-        assert len(skipped) == 6
+        assert len(skipped) == 7
