@@ -1,7 +1,7 @@
 # Sub-Plan Registry -- Browser Game Expansion and Pilot Readiness
 
 **Governing plan:** `plans/browser_game_expansion/governing_plan.md`
-**Last updated:** 2026-03-24 (initiative activated)
+**Last updated:** 2026-03-25 (SP-0-01 completed)
 
 ---
 
@@ -9,7 +9,7 @@
 
 | ID | Title | Parent Section | Status | Owner | File | Created | Completed |
 |----|-------|----------------|--------|-------|------|---------|-----------|
-| SP-0-01 | Proving Contract and Browser Testing Foundation | Phase 0 -- Execution Foundation | in_progress | Codex | `0_execution_foundation/sub/2026-03-24_proving-contract-and-browser-testing.md` | 2026-03-24 | -- |
+| SP-0-01 | Proving Contract and Browser Testing Foundation | Phase 0 -- Execution Foundation | completed | brws-author-a | `0_execution_foundation/sub/2026-03-24_proving-contract-and-browser-testing.md` | 2026-03-24 | 2026-03-25 |
 | SP-1-01 | OLSa Roster Migration | Phase 1 -- Model and Rules Core | proposed | -- | `1_model_and_rules_core/sub/2026-03-24_olsa-roster-migration.md` | 2026-03-24 | -- |
 | SP-1-02 | Moon/Loner Hosted-Play Plumbing | Phase 1 -- Model and Rules Core | proposed | -- | `1_model_and_rules_core/sub/2026-03-24_moon-loner-hosted-play.md` | 2026-03-24 | -- |
 | SP-2-01 | Gameplay Readability and Hand Pacing | Phase 2 -- Product Experience | proposed | -- | `2_product_experience/sub/2026-03-24_gameplay-readability-and-pacing.md` | 2026-03-24 | -- |
@@ -23,9 +23,9 @@
 | Status | Count |
 |--------|-------|
 | proposed | 7 |
-| in_progress | 1 |
+| in_progress | 0 |
 | blocked | 0 |
-| completed | 0 |
+| completed | 1 |
 | abandoned | 0 |
 | superseded | 0 |
 
