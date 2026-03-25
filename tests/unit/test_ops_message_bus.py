@@ -803,6 +803,25 @@ class TestCheckExpired:
         expired = check_expired(bus_root, events_dir=events_dir, now=0.0)
         assert len(expired) == 0
 
+    def test_check_expired_skips_urgent_messages(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """P0 (urgent) messages are never expired by check_expired (#1666)."""
+        msg = create_message(
+            "a",
+            "b",
+            "escalation",
+            "Critical alert",
+            priority="urgent",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Time well past the 1s TTL — should NOT expire the urgent message
+        future = time.time() + 100
+        expired = check_expired(bus_root=bus_root, events_dir=events_dir, now=future)
+        assert not any(e["message_id"] == msg.message_id for e in expired)
+
 
 # ---------------------------------------------------------------------------
 # Dead-letter handling
@@ -2074,6 +2093,44 @@ class TestCheckAckStatus:
         status = check_ack_status(msg.message_id, "orch", bus_root, now=future)
         assert status == "expired"
 
+    def test_urgent_message_not_expired_by_ttl(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Urgent messages are TTL-exempt in check_ack_status (#1666)."""
+        msg = create_message(
+            "ops",
+            "orch",
+            "escalation",
+            "Critical alert",
+            priority="urgent",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Time well past the 1s TTL — should still report pending, not expired
+        future = time.time() + 100
+        status = check_ack_status(msg.message_id, "orch", bus_root, now=future)
+        assert status == "pending"
+
+    def test_urgent_delivered_not_expired_by_ttl(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Urgent delivered messages are also TTL-exempt (#1666)."""
+        msg = create_message(
+            "ops",
+            "orch",
+            "escalation",
+            "Critical alert",
+            priority="urgent",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+        mark_delivered(msg.message_id, "orch", bus_root, events_dir=events_dir)
+
+        future = time.time() + 100
+        status = check_ack_status(msg.message_id, "orch", bus_root, now=future)
+        assert status == "delivered"
+
 
 # ---------------------------------------------------------------------------
 # escalate_unacked
@@ -2265,6 +2322,32 @@ class TestEscalateUnacked:
             bus_root=bus_root,
             events_dir=events_dir,
             now=soon,
+        )
+        assert len(escalation_ids) == 1
+
+    def test_escalates_urgent_message_past_ttl(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Urgent messages past TTL still get escalated (#1666)."""
+        msg = create_message(
+            "ops",
+            "orch",
+            "assignment",
+            "Critical task",
+            priority="urgent",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Time well past the 1s TTL — urgent messages are TTL-exempt
+        future = time.time() + 100
+        escalation_ids = escalate_unacked(
+            "ops",
+            "orch",
+            max_age_minutes=0,
+            bus_root=bus_root,
+            events_dir=events_dir,
+            now=future,
         )
         assert len(escalation_ids) == 1
 
