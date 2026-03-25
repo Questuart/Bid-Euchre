@@ -26,7 +26,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Step 1: Platform-8a preflight and Telegram transport skeleton | COMPLETE | 2026-03-24 | flex-b | SP-4-04 all steps proven. PRs #1436, #1451, #1452 merged. Pairing confirmed (user 8122530898), messages flow both ways, kill switch verified. |
 | Step 2: Platform-8b repo-owned remote audit trail and runtime wiring | IN_PROGRESS | 2026-03-24 | author-a + orchestrator | SP-4-06 shipped the audit library, but issue #1573 correctly reopens the slice: runtime callers, controller integration, and real inbound/outbound proving are still pending. PR #1616 fixed Telegram inbound (#1615) — ops lane moved to detached worktree to stop competing bun processes from consuming `getUpdates`. Inbound now proven working (test message confirmed 2026-03-24). |
 | Step 3: SP-4-07 controller-first control plane and transport evaluation | COMPLETE | 2026-03-25 | author-a + author-b + flex-c | 25+ PRs shipped. Key: #1618 (stabilization), #1633 (controller), #1650 (transport ADR), #1699 (controller live), #1719 (UserPromptSubmit hook), #1764 (PreToolUse guardrail), #1760 (inbound audit hook), #1755 (inbox+audit into reconcile), #1715 (outbound audit hook). All 5 proving runs passed (#1718, #1730, #1712, #1714, Telegram e2e). All 6 exit criteria met. |
-| Step 4: Platform-9a idle-attention alerts and acknowledgement loop | PENDING | -- | -- | Unblocked by Step 3 completion. Controller-backed state now live (#1699). Hook surfacing (#1719, #1764) and remote audit wiring (#1715, #1760) provide the substrate. |
+| Step 4: Platform-9a idle-attention alerts and acknowledgement loop | IN_PROGRESS | 2026-03-25 | overnight fleet | SP-4-08 groundwork shipped: alert push evaluator, Telegram adapter, ack parser, controller mutation, unit/integration tests (PRs #1815-#1820). **E2E wiring NOT complete** — `run_push_cycle()` prints but does not send via Telegram MCP; no live consumer of `execute_remote_ack()`. Exit criteria E3/E4/E7/E9 unmet. See #1826. |
 | Step 5: Platform-9b away-from-desk queue-moving proving run | BLOCKED | -- | -- | Blocked on Platform-9a plus controller-backed remote delivery. |
 | Step 6: Platform-9c first hardening pass and Phase 4 handoff | BLOCKED | -- | -- | Fix real proving-run issues, update docs, and record known gaps. |
 
@@ -43,6 +43,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | completed | Pre-Platform-8 |
 | SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | completed (library only) | Step 2 |
 | SP-4-07 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | completed | Step 3 |
+| SP-4-08 | `plans/agent_ops/4_remote_channel/sub/2026-03-25_platform-9a-idle-attention-alerts.md` | in_progress | Step 4 |
 
 ### Shared Surface Ownership
 
