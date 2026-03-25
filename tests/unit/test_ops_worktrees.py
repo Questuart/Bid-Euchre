@@ -1273,16 +1273,21 @@ class TestDeriveLaneId:
             ("Bid-Euchre-steward-author-b", "author-b"),
             ("Bid-Euchre-steward-author-c", "author-c"),
             ("Bid-Euchre-steward-author-d", "author-d"),
-            ("Bid-Euchre-steward-author-scratch", "author-scratch"),
             ("Bid-Euchre-steward-brws-author-a", "brws-author-a"),
             ("Bid-Euchre-steward-brws-author-b", "brws-author-b"),
             ("Bid-Euchre-steward-brws-author-c", "brws-author-c"),
             ("Bid-Euchre-steward-brws-author-d", "brws-author-d"),
+            ("Bid-Euchre-steward-analyst", "analyst-a"),
+            ("Bid-Euchre-steward-analyst-b", "analyst-b"),
+            ("Bid-Euchre-steward-analyst-c", "analyst-c"),
+            ("Bid-Euchre-steward-analyst-d", "analyst-d"),
             ("Bid-Euchre-steward-flex-a", "flex-a"),
             ("Bid-Euchre-steward-flex-b", "flex-b"),
             ("Bid-Euchre-steward-flex-c", "flex-c"),
             ("Bid-Euchre-steward-review", "review"),
             ("Bid-Euchre-steward-ops", "ops"),
+            # Legacy (retired but still in mapping)
+            ("Bid-Euchre-steward-author-scratch", "author-scratch"),
         ],
     )
     def test_known_steward_lanes(self, dir_name: str, expected: str) -> None:
@@ -1310,6 +1315,8 @@ class TestDeriveLaneClass:
         [
             ("ops", "ops"),
             ("review", "review"),
+            ("analyst-a", "analyst"),
+            ("analyst-d", "analyst"),
             ("author-scratch", "scratch"),
             ("author-a", "author"),
             ("author-b", "author"),
@@ -1334,6 +1341,8 @@ class TestDeriveVisibility:
             "author-b",
             "brws-author-a",
             "flex-a",
+            "analyst-a",
+            "analyst-d",
             "author-scratch",
         ):
             assert derive_visibility(lane_id) == "background"

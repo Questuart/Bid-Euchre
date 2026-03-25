@@ -49,9 +49,9 @@ logger = logging.getLogger("ops.worker_pool")
 # ---------------------------------------------------------------------------
 
 #: Maximum number of simultaneously active (non-idle) author lanes.
-#: Matches the dual-domain layout in steward-session.sh:
-#: 4 platform + 4 browser-game + 1 scratch + 3 flex = 12 worker lanes.
-MAX_ACTIVE_AUTHORS: int = 12
+#: Matches the 5-window layout in steward-session.sh:
+#: 4 platform + 4 browser-game + 4 analyst + 3 flex = 15 worker lanes.
+MAX_ACTIVE_AUTHORS: int = 15
 
 #: Idle threshold (minutes) before a lane is eligible for parking.
 IDLE_PARK_MINUTES: int = 15
@@ -69,17 +69,21 @@ POOL_STATUSES: frozenset[str] = frozenset({"active", "idle", "parked", "retired"
 #: Lanes with ``None`` are "flex" — available to any domain when same-domain
 #: lanes are exhausted.
 LANE_DOMAINS: dict[str, str | None] = {
-    # Platform pool (original)
+    # Platform pool
     "author-a": "platform",
     "author-b": "platform",
     "author-c": "platform",
     "author-d": "platform",
-    "author-scratch": None,  # flex
     # Browser-game pool
     "brws-author-a": "browser-game",
     "brws-author-b": "browser-game",
     "brws-author-c": "browser-game",
     "brws-author-d": "browser-game",
+    # Analyst pool (flex — accepts any domain)
+    "analyst-a": None,
+    "analyst-b": None,
+    "analyst-c": None,
+    "analyst-d": None,
     # Flex pool (domain-agnostic overflow)
     "flex-a": None,
     "flex-b": None,
@@ -361,10 +365,18 @@ def _create_tmux_window(
 def _resolve_agent_name(lane_id: str) -> str:
     """Map lane_id to the canonical agent profile name.
 
+    Most lanes follow the pattern ``steward-{lane_id}``.  Analyst lanes are
+    the exception — all analyst-a through analyst-d share a single agent
+    definition (``steward-analyst``).
+
     Examples:
-        "author-a"       -> "steward-author-a"
-        "author-scratch" -> "steward-author-scratch"
+        "author-a"   -> "steward-author-a"
+        "analyst-a"  -> "steward-analyst"
+        "analyst-d"  -> "steward-analyst"
+        "flex-a"     -> "steward-flex-a"
     """
+    if lane_id.startswith("analyst-"):
+        return "steward-analyst"
     return f"steward-{lane_id}"
 
 

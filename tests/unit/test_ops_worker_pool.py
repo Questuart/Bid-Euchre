@@ -134,7 +134,7 @@ class TestConstants:
     """Test module-level constants."""
 
     def test_max_active_authors(self) -> None:
-        assert MAX_ACTIVE_AUTHORS == 12
+        assert MAX_ACTIVE_AUTHORS == 15
 
     def test_idle_park_minutes(self) -> None:
         assert IDLE_PARK_MINUTES == 15
@@ -152,10 +152,10 @@ class TestConstants:
         lanes = _managed_lanes()
         assert "author-a" in lanes
         assert "author-b" in lanes
-        assert "author-scratch" in lanes
+        assert "analyst-a" in lanes
         assert "brws-author-a" in lanes
         assert "flex-a" in lanes
-        assert len(lanes) == 12
+        assert len(lanes) == 15
 
 
 class TestResolveAgentName:
@@ -164,8 +164,12 @@ class TestResolveAgentName:
     def test_author_a(self) -> None:
         assert _resolve_agent_name("author-a") == "steward-author-a"
 
-    def test_author_scratch(self) -> None:
-        assert _resolve_agent_name("author-scratch") == "steward-author-scratch"
+    def test_analyst_uses_shared_agent(self) -> None:
+        """All analyst lanes share the steward-analyst agent definition."""
+        assert _resolve_agent_name("analyst-a") == "steward-analyst"
+        assert _resolve_agent_name("analyst-b") == "steward-analyst"
+        assert _resolve_agent_name("analyst-c") == "steward-analyst"
+        assert _resolve_agent_name("analyst-d") == "steward-analyst"
 
     def test_author_b(self) -> None:
         assert _resolve_agent_name("author-b") == "steward-author-b"
@@ -603,17 +607,20 @@ class TestSelectWorker:
 
     def test_no_capacity(self) -> None:
         """At MAX_ACTIVE_AUTHORS, returns None."""
-        # Create 12 active workers to fill the dual-domain layout capacity
+        # Create 15 active workers to fill the full layout capacity
         lane_ids = [
             "author-a",
             "author-b",
             "author-c",
             "author-d",
-            "author-scratch",
             "brws-author-a",
             "brws-author-b",
             "brws-author-c",
             "brws-author-d",
+            "analyst-a",
+            "analyst-b",
+            "analyst-c",
+            "analyst-d",
             "flex-a",
             "flex-b",
             "flex-c",
@@ -676,7 +683,7 @@ class TestDomainRouting:
     def test_get_lane_domain(self) -> None:
         """get_lane_domain returns configured domain or None."""
         assert get_lane_domain("author-a") == "platform"
-        assert get_lane_domain("author-scratch") is None
+        assert get_lane_domain("analyst-a") is None
         assert get_lane_domain("brws-author-a") == "browser-game"
         assert get_lane_domain("flex-a") is None
         assert get_lane_domain("unknown-lane") is None
@@ -691,7 +698,7 @@ class TestDomainRouting:
         """Same-domain lane selected over flex lane."""
         pool = _make_pool(
             [
-                _make_worker("author-scratch", "idle", domain=None),  # flex
+                _make_worker("analyst-a", "idle", domain=None),  # flex
                 _make_worker("author-a", "idle", domain="platform"),
             ]
         )
@@ -704,10 +711,10 @@ class TestDomainRouting:
                 _make_worker(
                     "author-a", "active", domain="platform", current_task_id="t1"
                 ),
-                _make_worker("author-scratch", "idle", domain=None),  # flex
+                _make_worker("analyst-a", "idle", domain=None),  # flex
             ]
         )
-        assert select_worker(pool, domain="platform") == "author-scratch"
+        assert select_worker(pool, domain="platform") == "analyst-a"
 
     def test_cross_domain_rejected_by_default(self) -> None:
         """Cross-domain lanes not selected without allow_cross_domain."""
@@ -754,11 +761,11 @@ class TestDomainRouting:
         pool = _make_pool(
             [
                 _make_worker("author-a", "parked", domain="platform"),
-                _make_worker("author-scratch", "idle", domain=None),
+                _make_worker("analyst-a", "idle", domain=None),
             ]
         )
         # Idle (any domain-compatible) should beat parked
-        assert select_worker(pool, domain="platform") == "author-scratch"
+        assert select_worker(pool, domain="platform") == "analyst-a"
 
     def test_preferred_lane_domain_incompatible(self) -> None:
         """Preferred lane skipped if domain-incompatible."""
@@ -788,43 +795,50 @@ class TestDomainRouting:
         pool = _make_pool(
             [
                 _make_worker("author-a", "idle", domain="platform"),
-                _make_worker("author-scratch", "idle", domain=None),
+                _make_worker("analyst-a", "idle", domain=None),
             ]
         )
-        result = select_worker(
-            pool, preferred_lane="author-scratch", domain="browser-game"
-        )
-        assert result == "author-scratch"
+        result = select_worker(pool, preferred_lane="analyst-a", domain="browser-game")
+        assert result == "analyst-a"
 
     def test_worker_state_domain_field(self) -> None:
         """WorkerState has domain field."""
         w = _make_worker("author-a", "idle", domain="platform")
         assert w.domain == "platform"
-        w_flex = _make_worker("author-scratch", "idle", domain=None)
+        w_flex = _make_worker("analyst-a", "idle", domain=None)
         assert w_flex.domain is None
 
 
 class TestLaneExpansion:
-    """Test expanded lane identity (SP-3-05 PR 2)."""
+    """Test expanded lane identity."""
 
-    def test_known_lanes_include_browser_and_flex(self) -> None:
+    def test_known_lanes_include_all_pools(self) -> None:
         from bid_euchre.ops.task_queue import KNOWN_AUTHOR_LANES
 
         # Browser-game pool
         assert "brws-author-a" in KNOWN_AUTHOR_LANES
         assert "brws-author-d" in KNOWN_AUTHOR_LANES
+        # Analyst pool
+        assert "analyst-a" in KNOWN_AUTHOR_LANES
+        assert "analyst-d" in KNOWN_AUTHOR_LANES
         # Flex pool
         assert "flex-a" in KNOWN_AUTHOR_LANES
         assert "flex-c" in KNOWN_AUTHOR_LANES
-        # Original platform pool still present
+        # Platform pool
         assert "author-a" in KNOWN_AUTHOR_LANES
-        assert "author-scratch" in KNOWN_AUTHOR_LANES
+        assert "author-d" in KNOWN_AUTHOR_LANES
 
     def test_browser_lanes_have_browser_game_domain(self) -> None:
         assert get_lane_domain("brws-author-a") == "browser-game"
         assert get_lane_domain("brws-author-b") == "browser-game"
         assert get_lane_domain("brws-author-c") == "browser-game"
         assert get_lane_domain("brws-author-d") == "browser-game"
+
+    def test_analyst_lanes_have_none_domain(self) -> None:
+        assert get_lane_domain("analyst-a") is None
+        assert get_lane_domain("analyst-b") is None
+        assert get_lane_domain("analyst-c") is None
+        assert get_lane_domain("analyst-d") is None
 
     def test_flex_lanes_have_none_domain(self) -> None:
         assert get_lane_domain("flex-a") is None

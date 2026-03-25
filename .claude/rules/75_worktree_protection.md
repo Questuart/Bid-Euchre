@@ -12,7 +12,6 @@ These worktrees are permanent and must not be deleted:
 - `Bid-Euchre-steward-author-b`
 - `Bid-Euchre-steward-author-c`
 - `Bid-Euchre-steward-author-d`
-- `Bid-Euchre-steward-author-scratch`
 
 **Browser-game pool:**
 - `Bid-Euchre-steward-brws-author-a`
@@ -20,15 +19,23 @@ These worktrees are permanent and must not be deleted:
 - `Bid-Euchre-steward-brws-author-c`
 - `Bid-Euchre-steward-brws-author-d`
 
+**Analyst pool:**
+- `Bid-Euchre-steward-analyst` (analyst-a)
+- `Bid-Euchre-steward-analyst-b`
+- `Bid-Euchre-steward-analyst-c`
+- `Bid-Euchre-steward-analyst-d`
+
 **Flex pool:**
 - `Bid-Euchre-steward-flex-a`
 - `Bid-Euchre-steward-flex-b`
 - `Bid-Euchre-steward-flex-c`
 
 **Control plane:**
-- `Bid-Euchre-steward-analyst`
 - `Bid-Euchre-steward-review`
 - `Bid-Euchre-steward-ops`
+
+**Legacy (retired from active layout but still protected):**
+- `Bid-Euchre-steward-author-scratch`
 
 ## Cleanup Rules
 

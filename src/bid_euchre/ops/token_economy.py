@@ -523,12 +523,16 @@ _WORKTREE_TO_LANE: dict[str, str] = {
     "Bid-Euchre-steward-author-b": "author-b",
     "Bid-Euchre-steward-author-c": "author-c",
     "Bid-Euchre-steward-author-d": "author-d",
-    "Bid-Euchre-steward-author-scratch": "author-scratch",
     # Browser-game pool
     "Bid-Euchre-steward-brws-author-a": "brws-author-a",
     "Bid-Euchre-steward-brws-author-b": "brws-author-b",
     "Bid-Euchre-steward-brws-author-c": "brws-author-c",
     "Bid-Euchre-steward-brws-author-d": "brws-author-d",
+    # Analyst pool (analyst-a reuses the original steward-analyst worktree)
+    "Bid-Euchre-steward-analyst": "analyst-a",
+    "Bid-Euchre-steward-analyst-b": "analyst-b",
+    "Bid-Euchre-steward-analyst-c": "analyst-c",
+    "Bid-Euchre-steward-analyst-d": "analyst-d",
     # Flex pool
     "Bid-Euchre-steward-flex-a": "flex-a",
     "Bid-Euchre-steward-flex-b": "flex-b",
@@ -536,12 +540,15 @@ _WORKTREE_TO_LANE: dict[str, str] = {
     # Control plane
     "Bid-Euchre-steward-review": "review",
     "Bid-Euchre-steward-ops": "ops",
+    # Legacy (retired from active layout, kept for attribution)
+    "Bid-Euchre-steward-author-scratch": "author-scratch",
 }
 
 #: Worktree class categorization by lane prefix.
 _LANE_POOL: dict[str, str] = {
     "author-": "platform",
     "brws-author-": "browser-game",
+    "analyst-": "analyst",
     "flex-": "flex",
     "review": "control",
     "ops": "control",
