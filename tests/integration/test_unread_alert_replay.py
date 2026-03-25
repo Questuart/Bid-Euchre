@@ -38,6 +38,8 @@ from bid_euchre.ops.message_bus import (
     shared_bus_root,
 )
 
+pytestmark = pytest.mark.integration
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
