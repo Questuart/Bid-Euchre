@@ -47,10 +47,15 @@ class TestClaudeReviewWorkflow:
             "--max-turns 15" in claude_args
         ), f"expected '--max-turns 15' in claude_args, got {claude_args!r}"
 
-    def test_no_continue_on_error(self):
-        """Review step must NOT use continue-on-error — failures must be visible."""
+    def test_continue_on_error_advisory(self):
+        """Review step must use continue-on-error — check is advisory (#1757).
+
+        The local review coordinator (Codex CLI) handles merge-gating. This
+        GitHub Action is supplementary; infra failures (max-turns, auth,
+        timeout) should not red-mark the PR.
+        """
         step = self._review_step()
-        assert step.get("continue-on-error") is not True
+        assert step.get("continue-on-error") is True
 
     def test_no_allowed_tools_input(self):
         """allowed_tools is not a valid action input — must not be present.
@@ -182,11 +187,11 @@ class TestClaudeReviewWorkflow:
         assert "GH_TOKEN" in str(flag_step.get("env", {}))
 
     def test_classifier_suppresses_blank_execution_file(self):
-        """Blank EXECUTION_FILE below threshold must warn and exit 0.
+        """Blank EXECUTION_FILE must always exit 0 — check is advisory (#1757).
 
         The action does not set execution_file on error_max_turns exits.
-        Below the threshold, blank files exit 0 (suppressed). Above the
-        threshold, consecutive failures escalate to an issue (#1092).
+        Both below-threshold (warn) and above-threshold (issue created) paths
+        exit 0 because the workflow is advisory and should never fail the job.
         """
         flag_step = self._flag_step()
         script = flag_step["run"]
@@ -194,19 +199,17 @@ class TestClaudeReviewWorkflow:
         assert (
             '-z "$EXECUTION_FILE"' in script
         ), "classifier must check for blank EXECUTION_FILE"
-        # The blank-execution branch must contain both:
-        # - exit 0 (below threshold, suppress)
-        # - exit 1 (above threshold, escalate)
+        # The blank-execution branch must exit 0 in all paths (advisory)
         blank_idx = script.index('-z "$EXECUTION_FILE"')
         # Find the elif that ends the blank-execution branch
         elif_idx = script.index("elif", blank_idx)
         blank_section = script[blank_idx:elif_idx]
         assert (
             "exit 0" in blank_section
-        ), "blank EXECUTION_FILE path must exit 0 below threshold"
+        ), "blank EXECUTION_FILE path must exit 0 (advisory workflow)"
         assert (
-            "exit 1" in blank_section
-        ), "blank EXECUTION_FILE path must exit 1 above threshold"
+            "exit 1" not in blank_section
+        ), "blank EXECUTION_FILE path must not exit 1 (advisory workflow, #1757)"
 
     def test_classifier_suppresses_max_turns(self):
         """error_max_turns must warn and exit 0, not create an issue.

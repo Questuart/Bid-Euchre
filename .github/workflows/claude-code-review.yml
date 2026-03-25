@@ -34,6 +34,11 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
+        # Advisory: infrastructure failures (max-turns, auth, timeout) should not
+        # red-mark the PR.  The local review coordinator (Codex CLI) handles
+        # merge-gating; this action is supplementary.  `outcome` still reflects
+        # the real result for downstream steps even with continue-on-error.
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -100,6 +105,9 @@ jobs:
             # Threshold alerting: count recent consecutive blank-execution runs
             # by querying workflow run conclusions. If >= BLANK_EXEC_THRESHOLD
             # consecutive failures, escalate to an issue instead of just warning.
+            # NOTE: With continue-on-error on the action step, job conclusion is
+            # always "success", so this threshold effectively never triggers.
+            # Kept for future use if the advisory policy is ever reversed.
             BLANK_EXEC_THRESHOLD=3
             RECENT_RUNS=$(gh run list \
               --workflow "claude-code-review.yml" \
@@ -118,7 +126,7 @@ jobs:
               EXISTING=$(gh issue list --search "claude-review: consecutive blank-execution" --state open --limit 1 --json number --jq '.[0].number' 2>/dev/null || echo "")
               if [ -n "$EXISTING" ]; then
                 echo "::warning::Infra issue #$EXISTING already open — skipping duplicate"
-                exit 1
+                exit 0
               fi
 
               gh issue create \
@@ -131,8 +139,8 @@ jobs:
 
           Investigate: OOM, token expiry, auth failure, or action version regression." \
                 --label "follow-up"
-              # Exit non-zero so the check stays failed as a visible signal
-              exit 1
+              # Advisory workflow — issue created for visibility, don't fail the check
+              exit 0
             fi
 
             echo "::warning::claude-review exited without execution_file (likely max-turns exhaustion)"
@@ -165,6 +173,6 @@ jobs:
           **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
           This is a reviewer infrastructure issue, not a code review finding.
-          The \`claude-review\` check remains failed on the PR as a visible signal." \
+          The \`claude-review\` check is advisory and does not block merges." \
             --label "follow-up"
           echo "::warning::claude-review infra failure (subtype=$SUBTYPE, denials=$DENIALS) — issue created"
