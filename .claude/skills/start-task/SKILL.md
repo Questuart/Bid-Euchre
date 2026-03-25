@@ -96,6 +96,7 @@ decomposition (use `/executing-plans` for that).
      git rebase --abort
      uv run python scripts/internal/ops.py message send \
        --from <lane> --to orchestrator --type blocker \
+       --priority high \
        --summary "Rebase conflict on <branch>: <description>" \
        --task-id <PACKET_ID>
      ```

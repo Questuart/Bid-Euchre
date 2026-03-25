@@ -60,12 +60,20 @@ class TestStripCodeBlocks:
         assert "Some text" in result
         assert "More text" in result
 
-    def test_removes_inline_code(self, hook: ModuleType) -> None:
+    def test_neutralises_channel_in_inline_code(self, hook: ModuleType) -> None:
+        """Inline backticks are preserved but <channel inside them is neutralised."""
         text = 'Use `<channel source="telegram">` to send messages'
         result = hook._strip_code_blocks(text)
         assert "<channel" not in result
+        assert "&lt;channel" in result
         assert "Use" in result
         assert "to send messages" in result
+
+    def test_preserves_inline_code_without_channel(self, hook: ModuleType) -> None:
+        """Inline backtick content with no <channel is left untouched."""
+        text = "Run `git status` to check"
+        result = hook._strip_code_blocks(text)
+        assert result == text
 
     def test_preserves_non_code_text(self, hook: ModuleType) -> None:
         text = "No code blocks here, just plain text."
