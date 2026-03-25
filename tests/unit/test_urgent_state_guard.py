@@ -193,6 +193,22 @@ class TestAllowCases:
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
+    def test_dispatch_to_worker_in_grep_not_blocked(self, tmp_path: Path) -> None:
+        """Hook allows grep/cat of dispatch_to_worker (not a real invocation)."""
+        items = [_make_item(severity="high", summary="Alert")]
+        _write_fleet_status(tmp_path, _fleet_status(items))
+        result = _run_hook(tmp_path, "grep -r dispatch_to_worker src/")
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_dispatch_to_worker_in_cat_not_blocked(self, tmp_path: Path) -> None:
+        """Hook allows reading files that contain dispatch_to_worker."""
+        items = [_make_item(severity="high", summary="Alert")]
+        _write_fleet_status(tmp_path, _fleet_status(items))
+        result = _run_hook(tmp_path, "cat src/bid_euchre/ops/worker_pool.py")
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
 
 # ---------------------------------------------------------------------------
 # Tests: block cases (exit 2)
@@ -220,7 +236,7 @@ class TestBlockCases:
         assert "BLOCKED" in result.stdout
         assert "[URGENT] CI broken on main" in result.stdout
 
-    def test_blocks_dispatch_command(self, tmp_path: Path) -> None:
+    def test_blocks_task_dispatch_command(self, tmp_path: Path) -> None:
         """Hook blocks task dispatch when open high alert exists."""
         items = [_make_item(severity="high", summary="Stalled lane")]
         _write_fleet_status(tmp_path, _fleet_status(items))
@@ -231,8 +247,19 @@ class TestBlockCases:
         assert result.returncode == 2
         assert "BLOCKED" in result.stdout
 
-    def test_blocks_dispatch_to_worker(self, tmp_path: Path) -> None:
-        """Hook blocks dispatch_to_worker calls."""
+    def test_blocks_workers_dispatch_command(self, tmp_path: Path) -> None:
+        """Hook blocks workers dispatch when open high alert exists."""
+        items = [_make_item(severity="high", summary="Stalled lane")]
+        _write_fleet_status(tmp_path, _fleet_status(items))
+        result = _run_hook(
+            tmp_path,
+            "uv run python scripts/internal/ops.py workers dispatch 6f2985cfd01b author-a",
+        )
+        assert result.returncode == 2
+        assert "BLOCKED" in result.stdout
+
+    def test_blocks_dispatch_to_worker_call(self, tmp_path: Path) -> None:
+        """Hook blocks dispatch_to_worker() function calls."""
         items = [_make_item(severity="high", summary="Stalled lane")]
         _write_fleet_status(tmp_path, _fleet_status(items))
         result = _run_hook(
@@ -287,12 +314,12 @@ class TestBlockCases:
         assert "Capacity OK" not in result.stdout  # info excluded
 
     def test_block_message_includes_remediation(self, tmp_path: Path) -> None:
-        """Block message shows how to resolve."""
+        """Block message shows the real fleet --ack command."""
         items = [_make_item(severity="high", summary="Alert")]
         _write_fleet_status(tmp_path, _fleet_status(items))
         result = _run_hook(tmp_path, "gh pr merge 123 --squash")
         assert result.returncode == 2
-        assert "fleet ack" in result.stdout
+        assert "fleet --ack" in result.stdout
 
 
 # ---------------------------------------------------------------------------
