@@ -15,6 +15,8 @@ from typing import Type
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.sim.simulation import simulate_many_hands
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.baselines import (
@@ -229,9 +231,9 @@ class TestMixedStrategies:
 
         strategies = [
             AlwaysHighestLegalStrategy(),  # Seat 0: aggressive
-            AlwaysLowestLegalStrategy(),   # Seat 1: passive
+            AlwaysLowestLegalStrategy(),  # Seat 1: passive
             AlwaysHighestLegalStrategy(),  # Seat 2: aggressive
-            AlwaysLowestLegalStrategy(),   # Seat 3: passive
+            AlwaysLowestLegalStrategy(),  # Seat 3: passive
         ]
 
         n = 100
@@ -275,7 +277,9 @@ class TestGluttonStrategySpecific:
             )
 
             t0, t1 = result[0], result[1]
-            assert t0 + t1 == 10, f"Deal {deal_id}: card tracking may have corrupted state"
+            assert (
+                t0 + t1 == 10
+            ), f"Deal {deal_id}: card tracking may have corrupted state"
 
     def test_glutton_debug_mode_legal(self) -> None:
         """GluttonStrategy in debug mode should still play legally."""

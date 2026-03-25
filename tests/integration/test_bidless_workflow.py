@@ -11,6 +11,8 @@ import tempfile
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 class TestBidlessDatasetWorkflow:
     """Test bidless dataset emission via run_experiment.py."""
@@ -27,11 +29,16 @@ class TestBidlessDatasetWorkflow:
         """--emit-bidless-dataset creates parquet, jsonl, and meta files."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "5",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "5",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -43,13 +50,17 @@ class TestBidlessDatasetWorkflow:
         assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
 
         # Find the run directory (includes timestamp)
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         assert len(run_dirs) == 1, f"Expected one run dir, found: {run_dirs}"
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
 
         # Check dataset directory exists
         datasets_dir = os.path.join(run_dir, "datasets")
-        assert os.path.isdir(datasets_dir), f"datasets/ directory not found in {run_dir}"
+        assert os.path.isdir(
+            datasets_dir
+        ), f"datasets/ directory not found in {run_dir}"
 
         # Check expected files exist
         expected_files = ["bidless.parquet", "bidless.jsonl", "bidless_meta.json"]
@@ -61,11 +72,16 @@ class TestBidlessDatasetWorkflow:
         """Emitted dataset can be loaded by diagnostics.load_bidless_dataset()."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "10",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "10",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -77,7 +93,9 @@ class TestBidlessDatasetWorkflow:
         assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
 
         # Find the run directory
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -104,11 +122,16 @@ class TestBidlessDatasetWorkflow:
         # Use quick_test.yaml which has declared contracts (not auction)
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "5",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "5",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -119,7 +142,9 @@ class TestBidlessDatasetWorkflow:
 
         assert result.returncode == 0
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -138,13 +163,19 @@ class TestBidlessDatasetWorkflow:
         """--bidless-dataset-format=jsonl works correctly."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "5",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "5",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-dataset",
-                "--bidless-dataset-format", "jsonl",
+                "--bidless-dataset-format",
+                "jsonl",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
             capture_output=True,
@@ -154,7 +185,9 @@ class TestBidlessDatasetWorkflow:
 
         assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -173,11 +206,16 @@ class TestBidlessDatasetWorkflow:
         """Without --emit-bidless-dataset, no dataset files are created."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "5",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "5",
+                "--run-dir",
+                temp_run_dir,
                 # Note: no --emit-bidless-dataset flag
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -188,7 +226,9 @@ class TestBidlessDatasetWorkflow:
 
         assert result.returncode == 0
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -196,7 +236,9 @@ class TestBidlessDatasetWorkflow:
         if os.path.isdir(datasets_dir):
             files = os.listdir(datasets_dir)
             bidless_files = [f for f in files if f.startswith("bidless")]
-            assert len(bidless_files) == 0, f"Found bidless files without flag: {bidless_files}"
+            assert (
+                len(bidless_files) == 0
+            ), f"Found bidless files without flag: {bidless_files}"
 
     def test_hand_id_uniqueness_across_strategies_and_scenarios(self, temp_run_dir):
         """hand_id is globally unique across all strategies and scenarios.
@@ -210,11 +252,16 @@ class TestBidlessDatasetWorkflow:
         # Use strategy_comparison.yaml which has 5 strategies
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/strategy_comparison.yaml",
-                "--seed", "42",
-                "--n_per", "10",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/strategy_comparison.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "10",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -225,7 +272,11 @@ class TestBidlessDatasetWorkflow:
 
         assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("strategy_comparison_42_")]
+        run_dirs = [
+            d
+            for d in os.listdir(temp_run_dir)
+            if d.startswith("strategy_comparison_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -237,10 +288,14 @@ class TestBidlessDatasetWorkflow:
         # strategy_comparison.yaml: 5 strategies × 6 scenarios × 10 hands × 4 seats = 1200 rows
         # Each unique hand_id should appear exactly 4 times (once per seat)
         hand_id_counts = df.groupby("hand_id").size()
-        assert (hand_id_counts == 4).all(), "Some hand_ids don't have exactly 4 rows (one per seat)"
+        assert (
+            hand_id_counts == 4
+        ).all(), "Some hand_ids don't have exactly 4 rows (one per seat)"
 
         # Verify total unique hand_ids matches expected
-        num_strategies = 5  # greedy, glutton, random_legal, always_lowest, always_highest
+        num_strategies = (
+            5  # greedy, glutton, random_legal, always_lowest, always_highest
+        )
         num_scenarios = 6  # suit-C, suit-D, suit-H, suit-S, high, low
         n_per = 10
         expected_unique_hands = num_strategies * num_scenarios * n_per

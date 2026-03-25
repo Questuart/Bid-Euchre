@@ -21,21 +21,17 @@ To update baselines after intentional changes:
     "
 """
 
+import pytest
 
 from bid_euchre.sim.simulation import simulate_many_hands
 from bid_euchre.strategy.baselines import AlwaysHighestLegalStrategy
 
-# ============================================================================
-# BASELINE VALUES
-# ============================================================================
-# These are the expected results for specific (seed, config) combinations.
-# If these fail after a code change, either:
-#   1. The change was unintentional (fix the bug), or
-#   2. The change was intentional (update the baseline)
-#
-# Last updated: 2026-02-01
-# Git SHA at baseline: cf2119e (after PR #183 round-robin dealing)
-# ============================================================================
+pytestmark = pytest.mark.integration
+
+# BASELINE VALUES — expected results for specific (seed, config) combos.
+# If these fail: (1) unintentional change → fix the bug, or
+# (2) intentional change → update the baseline.
+# Last updated: 2026-02-01 | Git SHA: cf2119e (PR #183 round-robin dealing)
 
 BASELINE_SUIT_HEARTS_SEED42 = {
     "n": 100,
@@ -140,7 +136,11 @@ class TestVersionDrift:
 
     def test_tricks_sum_to_ten(self) -> None:
         """Sanity check: avg_team0 + avg_team1 should always equal 10."""
-        for baseline in [BASELINE_SUIT_HEARTS_SEED42, BASELINE_HIGH_SEED42, BASELINE_LOW_SEED42]:
+        for baseline in [
+            BASELINE_SUIT_HEARTS_SEED42,
+            BASELINE_HIGH_SEED42,
+            BASELINE_LOW_SEED42,
+        ]:
             total = baseline["expected_avg_team0"] + baseline["expected_avg_team1"]
             assert total == 10.0, (
                 f"Baseline {baseline['contract_type']}: "
@@ -166,6 +166,6 @@ class TestVersionDrift:
         )
 
         # Results should differ for different seeds
-        assert result_42["avg_team0"] != result_43["avg_team0"], (
-            "Different seeds produced identical results - RNG may be broken"
-        )
+        assert (
+            result_42["avg_team0"] != result_43["avg_team0"]
+        ), "Different seeds produced identical results - RNG may be broken"

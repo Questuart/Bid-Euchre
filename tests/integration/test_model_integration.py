@@ -7,9 +7,13 @@ and that they produce reasonable results.
 
 import sys
 
+import pytest
+
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.artifact_strategy import ArtifactGreedyStrategy
 from bid_euchre.strategy.baselines import RandomLegalStrategy
+
+pytestmark = pytest.mark.integration
 
 
 def test_artifact_strategies_load_successfully():

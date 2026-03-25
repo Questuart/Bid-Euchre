@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.core.cards import create_deck, deal_hands, shuffle_deck
 from bid_euchre.scoring import compute_points
 from bid_euchre.sim.deals import generate_deal

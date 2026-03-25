@@ -1,5 +1,7 @@
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.core.cards import Card
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.artifact_strategy import ArtifactGreedyStrategy

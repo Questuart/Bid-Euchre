@@ -9,10 +9,15 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
 
+pytestmark = pytest.mark.integration
 
-def run_experiment(config_path: str, extra_args: list[str] | None = None, run_dir: str | None = None) -> subprocess.CompletedProcess:
+
+def run_experiment(
+    config_path: str, extra_args: list[str] | None = None, run_dir: str | None = None
+) -> subprocess.CompletedProcess:
     """Run the experiment runner with given args."""
     args = ["python", "experiments/run_experiment.py", "--config", config_path]
     if extra_args:
@@ -38,7 +43,7 @@ def test_run_output_structure_contract():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
 
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
@@ -51,7 +56,9 @@ def test_run_output_structure_contract():
 
         # Verify required files exist
         assert (run_dir / "meta.json").exists(), "meta.json should exist"
-        assert (run_dir / "config_effective.yaml").exists(), "config_effective.yaml should exist"
+        assert (
+            run_dir / "config_effective.yaml"
+        ).exists(), "config_effective.yaml should exist"
         assert (run_dir / "perf.json").exists(), "perf.json should exist"
 
         # Verify required directories exist
@@ -69,7 +76,7 @@ def test_config_effective_is_valid_and_useful():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "10"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
 
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
@@ -91,16 +98,24 @@ def test_config_effective_is_valid_and_useful():
         assert "parameters" in effective_config, "Config should have parameters section"
         params = effective_config["parameters"]
 
-        assert params["seed"] == 42, f"Seed should be 42 (overridden), got {params.get('seed')}"
-        assert params["n_per"] == 10, f"n_per should be 10 (overridden), got {params.get('n_per')}"
+        assert (
+            params["seed"] == 42
+        ), f"Seed should be 42 (overridden), got {params.get('seed')}"
+        assert (
+            params["n_per"] == 10
+        ), f"n_per should be 10 (overridden), got {params.get('n_per')}"
         assert params["log_level"] == "none", "log_level should be set"
 
         # Verify it has strategies and scenarios
         assert "strategies" in effective_config, "Config should have strategies"
-        assert len(effective_config["strategies"]) > 0, "Should have at least one strategy"
+        assert (
+            len(effective_config["strategies"]) > 0
+        ), "Should have at least one strategy"
 
         assert "scenarios" in effective_config, "Config should have scenarios"
-        assert len(effective_config["scenarios"]) > 0, "Should have at least one scenario"
+        assert (
+            len(effective_config["scenarios"]) > 0
+        ), "Should have at least one scenario"
 
 
 def test_run_output_is_self_contained():
@@ -109,7 +124,7 @@ def test_run_output_is_self_contained():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
 
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
@@ -122,12 +137,15 @@ def test_run_output_is_self_contained():
         files_only = [f for f in all_files if f.is_file()]
 
         # Should have at least: meta.json, config_effective.yaml, perf.json, and some result files
-        assert len(files_only) >= 3, f"Should have multiple output files, found {len(files_only)}"
+        assert (
+            len(files_only) >= 3
+        ), f"Should have multiple output files, found {len(files_only)}"
 
         # All files should be under the run directory
         for file_path in files_only:
-            assert file_path.is_relative_to(run_dir), \
-                f"File {file_path} should be under run directory {run_dir}"
+            assert file_path.is_relative_to(
+                run_dir
+            ), f"File {file_path} should be under run directory {run_dir}"
 
 
 def test_empty_directories_are_created():
@@ -136,7 +154,7 @@ def test_empty_directories_are_created():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5", "--log-level", "none"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
 
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"

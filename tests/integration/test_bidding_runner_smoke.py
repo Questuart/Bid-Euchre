@@ -11,8 +11,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
 
-def run_experiment(config_path: str, extra_args: list[str] | None = None, run_dir: str | None = None) -> subprocess.CompletedProcess:
+pytestmark = pytest.mark.integration
+
+
+def run_experiment(
+    config_path: str, extra_args: list[str] | None = None, run_dir: str | None = None
+) -> subprocess.CompletedProcess:
     """Run the experiment runner with given args."""
     args = ["python", "experiments/run_experiment.py", "--config", config_path]
     if extra_args:
@@ -35,11 +41,12 @@ def test_auction_mode_runner_smoke():
     """Smoke test that auction mode runs successfully and produces expected outputs."""
     with tempfile.TemporaryDirectory() as tmpdir:
         result = run_experiment(
-            "experiments/configs/auction_smoke.yaml",
-            ["--run-dir", tmpdir]
+            "experiments/configs/auction_smoke.yaml", ["--run-dir", tmpdir]
         )
 
-        assert result.returncode == 0, f"Auction mode run should succeed. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Auction mode run should succeed. Error: {result.stderr}"
 
         # Find the run directory (should be exactly one)
         run_dirs = list(Path(tmpdir).glob("*"))
@@ -52,13 +59,19 @@ def test_auction_mode_runner_smoke():
 
         # Should have results for exactly one strategy (greedy from config)
         strategy_dirs = list(results_dir.glob("*"))
-        assert len(strategy_dirs) == 1, f"Expected 1 strategy dir, found {len(strategy_dirs)}"
+        assert (
+            len(strategy_dirs) == 1
+        ), f"Expected 1 strategy dir, found {len(strategy_dirs)}"
         strategy_dir = strategy_dirs[0]
-        assert strategy_dir.name == "greedy", f"Expected 'greedy' strategy dir, found {strategy_dir.name}"
+        assert (
+            strategy_dir.name == "greedy"
+        ), f"Expected 'greedy' strategy dir, found {strategy_dir.name}"
 
         # Should have exactly one results JSON file (auction scenario)
         result_files = list(strategy_dir.glob("*.json"))
-        assert len(result_files) == 1, f"Expected 1 result file, found {len(result_files)}"
+        assert (
+            len(result_files) == 1
+        ), f"Expected 1 result file, found {len(result_files)}"
         result_file = result_files[0]
 
         # Load and verify result structure indicates auction mode ran
@@ -72,18 +85,28 @@ def test_auction_mode_runner_smoke():
 
         # Auction mode was executed (contract_type: null)
         assert "contract_type" in results, "Results should have 'contract_type' field"
-        assert results["contract_type"] is None, "Contract type should be None for auction mode"
+        assert (
+            results["contract_type"] is None
+        ), "Contract type should be None for auction mode"
 
         # Auction mode always produces bidding_points structure
-        assert "bidding_points" in results, "bidding_points should exist for auction mode"
+        assert (
+            "bidding_points" in results
+        ), "bidding_points should exist for auction mode"
         bidding_points = results["bidding_points"]
         assert isinstance(bidding_points, dict), "bidding_points should be a dictionary"
 
         # Verify bidding_points has required structure (always present in auction mode)
         required_bidding_fields = ["enabled", "hands_with_bids"]
         for field in required_bidding_fields:
-            assert field in bidding_points, f"bidding_points should have '{field}' field"
-            assert isinstance(bidding_points[field], (bool, int)), f"{field} should be boolean or int"
+            assert (
+                field in bidding_points
+            ), f"bidding_points should have '{field}' field"
+            assert isinstance(
+                bidding_points[field], (bool, int)
+            ), f"{field} should be boolean or int"
 
         # hands_with_bids should be a non-negative integer (can be 0 if no bidding occurred)
-        assert bidding_points["hands_with_bids"] >= 0, "hands_with_bids should be non-negative"
+        assert (
+            bidding_points["hands_with_bids"] >= 0
+        ), "hands_with_bids should be non-negative"

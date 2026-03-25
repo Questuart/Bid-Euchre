@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.ops.audit_trail import (
     append_record,
     audit_channel_tag,

@@ -17,6 +17,8 @@ from typing import List
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.core.cards import Card
 from bid_euchre.core.rules import trick_winner
 from bid_euchre.sim.deals import generate_deal
@@ -84,12 +86,12 @@ class TestSeatRotationSymmetry:
 
         # With rotation by 2, team composition is preserved
         # So team trick counts should match
-        assert t0_orig == t0_rot, (
-            f"Team0 tricks differ after rotation by 2: {t0_orig} vs {t0_rot}"
-        )
-        assert t1_orig == t1_rot, (
-            f"Team1 tricks differ after rotation by 2: {t1_orig} vs {t1_rot}"
-        )
+        assert (
+            t0_orig == t0_rot
+        ), f"Team0 tricks differ after rotation by 2: {t0_orig} vs {t0_rot}"
+        assert (
+            t1_orig == t1_rot
+        ), f"Team1 tricks differ after rotation by 2: {t1_orig} vs {t1_rot}"
 
     def test_rotation_by_1_swaps_teams(self) -> None:
         """Rotating by 1 swaps team membership.
@@ -131,12 +133,12 @@ class TestSeatRotationSymmetry:
         # With rotation by 1, teams swap
         # Old Team0 (seats 0,2) becomes new Team1 (seats 1,3)
         # Old Team1 (seats 1,3) becomes new Team0 (seats 0,2)
-        assert t0_orig == t1_rot, (
-            f"Expected old Team0 ({t0_orig}) = new Team1 ({t1_rot})"
-        )
-        assert t1_orig == t0_rot, (
-            f"Expected old Team1 ({t1_orig}) = new Team0 ({t0_rot})"
-        )
+        assert (
+            t0_orig == t1_rot
+        ), f"Expected old Team0 ({t0_orig}) = new Team1 ({t1_rot})"
+        assert (
+            t1_orig == t0_rot
+        ), f"Expected old Team1 ({t1_orig}) = new Team0 ({t0_rot})"
 
 
 class TestTrickWinnerSymmetry:
@@ -181,27 +183,27 @@ class TestTrickWinnerSymmetry:
         ]
 
         for rotation in range(4):
-            plays = [
-                ((i + rotation) % 4, cards[i])
-                for i in range(4)
-            ]
+            plays = [((i + rotation) % 4, cards[i]) for i in range(4)]
 
             winner = trick_winner(plays, "suit", trump_suit)
             expected_winner = rotation  # The Ace holder's seat
-            assert winner == expected_winner, (
-                f"Rotation {rotation}: expected winner {expected_winner}, got {winner}"
-            )
+            assert (
+                winner == expected_winner
+            ), f"Rotation {rotation}: expected winner {expected_winner}, got {winner}"
 
 
 class TestContractSymmetry:
     """Tests that different contracts maintain symmetry."""
 
-    @pytest.mark.parametrize("contract_type,trump_suit", [
-        ("suit", "H"),
-        ("suit", "S"),
-        ("high", None),
-        ("low", None),
-    ])
+    @pytest.mark.parametrize(
+        "contract_type,trump_suit",
+        [
+            ("suit", "H"),
+            ("suit", "S"),
+            ("high", None),
+            ("low", None),
+        ],
+    )
     def test_rotation_symmetry_across_contracts(
         self, contract_type: str, trump_suit: str | None
     ) -> None:
@@ -271,9 +273,9 @@ class TestEdgeCases:
 
         # With symmetric strategy and many deals, should be close to 50%
         # Allow 40-60% range
-        assert 0.40 <= t0_ratio <= 0.60, (
-            f"Team0 ratio {t0_ratio:.2%} outside expected 40-60% range"
-        )
+        assert (
+            0.40 <= t0_ratio <= 0.60
+        ), f"Team0 ratio {t0_ratio:.2%} outside expected 40-60% range"
 
     def test_identity_rotation_is_noop(self) -> None:
         """Rotation by 0 should produce identical results."""

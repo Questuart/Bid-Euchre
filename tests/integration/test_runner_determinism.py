@@ -8,8 +8,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
 
-def run_experiment(config_path: str, extra_args: list[str] | None = None) -> subprocess.CompletedProcess:
+pytestmark = pytest.mark.integration
+
+
+def run_experiment(
+    config_path: str, extra_args: list[str] | None = None
+) -> subprocess.CompletedProcess:
     """Run the experiment runner with given args."""
     args = ["python", "experiments/run_experiment.py", "--config", config_path]
     if extra_args:
@@ -48,8 +54,10 @@ scenarios:
         result = run_experiment(str(config_path), ["--n_per", "1"])
 
         assert result.returncode != 0, "Runner should fail without seed"
-        assert "--seed is required" in result.stderr or "--seed is required" in result.stdout, \
-            f"Error message should mention --seed requirement. Got: {result.stderr}"
+        assert (
+            "--seed is required" in result.stderr
+            or "--seed is required" in result.stdout
+        ), f"Error message should mention --seed requirement. Got: {result.stderr}"
 
 
 def test_runner_succeeds_with_seed():
@@ -57,10 +65,12 @@ def test_runner_succeeds_with_seed():
     with tempfile.TemporaryDirectory() as tmpdir:
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
-            ["--seed", "42", "--n_per", "1", "--run-dir", tmpdir]
+            ["--seed", "42", "--n_per", "1", "--run-dir", tmpdir],
         )
 
-        assert result.returncode == 0, f"Runner should succeed with seed. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Runner should succeed with seed. Error: {result.stderr}"
 
 
 def test_runner_succeeds_with_allow_nondeterministic():
@@ -84,11 +94,12 @@ scenarios:
 
         result = run_experiment(
             str(config_path),
-            ["--allow-nondeterministic", "--n_per", "1", "--run-dir", tmpdir]
+            ["--allow-nondeterministic", "--n_per", "1", "--run-dir", tmpdir],
         )
 
-        assert result.returncode == 0, \
-            f"Runner should succeed with --allow-nondeterministic. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Runner should succeed with --allow-nondeterministic. Error: {result.stderr}"
 
 
 def test_seed_wins_over_allow_nondeterministic():
@@ -96,7 +107,15 @@ def test_seed_wins_over_allow_nondeterministic():
     with tempfile.TemporaryDirectory() as tmpdir:
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
-            ["--seed", "42", "--allow-nondeterministic", "--n_per", "1", "--run-dir", tmpdir]
+            [
+                "--seed",
+                "42",
+                "--allow-nondeterministic",
+                "--n_per",
+                "1",
+                "--run-dir",
+                tmpdir,
+            ],
         )
 
         assert result.returncode == 0, f"Runner should succeed. Error: {result.stderr}"
@@ -117,17 +136,22 @@ def test_seed_wins_over_allow_nondeterministic():
 
 def test_determinism_same_seed_produces_same_results():
     """Same seed + same config produces identical aggregate metrics."""
-    with tempfile.TemporaryDirectory() as tmpdir1, tempfile.TemporaryDirectory() as tmpdir2:
+    with (
+        tempfile.TemporaryDirectory() as tmpdir1,
+        tempfile.TemporaryDirectory() as tmpdir2,
+    ):
         # Run 1
         result1 = run_experiment(
             "experiments/configs/quick_test.yaml",
-            ["--seed", "42", "--n_per", "10", "--run-dir", tmpdir1]
+            ["--seed", "42", "--n_per", "10", "--run-dir", tmpdir1],
         )
         assert result1.returncode == 0, f"Run 1 failed: {result1.stderr}"
 
         # Get run 1 results (pick first strategy's first scenario)
         run_dirs_1 = list(Path(tmpdir1).glob("*"))
-        assert len(run_dirs_1) == 1, f"Expected 1 run dir in tmpdir1, got {len(run_dirs_1)}"
+        assert (
+            len(run_dirs_1) == 1
+        ), f"Expected 1 run dir in tmpdir1, got {len(run_dirs_1)}"
         results1_dir = run_dirs_1[0] / "results"
         strategy_dirs = list(results1_dir.glob("*"))
         assert len(strategy_dirs) > 0, "Expected at least one strategy results dir"
@@ -141,13 +165,15 @@ def test_determinism_same_seed_produces_same_results():
         # Run 2 (same seed, different tmpdir)
         result2 = run_experiment(
             "experiments/configs/quick_test.yaml",
-            ["--seed", "42", "--n_per", "10", "--run-dir", tmpdir2]
+            ["--seed", "42", "--n_per", "10", "--run-dir", tmpdir2],
         )
         assert result2.returncode == 0, f"Run 2 failed: {result2.stderr}"
 
         # Get run 2 results
         run_dirs_2 = list(Path(tmpdir2).glob("*"))
-        assert len(run_dirs_2) == 1, f"Expected 1 run dir in tmpdir2, got {len(run_dirs_2)}"
+        assert (
+            len(run_dirs_2) == 1
+        ), f"Expected 1 run dir in tmpdir2, got {len(run_dirs_2)}"
         results2_dir = run_dirs_2[0] / "results"
         strategy_dirs2 = list(results2_dir.glob("*"))
         result_files2 = list(strategy_dirs2[0].glob("*.json"))
@@ -157,14 +183,17 @@ def test_determinism_same_seed_produces_same_results():
 
         # Assert determinism: same aggregate metrics (within fixed precision)
         assert results1["hands"] == results2["hands"], "Hand count should match"
-        assert abs(results1["avg_team0"] - results2["avg_team0"]) < 0.001, \
-            f"avg_team0 should match: {results1['avg_team0']} vs {results2['avg_team0']}"
-        assert abs(results1["avg_team1"] - results2["avg_team1"]) < 0.001, \
-            f"avg_team1 should match: {results1['avg_team1']} vs {results2['avg_team1']}"
+        assert (
+            abs(results1["avg_team0"] - results2["avg_team0"]) < 0.001
+        ), f"avg_team0 should match: {results1['avg_team0']} vs {results2['avg_team0']}"
+        assert (
+            abs(results1["avg_team1"] - results2["avg_team1"]) < 0.001
+        ), f"avg_team1 should match: {results1['avg_team1']} vs {results2['avg_team1']}"
 
         # Distribution should match exactly
-        assert results1["distribution_team0"] == results2["distribution_team0"], \
-            "Team0 distribution should match exactly"
+        assert (
+            results1["distribution_team0"] == results2["distribution_team0"]
+        ), "Team0 distribution should match exactly"
 
 
 def test_nondeterministic_run_records_metadata():
@@ -188,7 +217,7 @@ scenarios:
 
         result = run_experiment(
             str(config_path),
-            ["--allow-nondeterministic", "--n_per", "1", "--run-dir", tmpdir]
+            ["--allow-nondeterministic", "--n_per", "1", "--run-dir", tmpdir],
         )
 
         assert result.returncode == 0, f"Runner should succeed. Error: {result.stderr}"
@@ -201,7 +230,9 @@ scenarios:
             meta = json.load(f)
 
         assert meta["seed"] is None, "Seed should be null for nondeterministic run"
-        assert meta["is_deterministic"] is False, "Run should be marked nondeterministic"
+        assert (
+            meta["is_deterministic"] is False
+        ), "Run should be marked nondeterministic"
 
 
 def test_config_seed_works():
@@ -226,7 +257,9 @@ scenarios:
 
         result = run_experiment(str(config_path), ["--run-dir", tmpdir])
 
-        assert result.returncode == 0, f"Runner should succeed with config seed. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Runner should succeed with config seed. Error: {result.stderr}"
 
         run_dirs = [d for d in Path(tmpdir).glob("*") if d.is_dir()]
         assert len(run_dirs) == 1

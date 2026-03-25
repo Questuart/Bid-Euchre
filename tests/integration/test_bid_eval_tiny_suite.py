@@ -9,6 +9,10 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.integration
+
 SUITE_PATH = "experiments/suites/bid_eval_tiny.yaml"
 SEED = 42
 N_PER = 5
