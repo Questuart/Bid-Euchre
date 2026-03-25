@@ -6,8 +6,14 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
 
-def run_experiment(config_path: str, extra_args: list[str] | None = None) -> subprocess.CompletedProcess:
+pytestmark = pytest.mark.integration
+
+
+def run_experiment(
+    config_path: str, extra_args: list[str] | None = None
+) -> subprocess.CompletedProcess:
     """Invoke the canonical runner using the provided config."""
     args = ["python", "experiments/run_experiment.py", "--config", config_path]
     if extra_args:
@@ -27,8 +33,12 @@ def run_experiment(config_path: str, extra_args: list[str] | None = None) -> sub
 def _assert_validation_error(result: subprocess.CompletedProcess, substring: str):
     """Assert that the runner exited with a validation error."""
     assert result.returncode != 0, "Runner should exit non-zero for validation errors"
-    assert "Traceback" not in result.stderr, "Validation errors must not print a traceback"
-    assert substring in result.stderr, f"Expected substring '{substring}' in stderr: {result.stderr}"
+    assert (
+        "Traceback" not in result.stderr
+    ), "Validation errors must not print a traceback"
+    assert (
+        substring in result.stderr
+    ), f"Expected substring '{substring}' in stderr: {result.stderr}"
     assert "Error:" in result.stderr, f"Expected 'Error:' prefix: {result.stderr}"
 
 

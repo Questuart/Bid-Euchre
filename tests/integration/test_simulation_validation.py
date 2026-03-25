@@ -1,6 +1,6 @@
 import pytest
 
-pytestmark = pytest.mark.statistical
+pytestmark = [pytest.mark.integration, pytest.mark.statistical]
 
 from bid_euchre.sim import simulation
 

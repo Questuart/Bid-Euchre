@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from scripts.run_notebooks import discover_notebooks, execute_notebook
 
 

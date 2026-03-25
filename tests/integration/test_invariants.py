@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.core.cards import Card
 from bid_euchre.core.rules import get_legal_indices
 from bid_euchre.logging.game_logger import GameLogger, LogLevel
@@ -43,7 +45,9 @@ def _parse_hand_end_hands(hands_payload) -> list[list[Card]]:
 def _assert_deal_integrity(seat_hands: list[list[Card]]) -> None:
     # 4 seats × 10 cards = 40 cards total
     assert len(seat_hands) == 4
-    assert all(len(h) == 10 for h in seat_hands), f"Expected 10 cards per seat, got {[len(h) for h in seat_hands]}"
+    assert all(
+        len(h) == 10 for h in seat_hands
+    ), f"Expected 10 cards per seat, got {[len(h) for h in seat_hands]}"
     all_cards = [c for h in seat_hands for c in h]
     assert len(all_cards) == 40, f"Expected 40 cards dealt, got {len(all_cards)}"
 
@@ -54,7 +58,9 @@ def _assert_deal_integrity(seat_hands: list[list[Card]]) -> None:
 
 def _assert_trick_records(trick_recs: list[dict]) -> None:
     # Expect exactly 10 trick_end records with trick_num 0..9
-    assert len(trick_recs) == 10, f"Expected 10 trick_end records, got {len(trick_recs)}"
+    assert (
+        len(trick_recs) == 10
+    ), f"Expected 10 trick_end records, got {len(trick_recs)}"
     nums = sorted(r["trick_num"] for r in trick_recs)
     assert nums == list(range(10)), f"Expected trick_num 0..9, got {nums}"
 
@@ -72,7 +78,9 @@ def _assert_trick_records(trick_recs: list[dict]) -> None:
         assert r["winner"] in [0, 1, 2, 3]
 
 
-def _assert_card_conservation(seat_hands: list[list[Card]], trick_recs: list[dict]) -> None:
+def _assert_card_conservation(
+    seat_hands: list[list[Card]], trick_recs: list[dict]
+) -> None:
     dealt = Counter((_card_key(c) for h in seat_hands for c in h))
 
     played_cards = []
@@ -86,13 +94,22 @@ def _assert_card_conservation(seat_hands: list[list[Card]], trick_recs: list[dic
 
     # 40 plays total, 10 per player
     assert sum(played.values()) == 40, f"Expected 40 plays, got {sum(played.values())}"
-    assert all(played_by_player[i] == 10 for i in range(4)), f"Expected 10 plays per player, got {played_by_player}"
+    assert all(
+        played_by_player[i] == 10 for i in range(4)
+    ), f"Expected 10 plays per player, got {played_by_player}"
 
     # Every dealt card is played exactly once (multiset equality, handles double-deck duplicates)
-    assert played == dealt, f"Played multiset != dealt multiset\nDealt: {dealt}\nPlayed: {played}"
+    assert (
+        played == dealt
+    ), f"Played multiset != dealt multiset\nDealt: {dealt}\nPlayed: {played}"
 
 
-def _assert_legality(seat_hands: list[list[Card]], trick_recs: list[dict], contract: str, trump: str | None) -> None:
+def _assert_legality(
+    seat_hands: list[list[Card]],
+    trick_recs: list[dict],
+    contract: str,
+    trump: str | None,
+) -> None:
     """
     Reconstruct hand state and verify each played card was legal via get_legal_indices.
     This checks follow-suit enforcement as a post-condition.
@@ -108,7 +125,9 @@ def _assert_legality(seat_hands: list[list[Card]], trick_recs: list[dict], contr
             try:
                 idx = next(i for i, c in enumerate(hands[player_idx]) if c == card)
             except StopIteration:
-                raise AssertionError(f"Played card {card} not found in player {player_idx} hand at time of play")
+                raise AssertionError(
+                    f"Played card {card} not found in player {player_idx} hand at time of play"
+                )
 
             legal = get_legal_indices(
                 hand=hands[player_idx],
@@ -127,15 +146,22 @@ def _assert_legality(seat_hands: list[list[Card]], trick_recs: list[dict], contr
             plays_so_far.append((player_idx, played_card))
 
     # After 10 tricks, all hands should be empty
-    assert all(len(h) == 0 for h in hands), f"Expected all hands empty after play, got {[len(h) for h in hands]}"
+    assert all(
+        len(h) == 0 for h in hands
+    ), f"Expected all hands empty after play, got {[len(h) for h in hands]}"
 
 
-@pytest.mark.parametrize("contract_type,trump_suit,deal_seed", [
-    ("suit", "H", 4242),
-    ("high", None, 4243),
-    ("low", None, 4244),
-])
-def test_engine_invariants_via_trick_logs(tmp_path: Path, contract_type: str, trump_suit: str | None, deal_seed: int):
+@pytest.mark.parametrize(
+    "contract_type,trump_suit,deal_seed",
+    [
+        ("suit", "H", 4242),
+        ("high", None, 4243),
+        ("low", None, 4244),
+    ],
+)
+def test_engine_invariants_via_trick_logs(
+    tmp_path: Path, contract_type: str, trump_suit: str | None, deal_seed: int
+):
     """
     Integration invariant test:
     - Deal integrity (40 cards; double-deck duplicate bounds; 10 per player)
@@ -147,7 +173,9 @@ def test_engine_invariants_via_trick_logs(tmp_path: Path, contract_type: str, tr
     """
     log_path = tmp_path / f"invariants_{contract_type}_{deal_seed}.jsonl"
 
-    logger = GameLogger(run_id="test_invariants", strategy_id="always_highest", level=LogLevel.TRICK).open(str(log_path))
+    logger = GameLogger(
+        run_id="test_invariants", strategy_id="always_highest", level=LogLevel.TRICK
+    ).open(str(log_path))
 
     # Keep this small/fast; determinism comes from deal_seed + deterministic strategy.
     simulate_many_hands(
@@ -169,7 +197,9 @@ def test_engine_invariants_via_trick_logs(tmp_path: Path, contract_type: str, tr
         if r.get("event") in {"hand_end", "trick_end"}:
             by_deal[r["deal_id"]].append(r)
 
-    assert len(by_deal) == 1, f"Expected exactly 1 deal_id in logs, got {list(by_deal.keys())}"
+    assert (
+        len(by_deal) == 1
+    ), f"Expected exactly 1 deal_id in logs, got {list(by_deal.keys())}"
     deal_id = next(iter(by_deal.keys()))
     deal_recs = by_deal[deal_id]
 
@@ -184,4 +214,9 @@ def test_engine_invariants_via_trick_logs(tmp_path: Path, contract_type: str, tr
     _assert_deal_integrity(seat_hands)
     _assert_trick_records(trick_ends)
     _assert_card_conservation(seat_hands, trick_ends)
-    _assert_legality(seat_hands, trick_ends, contract=hand_end["contract"], trump=hand_end.get("trump"))
+    _assert_legality(
+        seat_hands,
+        trick_ends,
+        contract=hand_end["contract"],
+        trump=hand_end.get("trump"),
+    )

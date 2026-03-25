@@ -9,8 +9,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
 
-def run_experiment(config_path: str, extra_args: list[str] | None = None, run_dir: str | None = None) -> subprocess.CompletedProcess:
+pytestmark = pytest.mark.integration
+
+
+def run_experiment(
+    config_path: str, extra_args: list[str] | None = None, run_dir: str | None = None
+) -> subprocess.CompletedProcess:
     """Run the experiment runner with given args."""
     args = ["python", "experiments/run_experiment.py", "--config", config_path]
     if extra_args:
@@ -29,7 +35,9 @@ def run_experiment(config_path: str, extra_args: list[str] | None = None, run_di
     )
 
 
-def generate_report(run_dir: str, extra_args: list[str] | None = None) -> subprocess.CompletedProcess:
+def generate_report(
+    run_dir: str, extra_args: list[str] | None = None
+) -> subprocess.CompletedProcess:
     """Run the report generator on a run directory."""
     args = ["python", "scripts/generate_report.py", "--run-dir", run_dir]
     if extra_args:
@@ -53,9 +61,11 @@ def test_report_generator_creates_summary():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
-        assert result.returncode == 0, f"Experiment should succeed. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Experiment should succeed. Error: {result.stderr}"
 
         # Find run directory
         run_dirs = list(Path(tmpdir).glob("*"))
@@ -64,7 +74,9 @@ def test_report_generator_creates_summary():
 
         # Generate report
         result = generate_report(str(run_dir))
-        assert result.returncode == 0, f"Report generation should succeed. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Report generation should succeed. Error: {result.stderr}"
 
         # Verify reports/ exists
         reports_dir = run_dir / "reports"
@@ -79,7 +91,9 @@ def test_report_generator_creates_summary():
         content = summary_path.read_text()
         assert len(content) > 50, "ANALYSIS_SUMMARY.md should be non-trivial"
         assert run_dir.name in content, "Summary should contain run directory name"
-        assert "Results Files Discovered" in content, "Summary should have results section"
+        assert (
+            "Results Files Discovered" in content
+        ), "Summary should have results section"
         assert "Charts Generated" in content, "Summary should have charts section"
 
 
@@ -90,16 +104,20 @@ def test_report_generator_includes_metadata():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "123", "--n_per", "7"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
-        assert result.returncode == 0, f"Experiment should succeed. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Experiment should succeed. Error: {result.stderr}"
 
         run_dirs = list(Path(tmpdir).glob("*"))
         run_dir = run_dirs[0]
 
         # Generate report
         result = generate_report(str(run_dir))
-        assert result.returncode == 0, f"Report generation should succeed. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Report generation should succeed. Error: {result.stderr}"
 
         # Verify metadata in summary
         summary_path = run_dir / "reports" / "ANALYSIS_SUMMARY.md"
@@ -119,19 +137,26 @@ def test_report_generator_handles_empty_results():
 
         # Create minimal meta.json
         import json
+
         with open(run_dir / "meta.json", "w") as f:
             json.dump({"seed": 42, "n_per": 0}, f)
 
         # Generate report (should succeed with no results)
         result = generate_report(str(run_dir))
-        assert result.returncode == 0, f"Report generation should succeed with empty results. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Report generation should succeed with empty results. Error: {result.stderr}"
 
         # Verify summary exists and notes no results
         summary_path = run_dir / "reports" / "ANALYSIS_SUMMARY.md"
-        assert summary_path.exists(), "ANALYSIS_SUMMARY.md should exist even with no results"
+        assert (
+            summary_path.exists()
+        ), "ANALYSIS_SUMMARY.md should exist even with no results"
 
         content = summary_path.read_text()
-        assert "No results found" in content or len(content) > 0, "Summary should handle empty results gracefully"
+        assert (
+            "No results found" in content or len(content) > 0
+        ), "Summary should handle empty results gracefully"
 
 
 def test_report_generator_fails_without_results_directory():
@@ -144,8 +169,10 @@ def test_report_generator_fails_without_results_directory():
         # Try to generate report
         result = generate_report(str(bad_dir))
         assert result.returncode != 0, "Should fail for invalid run directory"
-        assert "missing results/" in result.stderr.lower() or "not a valid run" in result.stderr.lower(), \
-            "Error message should mention missing results/"
+        assert (
+            "missing results/" in result.stderr.lower()
+            or "not a valid run" in result.stderr.lower()
+        ), "Error message should mention missing results/"
 
 
 def test_report_generator_fails_if_reports_exist_without_overwrite():
@@ -155,7 +182,7 @@ def test_report_generator_fails_if_reports_exist_without_overwrite():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
         assert result.returncode == 0
 
@@ -168,7 +195,9 @@ def test_report_generator_fails_if_reports_exist_without_overwrite():
 
         # Try to generate again without --overwrite
         result = generate_report(str(run_dir))
-        assert result.returncode != 0, "Should fail when reports/ exists without --overwrite"
+        assert (
+            result.returncode != 0
+        ), "Should fail when reports/ exists without --overwrite"
         assert "overwrite" in result.stderr.lower(), "Error should mention --overwrite"
 
 
@@ -179,7 +208,7 @@ def test_report_generator_succeeds_with_overwrite():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
         assert result.returncode == 0
 
@@ -194,14 +223,18 @@ def test_report_generator_succeeds_with_overwrite():
 
         # Generate again with --overwrite
         result = generate_report(str(run_dir), ["--overwrite"])
-        assert result.returncode == 0, f"Should succeed with --overwrite. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Should succeed with --overwrite. Error: {result.stderr}"
 
         # Verify summary was regenerated
         assert summary_path.exists(), "Summary should still exist after regeneration"
         second_content = summary_path.read_text()
 
         # Content should be logically similar (same run_id, seed, etc.)
-        assert run_dir.name in second_content, "Regenerated summary should contain run_id"
+        assert (
+            run_dir.name in second_content
+        ), "Regenerated summary should contain run_id"
 
 
 def test_report_generator_writes_only_under_reports_and_artifacts():
@@ -211,7 +244,7 @@ def test_report_generator_writes_only_under_reports_and_artifacts():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
         assert result.returncode == 0
 
@@ -238,5 +271,6 @@ def test_report_generator_writes_only_under_reports_and_artifacts():
             if new_file.is_file():
                 is_under_reports = new_file.is_relative_to(reports_dir)
                 is_under_artifacts = new_file.is_relative_to(artifacts_dir)
-                assert is_under_reports or is_under_artifacts, \
-                    f"New file should be under reports/ or artifacts/: {new_file.relative_to(run_dir)}"
+                assert (
+                    is_under_reports or is_under_artifacts
+                ), f"New file should be under reports/ or artifacts/: {new_file.relative_to(run_dir)}"

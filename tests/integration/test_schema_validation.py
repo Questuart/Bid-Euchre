@@ -13,6 +13,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.integration
+
 from bid_euchre.validation.schemas import (
     ValidationError,
     validate_meta_v2,
@@ -22,9 +26,7 @@ from bid_euchre.validation.schemas import (
 
 
 def run_experiment(
-    config_path: str,
-    extra_args: list[str] | None = None,
-    run_dir: str | None = None
+    config_path: str, extra_args: list[str] | None = None, run_dir: str | None = None
 ) -> subprocess.CompletedProcess:
     """Run the experiment runner with given args."""
     args = ["python", "experiments/run_experiment.py", "--config", config_path]
@@ -45,9 +47,7 @@ def run_experiment(
 
 
 def run_suite(
-    suite_path: str,
-    extra_args: list[str] | None = None,
-    run_dir: str | None = None
+    suite_path: str, extra_args: list[str] | None = None, run_dir: str | None = None
 ) -> subprocess.CompletedProcess:
     """Run the suite runner with given args."""
     args = ["python", "scripts/run_suite.py", "--suite", suite_path]
@@ -73,7 +73,7 @@ def test_quick_test_produces_valid_meta_v2():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
 
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
@@ -100,7 +100,7 @@ def test_quick_test_produces_valid_results():
         result = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
 
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
@@ -121,8 +121,7 @@ def test_quick_test_produces_valid_results():
                 results = json.load(f)
 
             errors = validate_results_json(results)
-            assert not errors, \
-                f"{results_file.name} validation errors: {errors}"
+            assert not errors, f"{results_file.name} validation errors: {errors}"
 
 
 def test_suite_produces_valid_rollup():
@@ -132,14 +131,18 @@ def test_suite_produces_valid_rollup():
         result = run_suite(
             "experiments/suites/baseline_tiny.yaml",
             ["--seed", "42", "--n-per", "5"],
-            run_dir=tmpdir
+            run_dir=tmpdir,
         )
 
-        assert result.returncode == 0, f"Suite run should succeed. Error: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Suite run should succeed. Error: {result.stderr}"
 
         # Find suite rollup directory (starts with "suite_")
         suite_dirs = list(Path(tmpdir).glob("suite_*"))
-        assert len(suite_dirs) >= 1, f"Expected at least 1 suite directory, found {len(suite_dirs)}"
+        assert (
+            len(suite_dirs) >= 1
+        ), f"Expected at least 1 suite directory, found {len(suite_dirs)}"
 
         # Use the most recent suite dir (in case multiple runs)
         suite_dir = sorted(suite_dirs, key=lambda p: p.name)[-1]
@@ -165,8 +168,9 @@ def test_meta_validator_catches_missing_field():
 
     errors = validate_meta_v2(invalid_meta)
     assert len(errors) > 0, "Should catch missing fields"
-    assert any("created_at_utc" in err for err in errors), \
-        f"Should catch missing created_at_utc: {errors}"
+    assert any(
+        "created_at_utc" in err for err in errors
+    ), f"Should catch missing created_at_utc: {errors}"
 
 
 def test_meta_validator_catches_wrong_schema_version():
@@ -185,8 +189,9 @@ def test_meta_validator_catches_wrong_schema_version():
 
     errors = validate_meta_v2(invalid_meta)
     assert len(errors) > 0, "Should catch wrong schema version"
-    assert any("schema_version must be 2" in err for err in errors), \
-        f"Should catch schema version mismatch: {errors}"
+    assert any(
+        "schema_version must be 2" in err for err in errors
+    ), f"Should catch schema version mismatch: {errors}"
 
 
 def test_meta_validator_catches_invalid_timestamp():
@@ -205,8 +210,9 @@ def test_meta_validator_catches_invalid_timestamp():
 
     errors = validate_meta_v2(invalid_meta)
     assert len(errors) > 0, "Should catch invalid timestamp"
-    assert any("ISO-8601 with Z suffix" in err for err in errors), \
-        f"Should catch timestamp format error: {errors}"
+    assert any(
+        "ISO-8601 with Z suffix" in err for err in errors
+    ), f"Should catch timestamp format error: {errors}"
 
 
 def test_results_validator_catches_missing_distribution():
@@ -220,8 +226,9 @@ def test_results_validator_catches_missing_distribution():
 
     errors = validate_results_json(invalid_results)
     assert len(errors) > 0, "Should catch missing distribution_team0"
-    assert any("distribution_team0" in err for err in errors), \
-        f"Should catch missing distribution: {errors}"
+    assert any(
+        "distribution_team0" in err for err in errors
+    ), f"Should catch missing distribution: {errors}"
 
 
 def test_results_validator_catches_invalid_avg_range():
@@ -235,8 +242,9 @@ def test_results_validator_catches_invalid_avg_range():
 
     errors = validate_results_json(invalid_results)
     assert len(errors) > 0, "Should catch out-of-range average"
-    assert any("avg_team0" in err and "range" in err.lower() for err in errors), \
-        f"Should catch range error: {errors}"
+    assert any(
+        "avg_team0" in err and "range" in err.lower() for err in errors
+    ), f"Should catch range error: {errors}"
 
 
 def test_rollup_validator_catches_missing_summary():
@@ -253,8 +261,9 @@ def test_rollup_validator_catches_missing_summary():
 
     errors = validate_rollup_v1(invalid_rollup)
     assert len(errors) > 0, "Should catch missing summary"
-    assert any("summary" in err for err in errors), \
-        f"Should catch missing summary: {errors}"
+    assert any(
+        "summary" in err for err in errors
+    ), f"Should catch missing summary: {errors}"
 
 
 def test_validation_error_exception():
@@ -266,5 +275,6 @@ def test_validation_error_exception():
         assert False, "Should have raised ValidationError"
     except ValidationError as e:
         assert len(e.errors) > 0, "ValidationError should contain error list"
-        assert "schema_version must be 2" in str(e), \
-            f"ValidationError message should mention schema version: {e}"
+        assert "schema_version must be 2" in str(
+            e
+        ), f"ValidationError message should mention schema version: {e}"

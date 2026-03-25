@@ -28,6 +28,9 @@ import os
 import uuid
 
 import pytest
+
+pytestmark = pytest.mark.integration
+
 from sqlalchemy import inspect, text
 from starlette.testclient import TestClient
 

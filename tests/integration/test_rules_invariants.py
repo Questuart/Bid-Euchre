@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.core.cards import (
     SAME_COLOR_SUIT,
     Card,
@@ -46,10 +48,10 @@ class TestBowerOrdering:
         """Right bower (J of trump) beats left bower (J of same color)."""
         trump_suit = "H"
         right_bower = Card(suit="H", rank="J")  # Right bower
-        left_bower = Card(suit="D", rank="J")   # Left bower (diamonds = same color)
+        left_bower = Card(suit="D", rank="J")  # Left bower (diamonds = same color)
 
         plays = [
-            (0, left_bower),   # Player 0 leads left bower
+            (0, left_bower),  # Player 0 leads left bower
             (1, right_bower),  # Player 1 plays right bower
         ]
 
@@ -60,11 +62,11 @@ class TestBowerOrdering:
         """Left bower beats Ace of trump."""
         trump_suit = "H"
         left_bower = Card(suit="D", rank="J")  # Left bower
-        ace_trump = Card(suit="H", rank="A")    # Ace of hearts (trump)
+        ace_trump = Card(suit="H", rank="A")  # Ace of hearts (trump)
 
         plays = [
-            (0, ace_trump),    # Player 0 leads ace of trump
-            (1, left_bower),   # Player 1 plays left bower
+            (0, ace_trump),  # Player 0 leads ace of trump
+            (1, left_bower),  # Player 1 plays left bower
         ]
 
         winner = trick_winner(plays, contract_type="suit", trump_suit=trump_suit)
@@ -74,11 +76,11 @@ class TestBowerOrdering:
         """Right bower beats Ace of trump."""
         trump_suit = "H"
         right_bower = Card(suit="H", rank="J")  # Right bower
-        ace_trump = Card(suit="H", rank="A")    # Ace of hearts (trump)
+        ace_trump = Card(suit="H", rank="A")  # Ace of hearts (trump)
 
         plays = [
-            (0, ace_trump),     # Player 0 leads ace of trump
-            (1, right_bower),   # Player 1 plays right bower
+            (0, ace_trump),  # Player 0 leads ace of trump
+            (1, right_bower),  # Player 1 plays right bower
         ]
 
         winner = trick_winner(plays, contract_type="suit", trump_suit=trump_suit)
@@ -101,14 +103,14 @@ class TestBowerOrdering:
             weaker = cards_strongest_first[i + 1]
 
             plays = [
-                (0, weaker),   # Player 0 leads weaker card
-                (1, stronger), # Player 1 plays stronger card
+                (0, weaker),  # Player 0 leads weaker card
+                (1, stronger),  # Player 1 plays stronger card
             ]
 
             winner = trick_winner(plays, contract_type="suit", trump_suit=trump_suit)
-            assert winner == 1, (
-                f"Expected {stronger} to beat {weaker} with trump={trump_suit}"
-            )
+            assert (
+                winner == 1
+            ), f"Expected {stronger} to beat {weaker} with trump={trump_suit}"
 
 
 class TestTrumpBeatsNonTrump:
@@ -117,12 +119,12 @@ class TestTrumpBeatsNonTrump:
     def test_lowest_trump_beats_highest_offsuit(self) -> None:
         """Even the lowest trump (10) beats Ace of non-trump."""
         trump_suit = "H"
-        ten_trump = Card(suit="H", rank="T")   # 10 of trump (lowest)
-        ace_offsuit = Card(suit="S", rank="A") # Ace of spades
+        ten_trump = Card(suit="H", rank="T")  # 10 of trump (lowest)
+        ace_offsuit = Card(suit="S", rank="A")  # Ace of spades
 
         plays = [
             (0, ace_offsuit),  # Player 0 leads ace of spades
-            (1, ten_trump),    # Player 1 trumps with 10
+            (1, ten_trump),  # Player 1 trumps with 10
         ]
 
         winner = trick_winner(plays, contract_type="suit", trump_suit=trump_suit)
@@ -131,15 +133,15 @@ class TestTrumpBeatsNonTrump:
     def test_trump_wins_when_following_not_possible(self) -> None:
         """Player who trumps wins even if led suit has high card."""
         trump_suit = "H"
-        ace_led = Card(suit="C", rank="A")     # Ace of clubs (led suit)
-        king_led = Card(suit="C", rank="K")    # King of clubs
-        queen_led = Card(suit="C", rank="Q")   # Queen of clubs
+        ace_led = Card(suit="C", rank="A")  # Ace of clubs (led suit)
+        king_led = Card(suit="C", rank="K")  # King of clubs
+        queen_led = Card(suit="C", rank="Q")  # Queen of clubs
         trump_card = Card(suit="H", rank="T")  # 10 of hearts (trump)
 
         plays = [
-            (0, ace_led),    # Player 0 leads ace of clubs
-            (1, king_led),   # Player 1 follows with king
-            (2, trump_card), # Player 2 trumps (can't follow)
+            (0, ace_led),  # Player 0 leads ace of clubs
+            (1, king_led),  # Player 1 follows with king
+            (2, trump_card),  # Player 2 trumps (can't follow)
             (3, queen_led),  # Player 3 follows with queen
         ]
 
@@ -149,16 +151,16 @@ class TestTrumpBeatsNonTrump:
     def test_highest_trump_wins_when_multiple_trump(self) -> None:
         """When multiple players trump, highest trump wins."""
         trump_suit = "H"
-        card_led = Card(suit="C", rank="A")   # Ace of clubs (led)
-        trump_1 = Card(suit="H", rank="T")    # 10 of hearts
-        trump_2 = Card(suit="H", rank="Q")    # Queen of hearts
-        trump_3 = Card(suit="H", rank="K")    # King of hearts
+        card_led = Card(suit="C", rank="A")  # Ace of clubs (led)
+        trump_1 = Card(suit="H", rank="T")  # 10 of hearts
+        trump_2 = Card(suit="H", rank="Q")  # Queen of hearts
+        trump_3 = Card(suit="H", rank="K")  # King of hearts
 
         plays = [
             (0, card_led),  # Player 0 leads
-            (1, trump_1),   # Player 1 trumps with 10
-            (2, trump_2),   # Player 2 trumps with Q
-            (3, trump_3),   # Player 3 trumps with K
+            (1, trump_1),  # Player 1 trumps with 10
+            (2, trump_2),  # Player 2 trumps with Q
+            (3, trump_3),  # Player 3 trumps with K
         ]
 
         winner = trick_winner(plays, contract_type="suit", trump_suit=trump_suit)
@@ -279,9 +281,9 @@ class TestFollowSuitEnforcement:
         left_bower = Card(suit=same_color, rank="J")  # JD is left bower
 
         hand = [
-            left_bower,               # 0 - left bower (effectively hearts)
-            Card(suit="D", rank="A"), # 1 - Ace of diamonds
-            Card(suit="S", rank="K"), # 2 - King of spades
+            left_bower,  # 0 - left bower (effectively hearts)
+            Card(suit="D", rank="A"),  # 1 - Ace of diamonds
+            Card(suit="S", rank="K"),  # 2 - King of spades
         ]
 
         # Hearts (trump) was led
@@ -290,9 +292,9 @@ class TestFollowSuitEnforcement:
         legal = get_legal_indices(hand, plays_so_far, "suit", trump_suit=trump_suit)
 
         # Only left bower follows trump
-        assert set(legal) == {0}, (
-            f"Left bower should be only legal card when trump led, got {legal}"
-        )
+        assert set(legal) == {
+            0
+        }, f"Left bower should be only legal card when trump led, got {legal}"
 
 
 class TestTrickWinnerInSimulation:
@@ -332,7 +334,8 @@ class TestTrickWinnerInSimulation:
             trump_plays = [
                 (p[0], Card(suit=p[1], rank=p[2]))
                 for p in plays
-                if effective_suit(Card(suit=p[1], rank=p[2]), trump_suit, "suit") == trump_suit
+                if effective_suit(Card(suit=p[1], rank=p[2]), trump_suit, "suit")
+                == trump_suit
             ]
 
             if trump_plays:
@@ -376,9 +379,9 @@ class TestTrickWinnerInSimulation:
                 by_deal[r["deal_id"]].append(r)
 
         for deal_id, tricks in by_deal.items():
-            assert len(tricks) == 10, (
-                f"Deal {deal_id} has {len(tricks)} tricks, expected 10"
-            )
+            assert (
+                len(tricks) == 10
+            ), f"Deal {deal_id} has {len(tricks)} tricks, expected 10"
 
     def test_team_tricks_sum_to_ten(self, tmp_path: Path) -> None:
         """Team0 tricks + Team1 tricks should always equal 10."""
@@ -407,6 +410,6 @@ class TestTrickWinnerInSimulation:
         for hand in hand_ends:
             t0 = hand["t0"]  # Team 0 tricks
             t1 = hand["t1"]  # Team 1 tricks
-            assert t0 + t1 == 10, (
-                f"Deal {hand['deal_id']}: team tricks {t0} + {t1} = {t0+t1}, expected 10"
-            )
+            assert (
+                t0 + t1 == 10
+            ), f"Deal {hand['deal_id']}: team tricks {t0} + {t1} = {t0 + t1}, expected 10"

@@ -11,6 +11,8 @@ from typing import Dict, List
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.core.cards import create_deck, deal_hands, shuffle_deck
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy import GreedyStrategy

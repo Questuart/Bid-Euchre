@@ -21,6 +21,8 @@ from typing import Any
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 SUITE_PATH = "experiments/suites/baseline_tiny.yaml"
 SEED = 42
 N_PER = 3
@@ -31,9 +33,9 @@ def assert_scoring_contract(result: dict[str, Any]) -> None:
     """Ensure scoring/points keys exist and satisfy non-brittle invariants."""
 
     def _assert_number(value: Any, field_name: str) -> None:
-        assert isinstance(value, (int, float)) and not isinstance(value, bool), (
-            f"{field_name} must be numeric, got {type(value).__name__}"
-        )
+        assert isinstance(value, (int, float)) and not isinstance(
+            value, bool
+        ), f"{field_name} must be numeric, got {type(value).__name__}"
 
     def _assert_int_like_key(key: Any, field_name: str) -> None:
         if isinstance(key, int):
@@ -56,9 +58,9 @@ def assert_scoring_contract(result: dict[str, Any]) -> None:
         dist = result[dist_key]
         assert isinstance(dist, dict), f"{dist_key} must be a dict"
         for count in dist.values():
-            assert isinstance(count, int), (
-                f"{dist_key} values must be ints, got {type(count).__name__}"
-            )
+            assert isinstance(
+                count, int
+            ), f"{dist_key} values must be ints, got {type(count).__name__}"
             assert count >= 0, f"{dist_key} counts must be non-negative, got {count}"
 
     assert "bidding_points" in result, "Missing bidding_points section"
@@ -73,16 +75,16 @@ def assert_scoring_contract(result: dict[str, Any]) -> None:
     hands_with_bids = bidding["hands_with_bids"]
     assert isinstance(hands_with_bids, int), "hands_with_bids must be int"
     assert hands_with_bids >= 0, f"hands_with_bids must be >= 0, got {hands_with_bids}"
-    assert enabled == (hands_with_bids > 0), (
-        "enabled must reflect whether any hands had bids"
-    )
+    assert enabled == (
+        hands_with_bids > 0
+    ), "enabled must reflect whether any hands had bids"
 
     if hands_with_bids == 0:
         for optional in ("avg_bid", "bid_distribution", "make_rate", "set_rate"):
             if optional in bidding:
-                assert bidding[optional] is None, (
-                    f"{optional} should be absent or null when no bids were made"
-                )
+                assert (
+                    bidding[optional] is None
+                ), f"{optional} should be absent or null when no bids were made"
         return
 
     assert "avg_bid" in bidding, "avg_bid missing when bids occurred"
@@ -93,27 +95,27 @@ def assert_scoring_contract(result: dict[str, Any]) -> None:
     assert isinstance(bid_dist, dict), "bid_distribution must be a dict"
     for key, value in bid_dist.items():
         _assert_int_like_key(key, "bid_distribution")
-        assert isinstance(value, int), (
-            f"bid_distribution[{key!r}] must be int, got {type(value).__name__}"
-        )
+        assert isinstance(
+            value, int
+        ), f"bid_distribution[{key!r}] must be int, got {type(value).__name__}"
         assert value >= 0, f"bid_distribution[{key!r}] must be >= 0"
 
     for rate_key in ("make_rate", "set_rate"):
         assert rate_key in bidding, f"{rate_key} missing when bids occurred"
         _assert_number(bidding[rate_key], rate_key)
         rate_value = bidding[rate_key]
-        assert 0.0 <= rate_value <= 1.0, (
-            f"{rate_key} must be within [0, 1], got {rate_value}"
-        )
+        assert (
+            0.0 <= rate_value <= 1.0
+        ), f"{rate_key} must be within [0, 1], got {rate_value}"
 
 
 JSON_SCALAR_TYPES: tuple[type, ...] = (str, int, float, bool, type(None))
 
 
 def _assert_json_scalar(value: Any, field_name: str) -> None:
-    assert isinstance(value, JSON_SCALAR_TYPES), (
-        f"{field_name} must be JSON scalar-ish, got {type(value).__name__}"
-    )
+    assert isinstance(
+        value, JSON_SCALAR_TYPES
+    ), f"{field_name} must be JSON scalar-ish, got {type(value).__name__}"
 
 
 def _assert_nested_json_scalars(value: dict[str, Any], field_name: str) -> None:
@@ -148,13 +150,17 @@ def assert_results_json_shape(result: dict[str, Any]) -> None:
 
     for key, expected in required_types.items():
         assert key in result, f"Missing {key} in results payload"
-        assert isinstance(result[key], expected), (
-            f"{key} must be one of {expected}, got {type(result[key]).__name__}"
-        )
+        assert isinstance(
+            result[key], expected
+        ), f"{key} must be one of {expected}, got {type(result[key]).__name__}"
 
     _assert_nested_json_scalars(result["distribution_team0"], "distribution_team0")
-    _assert_nested_json_scalars(result["distribution_points_team0"], "distribution_points_team0")
-    _assert_nested_json_scalars(result["distribution_points_team1"], "distribution_points_team1")
+    _assert_nested_json_scalars(
+        result["distribution_points_team0"], "distribution_points_team0"
+    )
+    _assert_nested_json_scalars(
+        result["distribution_points_team1"], "distribution_points_team1"
+    )
     _assert_nested_json_scalars(result["score_buckets"], "score_buckets")
     _assert_nested_json_scalars(result["feature_buckets"], "feature_buckets")
     _assert_nested_json_scalars(result["bidding_points"], "bidding_points")
@@ -178,8 +184,12 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
 
     # Validate fixture parameters match test parameters
     assert fixture["suite_name"] == "baseline_tiny", "Fixture suite_name mismatch"
-    assert fixture["seed"] == SEED, f"Fixture seed mismatch: expected {SEED}, got {fixture['seed']}"
-    assert fixture["n_per"] == N_PER, f"Fixture n_per mismatch: expected {N_PER}, got {fixture['n_per']}"
+    assert (
+        fixture["seed"] == SEED
+    ), f"Fixture seed mismatch: expected {SEED}, got {fixture['seed']}"
+    assert (
+        fixture["n_per"] == N_PER
+    ), f"Fixture n_per mismatch: expected {N_PER}, got {fixture['n_per']}"
 
     # Run baseline_tiny suite
     run_base = tmp_path / "runs"
@@ -226,14 +236,16 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
 
     # Identify rollup directory
     rollup_candidates = [d for d in new_dirs if (d / "rollup.json").exists()]
-    assert len(rollup_candidates) == 1, (
-        f"Expected exactly 1 rollup directory, found {len(rollup_candidates)}"
-    )
+    assert (
+        len(rollup_candidates) == 1
+    ), f"Expected exactly 1 rollup directory, found {len(rollup_candidates)}"
     rollup_dir = rollup_candidates[0]
 
     # Verify rollup contract (existence-only checks)
     assert (rollup_dir / "meta.json").exists(), "Missing meta.json in rollup"
-    assert (rollup_dir / "suite_effective.yaml").exists(), "Missing suite_effective.yaml"
+    assert (
+        rollup_dir / "suite_effective.yaml"
+    ).exists(), "Missing suite_effective.yaml"
     assert (rollup_dir / "rollup.json").exists(), "Missing rollup.json"
     assert (rollup_dir / "reports" / "ROLLUP.md").exists(), "Missing ROLLUP.md"
 
@@ -242,14 +254,16 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
         rollup = json.load(f)
 
     assert rollup["suite_name"] == "baseline_tiny", "Rollup suite_name mismatch"
-    assert len(rollup["configs"]) == 3, f"Expected 3 configs, found {len(rollup['configs'])}"
+    assert (
+        len(rollup["configs"]) == 3
+    ), f"Expected 3 configs, found {len(rollup['configs'])}"
 
     # Build actual metrics from member runs
     actual_metrics = {
         "suite_name": "baseline_tiny",
         "seed": SEED,
         "n_per": N_PER,
-        "configs": []
+        "configs": [],
     }
 
     for config_entry in rollup["configs"]:
@@ -262,15 +276,15 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
         assert member_run_dir.exists(), f"Member run dir not found: {member_run_dir}"
 
         # Verify member run contract (existence-only)
-        assert (member_run_dir / "meta.json").exists(), (
-            f"Missing meta.json in {member_run_dir.name}"
-        )
-        assert (member_run_dir / "config_effective.yaml").exists(), (
-            f"Missing config_effective.yaml in {member_run_dir.name}"
-        )
-        assert (member_run_dir / "results").is_dir(), (
-            f"Missing results/ directory in {member_run_dir.name}"
-        )
+        assert (
+            member_run_dir / "meta.json"
+        ).exists(), f"Missing meta.json in {member_run_dir.name}"
+        assert (
+            member_run_dir / "config_effective.yaml"
+        ).exists(), f"Missing config_effective.yaml in {member_run_dir.name}"
+        assert (
+            member_run_dir / "results"
+        ).is_dir(), f"Missing results/ directory in {member_run_dir.name}"
 
         # Load all result files and extract stable metrics
         config_results = {}
@@ -287,7 +301,7 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
             # Extract stable metrics only
             metrics = {
                 "hands": result_data["hands"],
-                "distribution_team0": result_data["distribution_team0"]
+                "distribution_team0": result_data["distribution_team0"],
             }
 
             # Include distribution_team1 only if present
@@ -305,27 +319,26 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
 
             config_results[rel_path] = metrics
 
-        actual_metrics["configs"].append({
-            "config_path": config_path,
-            "results": config_results
-        })
+        actual_metrics["configs"].append(
+            {"config_path": config_path, "results": config_results}
+        )
 
     # Sort both fixture and actual configs by config_path for comparison
     fixture_configs = sorted(fixture["configs"], key=lambda c: c["config_path"])
     actual_configs = sorted(actual_metrics["configs"], key=lambda c: c["config_path"])
 
     # Compare config count
-    assert len(actual_configs) == len(fixture_configs), (
-        f"Config count mismatch: expected {len(fixture_configs)}, got {len(actual_configs)}"
-    )
+    assert (
+        len(actual_configs) == len(fixture_configs)
+    ), f"Config count mismatch: expected {len(fixture_configs)}, got {len(actual_configs)}"
 
     # Compare each config
     for fixture_config, actual_config in zip(fixture_configs, actual_configs):
         config_path = fixture_config["config_path"]
 
-        assert actual_config["config_path"] == config_path, (
-            f"Config path mismatch: expected {config_path}, got {actual_config['config_path']}"
-        )
+        assert (
+            actual_config["config_path"] == config_path
+        ), f"Config path mismatch: expected {config_path}, got {actual_config['config_path']}"
 
         fixture_results = fixture_config["results"]
         actual_results = actual_config["results"]
@@ -352,7 +365,10 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
             )
 
             # Compare distribution_team0
-            assert actual_metrics_for_file["distribution_team0"] == fixture_metrics["distribution_team0"], (
+            assert (
+                actual_metrics_for_file["distribution_team0"]
+                == fixture_metrics["distribution_team0"]
+            ), (
                 f"distribution_team0 mismatch for {config_path} / {result_path}:\n"
                 f"  Expected: {fixture_metrics['distribution_team0']}\n"
                 f"  Actual:   {actual_metrics_for_file['distribution_team0']}"
@@ -360,10 +376,13 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
 
             # Compare distribution_team1 if present in fixture
             if "distribution_team1" in fixture_metrics:
-                assert "distribution_team1" in actual_metrics_for_file, (
-                    f"distribution_team1 missing in actual results for {config_path} / {result_path}"
-                )
-                assert actual_metrics_for_file["distribution_team1"] == fixture_metrics["distribution_team1"], (
+                assert (
+                    "distribution_team1" in actual_metrics_for_file
+                ), f"distribution_team1 missing in actual results for {config_path} / {result_path}"
+                assert (
+                    actual_metrics_for_file["distribution_team1"]
+                    == fixture_metrics["distribution_team1"]
+                ), (
                     f"distribution_team1 mismatch for {config_path} / {result_path}:\n"
                     f"  Expected: {fixture_metrics['distribution_team1']}\n"
                     f"  Actual:   {actual_metrics_for_file['distribution_team1']}"
