@@ -209,6 +209,12 @@ class DashboardView:
 # ---------------------------------------------------------------------------
 
 
+#: Lane classes considered "worker" lanes for fleet-wide idle detection.
+#: Control-plane lanes (ops, review) are excluded — their idleness is normal
+#: and should not contribute to a fleet-stuck determination.
+_WORKER_LANE_CLASSES: frozenset[str] = frozenset({"author", "analyst", "scratch"})
+
+
 def _derive_attention_items(
     report: StatusReport,
 ) -> list[AttentionItem]:
@@ -216,8 +222,14 @@ def _derive_attention_items(
 
     Priority order:
     - blocked lanes/tasks -> high
-    - stale lanes -> medium
+    - all worker lanes idle/stale -> high (fleet stuck)
+    - stale lanes -> low (informational)
     - idle persistent lanes -> low
+
+    Individual lane staleness is ``low`` (informational) — it is normal for
+    some lanes to sit idle during fleet runs.  A ``high`` fleet-level alert
+    fires only when **all** author/analyst/scratch lanes are idle or stale,
+    indicating the entire fleet may be stuck (#1775).
 
     Args:
         report: Aggregated status report.
@@ -243,12 +255,14 @@ def _derive_attention_items(
                 )
             )
         elif lane.state == "stale" or ("stale" in reason.lower() if reason else False):
+            # Individual stale lanes are informational — it's normal for some
+            # lanes to be unused during fleet runs (#1775).
             items.append(
                 AttentionItem(
                     lane_id=lane.lane_id,
-                    severity="medium",
+                    severity="low",
                     reason=reason,
-                    suggested_action="check if agent died",
+                    suggested_action="check if agent died (informational)",
                 )
             )
         else:
@@ -257,6 +271,28 @@ def _derive_attention_items(
                     lane_id=lane.lane_id,
                     severity="low",
                     reason=reason,
+                )
+            )
+
+    # Fleet-wide idle check: if ALL worker lanes are idle or stale, the
+    # entire fleet may be stuck — escalate to high (#1775).
+    worker_lanes = [
+        lane for lane in report.lanes if lane.lane_class in _WORKER_LANE_CLASSES
+    ]
+    if worker_lanes:
+        all_idle_or_stale = all(
+            lane.state in ("idle", "stale") for lane in worker_lanes
+        )
+        if all_idle_or_stale:
+            items.append(
+                AttentionItem(
+                    lane_id="fleet",
+                    severity="high",
+                    reason=(
+                        f"All {len(worker_lanes)} worker lanes are idle or "
+                        f"stale — fleet may be stuck"
+                    ),
+                    suggested_action="check if fleet is stuck; consider dispatch or shutoff",
                 )
             )
 
