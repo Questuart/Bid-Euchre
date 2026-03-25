@@ -1,13 +1,22 @@
 """Token economy observability — import, attribute, and summarize Claude usage data.
 
-Reads from ``~/.claude/usage-data/session-meta/*.json`` and
-``~/.claude/usage-data/facets/*.json`` and normalizes them into a
-repo-owned store under ``.claude/runtime/token_economy/``.
+Reads from two sources:
+
+1. **Legacy session-meta:** ``~/.claude/usage-data/session-meta/*.json`` and
+   ``~/.claude/usage-data/facets/*.json`` (pre-v2.1.80 format).
+2. **Project JSONL:** ``~/.claude/projects/<slug>/*.jsonl`` (v2.1.80+ format).
+   Each JSONL file is a session transcript; token data is extracted from
+   ``assistant`` messages' ``message.usage`` blocks.
+
+Both are normalized into a repo-owned store under
+``.claude/runtime/token_economy/``.
 
 Public API
 ----------
 import_usage_data
-    Import native usage data. Idempotent — re-running does not duplicate sessions.
+    Import legacy session-meta data. Idempotent — re-running does not duplicate.
+import_project_jsonl
+    Import per-project JSONL telemetry. Streams files line-by-line. Idempotent.
 attribute_sessions
     Infer lane/worktree attribution for imported sessions.
 usage_summary
@@ -39,10 +48,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Schema version — bump when normalized record format changes
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
-# Default source directory
+# Default source directories
 DEFAULT_USAGE_DIR = Path.home() / ".claude" / "usage-data"
+DEFAULT_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 # Expected fields in session-meta JSON (required subset)
 _REQUIRED_SESSION_FIELDS = frozenset({"session_id"})
@@ -91,9 +101,10 @@ class SessionRecord:
     # Source tracking for idempotent import
     source_path: str = ""
     source_hash: str = ""
+    source_type: str = "session-meta"  # "session-meta" | "project-jsonl"
     import_timestamp: str = ""
 
-    # Core metrics from session-meta
+    # Core metrics from session-meta or aggregated from project JSONL
     project_path: str | None = None
     start_time: str | None = None
     duration_minutes: int | None = None
@@ -278,6 +289,324 @@ def _build_record(
                 setattr(rec, fld, val)
 
     return rec
+
+
+# ---------------------------------------------------------------------------
+# JSONL project telemetry scanner (v2.1.80+ per-project format)
+# ---------------------------------------------------------------------------
+
+
+def _infer_lane_from_slug(slug: str) -> tuple[str | None, str | None]:
+    """Infer lane ID and worktree name from a project directory slug.
+
+    Claude stores per-project telemetry under ``~/.claude/projects/<slug>/``
+    where *slug* is the project's absolute path with ``/`` replaced by ``-``.
+
+    This function matches known worktree names against the slug suffix,
+    preferring the longest match to avoid ambiguity (e.g., ``Bid-Euchre``
+    vs ``Bid-Euchre-steward-author``).
+
+    Returns
+    -------
+    tuple[str | None, str | None]
+        ``(lane_id, worktree_name)`` if a known worktree is matched,
+        ``(None, None)`` otherwise.
+    """
+    if not slug:
+        return None, None
+
+    # Try longest-first matching of known worktree names against slug suffix
+    for wt_name in sorted(_WORKTREE_TO_LANE, key=len, reverse=True):
+        if slug.endswith(wt_name):
+            return _WORKTREE_TO_LANE[wt_name], wt_name
+
+    # Check main checkout
+    if slug.endswith("Bid-Euchre") and "steward" not in slug:
+        return "main-checkout", "Bid-Euchre"
+
+    return None, None
+
+
+@dataclass
+class _JNLSessionAgg:
+    """Aggregated token data from streaming a session's JSONL messages."""
+
+    session_id: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
+    user_message_count: int = 0
+    assistant_message_count: int = 0
+    first_timestamp: str = ""
+    last_timestamp: str = ""
+    cwd: str = ""
+    git_branch: str = ""
+
+
+def _scan_jsonl_file(path: Path) -> _JNLSessionAgg | None:
+    """Stream a single project JSONL file and aggregate per-session token data.
+
+    Reads line-by-line to avoid loading the entire file into memory (files
+    can exceed 4 MB each, with 1.7 GB total across all projects).
+
+    Returns None if the file contains no usable data (no assistant messages
+    with usage info, or no session ID).
+    """
+    session_id: str | None = None
+    agg = _JNLSessionAgg(session_id="")
+    has_usage = False
+
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for raw_line in fh:
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    obj = json.loads(raw_line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+                if not isinstance(obj, dict):
+                    continue
+
+                # Capture session ID from any message
+                if session_id is None:
+                    sid = obj.get("sessionId")
+                    if isinstance(sid, str) and sid.strip():
+                        session_id = sid
+                        agg.session_id = sid
+
+                # Capture cwd from the first message that has it
+                if not agg.cwd:
+                    cwd = obj.get("cwd")
+                    if isinstance(cwd, str) and cwd.strip():
+                        agg.cwd = cwd
+
+                # Capture git branch
+                if not agg.git_branch:
+                    branch = obj.get("gitBranch")
+                    if isinstance(branch, str) and branch.strip():
+                        agg.git_branch = branch
+
+                # Track timestamps for duration calculation
+                ts = obj.get("timestamp")
+                if isinstance(ts, str) and ts:
+                    if not agg.first_timestamp or ts < agg.first_timestamp:
+                        agg.first_timestamp = ts
+                    if not agg.last_timestamp or ts > agg.last_timestamp:
+                        agg.last_timestamp = ts
+
+                msg_type = obj.get("type")
+
+                # Count user messages
+                if msg_type == "user" and not obj.get("isMeta"):
+                    agg.user_message_count += 1
+
+                # Extract token data from assistant messages
+                if msg_type == "assistant":
+                    agg.assistant_message_count += 1
+                    msg = obj.get("message")
+                    if isinstance(msg, dict):
+                        usage = msg.get("usage")
+                        if isinstance(usage, dict):
+                            has_usage = True
+                            agg.input_tokens += _safe_int(usage.get("input_tokens"))
+                            agg.output_tokens += _safe_int(usage.get("output_tokens"))
+                            agg.cache_creation_tokens += _safe_int(
+                                usage.get("cache_creation_input_tokens")
+                            )
+                            agg.cache_read_tokens += _safe_int(
+                                usage.get("cache_read_input_tokens")
+                            )
+
+    except OSError as exc:
+        logger.warning("Cannot read JSONL file %s: %s", path, exc)
+        return None
+
+    if session_id is None or not has_usage:
+        return None
+
+    return agg
+
+
+def _safe_int(val: Any) -> int:
+    """Coerce a value to int, returning 0 for None or non-numeric values."""
+    if val is None:
+        return 0
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _compute_duration_minutes(first_ts: str, last_ts: str) -> int | None:
+    """Compute session duration in minutes from first/last timestamps.
+
+    Returns None if timestamps are unparseable.
+    """
+    if not first_ts or not last_ts:
+        return None
+    try:
+        t1 = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
+        t2 = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+        delta = (t2 - t1).total_seconds()
+        return max(int(delta / 60), 1)  # at least 1 minute
+    except (ValueError, TypeError):
+        return None
+
+
+def _build_record_from_jsonl(
+    agg: _JNLSessionAgg,
+    source_path: Path,
+    source_hash: str,
+    now: str,
+    lane_id: str | None,
+) -> SessionRecord:
+    """Build a SessionRecord from aggregated JSONL data."""
+    duration = _compute_duration_minutes(agg.first_timestamp, agg.last_timestamp)
+
+    rec = SessionRecord(
+        session_id=agg.session_id,
+        source_path=str(source_path),
+        source_hash=source_hash,
+        source_type="project-jsonl",
+        import_timestamp=now,
+        project_path=agg.cwd or None,
+        start_time=agg.first_timestamp or None,
+        duration_minutes=duration,
+        user_message_count=agg.user_message_count,
+        assistant_message_count=agg.assistant_message_count,
+        input_tokens=agg.input_tokens,
+        output_tokens=agg.output_tokens,
+    )
+
+    # Store lane_id in project_path if we inferred it from slug but
+    # the cwd field was empty.
+    if not rec.project_path and lane_id:
+        rec.project_path = f"<inferred-lane:{lane_id}>"
+
+    return rec
+
+
+@dataclass
+class ProjectImportResult:
+    """Summary of an import_project_jsonl() run."""
+
+    sessions_imported: int
+    sessions_skipped: int
+    sessions_failed: int
+    total_files_scanned: int
+    directories_scanned: int
+    output_dir: str
+
+
+def import_project_jsonl(
+    *,
+    projects_dir: Path | None = None,
+    output_dir: Path | None = None,
+) -> ProjectImportResult:
+    """Import per-project JSONL telemetry into the token economy store.
+
+    Scans ``~/.claude/projects/<slug>/*.jsonl`` files produced by Claude
+    v2.1.80+. Each JSONL file is streamed line-by-line to aggregate token
+    usage from assistant messages.
+
+    Parameters
+    ----------
+    projects_dir
+        Path to ``~/.claude/projects/``. Defaults to :data:`DEFAULT_PROJECTS_DIR`.
+    output_dir
+        Path to the token economy output store. Defaults to repo runtime path.
+
+    Returns
+    -------
+    ProjectImportResult
+        Summary of import statistics.
+    """
+    resolved_projects = (
+        projects_dir if projects_dir is not None else DEFAULT_PROJECTS_DIR
+    )
+    resolved_output = _resolve_output_dir(output_dir)
+
+    # Ensure output directory exists
+    resolved_output.mkdir(parents=True, exist_ok=True)
+
+    if not resolved_projects.is_dir():
+        logger.warning("No projects directory found at %s", resolved_projects)
+        return ProjectImportResult(
+            sessions_imported=0,
+            sessions_skipped=0,
+            sessions_failed=0,
+            total_files_scanned=0,
+            directories_scanned=0,
+            output_dir=str(resolved_output),
+        )
+
+    # Load existing session IDs for idempotent import
+    existing_ids = _load_existing_ids(resolved_output)
+
+    now = datetime.now(timezone.utc).isoformat()
+    imported = 0
+    skipped = 0
+    failed = 0
+    files_scanned = 0
+    dirs_scanned = 0
+
+    new_records: list[SessionRecord] = []
+
+    # Iterate over project directories
+    for project_slug_dir in sorted(resolved_projects.iterdir()):
+        if not project_slug_dir.is_dir():
+            continue
+        dirs_scanned += 1
+
+        slug = project_slug_dir.name
+        lane_id, _wt_name = _infer_lane_from_slug(slug)
+
+        # Scan JSONL files in this project directory
+        for jsonl_path in sorted(project_slug_dir.glob("*.jsonl")):
+            files_scanned += 1
+
+            agg = _scan_jsonl_file(jsonl_path)
+            if agg is None:
+                failed += 1
+                continue
+
+            # Idempotent: skip already-imported sessions
+            if agg.session_id in existing_ids:
+                skipped += 1
+                continue
+
+            # If we didn't get lane from slug, try from cwd field
+            effective_lane = lane_id
+            if effective_lane is None and agg.cwd:
+                effective_lane, _ = infer_lane_from_path(agg.cwd)
+
+            source_hash = _file_hash(jsonl_path)
+            rec = _build_record_from_jsonl(
+                agg, jsonl_path, source_hash, now, effective_lane
+            )
+            new_records.append(rec)
+            existing_ids.add(agg.session_id)
+            imported += 1
+
+    # Append new records
+    if new_records:
+        _append_records(new_records, resolved_output)
+
+    # Recompute rollups
+    _write_rollups(resolved_output)
+
+    return ProjectImportResult(
+        sessions_imported=imported,
+        sessions_skipped=skipped,
+        sessions_failed=failed,
+        total_files_scanned=files_scanned,
+        directories_scanned=dirs_scanned,
+        output_dir=str(resolved_output),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1424,14 +1753,22 @@ def _ensure_imported(output_dir: Path) -> None:
             # Usage data is also stale — fall through to full re-import
 
         result = import_usage_data(output_dir=output_dir)
+
+        # Also scan per-project JSONL telemetry (v2.1.80+ format)
+        jsonl_result = import_project_jsonl(output_dir=output_dir)
+
         # Always attribute when attributions were missing, even if the
         # re-import found no new sessions (data may already be present).
-        if result.sessions_imported > 0 or result.sessions_skipped > 0 or attr_missing:
+        total_imported = result.sessions_imported + jsonl_result.sessions_imported
+        total_skipped = result.sessions_skipped + jsonl_result.sessions_skipped
+        if total_imported > 0 or total_skipped > 0 or attr_missing:
             attribute_sessions(output_dir=output_dir)
         logger.info(
-            "Auto-imported token economy data: %d new, %d skipped",
+            "Auto-imported token economy data: %d new (%d session-meta, %d project-jsonl), %d skipped",
+            total_imported,
             result.sessions_imported,
-            result.sessions_skipped,
+            jsonl_result.sessions_imported,
+            total_skipped,
         )
     except Exception as exc:
         logger.debug("Auto-import failed (best-effort): %s", exc)
