@@ -168,7 +168,8 @@ When parking a lane (no more work to assign), always use `/park` before
 context but leaves cron jobs running — they will continue firing on a
 lane the orchestrator considers stopped.
 
-Shutdown sequence:
+### Parking an Author Lane
+
 1. Complete or reassign any active task packet for the lane:
    ```bash
    # If the lane has finished its work:
@@ -179,6 +180,35 @@ Shutdown sequence:
 2. Send `/park` to the lane's tmux pane (cleans up cron jobs)
 3. Wait for confirmation that all cron jobs are deleted
 4. Send `/clear` to reset conversation context
+
+### Session-End Shutdown (Orchestrator Exit)
+
+Before the orchestrator ends its own session, it **must** park the ops and
+review lanes to prevent orphaned cron jobs. These lanes run persistent
+monitoring and polling crons that continue firing after the orchestrator
+stops reading them.
+
+Orchestrator exit sequence:
+1. Park **ops** lane: send `/park` to its tmux pane, wait for confirmation
+2. Park **review** lane: send `/park` to its tmux pane, wait for confirmation
+3. Park any **idle author lanes** that still have active sessions
+4. Verify all parked lanes report zero active cron jobs
+5. Write the session handoff document
+6. Park the orchestrator's own cron jobs (run `/park` locally)
+
+```bash
+# Park central lanes
+tmux send-keys -t steward:ops '/park' Enter
+# Wait for "0 cron jobs" confirmation, then:
+tmux send-keys -t steward:review '/park' Enter
+# Wait for confirmation, then park idle authors:
+tmux send-keys -t steward:author-a '/park' Enter
+# ... repeat for each idle author lane with an active session
+```
+
+**Critical rule:** Do not write a session handoff while ops or review lanes
+still have active cron jobs. The handoff signals "session ended" — but
+orphaned crons mean the session is still consuming resources.
 
 ## Named Skills
 
