@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1151,6 +1151,43 @@ class TestBulkAckMessages:
         ]
         assert len(ack_events) == 2
         assert all(ev["payload"].get("bulk") is True for ev in ack_events)
+
+    def test_bulk_ack_with_age_filter(self, bus_root: Path, events_dir: Path) -> None:
+        """Age-based filter acks only messages older than the cutoff."""
+        # Create two messages: one "old" (6 hours ago), one "recent" (now)
+        old_ts = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(
+            hours=6
+        )
+        m_old = create_message("a", "target", "assignment", "Old task")
+        # Patch created_at to be 6 hours ago
+        m_old = BusMessage(**{**m_old.__dict__, "created_at": old_ts.isoformat()})
+        m_new = create_message("a", "target", "assignment", "New task")
+
+        send_message(m_old, bus_root, events_dir=events_dir)
+        send_message(m_new, bus_root, events_dir=events_dir)
+
+        # Filter: only messages older than 4 hours
+        cutoff = datetime.now(tz=timezone.utc).timestamp() - (4 * 3600)
+
+        def age_filter(msg: dict) -> bool:
+            created = msg.get("created_at", "")
+            if not created:
+                return False
+            try:
+                created_ts = datetime.fromisoformat(created).timestamp()
+            except (ValueError, TypeError):
+                return False
+            return created_ts < cutoff
+
+        acked = bulk_ack_messages("target", age_filter, bus_root, events_dir=events_dir)
+        assert len(acked) == 1
+        assert acked[0]["summary"] == "Old task"
+
+        # The new message should still be unacked
+        inbox = read_inbox("target", bus_root)
+        unacked = [m for m in inbox if m.get("status") in ("pending", "delivered")]
+        assert len(unacked) == 1
+        assert unacked[0]["summary"] == "New task"
 
 
 # ---------------------------------------------------------------------------

@@ -65,6 +65,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -1861,24 +1862,44 @@ def cmd_inbox(args: argparse.Namespace) -> int:
 
     elif action == "ack-all":
         import re
+        from datetime import datetime, timezone
 
         lane = getattr(args, "lane", None)
         if not lane:
             print(
-                "Usage: ops.py inbox ack-all --lane LANE [--filter-summary PATTERN]",
+                "Usage: ops.py inbox ack-all --lane LANE [--filter-summary PATTERN] [--max-age HOURS]",
                 file=sys.stderr,
             )
             return 1
+
+        # Build a list of predicates, then compose them
+        predicates: list[Callable[[dict], bool]] = []
+
         summary_pattern = getattr(args, "filter_summary", None)
         if summary_pattern:
             pat = re.compile(summary_pattern, re.IGNORECASE)
+            predicates.append(lambda msg: bool(pat.search(msg.get("summary", ""))))
 
-            def filter_fn(msg: dict) -> bool:
-                return bool(pat.search(msg.get("summary", "")))
-        else:
+        max_age_hours: float | None = getattr(args, "max_age", None)
+        if max_age_hours is not None:
+            cutoff = datetime.now(tz=timezone.utc).timestamp() - (
+                max_age_hours * 3600.0
+            )
 
-            def filter_fn(msg: dict) -> bool:
-                return True
+            def _age_filter(msg: dict) -> bool:
+                created = msg.get("created_at", "")
+                if not created:
+                    return False
+                try:
+                    created_ts = datetime.fromisoformat(created).timestamp()
+                except (ValueError, TypeError):
+                    return False
+                return created_ts < cutoff
+
+            predicates.append(_age_filter)
+
+        def filter_fn(msg: dict) -> bool:
+            return all(p(msg) for p in predicates)
 
         acked = bulk_ack_messages(lane, filter_fn, bus_root)
         if args.json:
@@ -3451,6 +3472,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--filter-summary",
         default=None,
         help="Regex pattern to match against message summary (case-insensitive)",
+    )
+    inbox_ack_all_parser.add_argument(
+        "--max-age",
+        type=float,
+        default=None,
+        help="Only ack messages older than N hours (based on created_at)",
     )
 
     inbox_purge_parser = inbox_sub.add_parser(
