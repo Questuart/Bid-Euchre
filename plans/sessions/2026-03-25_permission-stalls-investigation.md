@@ -26,7 +26,7 @@ Esc to cancel . Tab to amend
 
 ### Finding 1: Permission Configuration Stack Is Already Maxed Out
 
-The user-level settings (`~/.claude/settings.json`) already have the most
+The user-level settings (user `settings.json` at `$HOME/.claude/`) already have the most
 permissive configuration possible through the settings system:
 
 | Setting | Value | Effect |
@@ -76,7 +76,7 @@ but this needs user verification.
 - `--dangerously-skip-permissions`: Bypasses ALL checks (recommended only
   for sandboxes with no internet access)
 
-The steward session launcher (`steward-session.sh`) does NOT pass
+The steward session launcher (`.claude/tmux/steward-session.sh`) does NOT pass
 `--dangerously-skip-permissions` when spawning lanes. Lanes are launched as:
 ```bash
 "$CLAUDE_BIN" --name author-c --agent steward-author-c
@@ -84,7 +84,7 @@ The steward session launcher (`steward-session.sh`) does NOT pass
 
 ### Finding 4: Approval Stall Detection Has a Pattern Gap
 
-The `check_approval_stalls()` function in `monitor.py` detects stalls by
+The `check_approval_stalls()` function in `src/bid_euchre/ops/monitor.py` detects stalls by
 matching regex patterns against tmux pane content. The existing patterns do
 NOT match the settings self-edit numbered menu format:
 
@@ -101,7 +101,7 @@ type. (Fix: separate PR, outside this task's declared scope.)
 
 The underlying trigger is that Claude Code occasionally wants to modify
 `.claude/` files during normal operation. Common triggers include:
-- The `update-config` skill modifying `settings.json` or `settings.local.json`
+- The `update-config` skill modifying `.claude/settings.json` or `.claude/settings.local.json`
 - Claude deciding to add a permission after encountering a tool-use denial
 - Hook or plugin configuration updates
 - Skill SKILL.md file updates (partially mitigated by PR #1708's
@@ -122,7 +122,7 @@ Each of these triggers the platform-level self-modification safety check.
 
 ### R1: Add `--dangerously-skip-permissions` to Author Lane Launch (Recommended)
 
-Modify `steward-session.sh` to pass `--dangerously-skip-permissions` for
+Modify `.claude/tmux/steward-session.sh` to pass `--dangerously-skip-permissions` for
 author, flex, and scratch lanes only. The orchestrator, analyst, ops, and
 review lanes would retain normal permission behavior for safety.
 
@@ -138,7 +138,7 @@ file creation/editing and confirm no permission stalls occur.
 
 ### R2: Add Missing Approval-Stall Detection Patterns (Follow-up)
 
-Add these patterns to `_APPROVAL_PATTERNS` in `monitor.py`:
+Add these patterns to `_APPROVAL_PATTERNS` in `src/bid_euchre/ops/monitor.py`:
 ```python
 re.compile(r"Do you want to create/edit", re.IGNORECASE),
 re.compile(r"Yes,?\s*and allow Claude to edit", re.IGNORECASE),
@@ -172,11 +172,11 @@ This investigation identified two implementable changes:
    reference for the permission stalls issue.
 
 The steward session launcher change (R1) should be implemented in a
-follow-up PR by modifying `.claude/tmux/steward-session.sh`.
+follow-up PR modifying `.claude/tmux/steward-session.sh`.
 
 ## Outcome
 
 Investigation complete. Root cause identified: **platform-hardcoded settings
 self-edit safety check** that cannot be suppressed through the settings
 system. The fix is to pass `--dangerously-skip-permissions` to author lane
-launch commands in the steward session script.
+launch commands in `.claude/tmux/steward-session.sh`.
