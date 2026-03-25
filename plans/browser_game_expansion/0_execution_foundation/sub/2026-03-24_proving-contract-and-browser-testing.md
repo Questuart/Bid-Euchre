@@ -3,8 +3,8 @@
 **ID:** SP-0-01
 **Date:** 2026-03-24
 **Parent:** `plans/browser_game_expansion/governing_plan.md` -- Phase 0 -- Execution Foundation
-**Status:** in_progress
-**Owner:** Codex
+**Status:** completed
+**Owner:** brws-author-a
 
 ---
 
@@ -92,19 +92,21 @@
 
 - Plan package created under `plans/browser_game_expansion/`
 - Proving matrix created at `plans/browser_game_expansion/proving_matrix.md`
+- `docs/01_core/HOSTED_PLAY_PROVING_CHECKLIST.md` created with full feature matrix
+- `tests/e2e/hosted_play/` scaffold created with `e2e` pytest marker
+- `docs/01_core/HOSTED_PLAY_MIGRATION_STRATEGY.md` created with migration policy
+- `docs/01_core/HOSTED_PLAY_RULES.md` extended with expansion sections §11-§16
 
 ## Outcome
 
-_Filled after completion._
-
-- Status: in_progress
-- PR: pending
-- Deviations from plan: --
-- Issues discovered: --
+- Status: completed
+- PR: (browser/expansion-phase0-foundation)
+- Deviations from plan: `.mcp.json` creation deferred to Phase 4 (PR-7) when actual Playwright integration is implemented. The E2E scaffold establishes the test path now; MCP config will be added when the browser testing stack is built.
+- Issues discovered: None.
 
 ## Handoff
 
-- Current state: phase package exists; implementation targets and proving tiers are locked at plan level.
-- Next action: create the repo-owned proving checklist doc and lock the concrete E2E/MCP configuration path before Phase 1 starts.
-- Blockers: no committed E2E harness or proving checklist doc exists yet.
-- Files with uncommitted changes: planning docs only
+- Current state: Phase 0 is complete. All foundation artifacts are committed.
+- Next action: Begin Phase 1 (PR-2: OLSa roster migration).
+- Blockers: None.
+- Files with uncommitted changes: None after PR merge.
