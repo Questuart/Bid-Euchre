@@ -14,9 +14,11 @@ from sqlalchemy import inspect
 from web.db import (
     Decision,
     Hand,
+    InviteCode,
     Match,
     Player,
     create_tables,
+    generate_invite_code,
     init_engine,
     make_session_factory,
 )
@@ -476,6 +478,126 @@ class TestDecisionCRUD:
         session.add(d)
         with pytest.raises(Exception):
             session.flush()
+
+
+# ---------------------------------------------------------------------------
+# CRUD — InviteCode
+# ---------------------------------------------------------------------------
+
+
+class TestInviteCodeCRUD:
+    """Basic CRUD operations on the InviteCode model."""
+
+    def test_create_invite_code(self, session):
+        code = InviteCode(code="TESTCODE", status="active")
+        session.add(code)
+        session.flush()
+
+        assert code.id is not None
+        assert code.code == "TESTCODE"
+        assert code.status == "active"
+        assert code.player_id is None
+        assert code.created_at is not None
+        assert code.redeemed_at is None
+
+    def test_invite_code_unique(self, session):
+        session.add(InviteCode(code="UNIQ1234", status="active"))
+        session.flush()
+
+        session.add(InviteCode(code="UNIQ1234", status="active"))
+        with pytest.raises(Exception):
+            session.flush()
+
+    def test_invite_code_status_constraint(self, session):
+        """Only 'active', 'redeemed', 'revoked' are valid."""
+        code = InviteCode(code="BAD00000", status="invalid")
+        session.add(code)
+        with pytest.raises(Exception):
+            session.flush()
+
+    def test_invite_code_with_label(self, session):
+        code = InviteCode(code="LABEL123", status="active", label="Beta tester")
+        session.add(code)
+        session.flush()
+        assert code.label == "Beta tester"
+
+    def test_invite_code_redeem(self, session):
+        """Redeeming binds a player_id and updates status."""
+        player = Player(link_uuid=str(uuid.uuid4()))
+        session.add(player)
+        session.flush()
+
+        code = InviteCode(code="REDEEM01", status="active")
+        session.add(code)
+        session.flush()
+
+        code.status = "redeemed"
+        code.player_id = player.id
+        session.flush()
+
+        assert code.status == "redeemed"
+        assert code.player_id == player.id
+
+    def test_invite_code_revoke(self, session):
+        code = InviteCode(code="REVOKE01", status="active")
+        session.add(code)
+        session.flush()
+
+        code.status = "revoked"
+        session.flush()
+        assert code.status == "revoked"
+
+    def test_invite_code_player_fk(self, session):
+        """player_id FK references players table."""
+        code = InviteCode(code="FKTEST01", status="redeemed", player_id=99999)
+        session.add(code)
+        with pytest.raises(Exception):
+            session.flush()
+
+
+class TestInviteCodeSchema:
+    """Verify invite_codes table is created with expected columns."""
+
+    def test_invite_codes_table_created(self, engine):
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert "invite_codes" in tables
+
+    def test_invite_codes_columns(self, engine):
+        inspector = inspect(engine)
+        cols = {c["name"] for c in inspector.get_columns("invite_codes")}
+        expected = {
+            "id",
+            "code",
+            "status",
+            "player_id",
+            "label",
+            "created_at",
+            "redeemed_at",
+        }
+        assert expected <= cols
+
+
+class TestGenerateInviteCode:
+    """Test the invite code generator."""
+
+    def test_default_length(self):
+        code = generate_invite_code()
+        assert len(code) == 8
+
+    def test_custom_length(self):
+        code = generate_invite_code(length=12)
+        assert len(code) == 12
+
+    def test_alphanumeric_uppercase(self):
+        code = generate_invite_code()
+        assert code.isalnum()
+        assert code == code.upper()
+
+    def test_uniqueness(self):
+        """Multiple generated codes should be unique (probabilistic)."""
+        codes = {generate_invite_code() for _ in range(100)}
+        assert len(codes) == 100
 
 
 # ---------------------------------------------------------------------------

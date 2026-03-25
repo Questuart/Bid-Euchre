@@ -17,7 +17,7 @@ from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPo
 from web.ai_manager import AIManager, ModelInfo
 from web.app import create_app
 from web.config import HostedPlayConfig
-from web.db import Decision, Hand, Match, Player
+from web.db import Decision, Hand, InviteCode, Match, Player
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -588,13 +588,14 @@ class TestDecisionLogging:
 
 
 class TestLandingPage:
-    """GET / returns the landing page."""
+    """GET / returns the landing page with invite code form."""
 
     def test_landing_page(self, client):
         resp = client.get("/")
         assert resp.status_code == 200
         assert "Bid Euchre" in resp.text
-        assert "New Game" in resp.text
+        assert "Enter Invite Code" in resp.text
+        assert "invite-code-input" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -1583,3 +1584,181 @@ class TestReadyEndpoint:
             assert body == {"status": "unavailable"}
         finally:
             app.state.session_factory = original_factory
+
+
+# ---------------------------------------------------------------------------
+# Invite code flow
+# ---------------------------------------------------------------------------
+
+
+def _seed_invite_code(
+    app, code: str = "TESTCODE", status: str = "active", label: str | None = None
+) -> InviteCode:
+    """Insert an invite code directly into the DB for testing."""
+    session = app.state.session_factory()
+    try:
+        invite = InviteCode(code=code, status=status, label=label)
+        session.add(invite)
+        session.commit()
+        session.refresh(invite)
+        return invite
+    finally:
+        session.close()
+
+
+class TestInviteCodeFlow:
+    """Tests for invite-code gated access: /enter-code route."""
+
+    def test_landing_shows_invite_form(self, client):
+        """Landing page contains the invite code input."""
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "invite-code-input" in resp.text
+        assert "Enter Invite Code" in resp.text
+
+    def test_invalid_code_rejected(self, client):
+        """POST /enter-code with an unknown code shows an error."""
+        resp = client.post(
+            "/enter-code",
+            data={"code": "BADCODE1"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 200
+        assert "Invalid invite code" in resp.text
+
+    def test_revoked_code_rejected(self, client, app):
+        """POST /enter-code with a revoked code shows an error."""
+        _seed_invite_code(app, code="REVOKED1", status="revoked")
+        resp = client.post(
+            "/enter-code",
+            data={"code": "REVOKED1"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 200
+        assert "revoked" in resp.text.lower()
+
+    def test_valid_code_redirects_to_game(self, client, app):
+        """POST /enter-code with a valid active code redirects to /play/{uuid}."""
+        _seed_invite_code(app, code="VALID001")
+        resp = client.post(
+            "/enter-code",
+            data={"code": "VALID001"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        location = resp.headers["location"]
+        assert "/play/" in location
+
+    def test_valid_code_creates_player(self, client, app):
+        """Valid code creates a Player row and binds the invite code."""
+        _seed_invite_code(app, code="PLAYER01")
+        resp = client.post(
+            "/enter-code",
+            data={"code": "PLAYER01"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        link_uuid = resp.headers["location"].split("/play/")[1]
+
+        session = app.state.session_factory()
+        try:
+            player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+            assert player is not None
+
+            invite = session.query(InviteCode).filter_by(code="PLAYER01").first()
+            assert invite.status == "redeemed"
+            assert invite.player_id == player.id
+            assert invite.redeemed_at is not None
+        finally:
+            session.close()
+
+    def test_redeemed_code_returns_same_player(self, client, app):
+        """Re-entering a redeemed code redirects to the same player."""
+        _seed_invite_code(app, code="REPEAT01")
+
+        # First entry
+        resp1 = client.post(
+            "/enter-code",
+            data={"code": "REPEAT01"},
+            follow_redirects=False,
+        )
+        assert resp1.status_code == 302
+        link1 = resp1.headers["location"]
+
+        # Second entry — same code
+        resp2 = client.post(
+            "/enter-code",
+            data={"code": "REPEAT01"},
+            follow_redirects=False,
+        )
+        assert resp2.status_code == 302
+        link2 = resp2.headers["location"]
+
+        assert link1 == link2  # Same player link
+
+    def test_code_case_insensitive(self, client, app):
+        """Invite codes are normalized to uppercase."""
+        _seed_invite_code(app, code="UPPER123")
+        resp = client.post(
+            "/enter-code",
+            data={"code": "upper123"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/play/" in resp.headers["location"]
+
+    def test_code_whitespace_stripped(self, client, app):
+        """Leading/trailing whitespace is stripped from code input."""
+        _seed_invite_code(app, code="STRIP001")
+        resp = client.post(
+            "/enter-code",
+            data={"code": "  STRIP001  "},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/play/" in resp.headers["location"]
+
+    def test_full_invite_to_nickname_to_game_flow(self, client, app):
+        """End-to-end: invite code → nickname → select AI → game board."""
+        _seed_invite_code(app, code="E2E00001")
+
+        # Enter code → redirect
+        resp = client.post(
+            "/enter-code",
+            data={"code": "E2E00001"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        link_uuid = resp.headers["location"].split("/play/")[1]
+
+        # Game page shows nickname form
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "nickname" in resp.text.lower()
+
+        # Set nickname
+        resp = _set_nickname(client, link_uuid, "InvitedUser")
+        assert resp.status_code == 200
+
+        # Select AI → game board rendered
+        resp = _select_ai(client, link_uuid, "heuristic")
+        assert resp.status_code == 200
+
+    def test_htmx_enter_code_returns_hx_redirect(self, client, app):
+        """HTMX POST /enter-code returns HX-Redirect header."""
+        _seed_invite_code(app, code="HTMX0001")
+        resp = client.post(
+            "/enter-code",
+            data={"code": "HTMX0001"},
+            headers={"HX-Request": "true"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 200
+        assert "HX-Redirect" in resp.headers
+        assert "/play/" in resp.headers["HX-Redirect"]
+
+    def test_legacy_new_route_still_works(self, client):
+        """POST /new still creates a player (backwards compat)."""
+        resp = client.post("/new", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/play/" in resp.headers["location"]

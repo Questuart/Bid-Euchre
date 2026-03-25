@@ -10,6 +10,8 @@ for browser-refresh resume — no complex ORM mapping of nested game state.
 
 from __future__ import annotations
 
+import secrets
+import string
 from datetime import datetime, timezone
 
 from sqlalchemy import (
@@ -26,6 +28,10 @@ from sqlalchemy import (
     event,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+# Invite code generation defaults
+INVITE_CODE_LENGTH = 8
+INVITE_CODE_ALPHABET = string.ascii_uppercase + string.digits
 
 # ---------------------------------------------------------------------------
 # Base
@@ -230,6 +236,64 @@ class Decision(Base):
             f"<Decision id={self.id} hand={self.hand_id} "
             f"turn={self.turn_number} seat={self.seat}>"
         )
+
+
+class InviteCode(Base):
+    """Invite code for pilot access control.
+
+    Each code is a short alphanumeric string that grants access to the game.
+    Codes are single-use: once redeemed, they are permanently bound to the
+    player who redeemed them.  A redeemed code can be re-entered to look up
+    the existing player (idempotent re-entry).
+
+    Statuses:
+      - ``active``   — available for redemption
+      - ``redeemed`` — bound to a player
+      - ``revoked``  — administratively disabled
+    """
+
+    __tablename__ = "invite_codes"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String, nullable=False, unique=True)
+    status = Column(
+        String,
+        CheckConstraint("status IN ('active', 'redeemed', 'revoked')"),
+        nullable=False,
+        default="active",
+    )
+    player_id = Column(
+        Integer,
+        ForeignKey("players.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    label = Column(String, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    redeemed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_invite_codes_code", "code"),
+        Index("idx_invite_codes_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<InviteCode id={self.id} code={self.code!r} status={self.status!r}>"
+
+
+def generate_invite_code(
+    length: int = INVITE_CODE_LENGTH,
+    alphabet: str = INVITE_CODE_ALPHABET,
+) -> str:
+    """Generate a cryptographically random invite code.
+
+    Default: 8-character uppercase alphanumeric (36^8 ≈ 2.8 trillion
+    combinations).  Easy to type on mobile keyboards.
+    """
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 # ---------------------------------------------------------------------------

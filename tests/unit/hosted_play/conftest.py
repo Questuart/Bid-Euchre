@@ -17,9 +17,11 @@ from sqlalchemy.orm import Session
 from web.db import (
     Decision,
     Hand,
+    InviteCode,
     Match,
     Player,
     create_tables,
+    generate_invite_code,
     init_engine,
     make_session_factory,
 )
@@ -232,3 +234,22 @@ def populate_complete_hand(
         decisions.append(decision)
 
     return hand, decisions
+
+
+def create_test_invite_code(
+    session: Session,
+    **overrides: Any,
+) -> InviteCode:
+    """Insert an InviteCode with sensible defaults.
+
+    Override any column by passing keyword arguments.
+    """
+    defaults: dict[str, Any] = {
+        "code": generate_invite_code(),
+        "status": "active",
+    }
+    defaults.update(overrides)
+    invite = InviteCode(**defaults)
+    session.add(invite)
+    session.flush()
+    return invite

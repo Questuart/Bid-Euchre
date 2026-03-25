@@ -88,3 +88,22 @@ CREATE INDEX IF NOT EXISTS idx_hands_match_number
 
 CREATE INDEX IF NOT EXISTS idx_decisions_match_turn
     ON decisions(match_id, hand_id, turn_number);
+
+-- Invite codes for pilot access control (expansion Phase 3).
+-- Each code is single-use: once redeemed it is bound to the player who used it.
+CREATE TABLE IF NOT EXISTS invite_codes (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'redeemed', 'revoked')),
+    player_id INTEGER REFERENCES players(id) ON DELETE SET NULL,
+    label TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    redeemed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_invite_codes_code
+    ON invite_codes(code);
+
+CREATE INDEX IF NOT EXISTS idx_invite_codes_status
+    ON invite_codes(status);
