@@ -15,26 +15,33 @@ when ``TEST_POSTGRES_URL`` is not set.
 
 **Running with Postgres:**
 
+Requires the ``hosted`` extra for the ``psycopg`` driver::
+
+    uv sync --extra dev --extra hosted
     TEST_POSTGRES_URL="postgresql+psycopg://user:pass@localhost/test_bideuchre" \
         uv run python -m pytest tests/integration/hosted_play/ -v
 
-The test database is created from scratch on each run (tables are dropped
-and recreated), so use a dedicated throwaway database.
+Each test process creates an isolated database (``<dbname>_pid<PID>``) to
+prevent cross-contamination when running with ``pytest-xdist`` or multiple
+sessions.  The database pointed to by ``TEST_POSTGRES_URL`` is used only as
+a template for the connection parameters — no tables are created in it
+directly.
 """
 
 from __future__ import annotations
 
 import os
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine import make_url
 from starlette.testclient import TestClient
 
 from web.app import create_app
 from web.config import HostedPlayConfig, override_config
 from web.db import (
-    Base,
     Match,
     Player,
     create_tables,
@@ -59,6 +66,22 @@ def _sqlite_url(tmp_path) -> str:
     return f"sqlite:///{tmp_path / 'smoke.db'}"
 
 
+def _isolated_pg_params() -> tuple[str, str, str]:
+    """Derive a process-isolated Postgres database from ``TEST_POSTGRES_URL``.
+
+    Returns:
+        (isolated_url, admin_url, db_name) — the unique database URL for
+        this test process, an admin URL (connected to ``postgres``) for
+        CREATE/DROP DATABASE commands, and the isolated database name.
+    """
+    assert _PG_URL is not None
+    base = make_url(_PG_URL)
+    db_name = f"{base.database}_pid{os.getpid()}"
+    isolated = base.set(database=db_name)
+    admin = base.set(database="postgres")
+    return str(isolated), str(admin), db_name
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -72,26 +95,37 @@ def sqlite_config(tmp_path):
 
 @pytest.fixture()
 def pg_config():
-    """HostedPlayConfig backed by Postgres (requires TEST_POSTGRES_URL)."""
-    assert _PG_URL is not None, "TEST_POSTGRES_URL must be set"
-    return HostedPlayConfig(database_url=_PG_URL)
+    """HostedPlayConfig backed by an isolated per-process Postgres database."""
+    isolated_url, _admin, _db = _isolated_pg_params()
+    return HostedPlayConfig(database_url=isolated_url)
 
 
 @pytest.fixture()
 def pg_engine():
-    """SQLAlchemy engine connected to the test Postgres database.
+    """SQLAlchemy engine connected to a per-process isolated Postgres database.
 
-    Drops and recreates all tables to ensure a clean slate.
+    Creates a fresh database named ``<base>_pid<PID>`` and drops it on
+    teardown, preventing cross-contamination between parallel test processes.
     """
-    assert _PG_URL is not None
-    engine = init_engine(_PG_URL)
-    # Clean slate — drop all tables then recreate
-    Base.metadata.drop_all(engine)
+    isolated_url, admin_url, db_name = _isolated_pg_params()
+
+    # Create isolated database via the admin connection
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+    admin_engine.dispose()
+
+    engine = init_engine(isolated_url)
     create_tables(engine)
     yield engine
-    # Teardown — drop tables to avoid polluting the test database
-    Base.metadata.drop_all(engine)
+
+    # Teardown — dispose engine then drop the isolated database
     engine.dispose()
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+    admin_engine.dispose()
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +193,49 @@ class TestSQLiteSmokeAlwaysRuns:
         monkeypatch.delenv("DATABASE_URL", raising=False)
         cfg = HostedPlayConfig.from_env()
         assert cfg.database_url == "sqlite:///hosted_play.db"
+
+    def test_startup_entrypoint_defaults(self, monkeypatch):
+        """web.start.main() reads env vars and calls uvicorn.run correctly."""
+        mock_run = MagicMock()
+        monkeypatch.setattr("uvicorn.run", mock_run)
+        # Clear env vars so main() uses defaults
+        for var in ("HOST", "PORT", "WEB_WORKERS", "LOG_LEVEL"):
+            monkeypatch.delenv(var, raising=False)
+
+        from web.start import main
+
+        main()
+
+        mock_run.assert_called_once_with(
+            "web.app:create_app",
+            factory=True,
+            host="0.0.0.0",
+            port=8000,
+            workers=1,
+            log_level="info",
+        )
+
+    def test_startup_entrypoint_custom_env(self, monkeypatch):
+        """web.start.main() honours custom environment overrides."""
+        mock_run = MagicMock()
+        monkeypatch.setattr("uvicorn.run", mock_run)
+        monkeypatch.setenv("HOST", "127.0.0.1")
+        monkeypatch.setenv("PORT", "9090")
+        monkeypatch.setenv("WEB_WORKERS", "4")
+        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+
+        from web.start import main
+
+        main()
+
+        mock_run.assert_called_once_with(
+            "web.app:create_app",
+            factory=True,
+            host="127.0.0.1",
+            port=9090,
+            workers=4,
+            log_level="debug",
+        )
 
 
 # ---------------------------------------------------------------------------
