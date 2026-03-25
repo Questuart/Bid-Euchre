@@ -4,8 +4,8 @@ Settings are loaded from environment variables with sensible defaults
 for local development.  Production deployments override via env vars
 (e.g. ``DATABASE_URL`` for Postgres).
 
-Environment variable contract (Phase 5 §5.2)
----------------------------------------------
+Environment variable contract (Expansion §5.2)
+-----------------------------------------------
 
 =========================================  =============================================
 Variable                                   Purpose
@@ -16,7 +16,7 @@ Variable                                   Purpose
 ``APP_URL``                                Public base URL for generated links
 ``MODELS_DIR``                             Directory containing model artifacts
 ``DEFAULT_MODEL_ID``                       Default AI model identifier
-``HYBRID_OLSA_ARTIFACT``                   Path to hybrid-OLSA artifact file
+``OLSA_ARTIFACT``                          Path to OLSa (ActionValueBidder) artifact file
 ``DEBUG``                                  Enable debug mode (``1``/``true``/``yes``)
 =========================================  =============================================
 """
@@ -64,8 +64,8 @@ class HostedPlayConfig:
     app_url: str = "http://localhost:8000"
 
     # AI model roster ---------------------------------------------------
-    default_model_id: str = "heuristic"
-    hybrid_olsa_artifact: str | None = None
+    default_model_id: str = "olsa"
+    olsa_artifact: str | None = None
     models_dir: str | None = None
 
     # App ---------------------------------------------------------------
@@ -81,8 +81,8 @@ class HostedPlayConfig:
             secret_key=os.environ.get("SECRET_KEY", _default_secret_key()),
             allowed_origins=_parse_origins(raw_origins),
             app_url=os.environ.get("APP_URL", "http://localhost:8000"),
-            default_model_id=os.environ.get("DEFAULT_MODEL_ID", "heuristic"),
-            hybrid_olsa_artifact=os.environ.get("HYBRID_OLSA_ARTIFACT"),
+            default_model_id=os.environ.get("DEFAULT_MODEL_ID", "olsa"),
+            olsa_artifact=os.environ.get("OLSA_ARTIFACT"),
             models_dir=os.environ.get("MODELS_DIR"),
             debug=os.environ.get("DEBUG", "").lower() in ("1", "true", "yes"),
         )
