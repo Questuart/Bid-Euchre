@@ -6,8 +6,6 @@ Tests the pure-function derivation core and the side-effecting reconcile loop.
 from __future__ import annotations
 
 import json
-import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -86,9 +84,9 @@ def _bus_message(
     created_at: str | None = None,
 ) -> dict:
     if created_at is None:
-        # 30 minutes ago by default (well past the default 10-min threshold).
-        ts = time.time() - 1800
-        created_at = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        # 30 minutes before NOW_ISO — deterministic, decoupled from the
+        # runner clock (see #1706).
+        created_at = "2026-03-24T21:30:00+00:00"
     return {
         "id": message_id,
         "priority": priority,
@@ -410,7 +408,8 @@ class TestItemsFromUnackedMessages:
         assert items[0].severity == "urgent"
 
     def test_recent_message_is_filtered_out(self):
-        recent = datetime.now(timezone.utc).isoformat()
+        # 5 minutes before NOW_ISO — within the default 10-min threshold.
+        recent = "2026-03-24T21:55:00+00:00"
         msgs = [_bus_message(priority="high", created_at=recent)]
         items = items_from_unacked_messages(msgs, now_iso=NOW_ISO, max_age_minutes=10)
         assert len(items) == 0
@@ -1790,10 +1789,9 @@ class TestMonitorReconcileWiring:
 
         # Reconcile should have picked up the task packet.
         loaded = load_fleet_status(tmp_path)
-        assert loaded is not None, (
-            f"reconcile() did not write fleet_status.json; "
-            f"stdout={result.stdout[:300]}"
-        )
+        assert (
+            loaded is not None
+        ), f"reconcile() did not write fleet_status.json; stdout={result.stdout[:300]}"
         task_items = [i for i in loaded.items if i.task_id == "test-pkt-1698"]
         assert len(task_items) == 1, (
             f"Expected task packet in fleet status but found {len(task_items)}; "

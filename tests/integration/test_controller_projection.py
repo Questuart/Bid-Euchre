@@ -363,9 +363,10 @@ class TestAlertPipeline:
         assert any(m["message_id"] == msg_id for m in inbox)
 
         # Detect with max_age_minutes=0 (fresh message is still detected).
+        # Omit now_iso so it defaults to the current clock — this E2E test
+        # uses the real bus whose created_at is wall-clock time.
         items = items_from_unacked_messages(
             inbox,
-            now_iso="2026-03-24T08:00:00+00:00",
             max_age_minutes=0,
         )
         urgent = [i for i in items if i.severity == SEVERITY_URGENT]
@@ -410,7 +411,8 @@ class TestRemoteExchangeProjection:
         assert audit_items[0].state == STATE_OPEN
         assert "operator" in audit_items[0].summary
 
-        # 3. Outbound reply is sent.
+        # 3. Outbound reply is sent (fixed timestamp to stay in-band with
+        #    the deterministic now_iso values used by reconcile above).
         audit_mcp_outbound(
             tool_name="mcp__plugin_telegram_telegram__reply",
             tool_args={
@@ -419,6 +421,7 @@ class TestRemoteExchangeProjection:
                 "reply_to": "200",
             },
             audit_dir=audit_dir,
+            timestamp="2026-03-24T08:02:00+00:00",
         )
 
         # 4. Second reconcile cycle with updated audit records.
@@ -459,11 +462,12 @@ class TestRemoteExchangeProjection:
         )
         audit_channel_tag(tag_text=tag_b, content="Hello from B", audit_dir=audit_dir)
 
-        # Reply to Chat A only.
+        # Reply to Chat A only (fixed timestamp — see finding P3 from #1706).
         audit_mcp_outbound(
             tool_name="mcp__plugin_telegram_telegram__reply",
             tool_args={"chat_id": "AAA", "body": "Hi Alice!", "reply_to": "1"},
             audit_dir=audit_dir,
+            timestamp="2026-03-24T07:30:00+00:00",
         )
 
         # Reconcile — chat B should still be unanswered.

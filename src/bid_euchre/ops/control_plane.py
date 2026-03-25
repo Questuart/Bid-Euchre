@@ -416,7 +416,9 @@ def items_from_unacked_messages(
         now_iso = _now_iso()
 
     items: list[ActionableItem] = []
-    now_ts = time.time()
+    # Derive now_ts from the authoritative now_iso so that tests can
+    # control the clock fully — no hidden dependency on time.time().
+    now_ts = datetime.fromisoformat(now_iso).timestamp()
 
     for msg in messages:
         priority = msg.get("priority", "normal")
