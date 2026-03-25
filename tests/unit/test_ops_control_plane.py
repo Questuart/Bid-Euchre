@@ -1737,6 +1737,69 @@ class TestMonitorReconcileWiring:
         # No fleet status file should exist.
         assert load_fleet_status(tmp_path) is None
 
+    def test_cli_monitor_reads_task_packets_from_task_queue_subdir(
+        self, tmp_path: Path
+    ):
+        """CLI monitor passes runtime_dir / 'task_queue' to list_packets (#1698).
+
+        Regression: cmd_monitor previously passed ``args.runtime_dir`` directly
+        to ``list_packets(root=...)``, but list_packets expects the task_queue
+        subdirectory.  This test places a packet in the correct subdirectory and
+        verifies it appears in the reconciled fleet status.
+        """
+        import json as _json
+        import subprocess
+
+        # Seed a task packet in runtime_dir / task_queue (the correct location).
+        tq_dir = tmp_path / "task_queue"
+        tq_dir.mkdir(parents=True)
+        packet = {
+            "packet_id": "test-pkt-1698",
+            "title": "Verify task queue root",
+            "description": "Regression test for #1698",
+            "owner": "author-a",
+            "created_by": "orchestrator",
+            "created_at": "2026-03-24T22:00:00Z",
+            "status": "approved",
+            "priority": "low",
+        }
+        (tq_dir / "test-pkt-1698.json").write_text(_json.dumps(packet))
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--runtime-dir",
+                str(tmp_path),
+                "monitor",
+                "--skip-pr-check",
+                "--no-notify",
+                "--no-recovery",
+                "--no-auto-dispatch",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode in (
+            0,
+            1,
+        ), f"Monitor crashed: stderr={result.stderr[:500]}"
+
+        # Reconcile should have picked up the task packet.
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None, (
+            f"reconcile() did not write fleet_status.json; "
+            f"stdout={result.stdout[:300]}"
+        )
+        task_items = [i for i in loaded.items if i.task_id == "test-pkt-1698"]
+        assert len(task_items) == 1, (
+            f"Expected task packet in fleet status but found {len(task_items)}; "
+            f"items={[i.task_id for i in loaded.items]}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Proving run 3 — persistence, deduplication, and clear lifecycle (#1678)
