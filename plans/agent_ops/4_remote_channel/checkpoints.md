@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-25 by flex-c (SP-4-07 in_progress; Step 3 IN_PROGRESS with 13+ PRs shipped including controller live wiring, proving runs 1/3/4 passed)
+**Last updated:** 2026-03-25 by author-a (SP-4-07 complete; Step 3 COMPLETE — all 6 exit criteria met, all 5 proving runs passed, 25+ PRs shipped)
 
 ---
 
@@ -25,8 +25,8 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Step 0: Phase 4 scope lock and sub-plan registration | COMPLETE | 2026-03-23 | author-scratch | SP-4-01 created and registered. |
 | Step 1: Platform-8a preflight and Telegram transport skeleton | COMPLETE | 2026-03-24 | flex-b | SP-4-04 all steps proven. PRs #1436, #1451, #1452 merged. Pairing confirmed (user 8122530898), messages flow both ways, kill switch verified. |
 | Step 2: Platform-8b repo-owned remote audit trail and runtime wiring | IN_PROGRESS | 2026-03-24 | author-a + orchestrator | SP-4-06 shipped the audit library, but issue #1573 correctly reopens the slice: runtime callers, controller integration, and real inbound/outbound proving are still pending. PR #1616 fixed Telegram inbound (#1615) — ops lane moved to detached worktree to stop competing bun processes from consuming `getUpdates`. Inbound now proven working (test message confirmed 2026-03-24). |
-| Step 3: SP-4-07 controller-first control plane and transport evaluation | IN_PROGRESS | 2026-03-24 | author-a + author-b + flex-c | PRs: #1618 (stabilization gate), #1633 (controller projection), #1650 (transport ADR), #1699 (controller wired into monitor cycle), #1701 (permission stall detection), #1703 (urgent TTL exemption), #1704 (fleet idle shutoff), #1707 (controller integration tests), #1708 (SKILL.md edit permission), #1712 (persistence/dedup proving), #1714 (false-stall regression proving), #1715 (outbound audit PostToolUse hook), #1718 (unread-alert replay proving). PR #1643 (audit runtime wiring) closed. Proving runs 1, 3, 4 passed. Remaining: PR 3 hook surfacing (UserPromptSubmit/PreToolUse guardrails), real remote loop proving run. |
-| Step 4: Platform-9a idle-attention alerts and acknowledgement loop | BLOCKED | -- | -- | Blocked on Step 3 completion (hook surfacing and real remote loop proving). Controller-backed state now live (#1699). |
+| Step 3: SP-4-07 controller-first control plane and transport evaluation | COMPLETE | 2026-03-25 | author-a + author-b + flex-c | 25+ PRs shipped. Key: #1618 (stabilization), #1633 (controller), #1650 (transport ADR), #1699 (controller live), #1719 (UserPromptSubmit hook), #1764 (PreToolUse guardrail), #1760 (inbound audit hook), #1755 (inbox+audit into reconcile), #1715 (outbound audit hook). All 5 proving runs passed (#1718, #1730, #1712, #1714, Telegram e2e). All 6 exit criteria met. |
+| Step 4: Platform-9a idle-attention alerts and acknowledgement loop | PENDING | -- | -- | Unblocked by Step 3 completion. Controller-backed state now live (#1699). Hook surfacing (#1719, #1764) and remote audit wiring (#1715, #1760) provide the substrate. |
 | Step 5: Platform-9b away-from-desk queue-moving proving run | BLOCKED | -- | -- | Blocked on Platform-9a plus controller-backed remote delivery. |
 | Step 6: Platform-9c first hardening pass and Phase 4 handoff | BLOCKED | -- | -- | Fix real proving-run issues, update docs, and record known gaps. |
 
@@ -42,7 +42,7 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-04 | `plans/agent_ops/4_remote_channel/sub/2026-03-23_platform-8a-telegram-transport.md` | completed | Step 1 |
 | SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | completed | Pre-Platform-8 |
 | SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | completed (library only) | Step 2 |
-| SP-4-07 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | in_progress | Step 3 |
+| SP-4-07 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | completed | Step 3 |
 
 ### Shared Surface Ownership
 
@@ -95,3 +95,4 @@ implementation.
 | 2026-03-24 | Telegram inbound fix: PR #1616 moved ops lane to detached worktree (`Bid-Euchre-steward-ops`), mirroring the review lane pattern. Root cause: ops lane and orchestrator both ran in `$MAIN_DIR`, spawning competing bun MCP server instances that raced on `getUpdates`. Ops bun consumed inbound messages before they reached the orchestrator. Fix confirmed — test message delivered successfully. Closes #1615, unblocks real inbound proving for Platform-8b runtime wiring. |
 | 2026-03-24 | SP-4-07 IN_PROGRESS (author-a + author-b). Three PRs shipped or in-flight: PR #1618 stabilization gate (merged — TTL expiry, escalation dedup, stall guard), PR #1633 controller projection module (merged — SP-4-07 PR 2), PR #1643 audit runtime wiring (open — SP-4-07 PR 4, wires audit trail into runtime paths and controller). Step 3 moved from PENDING to IN_PROGRESS. |
 | 2026-03-25 | SP-4-07 major progress reconciliation (flex-c). 10 additional PRs merged since last update: #1699 (controller wired into monitor cycle — controller now live), #1701 (permission stall detection), #1703 (urgent TTL exemption), #1704 (fleet idle auto-shutoff), #1707 (11 controller integration tests), #1708 (SKILL.md edit permission), #1712 (proving run 3: persistence/dedup/clear — 7 tests passed), #1714 (proving run 4: false-stall regression — 6 tests passed), #1715 (outbound audit wired into PostToolUse hook), #1718 (proving run 1: unread-alert replay — 10 tests passed). PR #1643 closed. 4 of 6 exit criteria now met. Remaining: PR 3 (hook surfacing/guardrails) and proving run 5 (real remote loop). |
+| 2026-03-25 | **SP-4-07 COMPLETE** (author-a). All 6 exit criteria met. Final deliveries: #1719 (UserPromptSubmit alert injection), #1764 (PreToolUse guardrail), #1760 (inbound audit hook), #1755 (inbox+audit into reconcile), #1730 (proving run 2: noise discrimination). All 5 proving runs passed. Telegram e2e remote loop proven (messages 83-86). Step 3 marked COMPLETE, Step 4 unblocked (BLOCKED → PENDING). |
