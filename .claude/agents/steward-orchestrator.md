@@ -174,8 +174,11 @@ lane the orchestrator considers stopped.
    ```bash
    # If the lane has finished its work:
    uv run python scripts/internal/ops.py task complete <PACKET_ID>
-   # If reassigning unfinished work:
-   uv run python scripts/internal/ops.py task update <PACKET_ID> --status pending --owner ""
+   # If reassigning unfinished work: complete old packet, then re-create
+   uv run python scripts/internal/ops.py task complete <PACKET_ID> --summary "Reassigned: lane parked"
+   # Then create and dispatch to a new lane:
+   uv run python scripts/internal/ops.py task create --title "<title>" --owner <NEW_LANE> --description "<desc>"
+   uv run python scripts/internal/ops.py task dispatch <NEW_PACKET_ID> <NEW_LANE> --approve
    ```
 2. Send `/park` to the lane's tmux pane (cleans up cron jobs)
 3. Wait for confirmation that all cron jobs are deleted
