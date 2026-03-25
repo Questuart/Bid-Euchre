@@ -11,21 +11,86 @@ Routes are defined in :mod:`web.routes` and registered via ``include_router``.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect as sa_inspect
 from starlette.templating import Jinja2Templates
 
 from .ai_manager import AIManager
+from .cleanup import expire_stale_matches
 from .config import HostedPlayConfig, get_config, override_config
-from .db import create_tables, init_engine, make_session_factory
+from .db import Base, create_tables, init_engine, make_session_factory
 from .routes import router as game_router
+
+logger = logging.getLogger(__name__)
 
 _WEB_DIR = Path(__file__).resolve().parent
 _TEMPLATES_DIR = _WEB_DIR / "templates"
+_STATIC_DIR = _WEB_DIR / "static"
+
+
+def _run_self_test(engine, templates_dir: Path, static_dir: Path) -> None:
+    """Verify critical resources are available at startup.
+
+    Checks:
+    1. Database tables exist (migrations applied).
+    2. Static assets directory exists and contains ``style.css``.
+    3. Template directory exists and key templates render without error.
+
+    Raises :class:`RuntimeError` if any check fails — the application
+    should not start in a broken state.
+    """
+    errors: list[str] = []
+
+    # 1. DB tables
+    try:
+        inspector = sa_inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        required_tables = {t.name for t in Base.metadata.sorted_tables}
+        missing = required_tables - existing_tables
+        if missing:
+            errors.append(f"Missing DB tables: {sorted(missing)}")
+    except Exception as exc:
+        errors.append(f"DB inspection failed: {exc}")
+
+    # 2. Static assets
+    if not static_dir.is_dir():
+        errors.append(f"Static assets directory missing: {static_dir}")
+    else:
+        if not (static_dir / "style.css").is_file():
+            errors.append("style.css not found in static directory")
+
+    # 3. Templates
+    if not templates_dir.is_dir():
+        errors.append(f"Templates directory missing: {templates_dir}")
+    else:
+        try:
+            test_templates = Jinja2Templates(directory=str(templates_dir))
+            # Verify key templates can be loaded (not full render — just load)
+            for name in (
+                "base.html",
+                "landing.html",
+                "errors/404.html",
+                "errors/500.html",
+            ):
+                test_templates.get_template(name)
+        except Exception as exc:
+            errors.append(f"Template load failed: {exc}")
+
+    if errors:
+        msg = "Startup self-test FAILED:\n" + "\n".join(f"  - {e}" for e in errors)
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    logger.info("Startup self-test passed")
 
 
 @asynccontextmanager
@@ -37,18 +102,36 @@ async def lifespan(app: FastAPI):
     engine = init_engine(config.database_url)
     create_tables(engine)
 
-    # 2. AI models
+    # 2. Cleanup stale matches from previous runs
+    session_factory = make_session_factory(engine)
+    cleanup_session = session_factory()
+    try:
+        expired = expire_stale_matches(cleanup_session)
+        cleanup_session.commit()
+        if expired:
+            logger.info("Startup cleanup: expired %d stale match(es)", expired)
+    except Exception:
+        cleanup_session.rollback()
+        logger.warning("Startup cleanup failed — continuing", exc_info=True)
+    finally:
+        cleanup_session.close()
+
+    # 3. Startup self-test — fail fast on broken deployment
+    _run_self_test(engine, _TEMPLATES_DIR, _STATIC_DIR)
+
+    # 4. AI models
     ai_manager = AIManager(config)
 
-    # 3. Templates
+    # 5. Templates
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
-    # 4. Stash on app.state for route access
+    # 6. Stash on app.state for route access
     app.state.config = config
     app.state.engine = engine
-    app.state.session_factory = make_session_factory(engine)
+    app.state.session_factory = session_factory
     app.state.ai_manager = ai_manager
     app.state.templates = templates
+    app.state.started_at = datetime.now(timezone.utc)
 
     yield
 
@@ -85,5 +168,30 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
 
     # Register game routes
     app.include_router(game_router)
+
+    # ---- Custom error pages ----
+
+    _error_templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+    @app.exception_handler(404)
+    async def not_found_handler(request: Request, exc: HTTPException) -> HTMLResponse:
+        """Render game-themed 404 page."""
+        return HTMLResponse(
+            _error_templates.get_template("errors/404.html").render(
+                {"request": request}
+            ),
+            status_code=404,
+        )
+
+    @app.exception_handler(500)
+    async def server_error_handler(request: Request, exc: Exception) -> HTMLResponse:
+        """Render game-themed 500 page."""
+        logger.exception("Unhandled server error on %s %s", request.method, request.url)
+        return HTMLResponse(
+            _error_templates.get_template("errors/500.html").render(
+                {"request": request}
+            ),
+            status_code=500,
+        )
 
     return app

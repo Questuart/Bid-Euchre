@@ -1513,7 +1513,12 @@ class TestHealthEndpoint:
         resp = client.get("/health")
         assert resp.status_code == 200
         body = resp.json()
-        assert body == {"status": "ok"}
+        assert body["status"] == "ok"
+        # Enhanced health includes metrics (B8 hardening)
+        assert "active_matches" in body
+        assert "total_players" in body
+        assert "db_size_bytes" in body
+        assert "uptime_seconds" in body
 
     def test_health_content_type_json(self, client):
         resp = client.get("/health")

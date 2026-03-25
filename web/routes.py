@@ -26,6 +26,7 @@ from bid_euchre.strategy.bidding import BidAction
 
 from .ai_manager import AIManager
 from .db import Decision, Hand, InviteCode, Match, Player
+from .middleware import check_match_limit
 
 router = APIRouter()
 
@@ -271,9 +272,51 @@ def _render_game_board(
 
 
 @router.get("/health")
-async def health():
-    """Liveness probe — always returns 200 OK."""
-    return JSONResponse({"status": "ok"})
+async def health(request: Request):
+    """Liveness probe with operational metrics.
+
+    Always returns 200 OK.  Includes ``active_matches``,
+    ``total_players``, ``db_size_bytes`` (SQLite only, -1 otherwise),
+    and ``uptime_seconds`` for operational observability.
+    """
+    info: dict[str, Any] = {"status": "ok"}
+
+    try:
+        session = _get_session(request)
+        try:
+            info["active_matches"] = (
+                session.query(Match).filter_by(status="active").count()
+            )
+            info["total_players"] = session.query(Player).count()
+
+            # DB file size — only meaningful for SQLite file-based databases
+            db_url = str(request.app.state.engine.url)
+            if db_url.startswith("sqlite:///") and ":memory:" not in db_url:
+                import os
+
+                db_path = db_url.replace("sqlite:///", "")
+                try:
+                    info["db_size_bytes"] = os.path.getsize(db_path)
+                except OSError:
+                    info["db_size_bytes"] = -1
+            else:
+                info["db_size_bytes"] = -1
+        finally:
+            session.close()
+    except Exception:
+        info["active_matches"] = -1
+        info["total_players"] = -1
+        info["db_size_bytes"] = -1
+
+    # Uptime
+    started_at = getattr(request.app.state, "started_at", None)
+    if started_at is not None:
+        delta = datetime.now(timezone.utc) - started_at
+        info["uptime_seconds"] = int(delta.total_seconds())
+    else:
+        info["uptime_seconds"] = -1
+
+    return JSONResponse(info)
 
 
 @router.get("/ready")
@@ -505,6 +548,13 @@ async def select_ai(
         player = session.query(Player).filter_by(link_uuid=link_uuid).first()
         if player is None:
             raise HTTPException(status_code=404, detail="Game not found")
+
+        # Rate limit — max active matches per player
+        if not check_match_limit(session, player_id=player.id):
+            raise HTTPException(
+                status_code=429,
+                detail="Match limit reached — complete or abandon an existing match first",
+            )
 
         ai_manager = _get_ai_manager(request)
         try:
