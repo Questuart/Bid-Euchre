@@ -24,6 +24,8 @@ losing the dependency chain.
 | PR-7 | Browser automation and smoke suite | Phase 4 | PR-5 + PR-6 | Add browser E2E tests, Claude-direct browser testing config, upgraded smoke scripts, and proving checklist execution harness. |
 | PR-8 | Pilot launch hardening | Phase 4 | PR-7 | Final launch gating docs, deploy-time checks, iPhone Safari proving protocol, and pilot operator runbook updates. |
 | PR-9 | Optional GBT evaluation | Phase 5 | PR-3 | Measure `gbt_av`, optionally wire it behind config, and decide whether to expose it after the stable pilot path exists. |
+| PR-AC1 | Leaderboard and analytics | Phase AC | PR-6 | Add invite-only leaderboard ranked by net_eppd with product-facing metrics. Route-backed tab in shared invited-user shell. |
+| PR-AC2 | Feedback forum and Claude bot constraints | Phase AC | PR-AC1 | Add invite-only forum (read/create/hide-unhide), Claude bot rate limits and labeling, shared shell navigation. |
 
 ## Parallelism Guidance
 
@@ -33,6 +35,8 @@ losing the dependency chain.
 - `PR-7` waits on the stable browser surface from `PR-5` and the access flow
   from `PR-6`.
 - `PR-9` is intentionally outside the launch blocker chain.
+- `PR-AC1` starts after `PR-6` (invite codes) is stable. `PR-AC2` follows
+  `PR-AC1`. Both are outside the launch blocker chain.
 
 ## Required Validation by PR
 
@@ -47,9 +51,11 @@ losing the dependency chain.
 | PR-7 | Full hosted-play unit/integration/E2E matrix, Claude-direct browser smoke, Docker/Postgres smoke |
 | PR-8 | Final pre-pilot checklist, real-device proving evidence, deployment/runbook validation |
 | PR-9 | Artifact preload/runtime measurements, browser smoke, explicit promote/defer decision |
+| PR-AC1 | Leaderboard unit/route/integration tests, access gating, ranking by net_eppd, column partitioning |
+| PR-AC2 | Forum unit/route/integration tests, Claude bot constraint enforcement, rate limiting, automated labeling, browser E2E |
 
 ## Launch Blockers
 
 `PR-1` through `PR-8` are launch blockers for the expanded pilot scope.
 
-`PR-9` is not a launch blocker.
+`PR-9`, `PR-AC1`, and `PR-AC2` are not launch blockers.

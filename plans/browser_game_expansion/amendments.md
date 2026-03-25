@@ -32,5 +32,36 @@ that suit buckets should remain visually segregated even when bower semantics
 matter for gameplay, so the sort must follow printed suits with a display-only
 rank order of `JAKQT`.
 
+---
+
+## BGE-2 -- Analytics and Community phase (leaderboard, forum, Claude bot constraints) (2026-03-25)
+
+**PR:** pending
+
+**What changed:**
+1. **Added Phase AC (Analytics and Community)** to the governing plan phase
+   table. This phase adds an invite-only leaderboard and a simple feedback
+   forum as route-backed tabs in the shared invited-user shell.
+2. **Removed "Public leaderboard or analytics pages" from Non-Goals** because
+   the leaderboard is now in scope (invite-only, not public).
+3. **Added Architecture Decision 5.7** defining the Analytics and Community
+   contract: leaderboard metrics, forum features, Claude bot constraints,
+   and implementation constraints (no websockets, no SPA-only tabs, no
+   research-parity optimization, no threaded chat).
+4. **Phase numbering:** The new phase uses the label "AC" (Analytics and
+   Community) rather than a numeric index to avoid renaming the existing
+   `4_validation_and_launch` directory which has in-progress work.
+   Sub-plan IDs use the `SP-AC-*` prefix.
+5. **Leaderboard is not a launch blocker** for the existing expansion
+   initiative. It runs after Phase 3 is stable and ships independently.
+6. **Sub-plans registered:** SP-AC-01 (leaderboard and analytics) and
+   SP-AC-02 (feedback forum and Claude user constraints).
+
+**Rationale:**
+The operator requested leaderboard and forum features during the Phase 4
+planning discussion. These features depend on the invite-code identity layer
+from Phase 3 but do not block the existing Validation and Launch critical
+path. They are positioned as a parallel track.
+
 Use this file only after the governing plan is locked and execution uncovers
 scope changes that should not be edited directly into the governing plan.

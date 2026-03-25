@@ -52,7 +52,6 @@ later:
 - Native mobile apps
 - Canvas/3D/drag-and-drop frontend work
 - Card-play model replacement beyond `GluttonStrategy`
-- Public leaderboard or analytics pages
 - GBT as a launch blocker
 
 ## 4. Key Definitions
@@ -165,7 +164,44 @@ on frontend-framework or animation-heavy scope:
   first live invite-code redemption on an actual phone if automation cannot
   establish equivalent confidence.
 
-### 5.7 Migration Contract
+### 5.7 Analytics and Community Contract
+
+The browser product adds two invite-only tabs -- Leaderboard and Forum --
+alongside the existing Game tab, all sharing the same invited-user shell.
+
+**Leaderboard:**
+- Ranked by `net_eppd` with product-facing metrics (not research-report fidelity).
+- Default visible columns: `net_eppd`, `games_won`, `win_rate`,
+  `avg_margin_victory`, `matches_played`.
+- Secondary columns (expandable): `hands_played`, `avg_match_margin`,
+  `bid_rate`, `make_rate`, `avg_bid_level`, `moon_call_rate`,
+  `moon_make_rate`, `loner_call_rate`, `loner_make_rate`.
+- Metrics are aggregated from match/hand completion data already persisted by
+  the hosted-play engine.
+
+**Forum:**
+- Simple post-based feedback channel: read posts, create post, small fixed
+  category set (Bug Report, Feature Request, General Feedback, Game Strategy).
+- Moderation is hide/unhide only. No editing or deleting others' posts.
+- No threaded replies, no nested comments, no chat, no community expansion.
+
+**Claude (bot) constraints:**
+- Labeled as automated in all interactions.
+- Cannot create/revoke invite codes (no invite admin).
+- Cannot moderate (hide/unhide) others' posts.
+- Cannot edit or delete others' content.
+- Max 1 active match at a time.
+- Max 3 completed matches per 24 hours.
+- Max 3 forum posts per 24 hours.
+
+**Architecture rules:**
+- All tabs (Game, Leaderboard, Forum) are real routes, not SPA-only tab state.
+- No websockets -- use server-rendered HTML plus optional polling.
+- No research-parity optimization on leaderboard display.
+- No threaded chat or community expansion.
+- No Claude privileged bypass routes.
+
+### 5.8 Migration Contract
 
 - This initiative introduces schema changes. Startup `create_all()` is not
   sufficient by itself for pilot-safe rollout.
@@ -193,8 +229,9 @@ not on the critical path.
 
 ### 6.2 PR Strategy
 
-This expansion is expected to land in 8-9 coherent PRs. The authoritative PR
-sequence lives in `plans/browser_game_expansion/pr_roadmap.md`.
+This expansion is expected to land in 10-11 coherent PRs (including the
+Analytics and Community track). The authoritative PR sequence lives in
+`plans/browser_game_expansion/pr_roadmap.md`.
 
 ### 6.3 Parallelism Rules
 
@@ -206,6 +243,8 @@ sequence lives in `plans/browser_game_expansion/pr_roadmap.md`.
   it does not need to wait for all UX polish.
 - Phase 4 validation work starts as soon as browser surfaces are stable enough
   to automate.
+- Phase AC (Analytics and Community) can begin after Phase 3 identity flow is
+  stable. SP-AC-01 (leaderboard) ships before SP-AC-02 (forum).
 - Phase 5 GBT work can run in parallel with late pilot hardening, but it must
   not reopen launch scope unless explicitly promoted through amendments.
 
@@ -220,6 +259,7 @@ sequence lives in `plans/browser_game_expansion/pr_roadmap.md`.
 | 2 | Product Experience | Add moon/loner-capable browser UI, readability improvements, next-deal flow, pace controls, help, mobile/touch, and telemetry fixes. | Phase 1 | Yes |
 | 3 | Pilot Access Control | Add invite-code access, player/admin code management, and user-chosen nickname flow. | Phase 1 | Yes |
 | 4 | Validation and Launch | Add browser E2E automation, Claude-direct browser testing support, smoke suites, proving checklist execution, and pilot launch gating. | Phases 2 and 3 | Yes |
+| AC | Analytics and Community | Add invite-only leaderboard (ranked by net_eppd with product-facing metrics) and simple feedback forum with Claude bot constraints. Route-backed tabs in the shared invited-user shell. | Phase 3 | No |
 | 5 | Optional GBT Evaluation | Measure, optionally wire, and decide whether `gbt_av` should be exposed after the stable pilot path exists. | Phase 1 | No |
 
 ### 7.2 Step Template (per phase)
