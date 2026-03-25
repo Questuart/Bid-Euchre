@@ -40,7 +40,12 @@ monitoring infrastructure.
    `recovery`) first, then P1 (`completion`, `escalation`, `blocker`), then
    P2 (`ack`, `progress`).
 
-2. **Filter for high-priority message types** — process these BEFORE any other
+2. **Triage imported native inbox items first.** Native messages are imported
+   as `progress` type (P2) by default, but may contain urgent content. Scan
+   the P2 tier for messages with `source_transport: claude_native` — read
+   their `native_text` and mentally re-classify before bulk-acking P2.
+
+3. **Filter for high-priority message types** — process these BEFORE any other
    status checks:
 
    | Message Type | Priority | Action |
@@ -53,7 +58,7 @@ monitoring infrastructure.
    | `ack` | LOW | Informational — bulk-ack |
    | `progress` | LOW | Informational — note and continue |
 
-3. **Acknowledge processed messages:**
+4. **Acknowledge processed messages:**
    ```bash
    # Ack individual high-priority messages after acting on them
    uv run python scripts/internal/ops.py inbox ack <MSG_ID> --lane orchestrator
@@ -65,7 +70,7 @@ monitoring infrastructure.
    uv run python scripts/internal/ops.py inbox ack-all --lane orchestrator --filter-summary "Task received|progress"
    ```
 
-4. **Surface unacked HIGH alerts prominently.** If any `supervisor_alert` or
+5. **Surface unacked HIGH alerts prominently.** If any `supervisor_alert` or
    `escalation` messages remain unacked from a previous cycle, flag them as
    overdue and prioritize response:
    ```
@@ -77,48 +82,48 @@ monitoring infrastructure.
 
 ### Phase 2 — Lane Health
 
-5. **Check dashboard state:**
+6. **Check dashboard state:**
    ```bash
    uv run python scripts/internal/ops.py --json dashboard --no-probe
    ```
 
-6. **Inspect attention items and warnings.** Look for:
+7. **Inspect attention items and warnings.** Look for:
    - Lanes with no recent activity (potential stalls)
    - Dirty worktrees that need recovery
    - Blocked or overdue task packets
 
-7. **Check active task packets:**
+8. **Check active task packets:**
    ```bash
    uv run python scripts/internal/ops.py task list
    ```
 
 ### Phase 3 — PR and CI Health
 
-8. **List open PRs:**
+9. **List open PRs:**
    ```bash
    gh pr list --state open --json number,title,headRefName,author
    ```
 
-9. **Check for stuck PRs** — any PR open > 1 hour without CI progress or
+10. **Check for stuck PRs** — any PR open > 1 hour without CI progress or
    review verdict warrants investigation.
 
-10. **Check recently merged PRs** for follow-up work:
+11. **Check recently merged PRs** for follow-up work:
     ```bash
     gh pr list --state merged --limit 5 --json number,title,mergedAt
     ```
 
 ### Phase 4 — Issue Triage
 
-11. **Scan for new or updated issues:**
+12. **Scan for new or updated issues:**
     ```bash
     gh issue list --state open --limit 10 --json number,title,labels,updatedAt
     ```
 
-12. **Classify each** as: blocker to active work, next-wave candidate, or backlog.
+13. **Classify each** as: blocker to active work, next-wave candidate, or backlog.
 
 ### Phase 5 — Summary
 
-13. **Produce a compact status block:**
+14. **Produce a compact status block:**
 
     ```
     CHECK-IN @ <timestamp>
