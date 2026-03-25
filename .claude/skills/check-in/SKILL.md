@@ -97,6 +97,49 @@ monitoring infrastructure.
    uv run python scripts/internal/ops.py task list
    ```
 
+### Phase 2b — Branch Divergence Detection
+
+> **Why:** Parallel author lanes branching off the same `origin/main` snapshot
+> diverge as other PRs merge. Catching divergence early (before PR creation)
+> avoids costly merge conflicts and wasted review cycles.
+
+9. **For each active author lane with a dispatched task**, check how far its
+   branch has diverged from `origin/main`:
+   ```bash
+   # From each lane's worktree, or using git directly:
+   git fetch origin main
+   git rev-list --count origin/main..<branch-name>   # commits ahead
+   git rev-list --count <branch-name>..origin/main   # commits behind
+   ```
+
+10. **Flag divergence warnings** using these thresholds:
+
+    | Commits Behind `origin/main` | Severity | Action |
+    |------------------------------|----------|--------|
+    | 0 | OK | No action needed |
+    | 1–5 | INFO | Note in check-in summary |
+    | 6–15 | WARN | Recommend lane rebase before PR |
+    | 16+ | HIGH | Send rebase nudge to the lane |
+
+    When severity is WARN or HIGH, include it in the check-in summary:
+    ```
+    DIVERGENCE:
+      author-a: 3 behind (OK)
+      author-b: 12 behind (WARN — recommend rebase)
+      author-d: 22 behind (HIGH — rebase nudge sent)
+    ```
+
+11. **Send rebase nudge** to lanes at HIGH divergence:
+    ```bash
+    uv run python scripts/internal/ops.py message send \
+      --from orchestrator --to <lane> --type supervisor_alert \
+      --summary "Branch diverged 16+ commits from main — rebase before continuing"
+    ```
+
+12. **Check for merge conflict potential** — if two active lanes are touching
+    overlapping files (visible from their task packet `scope_declared`), flag
+    this as a potential conflict even at low divergence counts.
+
 ### Phase 3 — PR and CI Health
 
 9. **List open PRs:**
@@ -128,12 +171,13 @@ monitoring infrastructure.
     ```
     CHECK-IN @ <timestamp>
     ────────────────────────
-    INBOX:  <N> pending (<M> HIGH-priority)
-    LANES:  <N> active, <M> idle, <K> stalled
-    PRs:    <N> open, <M> merged since last check
-    ISSUES: <N> open (<M> new since last check)
-    ALERTS: <list any unresolved HIGH alerts>
-    NEXT:   <recommended action>
+    INBOX:      <N> pending (<M> HIGH-priority)
+    LANES:      <N> active, <M> idle, <K> stalled
+    DIVERGENCE: <N> OK, <M> WARN, <K> HIGH (list HIGH lanes)
+    PRs:        <N> open, <M> merged since last check
+    ISSUES:     <N> open (<M> new since last check)
+    ALERTS:     <list any unresolved HIGH alerts>
+    NEXT:       <recommended action>
     ```
 
 ## Integration with /run-fleet
