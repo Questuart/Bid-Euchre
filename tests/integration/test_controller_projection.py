@@ -16,6 +16,7 @@ Closes #1683.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -58,15 +59,18 @@ def _old_urgent_message_dict(
     to_lane: str = "orchestrator",
     summary: str = "CI broken on main — all PRs blocked",
     priority: str = "urgent",
-    created_at: str = "2026-03-24T07:00:00+00:00",
+    age_minutes: int = 60,
 ) -> dict:
-    """Construct an inbox message dict with an old created_at for age tests.
+    """Construct an inbox message dict with a created_at older than the age threshold.
 
-    ``items_from_unacked_messages`` uses wall-clock ``time.time()`` for age
-    calculation, so freshly created messages won't exceed the default
-    10-minute threshold. We fabricate a dict with a past timestamp to
-    exercise the detection logic without sleeping.
+    Computes ``created_at`` relative to the current wall clock so the test
+    is not coupled to any hardcoded date.  ``items_from_unacked_messages``
+    uses ``time.time()`` for age calculation — the computed timestamp will
+    always exceed the default 10-minute threshold.
     """
+    created_at = (
+        datetime.now(timezone.utc) - timedelta(minutes=age_minutes)
+    ).isoformat()
     return {
         "message_id": msg_id,
         "from_lane": from_lane,
@@ -77,6 +81,17 @@ def _old_urgent_message_dict(
         "created_at": created_at,
         "summary": summary,
     }
+
+
+def _consistent_now_iso() -> str:
+    """Return a ``now_iso`` timestamp derived from the current wall clock.
+
+    Used as the ``now_iso`` argument for ``reconcile()`` /
+    ``items_from_unacked_messages()`` so that labelling timestamps are
+    consistent with the wall-clock age check inside the controller.
+    """
+    return datetime.now(timezone.utc).isoformat()
+
 
 
 # ---------------------------------------------------------------------------
@@ -214,16 +229,15 @@ class TestReconcileLifecycle:
 class TestAlertPipeline:
     """Prove urgent bus messages are detected and surfaced in the projection.
 
-    Note: ``items_from_unacked_messages`` uses wall-clock ``time.time()`` for
-    age calculation, so freshly-created bus messages won't exceed the default
-    10-minute threshold. These tests use fabricated message dicts with old
-    ``created_at`` timestamps to exercise the full detection pipeline without
-    sleeping or monkey-patching the clock.
+    Timestamps are computed relative to the current wall clock via
+    ``_old_urgent_message_dict`` and ``_consistent_now_iso`` so the tests
+    are not coupled to any hardcoded date (#1706).
     """
 
     def test_urgent_message_surfaces_in_projection(self, tmp_path: Path) -> None:
         """An unacked urgent message is surfaced as an actionable item."""
         runtime_dir = tmp_path / "runtime"
+        now_iso = _consistent_now_iso()
 
         # 1. Fabricate an urgent message dict with a timestamp old enough
         #    to exceed the default 10-minute age threshold.
@@ -231,13 +245,12 @@ class TestAlertPipeline:
             msg_id="urgent-001",
             summary="CI broken on main — all PRs blocked",
             priority="urgent",
-            created_at="2026-03-24T07:00:00+00:00",
         )
 
         # 2. Controller detects the unacked urgent message.
         items = items_from_unacked_messages(
             [msg_dict],
-            now_iso="2026-03-24T08:00:00+00:00",
+            now_iso=now_iso,
         )
         urgent_items = [i for i in items if i.severity == SEVERITY_URGENT]
         assert len(urgent_items) >= 1
@@ -248,17 +261,16 @@ class TestAlertPipeline:
         #    Use derive_items directly since reconcile calls it internally.
         all_items = derive_items(
             unacked_messages=[msg_dict],
-            now_iso="2026-03-24T08:00:00+00:00",
+            now_iso=now_iso,
             unacked_message_age_minutes=0,  # bypass wall-clock check
         )
         assert any(i.severity == SEVERITY_URGENT for i in all_items)
 
-        # 4. Verify reconcile persists the item (using age_minutes=0 workaround:
-        #    pass the item as a monitor finding instead).
+        # 4. Verify reconcile persists the item.
         status = reconcile(
             runtime_dir=runtime_dir,
             unacked_messages=[msg_dict],
-            now_iso="2026-03-24T08:00:00+00:00",
+            now_iso=now_iso,
         )
         # The message has an old created_at so it should be detected.
         open_urgent = [
@@ -275,17 +287,17 @@ class TestAlertPipeline:
 
     def test_high_priority_message_detected(self) -> None:
         """A high-priority unacked message surfaces as a high-severity item."""
+        now_iso = _consistent_now_iso()
         msg_dict = _old_urgent_message_dict(
             msg_id="high-001",
             from_lane="author-c",
             summary="Review stalled — needs manual approval",
             priority="high",
-            created_at="2026-03-24T07:00:00+00:00",
         )
 
         items = items_from_unacked_messages(
             [msg_dict],
-            now_iso="2026-03-24T08:00:00+00:00",
+            now_iso=now_iso,
         )
         high_items = [i for i in items if i.severity == SEVERITY_HIGH]
         assert len(high_items) >= 1
@@ -294,28 +306,29 @@ class TestAlertPipeline:
     def test_acked_message_clears_from_projection(self, tmp_path: Path) -> None:
         """An item from an urgent message is auto-cleared when the message disappears."""
         runtime_dir = tmp_path / "runtime"
+        now_iso = _consistent_now_iso()
 
         # Fabricate an old urgent message.
         msg_dict = _old_urgent_message_dict(
             msg_id="ack-test-001",
             summary="Worktree corrupted",
             priority="urgent",
-            created_at="2026-03-24T07:00:00+00:00",
         )
 
         # Cycle 1: message detected in projection.
         s1 = reconcile(
             runtime_dir=runtime_dir,
             unacked_messages=[msg_dict],
-            now_iso="2026-03-24T08:00:00+00:00",
+            now_iso=now_iso,
         )
         assert len(s1.urgent_items) >= 1
 
         # Cycle 2: message has been acked (no longer in unacked list).
+        cycle2_iso = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
         s2 = reconcile(
             runtime_dir=runtime_dir,
             unacked_messages=[],
-            now_iso="2026-03-24T08:05:00+00:00",
+            now_iso=cycle2_iso,
         )
 
         # The urgent item should be auto-cleared.
@@ -367,6 +380,7 @@ class TestAlertPipeline:
         # uses the real bus whose created_at is wall-clock time.
         items = items_from_unacked_messages(
             inbox,
+            now_iso=_consistent_now_iso(),
             max_age_minutes=0,
         )
         urgent = [i for i in items if i.severity == SEVERITY_URGENT]
@@ -387,10 +401,17 @@ class TestRemoteExchangeProjection:
         audit_dir = tmp_path / "audit"
         runtime_dir = tmp_path / "runtime"
 
+        # Use a consistent timeline anchored to the current wall clock (#1706).
+        base = datetime.now(timezone.utc)
+        inbound_iso = (base - timedelta(minutes=60)).isoformat()
+        cycle1_iso = base.isoformat()
+        reply_iso = (base + timedelta(minutes=2)).isoformat()
+        cycle2_iso = (base + timedelta(minutes=5)).isoformat()
+
         # 1. Inbound message arrives via channel tag.
         tag = (
-            '<channel source="telegram" chat_id="999" '
-            'message_id="200" user="operator" ts="2026-03-24T07:00:00Z">'
+            f'<channel source="telegram" chat_id="999" '
+            f'message_id="200" user="operator" ts="{inbound_iso}">'
         )
         audit_channel_tag(tag_text=tag, content="Fleet status?", audit_dir=audit_dir)
 
@@ -402,7 +423,7 @@ class TestRemoteExchangeProjection:
         s1 = reconcile(
             runtime_dir=runtime_dir,
             audit_records=record_dicts,
-            now_iso="2026-03-24T08:00:00+00:00",  # 60 min later
+            now_iso=cycle1_iso,
         )
 
         # Verify the unanswered inbound is surfaced.
@@ -411,8 +432,7 @@ class TestRemoteExchangeProjection:
         assert audit_items[0].state == STATE_OPEN
         assert "operator" in audit_items[0].summary
 
-        # 3. Outbound reply is sent (fixed timestamp to stay in-band with
-        #    the deterministic now_iso values used by reconcile above).
+        # 3. Outbound reply is sent (timestamp matches the relative timeline).
         audit_mcp_outbound(
             tool_name="mcp__plugin_telegram_telegram__reply",
             tool_args={
@@ -421,7 +441,7 @@ class TestRemoteExchangeProjection:
                 "reply_to": "200",
             },
             audit_dir=audit_dir,
-            timestamp="2026-03-24T08:02:00+00:00",
+            timestamp=reply_iso,
         )
 
         # 4. Second reconcile cycle with updated audit records.
@@ -432,7 +452,7 @@ class TestRemoteExchangeProjection:
         s2 = reconcile(
             runtime_dir=runtime_dir,
             audit_records=record_dicts_2,
-            now_iso="2026-03-24T08:05:00+00:00",
+            now_iso=cycle2_iso,
         )
 
         # The audit item should be cleared — the reply answered the inbound.
@@ -448,26 +468,32 @@ class TestRemoteExchangeProjection:
         audit_dir = tmp_path / "audit"
         runtime_dir = tmp_path / "runtime"
 
+        # Use a consistent timeline anchored to the current wall clock (#1706).
+        base = datetime.now(timezone.utc)
+        inbound_iso = (base - timedelta(minutes=60)).isoformat()
+        reply_iso = (base + timedelta(minutes=2)).isoformat()
+        reconcile_iso = (base + timedelta(minutes=5)).isoformat()
+
         # Chat A: inbound
         tag_a = (
-            '<channel source="telegram" chat_id="AAA" '
-            'message_id="1" user="alice" ts="2026-03-24T07:00:00Z">'
+            f'<channel source="telegram" chat_id="AAA" '
+            f'message_id="1" user="alice" ts="{inbound_iso}">'
         )
         audit_channel_tag(tag_text=tag_a, content="Hello from A", audit_dir=audit_dir)
 
         # Chat B: inbound
         tag_b = (
-            '<channel source="telegram" chat_id="BBB" '
-            'message_id="2" user="bob" ts="2026-03-24T07:00:00Z">'
+            f'<channel source="telegram" chat_id="BBB" '
+            f'message_id="2" user="bob" ts="{inbound_iso}">'
         )
         audit_channel_tag(tag_text=tag_b, content="Hello from B", audit_dir=audit_dir)
 
-        # Reply to Chat A only (fixed timestamp — see finding P3 from #1706).
+        # Reply to Chat A only (timestamp matches the relative timeline).
         audit_mcp_outbound(
             tool_name="mcp__plugin_telegram_telegram__reply",
             tool_args={"chat_id": "AAA", "body": "Hi Alice!", "reply_to": "1"},
             audit_dir=audit_dir,
-            timestamp="2026-03-24T07:30:00+00:00",
+            timestamp=reply_iso,
         )
 
         # Reconcile — chat B should still be unanswered.
@@ -477,7 +503,7 @@ class TestRemoteExchangeProjection:
         status = reconcile(
             runtime_dir=runtime_dir,
             audit_records=record_dicts,
-            now_iso="2026-03-24T08:00:00+00:00",
+            now_iso=reconcile_iso,
         )
 
         open_audit = [
@@ -503,26 +529,26 @@ class TestRemoteExchangeProjection:
             },
         ]
 
-        # Source 2: fabricated old urgent bus message (bypasses wall-clock age).
+        # Source 2: fabricated old urgent bus message (clock-relative).
         old_msg = _old_urgent_message_dict(
             msg_id="combined-001",
             from_lane="author-d",
             summary="Disk full",
             priority="urgent",
-            created_at="2026-03-24T07:00:00+00:00",
         )
 
         # Source 3: audit inbound.
+        inbound_iso = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
         tag = (
-            '<channel source="telegram" chat_id="777" '
-            'message_id="50" user="ops" ts="2026-03-24T07:00:00Z">'
+            f'<channel source="telegram" chat_id="777" '
+            f'message_id="50" user="ops" ts="{inbound_iso}">'
         )
         audit_channel_tag(tag_text=tag, content="Check deploy", audit_dir=audit_dir)
         records = read_records(audit_dir=audit_dir)
         record_dicts = [r.to_dict() for r in records]
 
         # Reconcile with all three sources.
-        now_iso = "2026-03-24T08:00:00+00:00"
+        now_iso = _consistent_now_iso()
         status = reconcile(
             runtime_dir=runtime_dir,
             monitor_findings=monitor,
