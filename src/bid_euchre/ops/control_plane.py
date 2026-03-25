@@ -847,6 +847,7 @@ def reconcile(
     unacked_messages: list[dict[str, Any]] | None = None,
     audit_records: list[dict[str, Any]] | None = None,
     now_iso: str | None = None,
+    unacked_message_age_minutes: int = 10,
 ) -> FleetStatus:
     """Run one reconciliation cycle.
 
@@ -862,6 +863,11 @@ def reconcile(
 
     If neither monitor input is provided, the caller is responsible
     for running the monitor cycle first and passing the results.
+
+    Args:
+        unacked_message_age_minutes: Age threshold in minutes for unacked
+            message detection. Messages younger than this are ignored.
+            Default 10. Pass 0 in tests to bypass wall-clock coupling.
     """
     if now_iso is None:
         now_iso = _now_iso()
@@ -876,6 +882,7 @@ def reconcile(
         unacked_messages=unacked_messages,
         audit_records=audit_records,
         now_iso=now_iso,
+        unacked_message_age_minutes=unacked_message_age_minutes,
     )
 
     merged = merge_with_previous(new_items, previous)
