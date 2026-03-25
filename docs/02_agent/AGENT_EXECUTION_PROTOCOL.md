@@ -40,6 +40,8 @@ An agent determines what to do next by reading the checkpoint file:
 
 **What blocks progression:**
 - A step's `Validates` conditions fail
+- A step's pass/fail criteria are not defined (every step must have specific,
+  observable verification conditions before implementation begins)
 - A required sub-plan is `blocked`
 - A predecessor step is not `COMPLETE`
 - A hard dependency declared in the governing plan is unmet
@@ -65,7 +67,10 @@ When an agent completes a step:
 
 1. Update `checkpoints.md`: set step status to `COMPLETE`, record date and session
 2. If a sub-plan was involved, update its status in the sub-plan registry
-3. Verify the step's `Validates` conditions are met
+3. Verify the step's `Validates` conditions are met — every step must have
+   specific pass/fail criteria defined in the `Validates` column. A step
+   cannot be marked `COMPLETE` without running its verification command(s)
+   and confirming the expected result.
 4. Proceed to the next step per the governing plan sequence
 
 When an agent completes a phase:

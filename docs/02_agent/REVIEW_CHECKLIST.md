@@ -10,6 +10,7 @@ Before claiming a PR is "done," ensure ALL of these are true:
 - [ ] **No Artifacts**: No generated files under `data/runs/` or `data/reports/` committed
 - [ ] **PR Template Complete**: ALL "##" headers from `.github/pull_request_template.md` present in PR body
 - [ ] **Repro Command**: Exact reproduction command with seed/config included in PR description
+- [ ] **Test Criteria Defined**: PR body `## Test Criteria` section includes specific pass/fail conditions with verification commands and expected results — not just "tests pass"
 - [ ] **Clean Main Ready**: Can `git checkout main && git pull --ff-only origin main` successfully
 - [ ] **Contract Compliance**: Changes to core rules/logging/metrics comply with `docs/01_core/` docs
 

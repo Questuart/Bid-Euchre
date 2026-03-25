@@ -9,6 +9,12 @@
 ## Files
 - `path/to/file.py` — what changes
 
+## Test Criteria
+<!-- Define before implementation starts. What proves this work is done? -->
+- **Pass condition:** <!-- e.g., "new test_X.py has ≥5 tests, all green" -->
+- **Verification command:** <!-- exact command to run -->
+- **Expected result:** <!-- what the output should look like -->
+
 ## Outcome
 <!-- Filled after implementation -->
 - PR: #NNN / abandoned / deferred
