@@ -76,13 +76,45 @@ class AIManager:
         )
 
         # 2. hybrid_olsa — available when artifact path is set and exists
+        self._try_load_hybrid_olsa(config)
+
+        # Validate default_model_id is available
+        if self.default_model_id not in self.available_models:
+            logger.warning(
+                "Default model %r not in roster; falling back to 'heuristic'",
+                self.default_model_id,
+            )
+            self.default_model_id = "heuristic"
+
+    def _try_load_hybrid_olsa(self, config: HostedPlayConfig) -> None:
+        """Attempt to load hybrid_olsa, resolving artifact path with fallback.
+
+        Resolution order for relative paths when ``models_dir`` is configured:
+        1. Try the CWD-relative path first (preserve existing local artifacts).
+        2. If CWD path doesn't exist **or** loading from it fails, fall back to
+           ``models_dir / artifact_path``.
+        """
         artifact_path = config.hybrid_olsa_artifact
-        # Resolve relative artifact paths against models_dir when configured,
-        # but only if the path doesn't already resolve from the working directory.
-        if artifact_path and config.models_dir and not os.path.isabs(artifact_path):
-            if not os.path.isfile(artifact_path):
-                artifact_path = os.path.join(config.models_dir, artifact_path)
-        if artifact_path and os.path.isfile(artifact_path):
+        if not artifact_path:
+            return
+
+        # Build ordered list of candidate paths to try.
+        candidates: list[str] = []
+        if config.models_dir and not os.path.isabs(artifact_path):
+            if os.path.isfile(artifact_path):
+                # CWD path exists — try it first, models_dir as fallback.
+                candidates.append(artifact_path)
+                candidates.append(os.path.join(config.models_dir, artifact_path))
+            else:
+                # CWD path missing — try models_dir only.
+                candidates.append(os.path.join(config.models_dir, artifact_path))
+        else:
+            # Absolute path or no models_dir — use as-is.
+            candidates.append(artifact_path)
+
+        for path in candidates:
+            if not os.path.isfile(path):
+                continue
             try:
                 from bid_euchre.strategy.bidding import HybridOLSaBidder
 
@@ -93,26 +125,19 @@ class AIManager:
                         "Statistical bidder (OLS payoff model with "
                         "risk-aware evaluation) and greedy play."
                     ),
-                    bidding_policy=HybridOLSaBidder(artifact_path=artifact_path),
+                    bidding_policy=HybridOLSaBidder(artifact_path=path),
                     play_strategy=GluttonStrategy(),
                 )
-                logger.info("Loaded hybrid_olsa model from %s", artifact_path)
+                logger.info("Loaded hybrid_olsa model from %s", path)
+                return
             except Exception:
                 logger.warning(
                     "Failed to load hybrid_olsa from %s",
-                    artifact_path,
+                    path,
                     exc_info=True,
                 )
-        elif artifact_path:
-            logger.info(
-                "hybrid_olsa artifact configured but file not found: %s",
-                artifact_path,
-            )
 
-        # Validate default_model_id is available
-        if self.default_model_id not in self.available_models:
-            logger.warning(
-                "Default model %r not in roster; falling back to 'heuristic'",
-                self.default_model_id,
-            )
-            self.default_model_id = "heuristic"
+        logger.info(
+            "hybrid_olsa artifact configured but not loadable: %s",
+            artifact_path,
+        )

@@ -155,6 +155,56 @@ class TestHybridOlsa:
             for m in caplog.messages
         )
 
+    def test_hybrid_olsa_cwd_failure_falls_back_to_models_dir(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """When CWD artifact exists but fails to load, models_dir is tried.
+
+        Regression test for #1700: if the CWD-relative path exists but the
+        artifact is corrupt/invalid, the loader should fall back to the
+        models_dir copy if one exists.
+        """
+        # Create a bad artifact in CWD-relative location.
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+        cwd_artifact_dir = workdir / "data" / "models"
+        cwd_artifact_dir.mkdir(parents=True)
+        cwd_artifact = cwd_artifact_dir / "hybrid.json"
+        cwd_artifact.write_text(json.dumps({"artifact_type": "wrong"}))
+
+        # Create the same relative name in models_dir (also bad — we just
+        # want to verify the fallback attempt happens).
+        models_dir = tmp_path / "shared_models"
+        models_dir.mkdir()
+        fallback_artifact = models_dir / "data" / "models" / "hybrid.json"
+        fallback_artifact.parent.mkdir(parents=True)
+        fallback_artifact.write_text(json.dumps({"artifact_type": "also_wrong"}))
+
+        monkeypatch.chdir(workdir)
+        config = HostedPlayConfig(
+            hybrid_olsa_artifact="data/models/hybrid.json",
+            models_dir=str(models_dir),
+        )
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="web.ai_manager"):
+            mgr = AIManager(config)
+
+        # Neither artifact is valid, so hybrid_olsa is not loaded.
+        assert "hybrid_olsa" not in mgr.available_models
+
+        # Both load attempts should be logged — CWD first, then models_dir.
+        warning_messages = [
+            r.message for r in caplog.records if r.levelno >= logging.WARNING
+        ]
+        assert any(
+            "Failed to load hybrid_olsa from data/models/hybrid.json" in m
+            for m in warning_messages
+        ), f"Expected CWD attempt warning; got: {warning_messages}"
+        assert any(
+            str(models_dir) in m and "Failed to load" in m for m in warning_messages
+        ), f"Expected models_dir fallback attempt warning; got: {warning_messages}"
+
     def test_hybrid_olsa_relative_without_models_dir_not_resolved(self):
         """A relative artifact with no models_dir stays relative (likely not found)."""
         config = HostedPlayConfig(
