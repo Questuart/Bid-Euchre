@@ -103,6 +103,26 @@ intake-to-dispatch flow into a reusable workflow.
    uv run python scripts/internal/ops.py task list
    ```
 
+## Tmux Paste Bracketing Caveat
+
+Modern terminals use **bracketed paste mode**. When `tmux send-keys` sends a
+multi-line string, tmux wraps it in `\e[200~...\e[201~` escape sequences. If
+`Enter` is appended in the same `send-keys` call, it is consumed inside the
+paste bracket and the text is **pasted but never submitted**.
+
+**Two-step pattern (required for reliable dispatch):**
+```bash
+# Step 1: send the text (do NOT append Enter)
+tmux send-keys -t <pane> 'message text'
+# Step 2: wait briefly, then send Enter separately
+sleep 1
+tmux send-keys -t <pane> Enter
+```
+
+This applies to all manual `tmux send-keys` invocations from the orchestrator.
+The `task dispatch` command uses `nudge_pane()` internally — see issue #1834
+for the code-level fix tracking.
+
 ## Gotchas
 
 - Do not bypass preview for non-trivial work — the user must see and approve
@@ -116,6 +136,8 @@ intake-to-dispatch flow into a reusable workflow.
   worker-pool summary
 - Always use `task dispatch` for the final dispatch step — do not use
   `workers dispatch` (low-level) or `Agent` (hidden subprocess delegation)
+- When manually nudging lanes via `tmux send-keys`, always use the two-step
+  pattern described above to avoid paste bracketing issues
 
 ## References
 

@@ -138,6 +138,26 @@ Expected analyst outputs:
 - PR roadmap / safe-parallelism guidance
 - restart-ready handoff
 
+## Tmux Paste Bracketing Caveat
+
+Modern terminals use **bracketed paste mode**. When `tmux send-keys` sends a
+multi-line string (or any text that triggers paste detection), `Enter` appended
+in the same call is consumed inside the paste bracket — the text is pasted but
+**never submitted**.
+
+**Two-step pattern (required for reliable pane delivery):**
+```bash
+# Step 1: send the text (do NOT append Enter)
+tmux send-keys -t <pane> 'message text'
+# Step 2: wait briefly, then send Enter separately
+sleep 1
+tmux send-keys -t <pane> Enter
+```
+
+This affects all manual `tmux send-keys` calls from the orchestrator, including
+analyst lane dispatch, `/park` and `/clear` commands, and any ad-hoc nudges.
+See issue #1834 for evidence and code-level fix tracking.
+
 ## Lane Discipline
 
 - Respect the lane/track affinity defined in the handoff
@@ -271,18 +291,25 @@ orphaned cron jobs. `/clear` alone does **not** stop cron jobs — always
 `/park` first.
 
 1. **Park central lanes** — ops and review run persistent monitoring crons
-   that must be stopped before the orchestrator exits:
+   that must be stopped before the orchestrator exits.
+   Use the two-step pattern (see *Tmux Paste Bracketing Caveat* above):
    ```bash
-   tmux send-keys -t steward:ops '/park' Enter
+   tmux send-keys -t steward:ops '/park'
+   sleep 1
+   tmux send-keys -t steward:ops Enter
    # Wait for "0 cron jobs" confirmation
-   tmux send-keys -t steward:review '/park' Enter
+   tmux send-keys -t steward:review '/park'
+   sleep 1
+   tmux send-keys -t steward:review Enter
    # Wait for confirmation
    ```
 
 2. **Park idle author lanes** — any author lane with an active session but
    no dispatched work:
    ```bash
-   tmux send-keys -t steward:author-a '/park' Enter
+   tmux send-keys -t steward:author-a '/park'
+   sleep 1
+   tmux send-keys -t steward:author-a Enter
    # ... repeat for each idle lane with an active session
    ```
 

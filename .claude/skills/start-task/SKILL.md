@@ -140,6 +140,32 @@ following happens automatically:
 The nudge is best-effort — if it fails, the task remains in durable state
 and you can pick it up manually via `task list`.
 
+### Tmux Paste Bracketing Caveat
+
+Modern terminals use **bracketed paste mode**. When the orchestrator sends
+a nudge via `tmux send-keys`, the terminal wraps the text in paste escape
+sequences. If `Enter` is included in the same `send-keys` call, it gets
+consumed inside the paste bracket and the command is **pasted but never
+submitted** — the lane appears stuck with text in the input buffer.
+
+**If you are manually nudging a lane** (e.g., dispatching to an analyst lane
+that is not in `KNOWN_AUTHOR_LANES`), always use the two-step pattern:
+
+```bash
+# Step 1: send the command text (do NOT append Enter)
+tmux send-keys -t <pane> '/start-task <packet_id>'
+# Step 2: wait briefly, then send Enter separately
+sleep 1
+tmux send-keys -t <pane> Enter
+```
+
+**Symptom of the bug:** The target pane shows `❯ [Pasted text ...]` but
+reports 0 tokens processed — the text was never submitted. Sending `Enter`
+separately resolves it.
+
+See issue #1834 for root cause analysis and code-level fix tracking in
+`nudge_pane()` / `clear_session()`.
+
 ## Auto-Completion on Merge
 
 When you merge a PR via `gh pr merge`, the `post-merge-notify.sh` hook
