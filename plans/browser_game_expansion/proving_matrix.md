@@ -41,6 +41,12 @@
 - Mobile touch-safe play
 - Invite-code access control and code generator workflow
 - Claude-direct browser testing capability
+- Leaderboard ranking by net_eppd with correct column partitioning
+- Leaderboard invite-only access gating
+- Forum post creation, category filtering, and hide/unhide moderation
+- Forum invite-only access gating
+- Claude bot automated labeling and rate limit enforcement
+- Shared invited-user shell with route-backed Game/Leaderboard/Forum tabs
 
 ## Automated Validation Commands (Target State)
 
@@ -83,4 +89,7 @@ These should be automated unless a failure forces escalation:
 - Loner trick-order correctness
 - Mobile narrow-layout regression
 - Access-code happy path
+- Leaderboard ranking and metric display
+- Forum post creation and category filtering
+- Claude bot rate limit enforcement
 - Postgres/local Docker smoke

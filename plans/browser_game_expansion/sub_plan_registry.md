@@ -1,7 +1,7 @@
 # Sub-Plan Registry -- Browser Game Expansion and Pilot Readiness
 
 **Governing plan:** `plans/browser_game_expansion/governing_plan.md`
-**Last updated:** 2026-03-25 by analyst (reconcile shipped overnight work)
+**Last updated:** 2026-03-25 by author-a (add Phase AC sub-plans)
 
 ---
 
@@ -17,12 +17,14 @@
 | SP-3-01 | Invite Codes and Nickname Flow | Phase 3 -- Pilot Access Control | completed | brws-author-b | `3_pilot_access_control/sub/2026-03-24_invite-codes-and-nickname-flow.md` | 2026-03-24 | 2026-03-25 (PR #1800) |
 | SP-4-01 | Browser Automation, Smoke, and Pilot Proving | Phase 4 -- Validation and Launch | in_progress | brws-author-c/d | `4_validation_and_launch/sub/2026-03-24_browser-automation-smoke-and-proving.md` | 2026-03-24 | — (PRs #1821, #1822 shipped; 2 of 7 Playwright tests failing — see #1827; user proving Steps 4-5 pending) |
 | SP-5-01 | GBT Evaluation and Optional Promotion | Phase 5 -- Optional GBT Evaluation | proposed | -- | `5_optional_gbt_evaluation/sub/2026-03-24_gbt-evaluation-and-promotion.md` | 2026-03-24 | -- |
+| SP-AC-01 | Leaderboard and Analytics | Phase AC -- Analytics and Community | proposed | -- | `4_analytics_and_community/sub/2026-03-25_leaderboard-and-analytics.md` | 2026-03-25 | -- |
+| SP-AC-02 | Feedback Forum and Claude User Constraints | Phase AC -- Analytics and Community | proposed | -- | `4_analytics_and_community/sub/2026-03-25_feedback-forum-and-claude-user.md` | 2026-03-25 | -- |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
-| proposed | 1 |
+| proposed | 3 |
 | in_progress | 1 |
 | blocked | 0 |
 | completed | 6 |
