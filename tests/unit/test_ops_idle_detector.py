@@ -14,8 +14,10 @@ from bid_euchre.ops.idle_detector import (
     MEANINGFUL_EVENT_TYPES,
     IdleStatus,
     ShutoffRecommendation,
+    ShutoffResult,
     _find_last_meaningful_event,
     _get_active_lane_ids,
+    execute_shutoff,
     is_fleet_idle,
     recommend_shutoff,
 )
@@ -438,3 +440,181 @@ class TestRecommendShutoff:
         assert isinstance(rec.should_shutoff, bool)
         assert isinstance(rec.idle_status, IdleStatus)
         assert isinstance(rec.recommended_actions, list)
+
+
+# ---------------------------------------------------------------------------
+# Tests: execute_shutoff
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteShutoff:
+    """Tests for the execute_shutoff() top-level entry point."""
+
+    def test_executes_when_fleet_idle(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Should execute shutoff and log event when fleet is idle."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts)
+
+        result = execute_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert isinstance(result, ShutoffResult)
+        assert result.executed is True
+        assert result.event_logged is True
+        assert result.idle_status.idle is True
+        assert result.idle_status.idle_minutes == pytest.approx(120.0, abs=0.1)
+        assert len(result.recommended_actions) > 0
+        assert "cron" in " ".join(result.recommended_actions).lower()
+        assert "shutoff executed" in result.summary.lower()
+
+    def test_no_execution_when_fleet_active(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Should not execute when fleet is active."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        recent_ts = now - timedelta(minutes=10)
+        _write_event(events_dir, "task_completed", recent_ts)
+
+        result = execute_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert result.executed is False
+        assert result.event_logged is False
+        assert result.idle_status.idle is False
+        assert result.recommended_actions == []
+        assert "active" in result.summary.lower()
+
+    def test_no_execution_when_lanes_active(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Active lanes prevent shutoff even when events are old."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts)
+        _register_lane(runtime_dir, "author-a", session_id="sess-live")
+
+        result = execute_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert result.executed is False
+        assert result.event_logged is False
+        assert "author-a" in result.idle_status.active_lanes
+
+    def test_dry_run_does_not_log_event(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Dry run should check status but not log any event."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts)
+
+        result = execute_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+            dry_run=True,
+        )
+        assert result.executed is False  # dry_run => not executed
+        assert result.event_logged is False
+        assert result.idle_status.idle is True
+        assert len(result.recommended_actions) > 0  # actions still recommended
+        assert "DRY RUN" in result.summary
+
+    def test_event_logged_to_event_log(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Verify the fleet_idle_shutoff event is actually in the event log."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts)
+
+        execute_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+
+        # Read the event log and find our shutoff event
+        events_file = events_dir / EVENTS_FILE
+        lines = events_file.read_text().strip().split("\n")
+        shutoff_events = [
+            json.loads(line) for line in lines if "fleet_idle_shutoff" in line
+        ]
+        assert len(shutoff_events) == 1
+        evt = shutoff_events[0]
+        assert evt["event_type"] == "fleet_idle_shutoff"
+        assert evt["source"] == "ops.idle_detector"
+        assert evt["lane_id"] == "orchestrator"
+        assert evt["payload"]["idle_minutes"] == pytest.approx(120.0, abs=0.1)
+        assert evt["payload"]["threshold_minutes"] == 90
+
+    def test_idempotent_execution(self, events_dir: Path, runtime_dir: Path) -> None:
+        """Calling execute_shutoff twice should produce two events."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts)
+
+        r1 = execute_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        r2 = execute_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert r1.executed is True
+        assert r2.executed is True
+
+        # Both events in the log
+        events_file = events_dir / EVENTS_FILE
+        lines = events_file.read_text().strip().split("\n")
+        shutoff_events = [line for line in lines if "fleet_idle_shutoff" in line]
+        assert len(shutoff_events) == 2
+
+    def test_result_fields(self, events_dir: Path, runtime_dir: Path) -> None:
+        """ShutoffResult has all expected fields."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        result = execute_shutoff(
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert isinstance(result, ShutoffResult)
+        assert isinstance(result.executed, bool)
+        assert isinstance(result.idle_status, IdleStatus)
+        assert isinstance(result.event_logged, bool)
+        assert isinstance(result.summary, str)
+        assert isinstance(result.recommended_actions, list)
+
+    def test_no_events_triggers_shutoff(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Empty fleet with no events should trigger shutoff."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        result = execute_shutoff(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert result.executed is True
+        assert result.event_logged is True
+        assert result.idle_status.idle is True

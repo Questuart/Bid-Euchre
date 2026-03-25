@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bid_euchre.ops.events import read_events
+from bid_euchre.ops.events import append_event, read_events
 
 logger = logging.getLogger("ops.idle_detector")
 
@@ -291,5 +291,148 @@ def recommend_shutoff(
     return ShutoffRecommendation(
         should_shutoff=True,
         idle_status=status,
+        recommended_actions=actions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shutoff execution
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ShutoffResult:
+    """Result of executing the fleet idle shutoff sequence.
+
+    Attributes:
+        executed: True if the shutoff was actually executed (event logged).
+            False when the fleet is not idle or when running in dry-run mode.
+        idle_status: The underlying :class:`IdleStatus` determination that
+            informed the decision.
+        event_logged: Whether a ``fleet_idle_shutoff`` event was appended
+            to the durable event log.
+        summary: Human-readable summary of the outcome.
+        recommended_actions: Concrete actions for the caller to execute.
+            The caller (typically the orchestrator) is responsible for:
+            - Cancelling cron jobs (via CronDelete)
+            - Producing a session handoff summary
+            - Notifying the user (via Telegram or durable log)
+    """
+
+    executed: bool
+    idle_status: IdleStatus
+    event_logged: bool
+    summary: str
+    recommended_actions: list[str]
+
+
+def execute_shutoff(
+    threshold_minutes: float = DEFAULT_THRESHOLD_MINUTES,
+    *,
+    events_dir: Path | None = None,
+    runtime_dir: Path | None = None,
+    now: datetime | None = None,
+    dry_run: bool = False,
+) -> ShutoffResult:
+    """Check fleet idle status and execute shutoff if warranted.
+
+    This is the top-level entry point for the auto-shutoff sequence.  It:
+
+    1. Checks whether the fleet is idle via :func:`is_fleet_idle`.
+    2. If idle past the threshold, appends a ``fleet_idle_shutoff`` event
+       to the durable event log (unless ``dry_run`` is True).
+    3. Returns a :class:`ShutoffResult` with the recommended actions for
+       the caller to execute.
+
+    The caller is responsible for executing the recommended actions:
+
+    - **Cancel cron jobs** — stop polling / check-in crons to prevent
+      token waste.
+    - **Produce a session handoff** — summarize what shipped, what's
+      stuck, and recommended next steps.
+    - **Notify the user** — via Telegram (if available) or durable log.
+    - **Log the shutoff** — the event is logged here, but the caller
+      should also record the shutoff in its session notes.
+
+    This function is idempotent — calling it multiple times produces
+    multiple events but the same recommendation.  The caller should
+    gate on a "shutoff already executed" flag to avoid duplicate actions.
+
+    Args:
+        threshold_minutes: Minutes threshold for idle detection.
+        events_dir: Override for the events directory.
+        runtime_dir: Override for the runtime directory.
+        now: Override for current time (for testing).
+        dry_run: If True, check idle status but do not log the event.
+            Useful for previewing the shutoff recommendation.
+
+    Returns:
+        A :class:`ShutoffResult` describing the outcome.
+    """
+    status = is_fleet_idle(
+        threshold_minutes=threshold_minutes,
+        events_dir=events_dir,
+        runtime_dir=runtime_dir,
+        now=now,
+    )
+
+    if not status.idle:
+        return ShutoffResult(
+            executed=False,
+            idle_status=status,
+            event_logged=False,
+            summary=f"Fleet is active — no shutoff needed. {status.reason}",
+            recommended_actions=[],
+        )
+
+    # Fleet is idle — prepare the shutoff
+    actions = [
+        "Cancel all active cron jobs (CronList → CronDelete each)",
+        "Produce a session handoff summary (what shipped, what's stuck, next steps)",
+        "Notify the user via Telegram or durable log",
+        "Stop autonomous dispatch and monitoring (do NOT exit the session)",
+    ]
+
+    event_logged = False
+    if not dry_run:
+        try:
+            append_event(
+                event_type="fleet_idle_shutoff",
+                source="ops.idle_detector",
+                lane_id="orchestrator",
+                payload={
+                    "idle_minutes": status.idle_minutes,
+                    "threshold_minutes": threshold_minutes,
+                    "last_meaningful_event": (
+                        status.last_meaningful_event.isoformat()
+                        if status.last_meaningful_event
+                        else None
+                    ),
+                    "active_lanes": status.active_lanes,
+                    "reason": status.reason,
+                },
+                events_dir=events_dir,
+            )
+            event_logged = True
+        except Exception as exc:
+            logger.error("Failed to log fleet_idle_shutoff event: %s", exc)
+
+    idle_mins = status.idle_minutes
+    summary = (
+        f"Fleet idle shutoff {'executed' if event_logged else 'recommended'}: "
+        f"no meaningful activity for {idle_mins:.0f}m "
+        f"(threshold: {threshold_minutes:.0f}m). "
+        f"{status.reason}"
+    )
+    if dry_run:
+        summary = f"[DRY RUN] {summary}"
+
+    logger.warning("Fleet idle shutoff: %s", summary)
+
+    return ShutoffResult(
+        executed=event_logged,
+        idle_status=status,
+        event_logged=event_logged,
+        summary=summary,
         recommended_actions=actions,
     )

@@ -60,6 +60,7 @@ VALID_EVENT_TYPES = frozenset(
         "message_resolved",
         "message_expired",
         "message_dead_lettered",
+        "fleet_idle_shutoff",
     }
 )
 
