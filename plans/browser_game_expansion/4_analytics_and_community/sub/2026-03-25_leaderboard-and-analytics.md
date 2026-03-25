@@ -73,17 +73,17 @@ invited-user shell, not a SPA-only tab.
 - Metrics are aggregated from match/hand completion data already persisted by
   the hosted-play engine.
 
-## File Scope
+## File Scope (Proposed)
 
-| Area | Files |
-|------|-------|
-| Data model | `src/bid_euchre/web/models.py` (new stats model or view) |
-| Backend | `src/bid_euchre/web/routes/leaderboard.py` (new) |
-| Templates | `src/bid_euchre/web/templates/leaderboard/` (new) |
-| Shell layout | `src/bid_euchre/web/templates/base.html` or shared shell template |
-| Unit tests | `tests/unit/hosted_play/test_leaderboard.py` (new) |
-| Route tests | `tests/unit/hosted_play/test_leaderboard_routes.py` (new) |
-| Integration | `tests/integration/hosted_play/test_leaderboard_integration.py` (new) |
+Files to be created or modified during implementation:
+
+- **Data model:** extend web models with stats model or view (new)
+- **Backend:** new leaderboard route handler under web routes (new)
+- **Templates:** new leaderboard template directory (new)
+- **Shell layout:** shared invited-user shell template (modify)
+- **Unit tests:** leaderboard stats and ranking tests (new)
+- **Route tests:** leaderboard route access and rendering tests (new)
+- **Integration:** leaderboard DB integration tests (new)
 
 ## Validation
 

@@ -74,19 +74,18 @@ The following constraints apply:
 - No Claude privileged bypass routes.
 - Claude bot constraints are enforced at the application layer, not just UI.
 
-## File Scope
+## File Scope (Proposed)
 
-| Area | Files |
-|------|-------|
-| Data model | `src/bid_euchre/web/models.py` (Post model, category enum, bot flag) |
-| Backend | `src/bid_euchre/web/routes/forum.py` (new) |
-| Bot constraints | `src/bid_euchre/web/bot_constraints.py` (new) |
-| Templates | `src/bid_euchre/web/templates/forum/` (new) |
-| Shell layout | `src/bid_euchre/web/templates/base.html` or shared shell template |
-| Unit tests | `tests/unit/hosted_play/test_forum.py` (new) |
-| Unit tests | `tests/unit/hosted_play/test_bot_constraints.py` (new) |
-| Route tests | `tests/unit/hosted_play/test_forum_routes.py` (new) |
-| Integration | `tests/integration/hosted_play/test_forum_integration.py` (new) |
+Files to be created or modified during implementation:
+
+- **Data model:** extend web models with Post model, category enum, bot flag (modify)
+- **Backend:** new forum route handler under web routes (new)
+- **Bot constraints:** new bot constraint enforcement module (new)
+- **Templates:** new forum template directory (new)
+- **Shell layout:** shared invited-user shell template (modify)
+- **Unit tests:** forum CRUD and bot constraint tests (new)
+- **Route tests:** forum route access and rendering tests (new)
+- **Integration:** forum DB integration tests (new)
 
 ## Validation
 

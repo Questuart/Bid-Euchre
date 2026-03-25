@@ -27,8 +27,8 @@ the leaderboard and forum depend on.
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
-| SP-AC-01 | `4_analytics_and_community/sub/2026-03-25_leaderboard-and-analytics.md` | proposed | Steps 1-2, 6 |
-| SP-AC-02 | `4_analytics_and_community/sub/2026-03-25_feedback-forum-and-claude-user.md` | proposed | Steps 3-5, 6 |
+| SP-AC-01 | `plans/browser_game_expansion/4_analytics_and_community/sub/2026-03-25_leaderboard-and-analytics.md` | proposed | Steps 1-2, 6 |
+| SP-AC-02 | `plans/browser_game_expansion/4_analytics_and_community/sub/2026-03-25_feedback-forum-and-claude-user.md` | proposed | Steps 3-5, 6 |
 
 ## Execution Order
 
