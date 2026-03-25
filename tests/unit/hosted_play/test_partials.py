@@ -185,6 +185,108 @@ class TestBidPanel:
         assert 'hx-post="/play/test-uuid/bid"' in html
         assert 'hx-target="#game-board"' in html
 
+    def test_moon_bid_in_transcript_has_emphasis(self, env):
+        """Moon bids in the auction transcript get CSS class and badge."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=2,
+            auction=[
+                {
+                    "seat": 1,
+                    "n": 10,
+                    "action": "bid",
+                    "contract": "H",
+                    "bid_type": "moon",
+                },
+            ],
+            current_high_bid=10,
+            dealer_seat=0,
+        )
+        assert "bid--moon" in html
+        assert "bid-type-badge--moon" in html
+        assert "Moon" in html
+
+    def test_loner_bid_in_transcript_has_emphasis(self, env):
+        """Loner bids in the auction transcript get CSS class and badge."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=2,
+            auction=[
+                {
+                    "seat": 0,
+                    "n": 10,
+                    "action": "bid",
+                    "contract": "S",
+                    "bid_type": "loner",
+                },
+            ],
+            current_high_bid=10,
+            dealer_seat=3,
+        )
+        assert "bid--loner" in html
+        assert "bid-type-badge--loner" in html
+        assert "Loner" in html
+
+    def test_regular_bid_no_emphasis_class(self, env):
+        """Regular bids do not get moon/loner CSS classes."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=2,
+            auction=[
+                {"seat": 2, "n": 5, "action": "bid", "contract": "D"},
+            ],
+            current_high_bid=5,
+            dealer_seat=0,
+        )
+        assert "bid--moon" not in html
+        assert "bid--loner" not in html
+        assert "bid-type-badge" not in html
+
+    def test_current_high_bid_shows_moon_badge(self, env):
+        """The current high bid info line shows a moon badge when bid_type is moon."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=2,
+            auction=[
+                {
+                    "seat": 1,
+                    "n": 10,
+                    "action": "bid",
+                    "contract": "H",
+                    "bid_type": "moon",
+                },
+            ],
+            current_high_bid=10,
+            dealer_seat=0,
+            bid_type="moon",
+        )
+        assert "bid-type-badge--moon" in html
+
+    def test_current_high_bid_shows_loner_badge(self, env):
+        """The current high bid info line shows a loner badge when bid_type is loner."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=2,
+            auction=[
+                {
+                    "seat": 1,
+                    "n": 10,
+                    "action": "bid",
+                    "contract": "S",
+                    "bid_type": "loner",
+                },
+            ],
+            current_high_bid=10,
+            dealer_seat=0,
+            bid_type="loner",
+        )
+        assert "bid-type-badge--loner" in html
+
 
 # ---------------------------------------------------------------------------
 # hand.html
@@ -395,6 +497,67 @@ class TestScore:
         assert "7" in html
         assert "Low" in html
 
+    def test_moon_contract_display(self, env):
+        """Moon contract shows moon badge instead of bid number."""
+        tmpl = env.get_template("partials/score.html")
+        html = tmpl.render(
+            score_human=10,
+            score_ai=5,
+            hands_played=2,
+            contract_type="suit",
+            trump="H",
+            winning_bid=10,
+            bidder_seat=0,
+            bid_type="moon",
+            tricks_team0=3,
+            tricks_team1=0,
+            dealer_seat=2,
+            phase="trick_play",
+        )
+        assert "contract-bid-type--moon" in html
+        assert "Moon" in html
+
+    def test_loner_contract_display(self, env):
+        """Loner contract shows loner badge instead of bid number."""
+        tmpl = env.get_template("partials/score.html")
+        html = tmpl.render(
+            score_human=10,
+            score_ai=5,
+            hands_played=2,
+            contract_type="suit",
+            trump="S",
+            winning_bid=10,
+            bidder_seat=1,
+            bid_type="loner",
+            tricks_team0=0,
+            tricks_team1=3,
+            dealer_seat=2,
+            phase="trick_play",
+        )
+        assert "contract-bid-type--loner" in html
+        assert "Loner" in html
+
+    def test_regular_bid_shows_number(self, env):
+        """Regular bid shows bid number, not moon/loner badges."""
+        tmpl = env.get_template("partials/score.html")
+        html = tmpl.render(
+            score_human=10,
+            score_ai=5,
+            hands_played=2,
+            contract_type="suit",
+            trump="H",
+            winning_bid=6,
+            bidder_seat=0,
+            bid_type="regular",
+            tricks_team0=2,
+            tricks_team1=1,
+            dealer_seat=2,
+            phase="trick_play",
+        )
+        assert "contract-bid-type--moon" not in html
+        assert "contract-bid-type--loner" not in html
+        assert "6" in html
+
 
 # ---------------------------------------------------------------------------
 # hand_result.html
@@ -476,6 +639,137 @@ class TestHandResult:
         )
         assert "Made it!" in html
         assert "Low" in html
+
+    def test_moon_made_banner(self, env):
+        """Moon made shows special banner with score delta."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=10,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="H",
+            bid_type="moon",
+            tricks_team0=10,
+            tricks_team1=0,
+            points_team0=20,
+            points_team1=0,
+            score_human=20,
+            score_ai=0,
+            hands_played=1,
+        )
+        assert "Moon Made!" in html
+        assert "result--moon-made" in html
+        assert "+20" in html
+        assert "MOON" in html
+        assert "MADE" in html
+        # Should NOT show regular "Made it!" text
+        assert "Made it!" not in html
+
+    def test_moon_set_banner(self, env):
+        """Moon set shows special banner with negative score."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=10,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            bid_type="moon",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=-20,
+            points_team1=3,
+            score_human=-20,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert "Moon Set!" in html
+        assert "result--moon-set" in html
+        assert "-20" in html
+        assert "SET" in html
+        # Should show moon-specific banner, not plain "Set!" alone
+        assert ">Set!<" not in html
+
+    def test_loner_made_banner(self, env):
+        """Loner made shows special banner."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=10,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="D",
+            bid_type="loner",
+            tricks_team0=10,
+            tricks_team1=0,
+            points_team0=20,
+            points_team1=0,
+            score_human=20,
+            score_ai=0,
+            hands_played=1,
+        )
+        assert "Loner Made!" in html
+        assert "result--loner-made" in html
+        assert "+20" in html
+        assert "LONER" in html
+
+    def test_loner_set_banner(self, env):
+        """Loner set shows special banner."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=10,
+            bidder_seat=2,
+            contract_type="suit",
+            trump="C",
+            bid_type="loner",
+            tricks_team0=5,
+            tricks_team1=5,
+            points_team0=-20,
+            points_team1=5,
+            score_human=-20,
+            score_ai=5,
+            hands_played=1,
+        )
+        assert "Loner Set!" in html
+        assert "result--loner-set" in html
+        assert "-20" in html
+
+    def test_regular_bid_no_moon_loner_class(self, env):
+        """Regular bid result does not get moon/loner CSS classes."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            bid_type="regular",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert "result--moon" not in html
+        assert "result--loner" not in html
+        assert "Made it!" in html
+
+    def test_animated_class_present(self, env):
+        """All hand results have the animated class for slide-in."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=5,
+            bidder_seat=1,
+            contract_type="suit",
+            trump="H",
+            tricks_team0=3,
+            tricks_team1=7,
+            points_team0=3,
+            points_team1=7,
+            score_human=3,
+            score_ai=7,
+            hands_played=1,
+        )
+        assert "hand-result--animated" in html
 
 
 # ---------------------------------------------------------------------------
