@@ -18,7 +18,7 @@ services:
     branch: main
     plan: free
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /
+    healthCheckPath: /ready
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
