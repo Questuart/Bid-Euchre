@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.ops.control_plane import (
     SEVERITY_HIGH,
     SEVERITY_URGENT,
