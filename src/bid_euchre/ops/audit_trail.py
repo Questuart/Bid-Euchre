@@ -436,7 +436,7 @@ def audit_inbound(
 _MCP_TOOL_MAP: dict[str, str] = {
     "mcp__plugin_telegram_telegram__reply": "reply",
     "mcp__plugin_telegram_telegram__react": "react",
-    "mcp__plugin_telegram_telegram__edit": "edit",
+    "mcp__plugin_telegram_telegram__edit_message": "edit",
 }
 
 

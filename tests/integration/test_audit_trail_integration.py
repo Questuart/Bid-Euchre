@@ -739,7 +739,7 @@ class TestMcpOutboundWiring:
     def test_edit_tool_audited(self, tmp_path: Path) -> None:
         """MCP edit tool call produces an outbound edit audit record."""
         rec = audit_mcp_outbound(
-            tool_name="mcp__plugin_telegram_telegram__edit",
+            tool_name="mcp__plugin_telegram_telegram__edit_message",
             tool_args={
                 "chat_id": "123",
                 "message_id": "42",
@@ -801,7 +801,7 @@ class TestMcpOutboundWiring:
             audit_dir=tmp_path,
         )
         audit_mcp_outbound(
-            tool_name="mcp__plugin_telegram_telegram__edit",
+            tool_name="mcp__plugin_telegram_telegram__edit_message",
             tool_args={"chat_id": "123", "message_id": "2", "body": "Edited"},
             audit_dir=tmp_path,
         )
