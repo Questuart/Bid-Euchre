@@ -1555,3 +1555,31 @@ class TestReadyEndpoint:
             assert body == {"status": "unavailable"}
         finally:
             app.state.session_factory = original_factory
+
+    def test_ready_returns_503_when_write_fails(self, client):
+        """When the DB is read-only, /ready returns 503."""
+        from unittest.mock import MagicMock
+
+        app = client.app
+        original_factory = app.state.session_factory
+
+        def read_only_factory():
+            session = MagicMock()
+
+            def execute_side_effect(stmt, *args, **kwargs):
+                sql = str(stmt).upper()
+                if sql.startswith("SELECT"):
+                    return MagicMock()
+                raise Exception("read-only filesystem")
+
+            session.execute.side_effect = execute_side_effect
+            return session
+
+        app.state.session_factory = read_only_factory
+        try:
+            resp = client.get("/ready")
+            assert resp.status_code == 503
+            body = resp.json()
+            assert body == {"status": "unavailable"}
+        finally:
+            app.state.session_factory = original_factory
