@@ -138,6 +138,22 @@ claude-work  # Uses auto-generated timestamp branch
 4. Changes to worktree directory
 5. Starts `claude` session in worktree
 
+### `post-telegram-audit.sh` (PostToolUse — MCP Telegram tools)
+
+**Trigger:** After any Telegram MCP tool call (reply, react, edit_message, download_attachment)
+
+**Purpose:** Wires `audit_mcp_outbound()` into the live PostToolUse path so outbound
+Telegram exchanges are recorded in the audit trail JSONL file.
+
+**Behavior:**
+1. Reads PostToolUse JSON payload from stdin
+2. Guards on tool name — exits immediately for non-Telegram tools
+3. Extracts `tool_input` arguments and passes them to `audit_mcp_outbound()`
+4. Best-effort: audit failures are silently swallowed (never blocks the agent)
+5. Suppresses TUI notification (audit is invisible background work)
+
+**Output:** `{"suppressOutput": true}` (silent)
+
 ### `pre-bash-dispatch.sh` (PreToolUse — Bash)
 
 **Trigger:** Before any Bash tool call
@@ -185,6 +201,7 @@ Hooks are registered across two files:
 - `PreToolUse` (Bash) → `pre-bash-dispatch.sh` (consolidated dispatcher)
 - `PostToolUse` (Write|Edit) → `post-write-check.sh`
 - `PostToolUse` (Bash) → `post-bash-dispatch.sh` (consolidated dispatcher)
+- `PostToolUse` (MCP Telegram tools) → `post-telegram-audit.sh` (audit trail)
 
 **`.claude/settings.local.json`** (gitignored, per-machine):
 - `SessionStart` → `worktree-reminder.sh`
