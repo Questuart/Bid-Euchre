@@ -1100,6 +1100,7 @@ _APPROVAL_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\[Y\]es,?\s*always", re.IGNORECASE),
     re.compile(r"Permission required", re.IGNORECASE),
     re.compile(r"Do you want to proceed", re.IGNORECASE),
+    re.compile(r"Do you want to make this edit", re.IGNORECASE),
     re.compile(r"approve.*deny", re.IGNORECASE),
 ]
 
