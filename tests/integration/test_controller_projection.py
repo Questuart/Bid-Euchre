@@ -44,6 +44,8 @@ from bid_euchre.ops.message_bus import (
     shared_bus_root,
 )
 
+pytestmark = pytest.mark.integration
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -75,9 +77,6 @@ def _old_urgent_message_dict(
         "created_at": created_at,
         "summary": summary,
     }
-
-
-pytestmark = pytest.mark.integration
 
 
 # ---------------------------------------------------------------------------
