@@ -72,6 +72,45 @@ decomposition (use `/executing-plans` for that).
    cat plans/agent_ops/<phase>/sub/<sub-plan>.md
    ```
 
+### Phase 2b — Pre-Implementation Rebase (Mandatory)
+
+> **Why:** Parallel author lanes frequently branch off the same `origin/main`
+> snapshot. If another lane's PR merges while you are working, your branch
+> diverges and the eventual PR hits merge conflicts. A mandatory rebase step
+> immediately before implementation catches these divergences early.
+
+7. **Rebase onto latest main before writing any code:**
+   ```bash
+   git fetch origin main
+   git rebase origin/main
+   ```
+   This is a no-op if you just created the branch (step 5 already used
+   `origin/main`), but it is **essential** when resuming work on an existing
+   branch or when time has passed since branch creation.
+
+8. **If the rebase produces conflicts:**
+   - Resolve them if they are trivial (e.g., import ordering, adjacent lines).
+   - If conflicts are non-trivial (overlapping logic changes), abort the
+     rebase and report a blocker to the orchestrator:
+     ```bash
+     git rebase --abort
+     uv run python scripts/internal/ops.py message send \
+       --from <lane> --to orchestrator --type blocker \
+       --summary "Rebase conflict on <branch>: <description>" \
+       --task-id <PACKET_ID>
+     ```
+   - Do **not** proceed with a diverged branch — the PR will fail to merge
+     cleanly and waste review cycles.
+
+9. **Pre-PR rebase reminder:** You must also rebase again just before running
+   `gh pr create`. This catches any merges that happened during your
+   implementation window:
+   ```bash
+   git fetch origin main && git rebase origin/main
+   make check-quiet   # Re-validate after rebase
+   gh pr create ...
+   ```
+
 ### Phase 3 — Scope Lock
 
 7. **Confirm file scope** matches the task packet's `scope_declared`:
