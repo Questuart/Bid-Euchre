@@ -67,9 +67,9 @@ full contract with defaults. The authoritative source is `web/config.py`
 | `SECRET_KEY` | Yes | Random per-process (dev) | Cookie/session signing |
 | `ALLOWED_ORIGINS` | No | `*` | Comma-separated CORS allowlist |
 | `APP_URL` | No | `http://localhost:8000` | Public base URL for share links |
-| `DEFAULT_MODEL_ID` | No | `heuristic` | AI bidding model |
+| `DEFAULT_MODEL_ID` | No | `olsa` | AI bidding model (falls back to `heuristic` if artifact unavailable) |
 | `MODELS_DIR` | No | None | Directory for model artifacts |
-| `HYBRID_OLSA_ARTIFACT` | No | None | Path to hybrid-OLSA artifact |
+| `OLSA_ARTIFACT` | No | None | Path to OLSa (ActionValueBidder) artifact |
 | `DEBUG` | No | `false` | Enable debug mode (`1`/`true`/`yes`) |
 | `PORT` | No | `8000` | Server bind port (Render sets this) |
 

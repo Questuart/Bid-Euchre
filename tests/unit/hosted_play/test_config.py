@@ -25,11 +25,11 @@ class TestHostedPlayConfigDefaults:
 
     def test_default_model_id(self):
         cfg = HostedPlayConfig()
-        assert cfg.default_model_id == "heuristic"
+        assert cfg.default_model_id == "olsa"
 
-    def test_default_hybrid_olsa_artifact(self):
+    def test_default_olsa_artifact(self):
         cfg = HostedPlayConfig()
-        assert cfg.hybrid_olsa_artifact is None
+        assert cfg.olsa_artifact is None
 
     def test_default_debug(self):
         cfg = HostedPlayConfig()
@@ -111,7 +111,7 @@ class TestFromEnv:
             "ALLOWED_ORIGINS",
             "APP_URL",
             "DEFAULT_MODEL_ID",
-            "HYBRID_OLSA_ARTIFACT",
+            "OLSA_ARTIFACT",
             "MODELS_DIR",
             "DEBUG",
         ):
@@ -123,14 +123,14 @@ class TestFromEnv:
         assert cfg.database_url == "postgresql://localhost/test"
 
     def test_reads_default_model_id(self, monkeypatch):
-        monkeypatch.setenv("DEFAULT_MODEL_ID", "hybrid_olsa")
+        monkeypatch.setenv("DEFAULT_MODEL_ID", "olsa")
         cfg = HostedPlayConfig.from_env()
-        assert cfg.default_model_id == "hybrid_olsa"
+        assert cfg.default_model_id == "olsa"
 
-    def test_reads_hybrid_olsa_artifact(self, monkeypatch):
-        monkeypatch.setenv("HYBRID_OLSA_ARTIFACT", "/path/to/artifact.json")
+    def test_reads_olsa_artifact(self, monkeypatch):
+        monkeypatch.setenv("OLSA_ARTIFACT", "/path/to/artifact.json")
         cfg = HostedPlayConfig.from_env()
-        assert cfg.hybrid_olsa_artifact == "/path/to/artifact.json"
+        assert cfg.olsa_artifact == "/path/to/artifact.json"
 
     def test_debug_true_values(self, monkeypatch):
         for val in ("1", "true", "yes", "True", "YES"):
@@ -199,8 +199,8 @@ class TestFromEnv:
         assert cfg.secret_key.startswith("dev-insecure-")
         assert cfg.allowed_origins == ["*"]
         assert cfg.app_url == "http://localhost:8000"
-        assert cfg.default_model_id == "heuristic"
-        assert cfg.hybrid_olsa_artifact is None
+        assert cfg.default_model_id == "olsa"
+        assert cfg.olsa_artifact is None
         assert cfg.models_dir is None
         assert cfg.debug is False
 
@@ -221,7 +221,7 @@ class TestOverrideGetConfig:
             "ALLOWED_ORIGINS",
             "APP_URL",
             "DEFAULT_MODEL_ID",
-            "HYBRID_OLSA_ARTIFACT",
+            "OLSA_ARTIFACT",
             "MODELS_DIR",
             "DEBUG",
         ):
@@ -257,14 +257,14 @@ class TestOverrideGetConfig:
     def test_round_trip(self):
         original = HostedPlayConfig(
             database_url="sqlite:///test.db",
-            default_model_id="hybrid_olsa",
+            default_model_id="olsa",
             debug=True,
         )
         override_config(original)
         try:
             retrieved = get_config()
             assert retrieved.database_url == "sqlite:///test.db"
-            assert retrieved.default_model_id == "hybrid_olsa"
+            assert retrieved.default_model_id == "olsa"
             assert retrieved.debug is True
         finally:
             override_config(None)

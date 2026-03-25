@@ -300,7 +300,7 @@ class TestMatchState:
     def test_round_trip_with_nested_hand_state(self) -> None:
         state = MatchState(
             seed=42,
-            ai_model="hybrid_olsa",
+            ai_model="olsa",
             score_human=12,
             score_ai=-3,
             hands_played=4,
@@ -425,7 +425,7 @@ class TestMatchState:
         """Full MatchState with nested hand survives json.dumps/loads."""
         state = MatchState(
             seed=42,
-            ai_model="hybrid_olsa",
+            ai_model="olsa",
             score_human=5,
             score_ai=3,
             hands_played=2,
