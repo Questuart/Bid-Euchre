@@ -22,17 +22,42 @@ import re
 import sys
 
 # --- Tag extraction ----------------------------------------------------------
-# Matches <channel ...>body</channel> blocks.  The closing tag is optional
-# (the tag may appear without it in some plugin formats).
+
+# Strip markdown code fences and inline code before scanning for channel tags.
+# This prevents pasted <channel> examples from being audited as real ingress.
+_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`]+`")
+
+# Only match properly closed <channel ...>body</channel> blocks.
+# Real Telegram plugin messages always include the closing tag.
+# Unclosed tags are skipped to prevent swallowing the rest of the prompt
+# (the old regex used ``$`` as a fallback, which with re.DOTALL could
+# consume everything after an unclosed tag — see #1763).
 _CHANNEL_RE = re.compile(
-    r"(<channel\s[^>]*>)(.*?)(?:</channel>|$)",
+    r"(<channel\s[^>]*>)(.*?)</channel>",
     re.DOTALL,
 )
 
 
+def _strip_code_blocks(text: str) -> str:
+    """Remove markdown code fences and inline code spans from *text*.
+
+    Returns the text with code blocks replaced by empty strings so that
+    ``<channel>`` tags pasted as examples inside code are not matched.
+    """
+    text = _CODE_FENCE_RE.sub("", text)
+    return _INLINE_CODE_RE.sub("", text)
+
+
 def extract_channel_blocks(text: str) -> list[tuple[str, str]]:
-    """Return ``(tag_text, body)`` pairs for every ``<channel>`` block in *text*."""
-    return [(m.group(1), m.group(2).strip()) for m in _CHANNEL_RE.finditer(text)]
+    """Return ``(tag_text, body)`` pairs for every ``<channel>`` block in *text*.
+
+    Filters out:
+    - Tags inside markdown code fences or inline code (pasted examples)
+    - Unclosed tags (malformed or partial — could swallow remaining prompt)
+    """
+    cleaned = _strip_code_blocks(text)
+    return [(m.group(1), m.group(2).strip()) for m in _CHANNEL_RE.finditer(cleaned)]
 
 
 def main() -> int:
