@@ -1736,3 +1736,291 @@ class TestMonitorReconcileWiring:
 
         # No fleet status file should exist.
         assert load_fleet_status(tmp_path) is None
+
+
+# ---------------------------------------------------------------------------
+# Proving run 3 — persistence, deduplication, and clear lifecycle (#1678)
+# ---------------------------------------------------------------------------
+
+
+class TestControllerPersistenceAndDedupe:
+    """Prove controller projection persistence and deduplication work correctly.
+
+    Scenario from issue #1678:
+    1. Seed one urgent finding, reconcile → verify exactly 1 actionable item
+    2. Reconcile 5 more times with same finding → item count stays at 1
+    3. Simulate restart (reload from disk) → item resurfaces
+    4. Ack the item → verify state transitions to acked
+    5. Resolve (remove finding) → verify item clears from fleet_status.json
+    """
+
+    def _urgent_stalled_finding(self) -> dict:
+        """A single urgent stalled-lane finding used throughout the scenario."""
+        return _monitor_finding(
+            category="stalled_lane",
+            severity="urgent",
+            summary="Lane author-a stalled for 45 min",
+            details={"lane_id": "author-a", "stall_minutes": 45},
+        )
+
+    # -- Step 1: Seed one urgent finding -------------------------------------
+
+    def test_persist_single_urgent_item(self, tmp_path: Path):
+        """Reconcile with one urgent finding → exactly 1 open item on disk."""
+        finding = self._urgent_stalled_finding()
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=NOW_ISO,
+        )
+
+        assert len(status.items) == 1
+        assert len(status.open_items) == 1
+        assert status.items[0].severity == "urgent"
+        assert status.items[0].state == STATE_OPEN
+        assert status.items[0].category == "stalled_lane"
+        assert status.cycle_count == 1
+
+        # Verify it's on disk and valid JSON.
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None
+        assert len(loaded.items) == 1
+        assert loaded.items[0].item_id == status.items[0].item_id
+
+    # -- Step 2: Repeated reconcile doesn't duplicate -------------------------
+
+    def test_dedupe_across_repeated_reconcile_cycles(self, tmp_path: Path):
+        """Running reconcile 6 times with the same finding keeps item count at 1."""
+        finding = self._urgent_stalled_finding()
+        timestamps = [f"2026-03-24T22:{i:02d}:00+00:00" for i in range(6)]
+
+        first_item_id = None
+        for cycle, ts in enumerate(timestamps, 1):
+            status = reconcile(
+                runtime_dir=tmp_path,
+                monitor_findings=[finding],
+                now_iso=ts,
+            )
+
+            # Every cycle: exactly 1 open item, no duplicates.
+            open_items = status.open_items
+            assert (
+                len(open_items) == 1
+            ), f"Cycle {cycle}: expected 1 open item, got {len(open_items)}"
+            assert status.cycle_count == cycle
+
+            if first_item_id is None:
+                first_item_id = open_items[0].item_id
+            else:
+                # Same logical item across all cycles.
+                assert open_items[0].item_id == first_item_id
+
+        # After 6 cycles, verify first_seen_at is preserved from cycle 1.
+        final = load_fleet_status(tmp_path)
+        assert final is not None
+        assert len(final.open_items) == 1
+        assert final.open_items[0].first_seen_at == timestamps[0]
+        assert final.open_items[0].last_seen_at == timestamps[-1]
+
+    # -- Step 3: Persistence survives restart ---------------------------------
+
+    def test_persist_survives_restart(self, tmp_path: Path):
+        """State written to disk survives a simulated restart (fresh load)."""
+        finding = self._urgent_stalled_finding()
+
+        # Write state.
+        status1 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=NOW_ISO,
+        )
+        original_id = status1.items[0].item_id
+
+        # Simulate restart: discard all in-memory state, reload from disk only.
+        reloaded = load_fleet_status(tmp_path)
+        assert reloaded is not None
+        assert len(reloaded.items) == 1
+        assert reloaded.items[0].item_id == original_id
+        assert reloaded.items[0].severity == "urgent"
+        assert reloaded.items[0].state == STATE_OPEN
+
+        # Resume reconciliation with the same finding — item persists,
+        # first_seen_at is preserved, and cycle_count increments.
+        later = "2026-03-24T23:00:00+00:00"
+        status2 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=later,
+        )
+        assert len(status2.open_items) == 1
+        assert status2.open_items[0].item_id == original_id
+        assert status2.open_items[0].first_seen_at == NOW_ISO
+        assert status2.cycle_count == 2
+
+    # -- Step 4: Ack transitions state ----------------------------------------
+
+    def test_persist_ack_survives_reconcile(self, tmp_path: Path):
+        """Acking an item persists across subsequent reconcile cycles."""
+        finding = self._urgent_stalled_finding()
+
+        # Cycle 1: create the item.
+        status1 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=NOW_ISO,
+        )
+        item_id = status1.items[0].item_id
+        assert status1.items[0].state == STATE_OPEN
+
+        # Ack it and save.
+        assert ack_item(status1, item_id) is True
+        assert status1.items[0].state == STATE_ACKED
+        save_fleet_status(status1, tmp_path)
+
+        # Cycle 2: same finding still present — acked state survives merge.
+        later = "2026-03-24T23:00:00+00:00"
+        status2 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=later,
+        )
+        matched = [i for i in status2.items if i.item_id == item_id]
+        assert len(matched) == 1
+        assert matched[0].state == STATE_ACKED
+
+        # Verify on disk too.
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None
+        disk_item = [i for i in loaded.items if i.item_id == item_id]
+        assert len(disk_item) == 1
+        assert disk_item[0].state == STATE_ACKED
+
+    # -- Step 5: Resolve clears the item --------------------------------------
+
+    def test_clear_after_resolve(self, tmp_path: Path):
+        """Removing the finding causes the item to auto-clear on next cycle."""
+        finding = self._urgent_stalled_finding()
+
+        # Cycle 1: item exists.
+        status1 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=NOW_ISO,
+        )
+        assert len(status1.open_items) == 1
+        item_id = status1.items[0].item_id
+
+        # Cycle 2: finding is gone (lane recovered) → item auto-clears.
+        later = "2026-03-24T23:00:00+00:00"
+        status2 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[],  # No findings — condition resolved.
+            now_iso=later,
+        )
+
+        # No open items.
+        assert len(status2.open_items) == 0
+
+        # The item should be present with state "cleared".
+        cleared = [i for i in status2.items if i.item_id == item_id]
+        assert len(cleared) == 1
+        assert cleared[0].state == STATE_CLEARED
+
+        # Cycle 3: cleared item that's still absent gets dropped entirely.
+        much_later = "2026-03-25T00:00:00+00:00"
+        status3 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[],
+            now_iso=much_later,
+        )
+        assert len(status3.items) == 0
+        assert len(status3.open_items) == 0
+
+        # fleet_status.json shows 0 items.
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None
+        assert loaded.to_dict()["summary"]["open"] == 0
+        assert loaded.to_dict()["summary"]["total"] == 0
+
+    # -- Full lifecycle scenario (end-to-end) ---------------------------------
+
+    def test_full_persist_dedupe_clear_lifecycle(self, tmp_path: Path):
+        """End-to-end proving run: seed → dedupe → restart → ack → clear."""
+        finding = self._urgent_stalled_finding()
+
+        # Phase 1: Seed one urgent finding.
+        t1 = "2026-03-24T20:00:00+00:00"
+        s1 = reconcile(runtime_dir=tmp_path, monitor_findings=[finding], now_iso=t1)
+        assert len(s1.open_items) == 1
+        item_id = s1.open_items[0].item_id
+
+        # Phase 2: Reconcile 5 more times — no duplicates.
+        for i in range(5):
+            ts = f"2026-03-24T20:{(i + 1) * 10:02d}:00+00:00"
+            s = reconcile(runtime_dir=tmp_path, monitor_findings=[finding], now_iso=ts)
+            assert len(s.open_items) == 1, f"Duplicate at cycle {i + 2}"
+            assert s.open_items[0].item_id == item_id
+
+        # Phase 3: Simulate restart — reload from disk, verify item survives.
+        reloaded = load_fleet_status(tmp_path)
+        assert reloaded is not None
+        assert len(reloaded.open_items) == 1
+        assert reloaded.open_items[0].item_id == item_id
+        assert reloaded.open_items[0].first_seen_at == t1
+
+        # Phase 4: Ack the item.
+        assert ack_item(reloaded, item_id) is True
+        save_fleet_status(reloaded, tmp_path)
+
+        t_ack = "2026-03-24T21:30:00+00:00"
+        s_ack = reconcile(
+            runtime_dir=tmp_path, monitor_findings=[finding], now_iso=t_ack
+        )
+        acked = [i for i in s_ack.items if i.item_id == item_id]
+        assert len(acked) == 1
+        assert acked[0].state == STATE_ACKED
+
+        # Phase 5: Resolve — remove the finding.
+        t_resolve = "2026-03-24T22:00:00+00:00"
+        s_resolve = reconcile(
+            runtime_dir=tmp_path, monitor_findings=[], now_iso=t_resolve
+        )
+        assert len(s_resolve.open_items) == 0
+
+        # Cleared item still present this cycle...
+        cleared = [i for i in s_resolve.items if i.item_id == item_id]
+        assert len(cleared) == 1
+        assert cleared[0].state == STATE_CLEARED
+
+        # ...and drops on the next cycle.
+        t_final = "2026-03-24T23:00:00+00:00"
+        s_final = reconcile(runtime_dir=tmp_path, monitor_findings=[], now_iso=t_final)
+        assert len(s_final.items) == 0
+
+        # Disk shows 0 open items.
+        final_disk = load_fleet_status(tmp_path)
+        assert final_disk is not None
+        assert final_disk.to_dict()["summary"]["open"] == 0
+
+    # -- JSON validity after multiple writes ----------------------------------
+
+    def test_persist_valid_json_after_multiple_writes(self, tmp_path: Path):
+        """fleet_status.json is valid JSON after many reconcile cycles."""
+        finding = self._urgent_stalled_finding()
+        for i in range(10):
+            ts = f"2026-03-24T20:{i:02d}:00+00:00"
+            reconcile(
+                runtime_dir=tmp_path,
+                monitor_findings=[finding],
+                now_iso=ts,
+            )
+
+        # Read the raw file and verify it's valid JSON.
+        status_path = tmp_path / "fleet_status.json"
+        assert status_path.exists()
+        raw = status_path.read_text()
+        data = json.loads(raw)  # Raises on invalid JSON.
+        assert isinstance(data, dict)
+        assert "items" in data
+        assert "summary" in data
+        assert data["summary"]["total"] >= 1
