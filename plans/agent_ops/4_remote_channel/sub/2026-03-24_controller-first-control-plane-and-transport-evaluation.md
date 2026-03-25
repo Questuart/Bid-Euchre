@@ -236,7 +236,7 @@ orchestration lifecycle test.
 - `#1571`
 - `#1569`
 
-### PR 3 -- Hook surfacing and local guardrails (PENDING)
+### PR 3 -- Hook surfacing and local guardrails (IN PROGRESS)
 
 **Goal:** Make unresolved urgent state mechanically visible and block unsafe
 local actions where appropriate.
@@ -260,7 +260,7 @@ local actions where appropriate.
 - `#1608`
 - `#1581`
 
-### PR 4 -- Platform-8b runtime wiring and controller-backed remote path ⏳ OPEN (#1643)
+### PR 4 -- Platform-8b runtime wiring and controller-backed remote path ❌ CLOSED (#1643), partially covered by #1715
 
 **Goal:** Move Platform-8b from library-complete to runtime-complete.
 
@@ -303,6 +303,21 @@ local actions where appropriate.
 **Primary issue:**
 
 - `#1289`
+
+### Additional shipped PRs (substrate hardening, runtime wiring, proving runs)
+
+| PR | Title | Roadmap Area |
+|----|-------|-------------|
+| #1699 | feat(ops): wire controller reconcile() into monitor cycle (#1684) | PR 2 completion — controller now live |
+| #1701 | fix(ops): detect permission stall patterns (#1672) | PR 1 area — monitor hardening |
+| #1703 | fix(ops): honor urgent-message TTL exemption (#1666) | PR 1 area — bus correctness |
+| #1704 | feat(ops): add execute_shutoff() for fleet idle auto-shutoff (#1572) | PR 1 area — idle detection pipeline |
+| #1707 | test(ops): add SP-4-07 controller projection integration tests | PR 2 — 11 integration tests |
+| #1708 | fix(ops): add SKILL.md edit permission to prevent lane stalls (#1671) | PR 1 area — lane stall prevention |
+| #1712 | test(ops): prove controller persistence, dedup, and clear lifecycle (#1678) | Proving run 3 — 7 tests |
+| #1714 | test(ops): prove stall guard prevents false positives (#1679) | Proving run 4 — 6 tests |
+| #1715 | fix(ops): wire audit_mcp_outbound into live PostToolUse hook (#1685) | PR 3/4 — outbound audit runtime wiring |
+| #1718 | test(ops): prove unread-alert replay through controller projection (#1681) | Proving run 1 — 10 tests |
 
 ## Test Strategy
 
@@ -361,7 +376,7 @@ Remote audit smoke:
 
 ## Proving Runs
 
-### Proving run 1 -- unread-alert replay
+### Proving run 1 -- unread-alert replay ✅ PASSED (PR #1718)
 
 Recreate the original failure shape where `ops` detects a blocker and the
 orchestrator does not manually poll raw inbox state.
@@ -370,6 +385,10 @@ orchestrator does not manually poll raw inbox state.
 
 - the urgent state is surfaced through the controller/hook path
 - no manual raw-inbox scan is required to notice it
+
+**Result:** 10 integration tests prove HIGH/URGENT alerts persisted in the
+message bus survive across session boundaries and are mechanically surfaced
+by `reconcile()` as actionable items with correct severity.
 
 ### Proving run 2 -- noise discrimination
 
@@ -380,7 +399,7 @@ Generate many info/warn findings plus one real blocker.
 - only the blocker becomes interrupt-like
 - routine findings remain visible but do not spam operator flow
 
-### Proving run 3 -- persistence and dedupe
+### Proving run 3 -- persistence and dedupe ✅ PASSED (PR #1712)
 
 Run several monitor/controller cycles with one unresolved urgent item.
 
@@ -390,13 +409,21 @@ Run several monitor/controller cycles with one unresolved urgent item.
 - repeated cycles do not create alert floods
 - ack/resolve clears the item cleanly
 
-### Proving run 4 -- false-stall regression
+**Result:** 7 tests prove fleet_status.json persistence across cycles,
+stable item IDs, deduplication of repeated findings, and clean clear on
+ack/resolve.
+
+### Proving run 4 -- false-stall regression ✅ PASSED (PR #1714)
 
 Keep one lane actively working while earlier observations suggest trouble.
 
 **Pass when:**
 
 - current-state verification prevents false stall reports
+
+**Result:** 6 regression tests prove the stall guard from #1618 correctly
+handles false-stall scenarios: pre-seeded stale state, recovery count
+transitions, and lane activity discrimination.
 
 ### Proving run 5 -- real remote loop
 
@@ -414,14 +441,14 @@ Run one real remote exchange through the chosen channel path.
 This sub-plan is complete only when:
 
 - [x] one repo-owned controller surface exists and is the documented actionable
-  truth for urgent/routine operator state — **DONE** (`src/bid_euchre/ops/control_plane.py`, PR #1633)
-- [ ] one automated integration test proves `detect -> surface -> ack -> clear`
-  — **PENDING** (controller unit tests exist; full integration test needs hook surfacing from PR 3)
+  truth for urgent/routine operator state — **DONE** (`src/bid_euchre/ops/control_plane.py`, PR #1633; wired into monitor cycle, PR #1699)
+- [x] one automated integration test proves `detect -> surface -> ack -> clear`
+  — **DONE** (PRs #1707, #1712, #1718: 28 integration tests covering controller lifecycle, persistence/dedup/clear, and unread-alert replay)
 - [ ] unresolved urgent state can no longer be silently ignored at normal
-  orchestrator interaction boundaries — **PENDING** (requires PR 3: hook surfacing)
-- [ ] Platform-8b is runtime-wired, not library-only — **IN PROGRESS** (PR #1643 open)
+  orchestrator interaction boundaries — **PENDING** (requires PR 3: UserPromptSubmit/PreToolUse hook surfacing)
+- [ ] Platform-8b is runtime-wired, not library-only — **PARTIAL** (PR #1643 closed; #1715 wired outbound audit into PostToolUse hook; inbound runtime wiring still needed)
 - [ ] one real channel-backed remote loop is proven end to end
-  — **PENDING** (Telegram inbound proven via PR #1616; outbound + full loop needs PR #1643)
+  — **PENDING** (Telegram inbound proven via PR #1616; outbound audit hook live via #1715; full loop proving run not yet executed)
 - [x] `#1289` has a decision note backed by the transport comparison matrix
   — **DONE** (`plans/sessions/2026-03-24_transport-comparison-adr.md`, PR #1650)
 
@@ -431,6 +458,7 @@ This sub-plan is complete only when:
 |------|---------|
 | 2026-03-24 | SP-4-07 drafted as proposed. 5-PR roadmap covering controller, hooks, audit wiring, and transport ADR. |
 | 2026-03-24 | Status updated to in_progress. 3 of 5 PRs shipped: PR #1618 (stabilization gate — TTL expiry, escalation dedup, stall guard fixes), PR #1633 (controller projection module with `reconcile()`, `derive_items()`, `load_fleet_status()`), PR #1650 (transport comparison ADR — closes #1289 with Option B). PR #1643 (audit runtime wiring) is open. PR 3 (hook surfacing) remains pending. 2 of 6 exit criteria met. |
+| 2026-03-25 | Checkpoint reconciliation (flex-c). Major progress across all deliverables. **Controller now live:** #1699 wires `reconcile()` into monitor cycle. **Substrate hardening:** #1701 (permission stall detection), #1703 (urgent TTL exemption), #1704 (fleet idle auto-shutoff), #1708 (SKILL.md edit permission). **Runtime wiring:** #1715 wires outbound MCP audit into PostToolUse hook; #1643 (broader audit wiring PR) closed. **Proving runs:** Run 1 passed (#1718, 10 tests — unread-alert replay), Run 3 passed (#1712, 7 tests — persistence/dedup/clear), Run 4 passed (#1714, 6 tests — false-stall regression). **Integration tests:** #1707 (11 controller projection integration tests). 3 of 6 exit criteria now met (controller, integration tests, transport ADR). Remaining: hook surfacing (PR 3), full Platform-8b inbound wiring, real remote loop proving run (Run 5). |
 
 ## Notes
 
