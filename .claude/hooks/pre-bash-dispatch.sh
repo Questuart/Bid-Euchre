@@ -4,9 +4,10 @@
 # Runs all PreToolUse hooks for Bash in a single invocation to minimize
 # "Async hook completed" TUI messages (issue #1255). Dispatches to:
 #   1. pre-worktree-cleanup.sh — blocks dangerous rm/worktree commands
-#   2. pre-merge-review-guard.sh — blocks merge without review verdict
-#   3. scope-drift-guard.sh — warns/blocks commit when staged files exceed task scope
-#   4. rule-loader.sh — progressive rule disclosure (context injection)
+#   2. urgent-state-guard.py — blocks merge/dispatch when fleet alerts unresolved
+#   3. pre-merge-review-guard.sh — blocks merge without review verdict
+#   4. scope-drift-guard.sh — warns/blocks commit when staged files exceed task scope
+#   5. rule-loader.sh — progressive rule disclosure (context injection)
 #
 # Guards run first: if either blocks (exit 2), we propagate immediately.
 # Rule-loader runs last since context injection is only useful if the
@@ -33,7 +34,18 @@ if [ -x "$HOOKS_DIR/pre-worktree-cleanup.sh" ]; then
     fi
 fi
 
-# --- 2. Merge review guard (may block with exit 2) ---
+# --- 2. Urgent state guard (may block with exit 2) ---
+if [ -x "$HOOKS_DIR/urgent-state-guard.py" ]; then
+    USG_OUTPUT=""
+    USG_EXIT=0
+    USG_OUTPUT=$(echo "$INPUT" | python3 "$HOOKS_DIR/urgent-state-guard.py" 2>/dev/null) || USG_EXIT=$?
+    if [ "$USG_EXIT" -ne 0 ]; then
+        echo "$USG_OUTPUT"
+        exit "$USG_EXIT"
+    fi
+fi
+
+# --- 3. Merge review guard (may block with exit 2) ---
 if [ -x "$HOOKS_DIR/pre-merge-review-guard.sh" ]; then
     MRG_OUTPUT=""
     MRG_EXIT=0
@@ -44,7 +56,7 @@ if [ -x "$HOOKS_DIR/pre-merge-review-guard.sh" ]; then
     fi
 fi
 
-# --- 3. Scope drift guard (may block with exit 2 or warn) ---
+# --- 4. Scope drift guard (may block with exit 2 or warn) ---
 if [ -x "$HOOKS_DIR/scope-drift-guard.sh" ]; then
     SDG_OUTPUT=""
     SDG_EXIT=0
@@ -63,7 +75,7 @@ if [ -x "$HOOKS_DIR/scope-drift-guard.sh" ]; then
     fi
 fi
 
-# --- 4. Rule loader (never blocks, may return additionalContext) ---
+# --- 5. Rule loader (never blocks, may return additionalContext) ---
 if [ -x "$HOOKS_DIR/rule-loader.sh" ]; then
     RULE_OUTPUT=""
     RULE_OUTPUT=$(echo "$INPUT" | "$HOOKS_DIR/rule-loader.sh" 2>/dev/null) || true
