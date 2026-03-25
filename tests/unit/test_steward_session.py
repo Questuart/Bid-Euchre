@@ -278,16 +278,17 @@ class TestStewardSessionScript:
 
 
 class TestWindowLayout:
-    """Validate the 4-window layout (central-ops: 3 panes, others: 4 panes)."""
+    """Validate the 4-window layout (all windows: 4 panes tiled)."""
 
     EXPECTED_WINDOWS = ["central-ops", "platform", "browser", "scratch"]
 
-    # Worker windows with 4 tiled panes each
-    TILED_WINDOWS = ["platform", "browser", "scratch"]
+    # All windows use 4 tiled panes
+    TILED_WINDOWS = ["central-ops", "platform", "browser", "scratch"]
 
     EXPECTED_LANES = [
-        # Central ops (3 panes)
+        # Central ops (4 panes)
         "orchestrator",
+        "analyst",
         "ops",
         "review",
         # Platform workers
@@ -309,7 +310,7 @@ class TestWindowLayout:
 
     # Lanes per window, in pane creation order (pane 1 = first, 1-based)
     WINDOW_PANES = {
-        "central-ops": ["orchestrator", "ops", "review"],
+        "central-ops": ["orchestrator", "analyst", "ops", "review"],
         "platform": ["author-a", "author-b", "author-c", "author-d"],
         "browser": [
             "brws-author-a",
@@ -363,20 +364,20 @@ class TestWindowLayout:
                 f"-n {window_name}" in content
             ), f"Expected window named '{window_name}'"
 
-    def test_central_ops_has_3_panes(self) -> None:
-        """central-ops must have 2 split-window commands (for 3 panes total)."""
+    def test_central_ops_has_4_panes(self) -> None:
+        """central-ops must have 3 split-window commands (for 4 panes total)."""
         content = STEWARD_SCRIPT.read_text()
         split_count = content.count('split-window -t "${SESSION}:central-ops"')
         assert (
-            split_count == 2
-        ), f"central-ops must have 2 split-window commands, found {split_count}"
+            split_count == 3
+        ), f"central-ops must have 3 split-window commands, found {split_count}"
 
-    def test_central_ops_main_vertical(self) -> None:
-        """central-ops must use main-vertical layout (orchestrator large left)."""
+    def test_central_ops_tiled(self) -> None:
+        """central-ops must use tiled layout (4 equal quadrants)."""
         content = STEWARD_SCRIPT.read_text()
         assert (
-            'select-layout -t "${SESSION}:central-ops" main-vertical' in content
-        ), "central-ops must use main-vertical layout"
+            'select-layout -t "${SESSION}:central-ops" tiled' in content
+        ), "central-ops must use tiled layout"
 
     def test_worker_windows_have_4_panes(self) -> None:
         """Each worker window must have 3 split-window commands (for 4 panes)."""
@@ -397,7 +398,7 @@ class TestWindowLayout:
             ), f"Window '{window_name}' must have select-layout tiled"
 
     def test_all_lanes_launched(self) -> None:
-        """All 15 lanes must appear in new-session, new-window, or split-window."""
+        """All 16 lanes must appear in new-session, new-window, or split-window."""
         content = STEWARD_SCRIPT.read_text()
         for lane in self.EXPECTED_LANES:
             assert (
@@ -442,7 +443,7 @@ class TestWindowLayout:
     def test_central_ops_foreground(self) -> None:
         """Central ops lanes must have foreground visibility."""
         metadata_lines = self._metadata_invocation_lines()
-        central_ops_lanes = {"orchestrator", "ops", "review"}
+        central_ops_lanes = {"orchestrator", "analyst", "ops", "review"}
         for line in metadata_lines:
             for lane in central_ops_lanes:
                 if f'"{lane}"' in line and line.index(f'"{lane}"') < 30:
@@ -475,20 +476,20 @@ class TestWindowLayout:
                     ), f"Worker lane must be background: {line.strip()}"
 
     def test_ops_monitoring_targets_correct_pane(self) -> None:
-        """The ops monitoring loop must target central-ops.2 (ops pane).
+        """The ops monitoring loop must target central-ops.3 (ops pane).
 
-        With pane-base-index=1: orchestrator=.1, ops=.2, review=.3.
+        With pane-base-index=1: orchestrator=.1, analyst=.2, ops=.3, review=.4.
         """
         content = STEWARD_SCRIPT.read_text()
-        assert "central-ops.2" in content, "Ops monitoring must target central-ops.2"
+        assert "central-ops.3" in content, "Ops monitoring must target central-ops.3"
 
     def test_review_loop_targets_correct_pane(self) -> None:
-        """The merged-PR review loop must target central-ops.3 (review pane).
+        """The merged-PR review loop must target central-ops.4 (review pane).
 
-        With pane-base-index=1: orchestrator=.1, ops=.2, review=.3.
+        With pane-base-index=1: orchestrator=.1, analyst=.2, ops=.3, review=.4.
         """
         content = STEWARD_SCRIPT.read_text()
-        assert "central-ops.3" in content, "Review loop must target central-ops.3"
+        assert "central-ops.4" in content, "Review loop must target central-ops.4"
 
     def test_review_pane_sends_natural_language_prompt(self) -> None:
         """The review pane auto-launch must send a natural-language prompt,
@@ -542,7 +543,7 @@ class TestWindowLayout:
         ), f"Ops metadata must use 'detached' branch: {line.strip()}"
 
     def test_ensure_detached_worktree_used_for_control_plane(self) -> None:
-        """Both review and ops worktrees must use ensure_detached_worktree."""
+        """Review, ops, and analyst worktrees must use ensure_detached_worktree."""
         content = STEWARD_SCRIPT.read_text()
         assert (
             'ensure_detached_worktree "$REVIEW"' in content
@@ -550,6 +551,9 @@ class TestWindowLayout:
         assert (
             'ensure_detached_worktree "$OPS"' in content
         ), "Ops worktree must use ensure_detached_worktree"
+        assert (
+            'ensure_detached_worktree "$ANALYST"' in content
+        ), "Analyst worktree must use ensure_detached_worktree"
 
     def test_browser_game_worktree_paths(self) -> None:
         """Script must define BRWS_A through BRWS_D worktree paths."""

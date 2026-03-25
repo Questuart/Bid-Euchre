@@ -4,10 +4,11 @@
 #
 # Creates (or attaches to) a tmux session with 4 windows:
 #
-#   Window 1 — central-ops (3 panes, main-vertical layout)
-#     .1  orchestrator    -- single intake point (large left, ~66%)
-#     .2  ops             -- operator monitoring lane (top right)
-#     .3  review          -- independent review lane (bottom right)
+#   Window 1 — central-ops (4 panes, tiled layout)
+#     .1  orchestrator      -- single intake point
+#     .2  steward-analyst   -- shaping, triage, plan review
+#     .3  ops               -- operator monitoring lane
+#     .4  review            -- independent review lane
 #
 #   Window 2 — platform (4 panes, tiled)
 #     .1  author-a        -- primary platform author lane
@@ -88,6 +89,7 @@ FLEX_C="${PARENT_DIR}/${REPO_NAME}-steward-flex-c"
 # Control plane
 REVIEW="${PARENT_DIR}/${REPO_NAME}-steward-review"
 OPS="${PARENT_DIR}/${REPO_NAME}-steward-ops"
+ANALYST="${PARENT_DIR}/${REPO_NAME}-steward-analyst"
 MAIN_DIR="$(git -C "$MAIN_DIR" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
 
 # ---------------------------------------------------------------------------
@@ -294,17 +296,19 @@ ensure_worktree "$FLEX_C" "codex/steward-flex-c"
 # Control plane
 ensure_detached_worktree "$REVIEW"
 ensure_detached_worktree "$OPS"
+ensure_detached_worktree "$ANALYST"
 
 # Write v2 registry metadata for each lane.
 # tmux_window = group name, tmux_pane = 1-based pane index within the window.
 # Pane target format: ${SESSION}:${tmux_window}.${tmux_pane}
 # Indices are 1-based to match tmux pane-base-index=1.
 
-# Central ops  (window: central-ops, panes 1-3, main-vertical layout)
+# Central ops  (window: central-ops, panes 1-4, tiled layout)
 # Note: pane indices are 1-based to match tmux pane-base-index=1.
 write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "central-ops" "1" "foreground" "Orchestrator"
-write_lane_metadata "ops"            "ops"          "$OPS"            "detached"                        "central-ops" "2" "foreground" "Ops"
-write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "3" "foreground" "Review"
+write_lane_metadata "analyst"        "analyst"      "$ANALYST"        "detached"                        "central-ops" "2" "foreground" "Analyst"
+write_lane_metadata "ops"            "ops"          "$OPS"            "detached"                        "central-ops" "3" "foreground" "Ops"
+write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "4" "foreground" "Review"
 
 # Platform workers  (window: platform, panes 1-4)
 write_lane_metadata "author-a"       "author"       "$AUTHOR_A"       "codex/steward-author"            "platform" "1" "background" "Author A"
@@ -340,12 +344,11 @@ if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Window + pane creation — 4 windows (central-ops: 3 panes, others: 4 panes)
+# Window + pane creation — 4 windows (central-ops: 4 panes tiled, others: 4 panes tiled)
 # ---------------------------------------------------------------------------
-# central-ops uses main-vertical: orchestrator large left, ops/review stacked right.
-# Worker windows use tiled: 4 equal quadrants.
+# All windows use tiled: 4 equal quadrants.
 
-# --- Window 1: central-ops (3 panes, main-vertical) ---
+# --- Window 1: central-ops (4 panes, tiled) ---
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $ORCH_CHANNEL_FLAGS
 
@@ -357,11 +360,13 @@ if [ -n "$STEWARD_CHANNELS" ]; then
 fi
 tmux set-environment -t "$SESSION" STEWARD_TELEGRAM_ENABLED "$STEWARD_TELEGRAM_ENABLED"
 
+tmux split-window -t "${SESSION}:central-ops" -c "$ANALYST" \
+    "$CLAUDE_BIN" --name analyst --agent steward-analyst
 tmux split-window -t "${SESSION}:central-ops" -c "$OPS" \
     "$CLAUDE_BIN" --name ops --agent steward-ops
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
     "$CLAUDE_BIN" --name review --agent steward-review
-tmux select-layout -t "${SESSION}:central-ops" main-vertical
+tmux select-layout -t "${SESSION}:central-ops" tiled
 
 # --- Window 2: platform ---
 tmux new-window -t "$SESSION" -n platform -c "$AUTHOR_A" \
@@ -399,11 +404,11 @@ tmux select-layout -t "${SESSION}:scratch" tiled
 # Auto-launch ops monitoring loop (SP-3-08).
 # Wait briefly for the claude process to initialize, then send the /loop
 # command.  Best-effort — if it fails the ops agent can start it manually.
-# Target: central-ops window, pane 2 (ops lane).
-# Note: pane-base-index=1, so orchestrator=.1, ops=.2, review=.3.
+# Target: central-ops window, pane 3 (ops lane).
+# Note: pane-base-index=1, so orchestrator=.1, analyst=.2, ops=.3, review=.4.
 (
     sleep 10
-    tmux send-keys -t "${SESSION}:central-ops.2" \
+    tmux send-keys -t "${SESSION}:central-ops.3" \
         "/loop 3m uv run python scripts/internal/ops.py monitor" Enter
 ) &
 
@@ -411,10 +416,10 @@ tmux select-layout -t "${SESSION}:scratch" tiled
 # Triggers the review agent's startup behavior: discover recent merges,
 # review diffs, triage findings, then poll every 15 minutes.
 # Best-effort — if it fails the review agent can start it manually.
-# Target: central-ops window, pane 3 (review lane).
+# Target: central-ops window, pane 4 (review lane).
 (
     sleep 15
-    tmux send-keys -t "${SESSION}:central-ops.3" \
+    tmux send-keys -t "${SESSION}:central-ops.4" \
         "Review recently merged PRs and triage findings. Set up a 15m recurring poll." Enter
 ) &
 
