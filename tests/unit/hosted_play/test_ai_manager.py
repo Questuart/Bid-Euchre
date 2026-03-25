@@ -113,6 +113,48 @@ class TestHybridOlsa:
         # File found at absolute path (not resolved via models_dir)
         assert "hybrid_olsa" not in mgr.available_models
 
+    def test_hybrid_olsa_relative_path_preserved_when_exists(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """A relative artifact path that already exists from CWD is preserved.
+
+        When MODELS_DIR is set but the relative path already resolves from the
+        working directory, the original relative path is used (not overridden
+        with models_dir prefix).  Regression test for #1668.
+        """
+        # Create artifact in CWD-relative location
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+        rel_dir = workdir / "rel"
+        rel_dir.mkdir()
+        artifact = rel_dir / "hybrid.json"
+        artifact.write_text(json.dumps({"artifact_type": "wrong"}))
+
+        # Create a *different* directory for models_dir (no artifact here)
+        models_dir = tmp_path / "elsewhere"
+        models_dir.mkdir()
+
+        # Run from workdir so "rel/hybrid.json" is a valid relative path
+        monkeypatch.chdir(workdir)
+        config = HostedPlayConfig(
+            hybrid_olsa_artifact="rel/hybrid.json",
+            models_dir=str(models_dir),
+        )
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="web.ai_manager"):
+            mgr = AIManager(config)
+
+        # The file was found at its original relative path and loading was
+        # attempted (producing a warning because the content is invalid).
+        # If models_dir had been prepended, the file would NOT be found
+        # and no loading attempt (warning) would occur.
+        assert "hybrid_olsa" not in mgr.available_models
+        assert any(
+            "Failed to load hybrid_olsa from rel/hybrid.json" in m
+            for m in caplog.messages
+        )
+
     def test_hybrid_olsa_relative_without_models_dir_not_resolved(self):
         """A relative artifact with no models_dir stays relative (likely not found)."""
         config = HostedPlayConfig(
