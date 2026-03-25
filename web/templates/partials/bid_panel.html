@@ -12,17 +12,17 @@
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
 {% set bid_type_labels = {"regular": "", "moon": " Moon", "loner": " Loner"} %}
 
-<div id="bid-panel">
-    <h3>Auction</h3>
+<div id="bid-panel" role="region" aria-label="Auction panel">
+    <h3 id="auction-heading">Auction</h3>
 
     {# Show auction transcript so far #}
     {% if auction %}
-    <div class="auction-transcript">
-        <table class="auction-table">
+    <div class="auction-transcript" aria-label="Bidding history" aria-live="polite">
+        <table class="auction-table" aria-describedby="auction-heading">
             <thead>
                 <tr>
-                    <th>Player</th>
-                    <th>Bid</th>
+                    <th scope="col">Player</th>
+                    <th scope="col">Bid</th>
                 </tr>
             </thead>
             <tbody>
@@ -35,10 +35,10 @@
                             Pass
                         {% else %}
                             {% if entry_bid_type == "moon" %}
-                                🌙 Moon
+                                <span aria-hidden="true">🌙</span> Moon
                                 <span class="bid-type-badge bid-type-badge--moon">Moon</span>
                             {% elif entry_bid_type == "loner" %}
-                                🃏 Loner
+                                <span aria-hidden="true">🃏</span> Loner
                                 <span class="bid-type-badge bid-type-badge--loner">Loner</span>
                             {% else %}
                                 {{ entry.n }}
@@ -64,27 +64,29 @@
           action="/play/{{ link_uuid }}/bid"
           hx-post="/play/{{ link_uuid }}/bid"
           hx-target="#game-board"
-          hx-swap="innerHTML">
+          hx-swap="innerHTML"
+          aria-label="Submit your bid">
         <input type="hidden" name="turn_number" value="{{ turn_number }}">
 
         <div class="bid-controls">
             {# Bid type selector #}
             <label for="bid-type">Type:</label>
             <select id="bid-type" name="bid_type"
+                    aria-label="Bid type"
                     onchange="updateBidControls(this.value)">
                 <option value="regular"
                     {% if bid_type|default("regular") not in ["regular"] %}disabled{% endif %}
                 >Regular</option>
                 <option value="moon"
                     {% if bid_type|default("regular") == "loner" %}disabled{% endif %}
-                >🌙 Moon (10)</option>
-                <option value="loner">🃏 Loner (10)</option>
+                >Moon (10)</option>
+                <option value="loner">Loner (10)</option>
             </select>
 
             {# Bid level — only for regular bids #}
             <span id="bid-level-wrapper">
                 <label for="bid-level">Bid:</label>
-                <select id="bid-level" name="bid_n">
+                <select id="bid-level" name="bid_n" aria-label="Bid level">
                     <option value="0">Pass</option>
                     {% for n in range(current_high_bid + 1, 11) %}
                     <option value="{{ n }}">{{ n }}</option>
@@ -93,7 +95,7 @@
             </span>
 
             <label for="bid-contract">Contract:</label>
-            <select id="bid-contract" name="bid_contract">
+            <select id="bid-contract" name="bid_contract" aria-label="Contract suit">
                 <option value="S">♠ Spades</option>
                 <option value="H">♥ Hearts</option>
                 <option value="D">♦ Diamonds</option>
@@ -102,19 +104,20 @@
                 <option value="LOW">Low (no trump)</option>
             </select>
 
-            <button type="submit">Submit Bid</button>
+            <button type="submit" aria-label="Submit bid">Submit Bid</button>
         </div>
 
         {# Pass button — always visible as a quick action #}
         <div class="bid-pass">
             <button type="button"
                     onclick="submitPass(this)"
-                    class="pass-btn">Pass</button>
+                    class="pass-btn"
+                    aria-label="Pass on this bid">Pass</button>
         </div>
     </form>
 
     {% if current_high_bid > 0 %}
-    <p class="bid-info">
+    <p class="bid-info" aria-live="polite">
         Current high bid: {{ current_high_bid }}
         {{ bid_type_labels.get(bid_type|default("regular"), "") }}
         {% if bid_type|default("regular") == "moon" %}

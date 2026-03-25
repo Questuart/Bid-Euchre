@@ -26,7 +26,7 @@
     primary HTMX swap target for all game-action responses.
 #}
 
-<div id="game-board">
+<div id="game-board" role="region" aria-label="Game board" aria-live="polite">
 
     {# ---- Setup phases: nickname & model selection ---- #}
     {% if phase == "nickname" %}
@@ -47,35 +47,36 @@
     {% elif phase in ("auction", "trick_play", "redeal") %}
 
         {# AI hands — face-down card backs with counts #}
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
+        <div class="ai-hands-row" style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;"
+             role="region" aria-label="AI opponent hands">
             {# Left opponent (seat 1) #}
             <div style="text-align:center; flex:0 0 auto;">
-                <div class="ai-hand">
+                <div class="ai-hand" role="img" aria-label="AI Left has {{ opp_left_count | default(0) }} cards">
                     {% for _ in range(opp_left_count | default(0)) %}
-                    <div class="card-back"></div>
+                    <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count">AI Left ({{ opp_left_count | default(0) }})</span>
+                <span class="ai-card-count" aria-hidden="true">AI Left ({{ opp_left_count | default(0) }})</span>
             </div>
 
             {# Partner (seat 2) #}
             <div style="text-align:center; flex:1 1 auto;">
-                <div class="ai-hand">
+                <div class="ai-hand" role="img" aria-label="Partner has {{ partner_count | default(0) }} cards">
                     {% for _ in range(partner_count | default(0)) %}
-                    <div class="card-back"></div>
+                    <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count">Partner ({{ partner_count | default(0) }})</span>
+                <span class="ai-card-count" aria-hidden="true">Partner ({{ partner_count | default(0) }})</span>
             </div>
 
             {# Right opponent (seat 3) #}
             <div style="text-align:center; flex:0 0 auto;">
-                <div class="ai-hand">
+                <div class="ai-hand" role="img" aria-label="AI Right has {{ opp_right_count | default(0) }} cards">
                     {% for _ in range(opp_right_count | default(0)) %}
-                    <div class="card-back"></div>
+                    <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count">AI Right ({{ opp_right_count | default(0) }})</span>
+                <span class="ai-card-count" aria-hidden="true">AI Right ({{ opp_right_count | default(0) }})</span>
             </div>
         </div>
 

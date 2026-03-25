@@ -817,3 +817,296 @@ class TestMatchResult:
         )
         assert 'action="/play/test-id/new-match"' in html
         assert 'hx-target="#game-board"' in html
+
+
+# ---------------------------------------------------------------------------
+# Accessibility — ARIA attributes
+# ---------------------------------------------------------------------------
+
+
+class TestAccessibilityHand:
+    """Verify ARIA attributes on card elements in hand.html."""
+
+    def test_legal_card_has_aria_label(self, env):
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["S", "A"]],
+            legal_plays=[0],
+            phase="trick_play",
+        )
+        assert 'aria-label="Play A of Spades"' in html
+
+    def test_illegal_card_has_aria_label(self, env):
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["H", "K"]],
+            legal_plays=[],
+            phase="trick_play",
+        )
+        assert 'aria-label="K of Hearts (cannot play)"' in html
+
+    def test_auction_card_has_aria_label(self, env):
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["D", "10"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert 'aria-label="10 of Diamonds"' in html
+
+    def test_hand_region_has_aria_label(self, env):
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["C", "J"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert 'aria-label="Your hand"' in html
+
+    def test_card_fan_has_group_role(self, env):
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["S", "A"], ["H", "K"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert 'role="group"' in html
+        assert "Cards in your hand (2)" in html
+
+
+class TestAccessibilityBidPanel:
+    """Verify ARIA attributes on bid panel controls."""
+
+    def test_bid_panel_has_region_role(self, env):
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert 'role="region"' in html
+        assert 'aria-label="Auction panel"' in html
+
+    def test_bid_form_has_aria_label(self, env):
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert 'aria-label="Submit your bid"' in html
+
+    def test_submit_button_has_aria_label(self, env):
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert 'aria-label="Submit bid"' in html
+
+    def test_pass_button_has_aria_label(self, env):
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert 'aria-label="Pass on this bid"' in html
+
+
+class TestAccessibilityTrick:
+    """Verify ARIA attributes on trick area."""
+
+    def test_trick_area_has_region(self, env):
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": []},
+            completed_tricks=[],
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert 'role="region"' in html
+        assert 'aria-label="Current trick"' in html
+
+    def test_played_card_has_aria_label(self, env):
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={
+                "leader": 1,
+                "plays": [[1, ["H", "A"]]],
+            },
+            completed_tricks=[],
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert "AI Left played A of Hearts" in html
+
+    def test_empty_slot_has_waiting_label(self, env):
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": []},
+            completed_tricks=[],
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert "waiting to play" in html
+
+
+class TestAccessibilityScore:
+    """Verify ARIA attributes on score bar."""
+
+    def test_score_bar_has_status_role(self, env):
+        tmpl = env.get_template("partials/score.html")
+        html = tmpl.render(
+            score_human=10,
+            score_ai=5,
+            hands_played=2,
+            contract_type=None,
+            trump=None,
+            winning_bid=None,
+            bidder_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            dealer_seat=0,
+            phase="auction",
+        )
+        assert 'role="status"' in html
+
+    def test_score_section_has_aria_label(self, env):
+        tmpl = env.get_template("partials/score.html")
+        html = tmpl.render(
+            score_human=15,
+            score_ai=-3,
+            hands_played=4,
+            contract_type=None,
+            trump=None,
+            winning_bid=None,
+            bidder_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            dealer_seat=3,
+            phase="auction",
+        )
+        assert "Match score: You 15, AI -3" in html
+
+
+class TestAccessibilityResults:
+    """Verify ARIA attributes on result screens."""
+
+    def test_hand_result_has_alert_role(self, env):
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert 'role="alert"' in html
+
+    def test_match_result_has_alert_role(self, env):
+        tmpl = env.get_template("partials/match_result.html")
+        html = tmpl.render(
+            link_uuid="x",
+            winner="human",
+            score_human=55,
+            score_ai=30,
+            hands_played=12,
+        )
+        assert 'role="alert"' in html
+
+    def test_play_again_has_aria_label(self, env):
+        tmpl = env.get_template("partials/match_result.html")
+        html = tmpl.render(
+            link_uuid="x",
+            winner="human",
+            score_human=55,
+            score_ai=30,
+            hands_played=12,
+        )
+        assert 'aria-label="Start a new match"' in html
+
+
+class TestAccessibilityForms:
+    """Verify ARIA attributes on setup form partials."""
+
+    def test_nickname_form_has_region(self, env):
+        tmpl = env.get_template("partials/nickname_form.html")
+        html = tmpl.render(link_uuid="x")
+        assert 'role="region"' in html
+        assert 'aria-label="Set your nickname"' in html
+
+    def test_model_select_has_region(self, env):
+        models = [ModelStub("heuristic", "Heuristic", "Rule-based")]
+        tmpl = env.get_template("partials/model_select.html")
+        html = tmpl.render(link_uuid="x", nickname="Bob", models=models)
+        assert 'role="region"' in html
+        assert 'aria-label="Choose AI opponent"' in html
+
+    def test_invite_code_has_sr_only_label(self, env):
+        tmpl = env.get_template("partials/invite_code_form.html")
+        html = tmpl.render(error=None)
+        assert 'class="sr-only"' in html
+        assert 'for="invite-code-input"' in html
+
+    def test_invite_error_has_alert_role(self, env):
+        tmpl = env.get_template("partials/invite_code_form.html")
+        html = tmpl.render(error="Invalid code")
+        assert 'role="alert"' in html
+        assert "Invalid code" in html
+
+
+class TestAccessibilityBaseTemplate:
+    """Verify accessibility features in base.html."""
+
+    def test_skip_link_present(self, env):
+        tmpl = env.get_template("base.html")
+        html = tmpl.render()
+        assert 'class="skip-link"' in html
+        assert 'href="#main-content"' in html
+
+    def test_main_has_id_for_skip(self, env):
+        tmpl = env.get_template("base.html")
+        html = tmpl.render()
+        assert 'id="main-content"' in html
+        assert 'role="main"' in html
+
+    def test_header_has_banner_role(self, env):
+        tmpl = env.get_template("base.html")
+        html = tmpl.render()
+        assert 'role="banner"' in html
+
+    def test_accessibility_css_linked(self, env):
+        tmpl = env.get_template("base.html")
+        html = tmpl.render()
+        assert "/static/css/accessibility.css" in html
+
+    def test_viewport_has_viewport_fit(self, env):
+        tmpl = env.get_template("base.html")
+        html = tmpl.render()
+        assert "viewport-fit=cover" in html

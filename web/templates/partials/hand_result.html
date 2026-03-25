@@ -43,20 +43,21 @@
     {% set result_class = "result--set" %}
 {% endif %}
 
-<div id="hand-result" class="hand-result hand-result--animated {{ result_class }}">
+<div id="hand-result" class="hand-result hand-result--animated {{ result_class }}"
+     role="alert" aria-live="assertive">
     <div class="result-banner">
         {# --- Moon / Loner special banners --- #}
         {% if hand_bid_type == "moon" %}
             {% if made %}
-                <h2 class="result-title">🌙 Moon Made!</h2>
+                <h2 class="result-title"><span aria-hidden="true">🌙</span> Moon Made!</h2>
             {% else %}
-                <h2 class="result-title">🌙 Moon Set!</h2>
+                <h2 class="result-title"><span aria-hidden="true">🌙</span> Moon Set!</h2>
             {% endif %}
         {% elif hand_bid_type == "loner" %}
             {% if made %}
-                <h2 class="result-title">🃏 Loner Made!</h2>
+                <h2 class="result-title"><span aria-hidden="true">🃏</span> Loner Made!</h2>
             {% else %}
-                <h2 class="result-title">🃏 Loner Set!</h2>
+                <h2 class="result-title"><span aria-hidden="true">🃏</span> Loner Set!</h2>
             {% endif %}
         {# --- Regular bid banners --- #}
         {% elif made %}
@@ -68,7 +69,8 @@
         {# Score delta emphasis for moon/loner #}
         {% if hand_bid_type in ("moon", "loner") %}
             {% set human_delta = points_team0 %}
-            <div class="score-delta {% if human_delta > 0 %}score-delta--{{ hand_bid_type }}{% elif human_delta < 0 %}score-delta--negative{% endif %}">
+            <div class="score-delta {% if human_delta > 0 %}score-delta--{{ hand_bid_type }}{% elif human_delta < 0 %}score-delta--negative{% endif %}"
+                 aria-label="Score change: {{ human_delta }} points">
                 {{ "+" if human_delta > 0 }}{{ human_delta }}
                 {% if hand_bid_type == "moon" %}MOON{% else %}LONER{% endif %}
                 {% if made %}MADE{% else %}SET{% endif %}
@@ -99,7 +101,7 @@
         </p>
     </div>
 
-    <div class="result-scoring">
+    <div class="result-scoring" role="table" aria-label="Hand scoring summary">
         <table class="result-table">
             <tr>
                 <td>Your team:</td>

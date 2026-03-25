@@ -1,0 +1,226 @@
+/* ==========================================================================
+   Bid Euchre Browser Game — Accessibility Stylesheet
+   Focus management, touch targets, keyboard navigation, and a11y utilities.
+   Loaded after style.css to layer accessibility enhancements.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Skip Navigation Link
+   -------------------------------------------------------------------------- */
+
+.skip-link {
+    position: absolute;
+    top: -100%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    padding: 0.75rem 1.5rem;
+    background: var(--color-surface, #263238);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 0 0 8px 8px;
+    text-decoration: none;
+    transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+    top: 0;
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   2. Focus Visible — Keyboard-Only Focus Rings
+   -------------------------------------------------------------------------- */
+
+/*
+ * :focus-visible targets keyboard focus only (not mouse/touch clicks).
+ * This keeps the UI clean for pointer users while ensuring keyboard users
+ * can always see where focus is.
+ */
+
+:focus-visible {
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 2px;
+}
+
+/* Remove default outlines since we handle them via :focus-visible */
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* Card buttons — bright green ring on keyboard focus */
+button.card--legal:focus-visible {
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 6px rgba(76, 175, 80, 0.3);
+}
+
+/* Bid controls — visible ring on selects and buttons */
+.bid-controls select:focus-visible,
+.bid-controls button:focus-visible {
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 2px;
+}
+
+/* Pass button */
+.pass-btn:focus-visible {
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 2px;
+}
+
+/* Form inputs */
+input[type="text"]:focus-visible,
+select:focus-visible {
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 1px;
+}
+
+/* Play Again and other action buttons */
+.btn:focus-visible {
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 6px rgba(76, 175, 80, 0.3);
+}
+
+/* --------------------------------------------------------------------------
+   3. Touch Target Minimums (44x44px per WCAG 2.5.5)
+   --------------------------------------------------------------------------
+   These rules enforce minimum interactive target sizes for touch devices.
+   Applied via media query so desktop pointer users keep compact layouts.
+   -------------------------------------------------------------------------- */
+
+@media (pointer: coarse) {
+    /* Card buttons — already large enough at default, but enforce min on small screens */
+    button.card--legal {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Bid control buttons */
+    .bid-controls button,
+    .pass-btn {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0.6rem 1.25rem;
+    }
+
+    /* Select dropdowns */
+    .bid-controls select,
+    #model-select select {
+        min-height: 44px;
+        padding: 0.5rem 0.75rem;
+    }
+
+    /* Form submit buttons (nickname, model select, invite code) */
+    #nickname-form button,
+    #model-select button,
+    .btn {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    /* Text inputs */
+    #nickname-form input[type="text"],
+    #invite-code-input {
+        min-height: 44px;
+    }
+
+    /* Play Again button */
+    .btn--play-again {
+        min-height: 48px;
+        padding: 0.75rem 2rem;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   4. Reduced Motion — Extended Coverage
+   --------------------------------------------------------------------------
+   Supplements the base reduced-motion rules in style.css.
+   Covers card hover transforms, button transitions, and any motion
+   that style.css does not already suppress.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+    /* Suppress card hover lift */
+    .card--legal:hover {
+        transform: none;
+    }
+
+    /* Suppress button hover lift */
+    .btn:hover {
+        transform: none;
+    }
+
+    /* Suppress all CSS transitions */
+    .card,
+    .btn,
+    .bid-controls button,
+    #nickname-form button,
+    #model-select button {
+        transition: none;
+    }
+
+    /* Skip link — no transition */
+    .skip-link {
+        transition: none;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   5. High Contrast Mode Support
+   -------------------------------------------------------------------------- */
+
+@media (forced-colors: active) {
+    .card--legal {
+        border: 3px solid LinkText;
+    }
+
+    .card--illegal {
+        opacity: 0.6;
+    }
+
+    .skip-link:focus {
+        outline: 3px solid LinkText;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   6. ARIA Live Region Styling
+   --------------------------------------------------------------------------
+   Elements marked with aria-live get a subtle visual treatment to signal
+   that content updates dynamically.
+   -------------------------------------------------------------------------- */
+
+[aria-live="polite"] {
+    /* No visual treatment by default — this selector exists as a hook
+       for future visual indicators of dynamic content updates. */
+}
+
+/* --------------------------------------------------------------------------
+   7. Pass Button Styling
+   --------------------------------------------------------------------------
+   The pass button is styled as a secondary action distinct from Submit Bid.
+   -------------------------------------------------------------------------- */
+
+.bid-pass {
+    margin-top: 0.5rem;
+}
+
+.pass-btn {
+    padding: 0.5rem 1.25rem;
+    border: 2px solid var(--color-text-muted, #bdbdbd);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted, #bdbdbd);
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.15s, color 0.15s;
+}
+
+.pass-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--color-text, #fafafa);
+}
