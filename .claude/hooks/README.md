@@ -154,6 +154,28 @@ Telegram exchanges are recorded in the audit trail JSONL file.
 
 **Output:** `{"suppressOutput": true}` (silent)
 
+### `inbound-channel-audit.sh` / `inbound-channel-audit.py` (UserPromptSubmit)
+
+**Trigger:** Before every prompt submission (all lanes)
+
+**Purpose:** Wires `audit_channel_tag()` into the live UserPromptSubmit path so
+inbound Telegram messages (identified by `<channel source="telegram" ...>` tags)
+are recorded in the audit trail JSONL file.
+
+**Behavior:**
+1. Reads UserPromptSubmit JSON from stdin
+2. Fast guard: exits immediately (~0ms) if no `<channel` tag in prompt
+3. If tag found, delegates to `inbound-channel-audit.py` via `uv run`
+4. Python script extracts `<channel ...>body</channel>` blocks
+5. Calls `audit_channel_tag()` for each block found
+6. Best-effort: audit failures are silently swallowed (never blocks prompt)
+
+**Speed:** ~0ms for common case (no `<channel` tag); ~2-5s when auditing
+
+**Registration:** `.claude/settings.json` → `UserPromptSubmit` (timeout: 10s)
+
+**Related:** #1752, `src/bid_euchre/ops/audit_trail.py`
+
 ### `pre-bash-dispatch.sh` (PreToolUse — Bash)
 
 **Trigger:** Before any Bash tool call
@@ -203,6 +225,7 @@ Hooks are registered across two files:
 - `PostToolUse` (Bash) → `post-bash-dispatch.sh` (consolidated dispatcher)
 - `PostToolUse` (MCP Telegram tools) → `post-telegram-audit.sh` (audit trail)
 - `UserPromptSubmit` (all) → `alert-inject.sh` (fleet alert injection)
+- `UserPromptSubmit` (all) → `inbound-channel-audit.sh` (inbound Telegram audit)
 
 **`.claude/settings.local.json`** (gitignored, per-machine):
 - `SessionStart` → `worktree-reminder.sh`
