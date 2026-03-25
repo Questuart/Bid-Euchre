@@ -264,6 +264,39 @@ At the end of the run, produce a compact handoff:
 - What is blocked
 - Recommended next wave
 
+## Shutdown Sequence
+
+Before ending the fleet run, park all lanes with active sessions to prevent
+orphaned cron jobs. `/clear` alone does **not** stop cron jobs — always
+`/park` first.
+
+1. **Park central lanes** — ops and review run persistent monitoring crons
+   that must be stopped before the orchestrator exits:
+   ```bash
+   tmux send-keys -t steward:ops '/park' Enter
+   # Wait for "0 cron jobs" confirmation
+   tmux send-keys -t steward:review '/park' Enter
+   # Wait for confirmation
+   ```
+
+2. **Park idle author lanes** — any author lane with an active session but
+   no dispatched work:
+   ```bash
+   tmux send-keys -t steward:author-a '/park' Enter
+   # ... repeat for each idle lane with an active session
+   ```
+
+3. **Verify cleanup** — confirm all parked lanes report zero active cron jobs
+
+4. **Write session handoff** — only after all lanes are parked
+
+5. **Park orchestrator** — run `/park` locally to clean up the orchestrator's
+   own cron jobs (e.g., the inbox-polling cron from the Startup Checklist)
+
+**Critical rule:** Do not write the session handoff while ops or review lanes
+still have active cron jobs. Orphaned crons burn tokens and send alerts to
+an orchestrator that has stopped reading them.
+
 ## Success Condition
 
 - Maximize safe, observable, mergeable progress across all active tracks
