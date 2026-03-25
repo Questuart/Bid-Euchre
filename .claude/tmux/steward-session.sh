@@ -1,32 +1,36 @@
 #!/bin/bash
-# Canonical steward session bootstrap — 4-window layout.
+# Canonical steward session bootstrap — 5-window layout.
 # Usage: steward-session.sh [session-name]
 #
-# Creates (or attaches to) a tmux session with 4 windows:
+# Creates (or attaches to) a tmux session with 5 windows:
 #
-#   Window 1 — central-ops (4 panes, tiled layout)
-#     .1  orchestrator      -- single intake point
-#     .2  steward-analyst   -- shaping, triage, plan review
-#     .3  ops               -- operator monitoring lane
-#     .4  review            -- independent review lane
+#   Window 1 — central-ops (3 panes, main-vertical layout)
+#     .1  orchestrator      -- single intake point (large left pane)
+#     .2  ops               -- operator monitoring lane
+#     .3  review            -- independent review lane
 #
-#   Window 2 — platform (4 panes, tiled)
+#   Window 2 — analyst (4 panes, tiled)
+#     .1  analyst-a        -- primary analyst lane (shaping, triage)
+#     .2  analyst-b        -- secondary analyst lane
+#     .3  analyst-c        -- overflow analyst lane
+#     .4  analyst-d        -- overflow analyst lane
+#
+#   Window 3 — platform (4 panes, tiled)
 #     .1  author-a        -- primary platform author lane
 #     .2  author-b        -- secondary platform author lane
 #     .3  author-c        -- overflow platform author lane
 #     .4  author-d        -- overflow platform author lane
 #
-#   Window 3 — browser (4 panes, tiled)
+#   Window 4 — browser (4 panes, tiled)
 #     .1  brws-author-a   -- primary browser-game author lane
 #     .2  brws-author-b   -- secondary browser-game author lane
 #     .3  brws-author-c   -- overflow browser-game author lane
 #     .4  brws-author-d   -- overflow browser-game author lane
 #
-#   Window 4 — scratch (4 panes, tiled)
-#     .1  author-scratch  -- exploratory Claude lane
-#     .2  flex-a          -- domain-agnostic overflow lane
-#     .3  flex-b          -- domain-agnostic overflow lane
-#     .4  flex-c          -- domain-agnostic overflow lane
+#   Window 5 — flex (3 panes, tiled)
+#     .1  flex-a          -- domain-agnostic overflow lane
+#     .2  flex-b          -- domain-agnostic overflow lane
+#     .3  flex-c          -- domain-agnostic overflow lane
 #
 # Writes v2 worktree registry metadata for each launched lane.
 # See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full model.
@@ -73,13 +77,18 @@ AUTHOR_A="${PARENT_DIR}/${REPO_NAME}-steward-author"
 AUTHOR_B="${PARENT_DIR}/${REPO_NAME}-steward-author-b"
 AUTHOR_C="${PARENT_DIR}/${REPO_NAME}-steward-author-c"
 AUTHOR_D="${PARENT_DIR}/${REPO_NAME}-steward-author-d"
-AUTHOR_SCRATCH="${PARENT_DIR}/${REPO_NAME}-steward-author-scratch"
 
 # Browser-game pool worktrees
 BRWS_A="${PARENT_DIR}/${REPO_NAME}-steward-brws-author-a"
 BRWS_B="${PARENT_DIR}/${REPO_NAME}-steward-brws-author-b"
 BRWS_C="${PARENT_DIR}/${REPO_NAME}-steward-brws-author-c"
 BRWS_D="${PARENT_DIR}/${REPO_NAME}-steward-brws-author-d"
+
+# Analyst pool worktrees (analyst-a reuses existing steward-analyst)
+ANALYST_A="${PARENT_DIR}/${REPO_NAME}-steward-analyst"
+ANALYST_B="${PARENT_DIR}/${REPO_NAME}-steward-analyst-b"
+ANALYST_C="${PARENT_DIR}/${REPO_NAME}-steward-analyst-c"
+ANALYST_D="${PARENT_DIR}/${REPO_NAME}-steward-analyst-d"
 
 # Flex pool worktrees
 FLEX_A="${PARENT_DIR}/${REPO_NAME}-steward-flex-a"
@@ -89,7 +98,6 @@ FLEX_C="${PARENT_DIR}/${REPO_NAME}-steward-flex-c"
 # Control plane
 REVIEW="${PARENT_DIR}/${REPO_NAME}-steward-review"
 OPS="${PARENT_DIR}/${REPO_NAME}-steward-ops"
-ANALYST="${PARENT_DIR}/${REPO_NAME}-steward-analyst"
 MAIN_DIR="$(git -C "$MAIN_DIR" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
 
 # ---------------------------------------------------------------------------
@@ -280,13 +288,18 @@ ensure_worktree "$AUTHOR_A" "codex/steward-author"
 ensure_worktree "$AUTHOR_B" "codex/steward-author-b"
 ensure_worktree "$AUTHOR_C" "codex/steward-author-c"
 ensure_worktree "$AUTHOR_D" "codex/steward-author-d"
-ensure_worktree "$AUTHOR_SCRATCH" "codex/steward-author-scratch"
 
 # Browser-game pool
 ensure_worktree "$BRWS_A" "codex/steward-brws-author-a"
 ensure_worktree "$BRWS_B" "codex/steward-brws-author-b"
 ensure_worktree "$BRWS_C" "codex/steward-brws-author-c"
 ensure_worktree "$BRWS_D" "codex/steward-brws-author-d"
+
+# Analyst pool (detached — shaping lanes, not code-authoring)
+ensure_detached_worktree "$ANALYST_A"
+ensure_detached_worktree "$ANALYST_B"
+ensure_detached_worktree "$ANALYST_C"
+ensure_detached_worktree "$ANALYST_D"
 
 # Flex pool
 ensure_worktree "$FLEX_A" "codex/steward-flex-a"
@@ -296,19 +309,23 @@ ensure_worktree "$FLEX_C" "codex/steward-flex-c"
 # Control plane
 ensure_detached_worktree "$REVIEW"
 ensure_detached_worktree "$OPS"
-ensure_detached_worktree "$ANALYST"
 
 # Write v2 registry metadata for each lane.
 # tmux_window = group name, tmux_pane = 1-based pane index within the window.
 # Pane target format: ${SESSION}:${tmux_window}.${tmux_pane}
 # Indices are 1-based to match tmux pane-base-index=1.
 
-# Central ops  (window: central-ops, panes 1-4, tiled layout)
+# Central ops  (window: central-ops, panes 1-3, main-vertical layout)
 # Note: pane indices are 1-based to match tmux pane-base-index=1.
 write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR"       "--"                              "central-ops" "1" "foreground" "Orchestrator"
-write_lane_metadata "analyst"        "analyst"      "$ANALYST"        "detached"                        "central-ops" "2" "foreground" "Analyst"
-write_lane_metadata "ops"            "ops"          "$OPS"            "detached"                        "central-ops" "3" "foreground" "Ops"
-write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "4" "foreground" "Review"
+write_lane_metadata "ops"            "ops"          "$OPS"            "detached"                        "central-ops" "2" "foreground" "Ops"
+write_lane_metadata "review"         "review"       "$REVIEW"         "detached"                        "central-ops" "3" "foreground" "Review"
+
+# Analyst pool  (window: analyst, panes 1-4, tiled)
+write_lane_metadata "analyst-a"      "analyst"      "$ANALYST_A"      "detached"                        "analyst" "1" "background" "Analyst A"
+write_lane_metadata "analyst-b"      "analyst"      "$ANALYST_B"      "detached"                        "analyst" "2" "background" "Analyst B"
+write_lane_metadata "analyst-c"      "analyst"      "$ANALYST_C"      "detached"                        "analyst" "3" "background" "Analyst C"
+write_lane_metadata "analyst-d"      "analyst"      "$ANALYST_D"      "detached"                        "analyst" "4" "background" "Analyst D"
 
 # Platform workers  (window: platform, panes 1-4)
 write_lane_metadata "author-a"       "author"       "$AUTHOR_A"       "codex/steward-author"            "platform" "1" "background" "Author A"
@@ -322,11 +339,10 @@ write_lane_metadata "brws-author-b"  "author"       "$BRWS_B"         "codex/ste
 write_lane_metadata "brws-author-c"  "author"       "$BRWS_C"         "codex/steward-brws-author-c"     "browser" "3" "background" "Brws Author C"
 write_lane_metadata "brws-author-d"  "author"       "$BRWS_D"         "codex/steward-brws-author-d"     "browser" "4" "background" "Brws Author D"
 
-# Scratch / flex  (window: scratch, panes 1-4)
-write_lane_metadata "author-scratch" "scratch"      "$AUTHOR_SCRATCH"  "codex/steward-author-scratch"   "scratch" "1" "background" "Scratch"
-write_lane_metadata "flex-a"         "flex"          "$FLEX_A"          "codex/steward-flex-a"           "scratch" "2" "background" "Flex A"
-write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/steward-flex-b"           "scratch" "3" "background" "Flex B"
-write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "scratch" "4" "background" "Flex C"
+# Flex pool  (window: flex, panes 1-3, tiled)
+write_lane_metadata "flex-a"         "flex"          "$FLEX_A"          "codex/steward-flex-a"           "flex" "1" "background" "Flex A"
+write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/steward-flex-b"           "flex" "2" "background" "Flex B"
+write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "flex" "3" "background" "Flex C"
 
 # ---------------------------------------------------------------------------
 # Orchestrator channel flags (Platform-8a)
@@ -344,11 +360,15 @@ if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Window + pane creation — 4 windows (central-ops: 4 panes tiled, others: 4 panes tiled)
+# Window + pane creation — 5 windows
+#   central-ops: 3 panes main-vertical
+#   analyst: 4 panes tiled
+#   platform: 4 panes tiled
+#   browser: 4 panes tiled
+#   flex: 3 panes tiled
 # ---------------------------------------------------------------------------
-# All windows use tiled: 4 equal quadrants.
 
-# --- Window 1: central-ops (4 panes, tiled) ---
+# --- Window 1: central-ops (3 panes, main-vertical) ---
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $ORCH_CHANNEL_FLAGS
 
@@ -360,15 +380,24 @@ if [ -n "$STEWARD_CHANNELS" ]; then
 fi
 tmux set-environment -t "$SESSION" STEWARD_TELEGRAM_ENABLED "$STEWARD_TELEGRAM_ENABLED"
 
-tmux split-window -t "${SESSION}:central-ops" -c "$ANALYST" \
-    "$CLAUDE_BIN" --name analyst --agent steward-analyst
 tmux split-window -t "${SESSION}:central-ops" -c "$OPS" \
     "$CLAUDE_BIN" --name ops --agent steward-ops
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
     "$CLAUDE_BIN" --name review --agent steward-review
-tmux select-layout -t "${SESSION}:central-ops" tiled
+tmux select-layout -t "${SESSION}:central-ops" main-vertical
 
-# --- Window 2: platform ---
+# --- Window 2: analyst (4 panes, tiled) ---
+tmux new-window -t "$SESSION" -n analyst -c "$ANALYST_A" \
+    "$CLAUDE_BIN" --name analyst-a --agent steward-analyst
+tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_B" \
+    "$CLAUDE_BIN" --name analyst-b --agent steward-analyst
+tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_C" \
+    "$CLAUDE_BIN" --name analyst-c --agent steward-analyst
+tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_D" \
+    "$CLAUDE_BIN" --name analyst-d --agent steward-analyst
+tmux select-layout -t "${SESSION}:analyst" tiled
+
+# --- Window 3: platform ---
 tmux new-window -t "$SESSION" -n platform -c "$AUTHOR_A" \
     "$CLAUDE_BIN" --name author-a --agent steward-author-a
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_B" \
@@ -379,7 +408,7 @@ tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_D" \
     "$CLAUDE_BIN" --name author-d --agent steward-author-d
 tmux select-layout -t "${SESSION}:platform" tiled
 
-# --- Window 3: browser ---
+# --- Window 4: browser ---
 tmux new-window -t "$SESSION" -n browser -c "$BRWS_A" \
     "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_B" \
@@ -390,25 +419,23 @@ tmux split-window -t "${SESSION}:browser" -c "$BRWS_D" \
     "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d
 tmux select-layout -t "${SESSION}:browser" tiled
 
-# --- Window 4: scratch ---
-tmux new-window -t "$SESSION" -n scratch -c "$AUTHOR_SCRATCH" \
-    "$CLAUDE_BIN" --name author-scratch --agent steward-author-scratch
-tmux split-window -t "${SESSION}:scratch" -c "$FLEX_A" \
+# --- Window 5: flex (3 panes, tiled) ---
+tmux new-window -t "$SESSION" -n flex -c "$FLEX_A" \
     "$CLAUDE_BIN" --name flex-a --agent steward-flex-a
-tmux split-window -t "${SESSION}:scratch" -c "$FLEX_B" \
+tmux split-window -t "${SESSION}:flex" -c "$FLEX_B" \
     "$CLAUDE_BIN" --name flex-b --agent steward-flex-b
-tmux split-window -t "${SESSION}:scratch" -c "$FLEX_C" \
+tmux split-window -t "${SESSION}:flex" -c "$FLEX_C" \
     "$CLAUDE_BIN" --name flex-c --agent steward-flex-c
-tmux select-layout -t "${SESSION}:scratch" tiled
+tmux select-layout -t "${SESSION}:flex" tiled
 
 # Auto-launch ops monitoring loop (SP-3-08).
 # Wait briefly for the claude process to initialize, then send the /loop
 # command.  Best-effort — if it fails the ops agent can start it manually.
-# Target: central-ops window, pane 3 (ops lane).
-# Note: pane-base-index=1, so orchestrator=.1, analyst=.2, ops=.3, review=.4.
+# Target: central-ops window, pane 2 (ops lane).
+# Note: pane-base-index=1, so orchestrator=.1, ops=.2, review=.3.
 (
     sleep 10
-    tmux send-keys -t "${SESSION}:central-ops.3" \
+    tmux send-keys -t "${SESSION}:central-ops.2" \
         "/loop 3m uv run python scripts/internal/ops.py monitor" Enter
 ) &
 
@@ -416,10 +443,10 @@ tmux select-layout -t "${SESSION}:scratch" tiled
 # Triggers the review agent's startup behavior: discover recent merges,
 # review diffs, triage findings, then poll every 15 minutes.
 # Best-effort — if it fails the review agent can start it manually.
-# Target: central-ops window, pane 4 (review lane).
+# Target: central-ops window, pane 3 (review lane).
 (
     sleep 15
-    tmux send-keys -t "${SESSION}:central-ops.4" \
+    tmux send-keys -t "${SESSION}:central-ops.3" \
         "Review recently merged PRs and triage findings. Set up a 15m recurring poll." Enter
 ) &
 

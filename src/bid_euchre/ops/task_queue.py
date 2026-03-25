@@ -56,20 +56,24 @@ VALID_ACK_ACTIONS = frozenset({"approve", "edit", "redirect", "reject"})
 VALID_RESULT_STATUSES = frozenset({"completed", "failed", "blocked"})
 
 # Known author lanes that can receive dispatched work.
-# Platform pool, browser-game pool, and flex lanes.
+# Platform pool, browser-game pool, analyst pool, and flex lanes.
 KNOWN_AUTHOR_LANES = frozenset(
     {
-        # Platform pool (original)
+        # Platform pool
         "author-a",
         "author-b",
         "author-c",
         "author-d",
-        "author-scratch",
         # Browser-game pool
         "brws-author-a",
         "brws-author-b",
         "brws-author-c",
         "brws-author-d",
+        # Analyst pool (shaping, triage, plan review, investigation)
+        "analyst-a",
+        "analyst-b",
+        "analyst-c",
+        "analyst-d",
         # Flex pool (domain-agnostic overflow)
         "flex-a",
         "flex-b",

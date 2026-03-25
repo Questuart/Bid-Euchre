@@ -1112,12 +1112,16 @@ _CHECKABLE_LANES: tuple[str, ...] = (
     "author-b",
     "author-c",
     "author-d",
-    "author-scratch",
     # Browser-game pool
     "brws-author-a",
     "brws-author-b",
     "brws-author-c",
     "brws-author-d",
+    # Analyst pool
+    "analyst-a",
+    "analyst-b",
+    "analyst-c",
+    "analyst-d",
     # Flex pool
     "flex-a",
     "flex-b",

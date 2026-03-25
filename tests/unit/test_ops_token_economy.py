@@ -472,10 +472,22 @@ class TestInferLaneFromPath:
         assert lane == "author-b"
         assert wt == "Bid-Euchre-steward-author-b"
 
-    def test_platform_author_scratch(self) -> None:
+    def test_legacy_author_scratch(self) -> None:
+        """Legacy author-scratch worktree is still detected for attribution."""
         path = "/Users/foo/Bid-Euchre-meta/Bid-Euchre-steward-author-scratch"
         lane, wt = infer_lane_from_path(path)
         assert lane == "author-scratch"
+
+    def test_analyst_pool(self) -> None:
+        path = "/Users/foo/Bid-Euchre-meta/Bid-Euchre-steward-analyst"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "analyst-a"
+        assert wt == "Bid-Euchre-steward-analyst"
+
+    def test_analyst_b(self) -> None:
+        path = "/Users/foo/Bid-Euchre-meta/Bid-Euchre-steward-analyst-b"
+        lane, wt = infer_lane_from_path(path)
+        assert lane == "analyst-b"
 
     def test_browser_game_pool(self) -> None:
         path = "/Users/foo/meta/Bid-Euchre-steward-brws-author-a"
@@ -528,7 +540,7 @@ class TestInferLaneFromPath:
         assert wt == "Bid-Euchre-steward-author"
 
     def test_all_known_lanes_covered(self) -> None:
-        """Every known author lane maps from at least one worktree path."""
+        """Every known lane maps from at least one worktree path."""
         from bid_euchre.ops.token_economy import _WORKTREE_TO_LANE
 
         expected_lanes = {
@@ -536,16 +548,21 @@ class TestInferLaneFromPath:
             "author-b",
             "author-c",
             "author-d",
-            "author-scratch",
             "brws-author-a",
             "brws-author-b",
             "brws-author-c",
             "brws-author-d",
+            "analyst-a",
+            "analyst-b",
+            "analyst-c",
+            "analyst-d",
             "flex-a",
             "flex-b",
             "flex-c",
             "review",
             "ops",
+            # Legacy (retired but still in mapping for attribution)
+            "author-scratch",
         }
         assert set(_WORKTREE_TO_LANE.values()) == expected_lanes
 

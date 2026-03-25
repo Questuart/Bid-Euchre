@@ -29,12 +29,16 @@ PROTECTED_WORKTREE_NAMES = frozenset(
         "Bid-Euchre-steward-author-b",
         "Bid-Euchre-steward-author-c",
         "Bid-Euchre-steward-author-d",
-        "Bid-Euchre-steward-author-scratch",
         # Browser-game pool
         "Bid-Euchre-steward-brws-author-a",
         "Bid-Euchre-steward-brws-author-b",
         "Bid-Euchre-steward-brws-author-c",
         "Bid-Euchre-steward-brws-author-d",
+        # Analyst pool (analyst-a reuses the original steward-analyst worktree)
+        "Bid-Euchre-steward-analyst",
+        "Bid-Euchre-steward-analyst-b",
+        "Bid-Euchre-steward-analyst-c",
+        "Bid-Euchre-steward-analyst-d",
         # Flex pool
         "Bid-Euchre-steward-flex-a",
         "Bid-Euchre-steward-flex-b",
@@ -42,6 +46,8 @@ PROTECTED_WORKTREE_NAMES = frozenset(
         # Control plane
         "Bid-Euchre-steward-review",
         "Bid-Euchre-steward-ops",
+        # Legacy (retired from active layout, still protected)
+        "Bid-Euchre-steward-author-scratch",
     }
 )
 
@@ -890,16 +896,22 @@ _STEWARD_DIR_TO_LANE: dict[str, str] = {
     "Bid-Euchre-steward-author-b": "author-b",
     "Bid-Euchre-steward-author-c": "author-c",
     "Bid-Euchre-steward-author-d": "author-d",
-    "Bid-Euchre-steward-author-scratch": "author-scratch",
     "Bid-Euchre-steward-brws-author-a": "brws-author-a",
     "Bid-Euchre-steward-brws-author-b": "brws-author-b",
     "Bid-Euchre-steward-brws-author-c": "brws-author-c",
     "Bid-Euchre-steward-brws-author-d": "brws-author-d",
+    # Analyst pool (analyst-a reuses the original steward-analyst worktree)
+    "Bid-Euchre-steward-analyst": "analyst-a",
+    "Bid-Euchre-steward-analyst-b": "analyst-b",
+    "Bid-Euchre-steward-analyst-c": "analyst-c",
+    "Bid-Euchre-steward-analyst-d": "analyst-d",
     "Bid-Euchre-steward-flex-a": "flex-a",
     "Bid-Euchre-steward-flex-b": "flex-b",
     "Bid-Euchre-steward-flex-c": "flex-c",
     "Bid-Euchre-steward-review": "review",
     "Bid-Euchre-steward-ops": "ops",
+    # Legacy (retired from active layout, kept for derivation)
+    "Bid-Euchre-steward-author-scratch": "author-scratch",
 }
 
 
@@ -940,12 +952,14 @@ def derive_lane_class(lane_id: str) -> str:
         lane_id: Lane identifier (e.g., ``"author-b"``, ``"ops"``).
 
     Returns:
-        One of ``"ops"``, ``"review"``, ``"scratch"``, ``"author"``.
+        One of ``"ops"``, ``"review"``, ``"analyst"``, ``"scratch"``, ``"author"``.
     """
     if lane_id == "ops":
         return "ops"
     if lane_id == "review":
         return "review"
+    if lane_id.startswith("analyst-"):
+        return "analyst"
     if lane_id.endswith("-scratch"):
         return "scratch"
     # author-*, brws-author-*, flex-* are all author-class lanes.
