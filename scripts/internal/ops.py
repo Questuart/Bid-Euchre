@@ -1859,22 +1859,49 @@ def cmd_inbox(args: argparse.Namespace) -> int:
             print(f"  Status: {result.get('status', '?')}")
         return 0
 
-    elif action == "ack-all":
+    elif action in ("ack-all", "bulk-ack"):
         import re
+        from datetime import datetime, timezone
 
         lane = getattr(args, "lane", None)
         if not lane:
             print(
-                "Usage: ops.py inbox ack-all --lane LANE [--filter-summary PATTERN]",
+                "Usage: ops.py inbox ack-all --lane LANE"
+                " [--filter-summary PATTERN] [--max-age HOURS]",
                 file=sys.stderr,
             )
             return 1
+
+        # Build composable filter predicates
+        predicates: list = []
+
         summary_pattern = getattr(args, "filter_summary", None)
         if summary_pattern:
             pat = re.compile(summary_pattern, re.IGNORECASE)
+            predicates.append(lambda msg: bool(pat.search(msg.get("summary", ""))))
+
+        max_age_hours = getattr(args, "max_age", None)
+        if max_age_hours is not None:
+            cutoff = datetime.now(timezone.utc).timestamp() - max_age_hours * 3600
+
+            def _older_than_cutoff(msg: dict) -> bool:
+                created = msg.get("created_at", "")
+                if not created:
+                    return False
+                try:
+                    ts = datetime.fromisoformat(
+                        created.replace("Z", "+00:00")
+                    ).timestamp()
+                except (ValueError, TypeError):
+                    return False
+                return ts < cutoff
+
+            predicates.append(_older_than_cutoff)
+
+        if predicates:
 
             def filter_fn(msg: dict) -> bool:
-                return bool(pat.search(msg.get("summary", "")))
+                return all(p(msg) for p in predicates)
         else:
 
             def filter_fn(msg: dict) -> bool:
@@ -3442,7 +3469,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     inbox_ack_all_parser = inbox_sub.add_parser(
-        "ack-all", help="Bulk-acknowledge inbox messages"
+        "ack-all",
+        aliases=["bulk-ack"],
+        help="Bulk-acknowledge inbox messages",
     )
     inbox_ack_all_parser.add_argument(
         "--lane", required=True, help="Lane whose inbox to bulk-ack"
@@ -3451,6 +3480,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--filter-summary",
         default=None,
         help="Regex pattern to match against message summary (case-insensitive)",
+    )
+    inbox_ack_all_parser.add_argument(
+        "--max-age",
+        type=float,
+        default=None,
+        help="Only ack messages older than N hours (based on created_at)",
     )
 
     inbox_purge_parser = inbox_sub.add_parser(
