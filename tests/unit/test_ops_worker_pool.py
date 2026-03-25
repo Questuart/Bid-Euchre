@@ -2270,7 +2270,10 @@ class TestDispatchWithReset:
         mock_vis: MagicMock,
         runtime_dir: Path,
     ) -> None:
-        """Dispatch with reset=False (default) should NOT call reset_worktree."""
+        """Dispatch with reset=False (default) should NOT call reset_worktree.
+
+        The pre-nudge /clear is still called via the session_cleared path.
+        """
         from bid_euchre.ops.task_queue import TaskPacket
 
         mock_load.return_value = TaskPacket(
@@ -2293,13 +2296,22 @@ class TestDispatchWithReset:
         with (
             patch(f"{_WORKER_POOL}.reset_worktree") as mock_reset,
             patch(f"{_WORKER_POOL}.clear_session") as mock_clear,
+            patch(f"{_WORKER_POOL}._probe_tmux_pane", return_value=True),
+            patch("time.sleep"),
         ):
+            mock_clear.return_value = PoolAction(
+                action="clear_session",
+                lane_id="author-a",
+                reason="Clear OK",
+                executed=True,
+            )
             result = dispatch_to_worker(
                 "pkt1", "author-a", runtime_dir=runtime_dir, reset=False
             )
             assert result.executed is True
             mock_reset.assert_not_called()
-            mock_clear.assert_not_called()
+            # Pre-nudge /clear IS called (for stale context prevention)
+            mock_clear.assert_called_once()
 
     @patch(f"{_DASHBOARD}.set_lane_visibility")
     @patch(f"{_WORKER_POOL}.nudge_pane")
@@ -2592,6 +2604,9 @@ class TestDispatchAutoRefresh:
 
     @patch(f"{_DASHBOARD}.set_lane_visibility")
     @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}._probe_tmux_pane")
     @patch(f"{_WORKER_POOL}.refresh_worker")
     @patch(f"{_WORKER_POOL}._is_worktree_stale")
     @patch(f"{_WORKER_POOL}.take_pool_snapshot")
@@ -2606,11 +2621,18 @@ class TestDispatchAutoRefresh:
         mock_snapshot: MagicMock,
         mock_stale: MagicMock,
         mock_refresh: MagicMock,
+        mock_probe: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
         mock_nudge: MagicMock,
         mock_vis: MagicMock,
         runtime_dir: Path,
     ) -> None:
-        """Dispatch should succeed even when auto-refresh fails."""
+        """Dispatch should succeed even when auto-refresh fails.
+
+        When auto-refresh fails, session_cleared stays False so the
+        pre-nudge /clear path fires.
+        """
         from bid_euchre.ops.task_queue import TaskPacket
 
         mock_load.return_value = TaskPacket(
@@ -2631,6 +2653,13 @@ class TestDispatchAutoRefresh:
             executed=False,
             error="dirty_worktree",
         )
+        mock_probe.return_value = True
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id="author-a",
+            reason="Clear OK",
+            executed=True,
+        )
         mock_nudge.return_value = PoolAction(
             action="nudge",
             lane_id="author-a",
@@ -2642,6 +2671,250 @@ class TestDispatchAutoRefresh:
         # Dispatch should still succeed despite refresh failure
         assert result.executed is True
         mock_refresh.assert_called_once()
+        # Pre-nudge /clear fires because auto-refresh didn't clear
+        mock_clear.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Pre-nudge /clear
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchPreNudgeClear:
+    """Test pre-nudge /clear behavior in dispatch_to_worker()."""
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}._probe_tmux_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_clears_session_before_nudge(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_probe: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Normal dispatch (no reset, not stale) sends /clear before /start-task."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_probe.return_value = True
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id="author-a",
+            reason="Clear OK",
+            executed=True,
+        )
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        # Pre-nudge /clear should have been called
+        mock_clear.assert_called_once()
+        mock_probe.assert_called_once()
+        # Sleep 3s for session reset
+        mock_sleep.assert_called_once_with(3)
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}._probe_tmux_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_skips_clear_when_pane_not_alive(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_probe: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Pre-nudge /clear is skipped when the pane is not alive (fresh boot)."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_probe.return_value = False  # No active pane
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        # /clear should NOT have been called — pane is not alive
+        mock_clear.assert_not_called()
+        mock_sleep.assert_not_called()
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}._probe_tmux_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_skips_pre_nudge_clear_when_reset_already_cleared(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_probe: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """When reset=True clears the session, pre-nudge /clear is skipped."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        with patch(f"{_WORKER_POOL}.reset_worktree") as mock_reset:
+            mock_reset.return_value = PoolAction(
+                action="reset_worktree",
+                lane_id="author-a",
+                reason="Reset OK",
+                executed=True,
+            )
+            mock_clear.return_value = PoolAction(
+                action="clear_session",
+                lane_id="author-a",
+                reason="Clear OK",
+                executed=True,
+            )
+
+            result = dispatch_to_worker(
+                "pkt1", "author-a", runtime_dir=runtime_dir, reset=True
+            )
+            assert result.executed is True
+
+            # clear_session called once (by reset path), NOT twice
+            mock_clear.assert_called_once()
+            # _probe_tmux_pane should NOT be checked — session already cleared
+            mock_probe.assert_not_called()
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch("time.sleep")
+    @patch(f"{_WORKER_POOL}.clear_session")
+    @patch(f"{_WORKER_POOL}._probe_tmux_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_continues_if_pre_nudge_clear_fails(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_probe: MagicMock,
+        mock_clear: MagicMock,
+        mock_sleep: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch succeeds even if the pre-nudge /clear fails (best-effort)."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_probe.return_value = True
+        mock_clear.return_value = PoolAction(
+            action="clear_session",
+            lane_id="author-a",
+            reason="Clear failed: tmux timeout",
+            executed=False,
+            error="clear_failed",
+        )
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="Nudge OK",
+            executed=True,
+        )
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        # /clear was attempted but failed — no sleep
+        mock_clear.assert_called_once()
+        mock_sleep.assert_not_called()
+        # nudge still fires
+        mock_nudge.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -1236,6 +1236,8 @@ def dispatch_to_worker(
     4b. Copy dispatched packet JSON to the target worktree's task_queue
         so the author lane can discover it via ``/start-task``.
     5. Write inbox message via message_bus (audit trail).
+    5b. Send ``/clear`` to the lane pane if not already cleared by steps
+        3a/3b, and the pane is alive.  Waits 3s for session reset.
     6. Nudge the target pane with ``/start-task <packet_id>``.
     7. Record delivery outcome (update inbox message status).
     8. Set lane visibility to "foreground".
@@ -1339,6 +1341,9 @@ def dispatch_to_worker(
                 error=f"wake_failed:{wake_result.error}",
             )
 
+    # Track whether /clear was already sent to avoid double-clearing.
+    session_cleared = False
+
     # 3a. Auto-refresh stale worktrees
     #     Skip if caller already requested explicit reset (step 3b does the same
     #     thing) or if auto-refresh is disabled.
@@ -1356,6 +1361,7 @@ def dispatch_to_worker(
             )
             if auto_refresh.executed:
                 logger.info("Auto-refresh succeeded for %s", lane_id)
+                session_cleared = True
                 import time
 
                 # Brief pause to let /clear complete before sending /start-task
@@ -1385,6 +1391,7 @@ def dispatch_to_worker(
                 lane_id,
                 clear_result.reason,
             )
+        session_cleared = True
         import time
 
         # Brief pause to let /clear complete before sending /start-task
@@ -1469,6 +1476,32 @@ def dispatch_to_worker(
             packet_id,
             exc,
         )
+
+    # 5b. Clear stale context before nudging (unless already cleared above).
+    #     Prevents the lane from carrying 70-150k tokens of old task context
+    #     into a new task.  Skipped if the pane is not alive (fresh boot).
+    if not session_cleared:
+        pane_alive = _probe_tmux_pane(lane_id, tmux_session, runtime_dir=runtime_dir)
+        if pane_alive:
+            clear_result = clear_session(
+                lane_id, tmux_session=tmux_session, runtime_dir=runtime_dir
+            )
+            if clear_result.executed:
+                import time
+
+                # Pause to let /clear complete before sending /start-task
+                time.sleep(3)
+            else:
+                logger.warning(
+                    "Pre-nudge session clear failed for %s: %s (continuing)",
+                    lane_id,
+                    clear_result.reason,
+                )
+        else:
+            logger.info(
+                "Lane %s has no active pane; skipping pre-nudge /clear",
+                lane_id,
+            )
 
     # 6. Nudge the target pane
     nudge_result = nudge_pane(lane_id, packet_id, tmux_session=tmux_session)
