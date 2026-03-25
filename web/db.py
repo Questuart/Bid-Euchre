@@ -128,6 +128,14 @@ class Hand(Base):
         nullable=False,
     )
     winning_bid_n = Column(Integer, nullable=True)
+    winning_bid_type = Column(
+        String,
+        CheckConstraint(
+            "winning_bid_type IS NULL "
+            "OR winning_bid_type IN ('regular', 'moon', 'loner')"
+        ),
+        nullable=True,
+    )
     winning_contract = Column(
         String,
         CheckConstraint(
@@ -139,6 +147,11 @@ class Hand(Base):
     bidder_seat = Column(
         Integer,
         CheckConstraint("bidder_seat IS NULL OR bidder_seat BETWEEN 0 AND 3"),
+        nullable=True,
+    )
+    sitting_out_seat = Column(
+        Integer,
+        CheckConstraint("sitting_out_seat IS NULL OR sitting_out_seat BETWEEN 0 AND 3"),
         nullable=True,
     )
     contract_type = Column(

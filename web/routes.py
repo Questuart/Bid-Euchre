@@ -104,7 +104,9 @@ def _update_hand_row(hand_row: Hand, hand_state) -> None:
     if hand_state.phase == "complete":
         hand_row.status = "complete"
         hand_row.winning_bid_n = hand_state.winning_bid
+        hand_row.winning_bid_type = hand_state.bid_type
         hand_row.bidder_seat = hand_state.bidder_seat
+        hand_row.sitting_out_seat = hand_state.sitting_out_seat
         hand_row.contract_type = hand_state.contract_type
         hand_row.trump_suit = hand_state.trump
         hand_row.winning_contract = _winning_contract_code(hand_state)
@@ -548,6 +550,7 @@ async def submit_bid(
     turn_number: int = Form(...),
     bid_n: int = Form(...),
     bid_contract: str = Form(None),
+    bid_type: str = Form("regular"),
 ):
     """Submit a bid action."""
     session = _get_session(request)
@@ -588,11 +591,19 @@ async def submit_bid(
                 raise HTTPException(
                     status_code=400, detail="bid_contract required for non-pass bids"
                 )
-            bid = BidAction.bid(bid_n, bid_contract)
+            if bid_type == "moon":
+                bid = BidAction.moon(bid_contract)
+            elif bid_type == "loner":
+                bid = BidAction.loner(bid_contract)
+            else:
+                bid = BidAction.bid(bid_n, bid_contract)
 
-        # Validate legality
+        # Validate legality using overcall-aware comparison
         legal_bids = engine.get_legal_bids(state)
-        if not any(b.n == bid.n and b.contract == bid.contract for b in legal_bids):
+        if not any(
+            b.n == bid.n and b.contract == bid.contract and b.bid_type == bid.bid_type
+            for b in legal_bids
+        ):
             raise HTTPException(status_code=400, detail="Illegal bid")
 
         # Record pre-action state for decision logging
@@ -611,8 +622,15 @@ async def submit_bid(
             phase="bid",
             actor_type="human",
             decision_source="human",
-            legal_actions=[{"n": b.n, "contract": b.contract} for b in legal_bids],
-            chosen_action={"n": bid.n, "contract": bid.contract},
+            legal_actions=[
+                {"n": b.n, "contract": b.contract, "bid_type": b.bid_type}
+                for b in legal_bids
+            ],
+            chosen_action={
+                "n": bid.n,
+                "contract": bid.contract,
+                "bid_type": bid.bid_type,
+            },
             game_state=engine.get_visible_state(state),
         )
 

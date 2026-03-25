@@ -13,8 +13,14 @@ from typing import Any
 from bid_euchre.core.rules import get_legal_indices, trick_winner
 from bid_euchre.scoring import compute_points
 from bid_euchre.sim.deals import generate_deal
+from bid_euchre.sim.exchange import perform_exchange
 from bid_euchre.strategy.base import Strategy
-from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
+from bid_euchre.strategy.bidding import (
+    BidAction,
+    BiddingObservation,
+    BiddingPolicy,
+    enumerate_legal_actions,
+)
 
 from .state import HandState, MatchState, TrickResult, TrickState
 
@@ -33,6 +39,33 @@ _TRICKS_PER_HAND = 10
 def _bid_order(dealer_seat: int) -> list[int]:
     """Return the four seats in auction order starting left of dealer."""
     return [(dealer_seat + i + 1) % _NUM_PLAYERS for i in range(_NUM_PLAYERS)]
+
+
+def _current_bid_rank(hand: HandState) -> int:
+    """Compute the bid_rank of the current winning bid.
+
+    Returns -1 if no bid has been placed yet.
+    """
+    if hand.bidder_seat is None:
+        return -1
+    type_rank = BidAction._BID_TYPE_RANK.get(hand.bid_type, 0)
+    if hand.bid_type == "regular":
+        return hand.current_high_bid
+    # moon = 11, loner = 12
+    return 10 + type_rank
+
+
+def _next_active_seat(seat: int, sitting_out_seat: int | None) -> int:
+    """Return the next clockwise seat, skipping the sitting-out seat."""
+    next_seat = (seat + 1) % _NUM_PLAYERS
+    if sitting_out_seat is not None and next_seat == sitting_out_seat:
+        next_seat = (next_seat + 1) % _NUM_PLAYERS
+    return next_seat
+
+
+def _players_per_trick(sitting_out_seat: int | None) -> int:
+    """Return how many players participate in each trick."""
+    return 3 if sitting_out_seat is not None else 4
 
 
 @dataclass
@@ -62,6 +95,7 @@ def _build_game_snapshot(hand: Any, seat: int) -> dict[str, Any]:
         "auction": list(hand.auction),
         "contract_type": hand.contract_type,
         "trump": hand.trump,
+        "bid_type": hand.bid_type,
         "tricks_team0": hand.tricks_team0,
         "tricks_team1": hand.tricks_team1,
         "hand_size": len(hand.hands[seat]),
@@ -87,6 +121,12 @@ class MatchEngine:
     The human is always at ``HUMAN_SEAT`` (seat 0, team 0 with seat 2).
     AI seats are 1, 2, 3.  The engine pauses whenever it is the human's
     turn to act (bid or play) and auto-advances through all AI turns.
+
+    Moon/loner support:
+    - Moon bids trigger a 2-card exchange with the partner before trick play.
+    - Loner bids cause the declarer's partner to sit out during trick play
+      (3-player tricks).
+    - Overcall hierarchy: regular 1-10 < moon < loner.
     """
 
     def __init__(
@@ -137,21 +177,28 @@ class MatchEngine:
     def get_legal_bids(self, state: MatchState) -> list[BidAction]:
         """Return legal bids for the current bidder.
 
-        Legal bids are strictly increasing: bid.n > current_high_bid, or pass.
+        Delegates to ``enumerate_legal_actions`` with moon/loner enabled.
+        Overcall hierarchy: regular 1-10 < moon < loner.
+        Dealer take-away (match) is supported for moon and loner.
         """
         hand = state.current_hand
         assert hand is not None and hand.phase == "auction"
 
-        current_high = hand.current_high_bid
-        legal: list[BidAction] = [BidAction.pass_bid()]
-
-        # Regular bids: anything strictly above the current high bid
-        contracts = ["C", "D", "H", "S", "HIGH", "LOW"]
-        for n in range(max(1, current_high + 1), _TRICKS_PER_HAND + 1):
-            for c in contracts:
-                legal.append(BidAction.bid(n, c))
-
-        return legal
+        seat = hand.current_seat
+        obs = BiddingObservation(
+            hand=hand.hands[seat],
+            seat=seat,
+            dealer_seat=hand.dealer_seat,
+            current_high_bid=hand.current_high_bid,
+            auction_transcript=tuple(hand.auction),
+        )
+        is_dealer = seat == hand.dealer_seat
+        return enumerate_legal_actions(
+            obs,
+            include_moon_loner=True,
+            current_bid_type=hand.bid_type,
+            is_dealer=is_dealer,
+        )
 
     def get_legal_plays(self, state: MatchState) -> list[int]:
         """Return legal card indices for the current seat.
@@ -175,7 +222,8 @@ class MatchEngine:
         """Return state visible to the human player.
 
         Includes: own hand, current trick, completed tricks, scores, auction
-        transcript, phase.  Excludes: other players' hands.
+        transcript, phase, bid_type, sitting_out_seat.
+        Excludes: other players' hands.
         """
         hand = state.current_hand
         result: dict[str, Any] = {
@@ -198,6 +246,8 @@ class MatchEngine:
         result["auction"] = list(hand.auction)
         result["contract_type"] = hand.contract_type
         result["trump"] = hand.trump
+        result["bid_type"] = hand.bid_type
+        result["sitting_out_seat"] = hand.sitting_out_seat
         result["current_trick"] = (
             None
             if hand.current_trick is None
@@ -244,6 +294,9 @@ class MatchEngine:
 
         Populates ``self.last_ai_events`` with exact decision data for every
         AI action taken during this advance cycle.
+
+        For loner hands where the human is sitting out (partner bid loner),
+        auto-advances through all trick play without pausing.
         """
         while True:
             # Match finished — nothing to advance
@@ -254,9 +307,15 @@ class MatchEngine:
             if hand is None:
                 return state
 
-            # If human's turn, stop and wait for input
+            # If human's turn AND human is not sitting out, pause for input
             if hand.current_seat == HUMAN_SEAT:
-                return state
+                if hand.sitting_out_seat != HUMAN_SEAT:
+                    return state
+                # Human is sitting out (partner bid loner) — skip is handled
+                # by _next_active_seat in trick play.  If we reach here during
+                # auction, it's the human's normal turn.
+                if hand.phase == "auction":
+                    return state
 
             # Hand is complete or redeal — handled by callers already
             if hand.phase in ("complete", "redeal"):
@@ -282,9 +341,18 @@ class MatchEngine:
                         seat=seat,
                         phase="bid",
                         legal_actions=[
-                            {"n": b.n, "contract": b.contract} for b in legal_bids
+                            {
+                                "n": b.n,
+                                "contract": b.contract,
+                                "bid_type": b.bid_type,
+                            }
+                            for b in legal_bids
                         ],
-                        chosen_action={"n": bid.n, "contract": bid.contract},
+                        chosen_action={
+                            "n": bid.n,
+                            "contract": bid.contract,
+                            "bid_type": bid.bid_type,
+                        },
                         game_state=_build_game_snapshot(hand, seat),
                     )
                 )
@@ -363,12 +431,13 @@ class MatchEngine:
             entry["action"] = "bid"
             entry["contract"] = bid.contract
             entry["bid_type"] = bid.bid_type
-            # Track the high bidder — a non-pass bid must strictly
-            # overcall the current best (or be the first bid).
-            if hand.bidder_seat is None or bid.n > hand.current_high_bid:
+            # Track the high bidder using overcall hierarchy:
+            # regular 1-10 < moon < loner
+            if bid.bid_rank() > _current_bid_rank(hand):
                 hand.current_high_bid = bid.n
                 hand.bidder_seat = seat
                 hand.winning_bid = bid.n
+                hand.bid_type = bid.bid_type
                 ct, ts = bid.to_contract_tuple()
                 hand.contract_type = ct
                 hand.trump = ts
@@ -403,7 +472,7 @@ class MatchEngine:
         return state
 
     def _process_auction_end(self, state: MatchState) -> MatchState:
-        """Finalize the auction: set contract or trigger redeal."""
+        """Finalize the auction: set contract, run exchange, or trigger redeal."""
         hand = state.current_hand
         assert hand is not None
 
@@ -414,10 +483,31 @@ class MatchEngine:
             hand.phase = "redeal"
             return state
 
+        # Moon exchange: mooner gives 2 worst cards, receives partner's 2 best
+        if hand.bid_type == "moon":
+            mooner_seat = hand.bidder_seat
+            partner_seat = (mooner_seat + 2) % _NUM_PLAYERS
+            (
+                hand.hands[mooner_seat],
+                hand.hands[partner_seat],
+                cards_given,
+                cards_received,
+            ) = perform_exchange(
+                mooner_hand=hand.hands[mooner_seat],
+                partner_hand=hand.hands[partner_seat],
+                contract_type=hand.contract_type or "suit",
+                trump_suit=hand.trump,
+            )
+            hand.exchange_given = [[c.suit, c.rank] for c in cards_given]
+            hand.exchange_received = [[c.suit, c.rank] for c in cards_received]
+
+        # Loner: partner sits out during trick play
+        if hand.bid_type == "loner":
+            hand.sitting_out_seat = (hand.bidder_seat + 2) % _NUM_PLAYERS
+
         # Contract set — transition to trick play
         hand.phase = "trick_play"
         # Declarer leads first trick (RULES.md §5.1)
-        assert hand.bidder_seat is not None
         leader = hand.bidder_seat
         hand.current_trick = TrickState(leader=leader)
         hand.current_seat = leader
@@ -441,13 +531,13 @@ class MatchEngine:
         hand.current_trick.plays.append((seat, card))
         hand.turn_number += 1
 
-        # Check if trick is complete (4 plays)
-        if len(hand.current_trick.plays) >= _NUM_PLAYERS:
+        # Check if trick is complete (3 plays for loner, 4 otherwise)
+        ppt = _players_per_trick(hand.sitting_out_seat)
+        if len(hand.current_trick.plays) >= ppt:
             state = self._process_trick_end(state)
         else:
-            # Advance to next player in clockwise order from leader
-            next_seat = (seat + 1) % _NUM_PLAYERS
-            hand.current_seat = next_seat
+            # Advance to next active player (skip sitting-out seat)
+            hand.current_seat = _next_active_seat(seat, hand.sitting_out_seat)
 
         return state
 
@@ -482,9 +572,12 @@ class MatchEngine:
         if len(hand.completed_tricks) >= _TRICKS_PER_HAND:
             state = self._process_hand_end(state)
         else:
-            # Winner leads next trick
-            hand.current_trick = TrickState(leader=winner)
-            hand.current_seat = winner
+            # Winner leads next trick (skip sitting-out seat if needed)
+            leader = winner
+            if hand.sitting_out_seat is not None and leader == hand.sitting_out_seat:
+                leader = _next_active_seat(leader, hand.sitting_out_seat)
+            hand.current_trick = TrickState(leader=leader)
+            hand.current_seat = leader
 
         return state
 
@@ -498,11 +591,8 @@ class MatchEngine:
         hand.phase = "complete"
         hand.current_trick = None
 
-        # Determine bid_type from auction
-        bid_type = "regular"
-        for entry in hand.auction:
-            if entry.get("seat") == hand.bidder_seat and entry.get("action") == "bid":
-                bid_type = entry.get("bid_type", "regular")
+        # Use the bid_type tracked on hand state (set during auction)
+        bid_type = hand.bid_type
 
         # Delegate scoring to the canonical function
         pts0, pts1 = compute_points(
