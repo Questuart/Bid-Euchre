@@ -93,7 +93,6 @@ def _consistent_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-
 # ---------------------------------------------------------------------------
 # 1. Lifecycle: reconcile → persist → reload
 # ---------------------------------------------------------------------------
