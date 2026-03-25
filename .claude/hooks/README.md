@@ -202,6 +202,7 @@ Hooks are registered across two files:
 - `PostToolUse` (Write|Edit) → `post-write-check.sh`
 - `PostToolUse` (Bash) → `post-bash-dispatch.sh` (consolidated dispatcher)
 - `PostToolUse` (MCP Telegram tools) → `post-telegram-audit.sh` (audit trail)
+- `UserPromptSubmit` (all) → `alert-inject.sh` (fleet alert injection)
 
 **`.claude/settings.local.json`** (gitignored, per-machine):
 - `SessionStart` → `worktree-reminder.sh`
@@ -305,3 +306,23 @@ Since hooks can't change directories, the workflow is:
 4. User restarts Claude in new location
 
 This reduces friction from "manual branch creation + worktree creation + cd" to just "cd + restart".
+
+### `alert-inject.sh` / `alert-inject.py` (UserPromptSubmit)
+
+**Trigger:** Before every prompt submission (all lanes)
+
+**Purpose:** Mechanically inject unresolved HIGH/URGENT fleet alerts into
+conversation context so the orchestrator cannot miss them.
+
+**Behavior:**
+1. Reads `.claude/runtime/fleet_status.json` (written by controller/reconciler)
+2. Filters for open items with severity `high` or `urgent`
+3. If any found: outputs `{"additionalContext": "..."}` with alert summary
+4. If none found: exits cleanly with no output (exit 0)
+5. Never blocks prompt submission — advisory injection only
+
+**Speed:** ~100ms (stdlib-only Python, no project imports, no `uv` overhead)
+
+**Registration:** `.claude/settings.json` → `UserPromptSubmit` (timeout: 5s)
+
+**Related:** #1608, `src/bid_euchre/ops/control_plane.py`
