@@ -276,6 +276,7 @@ def audit_reply(
     reply_to: str | None = None,
     files: list[str] | None = None,
     audit_dir: Path | None = None,
+    timestamp: str | None = None,
 ) -> AuditRecord:
     """Log an outbound reply to the audit trail.
 
@@ -288,6 +289,8 @@ def audit_reply(
         reply_to: Optional message ID being replied to.
         files: Optional list of file paths attached to the reply.
         audit_dir: Override for audit trail directory.
+        timestamp: Optional ISO 8601 timestamp override. Defaults to current
+            UTC time. Useful in tests to decouple from wall-clock time.
 
     Returns:
         The persisted :class:`AuditRecord`.
@@ -306,6 +309,7 @@ def audit_reply(
         content=body,
         chat_id=chat_id,
         metadata=metadata if metadata else None,
+        timestamp=timestamp,
     )
     append_record(record, audit_dir=audit_dir)
     return record
@@ -316,6 +320,7 @@ def audit_react(
     message_id: str,
     emoji: str,
     audit_dir: Path | None = None,
+    timestamp: str | None = None,
 ) -> AuditRecord:
     """Log an outbound reaction to the audit trail.
 
@@ -327,6 +332,8 @@ def audit_react(
         message_id: Message ID being reacted to.
         emoji: The emoji reaction.
         audit_dir: Override for audit trail directory.
+        timestamp: Optional ISO 8601 timestamp override. Defaults to current
+            UTC time. Useful in tests to decouple from wall-clock time.
 
     Returns:
         The persisted :class:`AuditRecord`.
@@ -340,6 +347,7 @@ def audit_react(
         chat_id=chat_id,
         message_id=message_id,
         metadata={"emoji": emoji},
+        timestamp=timestamp,
     )
     append_record(record, audit_dir=audit_dir)
     return record
@@ -350,6 +358,7 @@ def audit_edit(
     message_id: str,
     body: str,
     audit_dir: Path | None = None,
+    timestamp: str | None = None,
 ) -> AuditRecord:
     """Log an outbound message edit to the audit trail.
 
@@ -361,6 +370,8 @@ def audit_edit(
         message_id: Message ID being edited.
         body: The new message text after editing.
         audit_dir: Override for audit trail directory.
+        timestamp: Optional ISO 8601 timestamp override. Defaults to current
+            UTC time. Useful in tests to decouple from wall-clock time.
 
     Returns:
         The persisted :class:`AuditRecord`.
@@ -373,6 +384,7 @@ def audit_edit(
         content=body,
         chat_id=chat_id,
         message_id=message_id,
+        timestamp=timestamp,
     )
     append_record(record, audit_dir=audit_dir)
     return record
@@ -480,6 +492,7 @@ def audit_mcp_outbound(
     tool_name: str,
     tool_args: dict[str, Any],
     audit_dir: Path | None = None,
+    timestamp: str | None = None,
 ) -> AuditRecord | None:
     """Audit an outbound MCP tool call if it is an auditable Telegram exchange.
 
@@ -490,6 +503,8 @@ def audit_mcp_outbound(
         tool_name: The MCP tool name (e.g. ``"mcp__plugin_telegram_telegram__reply"``).
         tool_args: The arguments dict passed to the MCP tool.
         audit_dir: Override for audit trail directory.
+        timestamp: Optional ISO 8601 timestamp override. Defaults to current
+            UTC time. Useful in tests to decouple from wall-clock time.
 
     Returns:
         The :class:`AuditRecord` if an audit entry was written, or ``None``
@@ -528,6 +543,7 @@ def audit_mcp_outbound(
             reply_to=str(reply_to) if reply_to is not None else None,
             files=files,
             audit_dir=audit_dir,
+            timestamp=timestamp,
         )
 
     if exchange_type == "react":
@@ -538,6 +554,7 @@ def audit_mcp_outbound(
             message_id=message_id,
             emoji=emoji,
             audit_dir=audit_dir,
+            timestamp=timestamp,
         )
 
     if exchange_type == "edit":
@@ -548,6 +565,7 @@ def audit_mcp_outbound(
             message_id=message_id,
             body=str(body),
             audit_dir=audit_dir,
+            timestamp=timestamp,
         )
 
     return None  # pragma: no cover
