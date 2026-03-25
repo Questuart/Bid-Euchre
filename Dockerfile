@@ -35,6 +35,10 @@ RUN uv sync --frozen --no-dev --extra hosted
 RUN addgroup --system app && adduser --system --ingroup app app \
     && chown -R app:app /app
 
+# uv cache must be writable by the non-root user; the default
+# ~/.cache/uv resolves to /nonexistent/.cache/uv which doesn't exist.
+ENV UV_CACHE_DIR=/tmp/uv-cache
+
 USER app
 
 EXPOSE 8000
