@@ -2115,6 +2115,41 @@ class TestCheckApprovalStalls:
         assert len(approval_findings) >= 1
         assert "flex-a" in approval_findings[0].summary
 
+    def test_detects_do_you_want_to_make_this_edit(self, tmp_path: Path) -> None:
+        """Catches 'Do you want to make this edit' prompts (#1672)."""
+        pane_content = {
+            "brws-author-a": (
+                "Editing SKILL.md...\n"
+                "Do you want to make this edit to SKILL.md?\n"
+                ">\n"
+            ),
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        notifications: list[tuple[str, str, str]] = []
+
+        def notify_fn(lane_id: str, prompt_text: str, target: str) -> None:
+            notifications.append((lane_id, prompt_text, target))
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:browser.1",
+        ):
+            findings = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=notify_fn,
+            )
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_HIGH
+        assert findings[0].category == "approval_stall"
+        assert "brws-author-a" in findings[0].summary
+        assert "Do you want to make this edit" in findings[0].summary
+        assert len(notifications) == 1
+
     def test_no_false_positive_on_normal_output(self, tmp_path: Path) -> None:
         """Normal pane output does not trigger false positives."""
         pane_content = {
@@ -2255,6 +2290,20 @@ class TestMatchApprovalPrompt:
 
     def test_matches_yes_always(self) -> None:
         content = "prompt\n  [Y]es, always allow\n"
+        result = _match_approval_prompt(content)
+        assert result is not None
+
+    def test_matches_do_you_want_to_make_this_edit(self) -> None:
+        """Catches 'Do you want to make this edit' permission prompts (#1672)."""
+        content = (
+            "Working on SKILL.md...\n" "Do you want to make this edit to SKILL.md?\n"
+        )
+        result = _match_approval_prompt(content)
+        assert result is not None
+        assert "Do you want to make this edit" in result
+
+    def test_matches_do_you_want_to_make_this_edit_case_insensitive(self) -> None:
+        content = "output\ndo you want to make this edit to settings.json?\n"
         result = _match_approval_prompt(content)
         assert result is not None
 
