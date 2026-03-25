@@ -155,6 +155,55 @@ class TestHybridOlsa:
             for m in caplog.messages
         )
 
+    def test_hybrid_olsa_falls_back_to_models_dir_on_cwd_load_failure(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """When CWD-relative artifact exists but fails to load, fall back to models_dir.
+
+        Regression test for #1700: if the CWD-relative file is found but
+        invalid, the loader should still try the models_dir candidate before
+        giving up.
+        """
+        # CWD has a bad artifact
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+        rel_dir = workdir / "rel"
+        rel_dir.mkdir()
+        bad_artifact = rel_dir / "hybrid.json"
+        bad_artifact.write_text('{"artifact_type": "wrong"}')
+
+        # models_dir also has a bad artifact (we can't create a *valid* one
+        # easily in unit tests, but we can verify both paths are attempted)
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        models_rel = models_dir / "rel"
+        models_rel.mkdir()
+        also_bad = models_rel / "hybrid.json"
+        also_bad.write_text('{"artifact_type": "also_wrong"}')
+
+        monkeypatch.chdir(workdir)
+        config = HostedPlayConfig(
+            hybrid_olsa_artifact="rel/hybrid.json",
+            models_dir=str(models_dir),
+        )
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="web.ai_manager"):
+            mgr = AIManager(config)
+
+        assert "hybrid_olsa" not in mgr.available_models
+        # Both candidates should have been tried
+        assert any(
+            "Failed to load hybrid_olsa from rel/hybrid.json" in m
+            for m in caplog.messages
+        ), f"Expected CWD-relative attempt in logs: {caplog.messages}"
+        expected_fallback = str(models_dir / "rel" / "hybrid.json")
+        assert any(
+            f"Failed to load hybrid_olsa from {expected_fallback}" in m
+            for m in caplog.messages
+        ), f"Expected models_dir fallback attempt in logs: {caplog.messages}"
+
     def test_hybrid_olsa_relative_without_models_dir_not_resolved(self):
         """A relative artifact with no models_dir stays relative (likely not found)."""
         config = HostedPlayConfig(
