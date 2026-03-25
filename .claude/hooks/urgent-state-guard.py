@@ -26,7 +26,8 @@ from pathlib import Path
 GUARDED_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^\s*gh\s+pr\s+merge\b"),
     re.compile(r"uv\s+run\s+python\s+scripts/internal/ops\.py\s+task\s+dispatch\b"),
-    re.compile(r"dispatch_to_worker"),
+    re.compile(r"uv\s+run\s+python\s+scripts/internal/ops\.py\s+workers\s+dispatch\b"),
+    re.compile(r"dispatch_to_worker\s*\("),
 ]
 
 
@@ -71,7 +72,7 @@ def format_block_message(alerts: list[dict]) -> str:
         [
             "",
             "Resolve or ack alerts before running risky commands:",
-            "  uv run python scripts/internal/ops.py fleet ack <item_id>",
+            "  uv run python scripts/internal/ops.py fleet --ack <item_id>",
         ]
     )
     return "\n".join(lines)
