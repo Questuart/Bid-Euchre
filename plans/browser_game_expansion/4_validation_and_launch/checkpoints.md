@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/browser_game_expansion/governing_plan.md`
 **Phase/Rung:** `4_validation_and_launch`
-**Last updated:** 2026-03-25 by analyst (reconcile shipped overnight work)
+**Last updated:** 2026-03-25 by analyst (note Phase 2 gap dependency on validation)
 
 ---
 
@@ -25,7 +25,8 @@
 
 ## Blockers
 
-- [ ] 2 of 7 Playwright tests failing (#1827) — blocks Step 4 completion.
+- [ ] **Phase 2 is NOT complete** — see BGE-3 amendment. Phase 2 launch-blocking gaps (#1842, #1841, #1838, #1839, #1844, #1846) must ship before Phase 4 validation is meaningful.
+- [ ] 2 of 7 Playwright tests failing (#1827) — blocks Step 4 completion. Some failures may be caused by Phase 2 gaps (features under test don't exist).
 - [ ] User proving (Step 5) requires operator at device.
 
 ## Session Log
