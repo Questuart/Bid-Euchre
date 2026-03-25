@@ -711,7 +711,7 @@ main {
 }
 
 /* --------------------------------------------------------------------------
-   13. Responsive Basics
+   13. Responsive — Tablet / Small Desktop (max-width: 600px)
    -------------------------------------------------------------------------- */
 
 @media (max-width: 600px) {
@@ -765,6 +765,272 @@ main {
     #model-select {
         margin: 1rem;
         padding: 1.25rem;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   13a. Responsive — iPhone Plus / Pro (max-width: 414px)
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 414px) {
+    :root {
+        --card-width: 44px;
+        --card-height: 66px;
+        --card-overlap: -6px;
+    }
+
+    main {
+        padding: 0.5rem;
+    }
+
+    header {
+        padding: 0.4rem 0.75rem;
+    }
+
+    header h1 {
+        font-size: 1.1rem;
+    }
+
+    .card__rank {
+        font-size: 0.95rem;
+    }
+
+    .card__suit {
+        font-size: 0.85rem;
+    }
+
+    .card--played {
+        width: 38px;
+        height: 56px;
+    }
+
+    .card--played .card__rank {
+        font-size: 0.85rem;
+    }
+
+    .card--played .card__suit {
+        font-size: 0.75rem;
+    }
+
+    .trick-table {
+        padding: 0.75rem;
+        min-height: 200px;
+    }
+
+    .trick-row-middle {
+        gap: 0.75rem;
+    }
+
+    .trick-slot {
+        min-width: 50px;
+        min-height: 70px;
+    }
+
+    .trick-count {
+        font-size: 1.25rem;
+    }
+
+    /* Bid panel — tighter spacing */
+    #bid-panel {
+        padding: 0.75rem;
+    }
+
+    .auction-transcript {
+        max-height: 120px;
+    }
+
+    .auction-table {
+        font-size: 0.8rem;
+    }
+
+    /* Score bar — compact single-column */
+    .score-bar {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.75rem;
+        gap: 0.25rem;
+    }
+
+    /* Hand result — tighter padding */
+    .hand-result {
+        padding: 1rem;
+    }
+
+    .result-banner .result-title {
+        font-size: 1.25rem;
+    }
+
+    .score-delta {
+        font-size: 1.4rem;
+    }
+
+    /* Match result — tighter */
+    .match-result {
+        padding: 1.5rem 1rem;
+    }
+
+    .match-result .result-title {
+        font-size: 1.3rem;
+    }
+
+    /* Setup forms — full width */
+    #nickname-form,
+    #model-select {
+        margin: 0.75rem;
+        padding: 1rem;
+        max-width: none;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   13b. Responsive — iPhone SE / Small Phones (max-width: 375px)
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 375px) {
+    :root {
+        --card-width: 38px;
+        --card-height: 57px;
+        --card-overlap: -5px;
+    }
+
+    main {
+        padding: 0.25rem;
+    }
+
+    header h1 {
+        font-size: 1rem;
+    }
+
+    .card__rank {
+        font-size: 0.85rem;
+    }
+
+    .card__suit {
+        font-size: 0.75rem;
+    }
+
+    .card--played {
+        width: 34px;
+        height: 50px;
+    }
+
+    .card--played .card__rank {
+        font-size: 0.8rem;
+    }
+
+    .card--played .card__suit {
+        font-size: 0.7rem;
+    }
+
+    /* Card backs — smaller for narrow screens */
+    .card-back {
+        width: 28px;
+        height: 40px;
+        margin: 0 -3px;
+    }
+
+    .ai-card-count {
+        font-size: 0.7rem;
+    }
+
+    .trick-table {
+        padding: 0.5rem;
+        min-height: 160px;
+        border-radius: 8px;
+    }
+
+    .trick-row-middle {
+        gap: 0.5rem;
+    }
+
+    .trick-slot {
+        min-width: 44px;
+        min-height: 60px;
+    }
+
+    .card-slot {
+        width: var(--card-width);
+        height: var(--card-height);
+    }
+
+    .seat-label {
+        font-size: 0.65rem;
+    }
+
+    .trick-count {
+        font-size: 1.1rem;
+    }
+
+    /* Bid controls — stack fully */
+    .bid-controls label {
+        font-size: 0.8rem;
+    }
+
+    .bid-controls select {
+        font-size: 0.85rem;
+    }
+
+    .bid-controls button {
+        font-size: 0.85rem;
+    }
+
+    .auction-table th,
+    .auction-table td {
+        padding: 0.2rem 0.35rem;
+        font-size: 0.75rem;
+    }
+
+    /* Score bar — ultra-compact */
+    .score-bar {
+        padding: 0.4rem 0.5rem;
+        font-size: 0.7rem;
+    }
+
+    .score-value {
+        font-size: 0.9rem;
+    }
+
+    .match-target {
+        font-size: 0.7rem;
+    }
+
+    /* Result screens — compact */
+    .hand-result {
+        padding: 0.75rem;
+    }
+
+    .result-banner .result-title {
+        font-size: 1.1rem;
+    }
+
+    .score-delta {
+        font-size: 1.2rem;
+    }
+
+    .result-table {
+        font-size: 0.85rem;
+    }
+
+    .result-detail {
+        font-size: 0.85rem;
+    }
+
+    .match-result {
+        padding: 1rem;
+    }
+
+    .match-result .result-title {
+        font-size: 1.1rem;
+    }
+
+    .score-table {
+        font-size: 0.95rem;
+    }
+
+    /* Invite code input — narrower */
+    #invite-code-input {
+        font-size: 1.1rem;
+        width: 12rem;
+        letter-spacing: 0.1em;
     }
 }
 

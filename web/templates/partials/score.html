@@ -15,13 +15,13 @@
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
 
-<div id="score-bar" class="score-bar">
-    <div class="score-section">
+<div id="score-bar" class="score-bar" role="status" aria-label="Match score and hand information" aria-live="polite">
+    <div class="score-section" aria-label="Match score: You {{ score_human }}, AI {{ score_ai }}">
         <span class="score-label">You:</span>
         <span class="score-value{% if score_human >= 0 %} score--positive{% else %} score--negative{% endif %}">
             {{ score_human }}
         </span>
-        <span class="score-separator">|</span>
+        <span class="score-separator" aria-hidden="true">|</span>
         <span class="score-label">AI:</span>
         <span class="score-value{% if score_ai >= 0 %} score--positive{% else %} score--negative{% endif %}">
             {{ score_ai }}
@@ -30,7 +30,7 @@
 
     <div class="hand-info">
         <span>Hand {{ hands_played + 1 }}</span>
-        <span class="info-separator">&middot;</span>
+        <span class="info-separator" aria-hidden="true">&middot;</span>
         <span>Dealer: {{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>
     </div>
 
@@ -39,9 +39,9 @@
         {% set score_bid_type = bid_type | default("regular") %}
         <span>Contract:
             {% if score_bid_type == "moon" %}
-                <span class="contract-bid-type contract-bid-type--moon">🌙 Moon</span>
+                <span class="contract-bid-type contract-bid-type--moon"><span aria-hidden="true">🌙</span> Moon</span>
             {% elif score_bid_type == "loner" %}
-                <span class="contract-bid-type contract-bid-type--loner">🃏 Loner</span>
+                <span class="contract-bid-type contract-bid-type--loner"><span aria-hidden="true">🃏</span> Loner</span>
             {% else %}
                 {{ winning_bid }}
             {% endif %}
@@ -53,10 +53,10 @@
                 Low
             {% endif %}
         </span>
-        <span class="info-separator">&middot;</span>
+        <span class="info-separator" aria-hidden="true">&middot;</span>
         <span>Declarer: {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>
         {% if phase == "trick_play" %}
-        <span class="info-separator">&middot;</span>
+        <span class="info-separator" aria-hidden="true">&middot;</span>
         <span>Tricks: {{ tricks_team0 }}&ndash;{{ tricks_team1 }}</span>
         {% endif %}
     </div>
@@ -66,7 +66,7 @@
     </div>
     {% endif %}
 
-    <div class="match-target">
+    <div class="match-target" aria-label="First team to plus or minus 52 points wins">
         First to &plusmn;52 wins
     </div>
 </div>

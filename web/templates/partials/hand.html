@@ -7,17 +7,19 @@
      - phase: str — current hand phase ("auction", "trick_play", "complete", "redeal")
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
 {% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 
-<div id="human-hand" class="hand">
+<div id="human-hand" class="hand" role="region" aria-label="Your hand">
     <h3>Your Hand</h3>
-    <div class="card-fan">
+    <div class="card-fan" role="group" aria-label="Cards in your hand ({{ human_hand | length }})">
         {% for card in human_hand %}
             {% set suit = card[0] %}
             {% set rank = card[1] %}
             {% set idx = loop.index0 %}
             {% set suit_class = suit_classes.get(suit, "spades") %}
             {% set suit_sym = suit_symbols.get(suit, suit) %}
+            {% set suit_name = suit_names.get(suit, suit) %}
 
             {% if phase == "trick_play" and legal_plays is not none and idx in legal_plays %}
                 {# Legal card — clickable form button #}
@@ -31,17 +33,20 @@
                     <input type="hidden" name="card_index" value="{{ idx }}">
                     <button type="submit"
                             class="card card--{{ suit_class }} card--legal"
-                            title="{{ rank }}{{ suit_sym }} (click to play)">
-                        <span class="card__rank">{{ rank }}</span>
-                        <span class="card__suit">{{ suit_sym }}</span>
+                            title="{{ rank }}{{ suit_sym }} (click to play)"
+                            aria-label="Play {{ rank }} of {{ suit_name }}">
+                        <span class="card__rank" aria-hidden="true">{{ rank }}</span>
+                        <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
                     </button>
                 </form>
             {% else %}
                 {# Illegal or non-play-phase card — plain div #}
                 <div class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}"
-                     title="{{ rank }}{{ suit_sym }}">
-                    <span class="card__rank">{{ rank }}</span>
-                    <span class="card__suit">{{ suit_sym }}</span>
+                     title="{{ rank }}{{ suit_sym }}"
+                     role="img"
+                     aria-label="{{ rank }} of {{ suit_name }}{% if phase == 'trick_play' %} (cannot play){% endif %}">
+                    <span class="card__rank" aria-hidden="true">{{ rank }}</span>
+                    <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
                 </div>
             {% endif %}
         {% endfor %}

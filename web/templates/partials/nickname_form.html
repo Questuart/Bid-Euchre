@@ -2,13 +2,14 @@
    Context variables:
      - link_uuid: str — player's game link UUID
 #}
-<div id="nickname-form">
+<div id="nickname-form" role="region" aria-label="Set your nickname">
     <h2>Enter your nickname</h2>
     <form method="post"
           action="/play/{{ link_uuid }}/nickname"
           hx-post="/play/{{ link_uuid }}/nickname"
           hx-target="#game-board"
-          hx-swap="innerHTML">
+          hx-swap="innerHTML"
+          aria-label="Choose a display name">
         <label for="nickname-input">Nickname:</label>
         <input id="nickname-input"
                name="nickname"
@@ -16,7 +17,8 @@
                maxlength="30"
                required
                autofocus
-               placeholder="Your name">
-        <button type="submit">Set Nickname</button>
+               placeholder="Your name"
+               aria-label="Your display nickname">
+        <button type="submit" aria-label="Set nickname and continue">Set Nickname</button>
     </form>
 </div>

@@ -2,18 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{% block title %}Bid Euchre{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/css/accessibility.css">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="/static/game.js" defer></script>
     {% block head %}{% endblock %}
 </head>
 <body>
-    <header>
-        <h1><a href="/">Bid Euchre</a></h1>
+    <a href="#main-content" class="skip-link">Skip to game</a>
+    <header role="banner">
+        <h1><a href="/" aria-label="Bid Euchre home">Bid Euchre</a></h1>
     </header>
-    <main>
+    <main id="main-content" role="main">
         {% block content %}{% endblock %}
     </main>
 </body>

@@ -6,16 +6,17 @@
      - score_ai: int — final AI team score
      - hands_played: int — total hands played in the match
 #}
-<div id="match-result" class="match-result {% if winner == 'human' %}result--win{% else %}result--loss{% endif %}">
+<div id="match-result" class="match-result {% if winner == 'human' %}result--win{% else %}result--loss{% endif %}"
+     role="alert" aria-live="assertive">
     <div class="result-banner">
         {% if winner == "human" %}
-            <h1 class="result-title">You Win! 🎉</h1>
+            <h1 class="result-title">You Win! <span aria-hidden="true">🎉</span></h1>
         {% else %}
             <h1 class="result-title">You Lose</h1>
         {% endif %}
     </div>
 
-    <div class="final-score">
+    <div class="final-score" role="table" aria-label="Final match score">
         <table class="score-table">
             <tr>
                 <td>Your team:</td>
@@ -34,6 +35,6 @@
           hx-post="/play/{{ link_uuid }}/new-match"
           hx-target="#game-board"
           hx-swap="innerHTML">
-        <button type="submit" class="btn btn--play-again">Play Again</button>
+        <button type="submit" class="btn btn--play-again" aria-label="Start a new match">Play Again</button>
     </form>
 </div>
