@@ -117,9 +117,27 @@ class PushState:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PushState:
+        if not isinstance(data, dict):
+            logger.warning(
+                "push_state data is not a dict (got %s), resetting",
+                type(data).__name__,
+            )
+            return cls()
         items: dict[str, PushItemRecord] = {}
-        for k, v in data.get("items", {}).items():
-            items[k] = PushItemRecord(**v)
+        raw_items = data.get("items", {})
+        if not isinstance(raw_items, dict):
+            logger.warning(
+                "push_state items is not a dict (got %s), resetting",
+                type(raw_items).__name__,
+            )
+            raw_items = {}
+        for k, v in raw_items.items():
+            try:
+                items[k] = PushItemRecord(**v)
+            except (TypeError, ValueError) as exc:
+                # Skip malformed records rather than crashing the entire load.
+                logger.warning("Skipping malformed push state record %r: %s", k, exc)
+                continue
         return cls(
             items=items,
             last_evaluation_at=data.get("last_evaluation_at", ""),
@@ -271,9 +289,13 @@ def load_push_state(runtime_dir: Path | None = None) -> PushState:
     if not path.exists():
         return PushState()
     try:
-        data = json.loads(path.read_text())
+        raw = path.read_text()
+        if not raw.strip():
+            logger.warning("Empty push state file at %s", path)
+            return PushState()
+        data = json.loads(raw)
         return PushState.from_dict(data)
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, OSError) as exc:
         logger.warning("Could not load push state from %s: %s", path, exc)
         return PushState()
 

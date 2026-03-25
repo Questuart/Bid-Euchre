@@ -1348,7 +1348,7 @@ class TestFalseStallRegression:
                     _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
                     _capture_fn=capture,
                 )
-                assert len(f) == 0, f"Active cycle {i+1} should not stall: {f}"
+                assert len(f) == 0, f"Active cycle {i + 1} should not stall: {f}"
 
             # Cycle 4: epoch changes to 9999 (new value) — unchanged_count=0
             f4 = check_stalled_lanes(
@@ -2451,9 +2451,7 @@ class TestCheckApprovalStalls:
         """Catches 'Do you want to make this edit' prompts (#1672)."""
         pane_content = {
             "brws-author-a": (
-                "Editing SKILL.md...\n"
-                "Do you want to make this edit to SKILL.md?\n"
-                ">\n"
+                "Editing SKILL.md...\nDo you want to make this edit to SKILL.md?\n>\n"
             ),
         }
 
@@ -2627,9 +2625,7 @@ class TestMatchApprovalPrompt:
 
     def test_matches_do_you_want_to_make_this_edit(self) -> None:
         """Catches 'Do you want to make this edit' permission prompts (#1672)."""
-        content = (
-            "Working on SKILL.md...\n" "Do you want to make this edit to SKILL.md?\n"
-        )
+        content = "Working on SKILL.md...\nDo you want to make this edit to SKILL.md?\n"
         result = _match_approval_prompt(content)
         assert result is not None
         assert "Do you want to make this edit" in result
@@ -3233,3 +3229,184 @@ class TestCheckFleetIdle:
         warn = [f for f in findings if f.severity == "warn"]
         assert len(warn) == 1
         assert "Could not check fleet idle status" in warn[0].summary
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Edge-Case Hardening — monitor cycle timeout handling
+# ---------------------------------------------------------------------------
+
+
+class TestMonitorSubprocessTimeouts:
+    """Prove that subprocess timeouts in monitor checks produce graceful findings.
+
+    Monitor checks call external commands (``gh pr list``, ``tmux``, etc.) via
+    ``subprocess.run(..., timeout=N)``.  If any of these time out, the check
+    must produce a WARN finding and continue rather than crashing the cycle.
+    """
+
+    def test_check_open_prs_timeout(self) -> None:
+        """check_open_prs handles subprocess.TimeoutExpired gracefully."""
+        import subprocess
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("gh", 30),
+        ):
+            findings = check_open_prs()
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "Could not check PRs" in findings[0].summary
+
+    def test_check_open_prs_oserror(self) -> None:
+        """check_open_prs handles OSError (e.g., broken pipe) gracefully."""
+        with patch(
+            "subprocess.run",
+            side_effect=OSError("broken pipe"),
+        ):
+            findings = check_open_prs()
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+
+    def test_check_recently_merged_prs_timeout(self, tmp_path: Path) -> None:
+        """check_recently_merged_prs handles subprocess timeout gracefully."""
+        import subprocess
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired("gh", 30),
+        ):
+            findings = check_recently_merged_prs(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "Could not check merged PRs" in findings[0].summary
+
+    def test_check_merged_dispatches_timeout(self, tmp_path: Path) -> None:
+        """check_merged_dispatches handles list_packets failure gracefully."""
+        # When list_packets fails, we get a WARN finding instead of a crash.
+        with patch(
+            "bid_euchre.ops.task_queue.list_packets",
+            side_effect=RuntimeError("disk full"),
+        ):
+            findings = check_merged_dispatches(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "Could not check dispatched packets" in findings[0].summary
+
+    def test_check_stale_dispatches_task_queue_failure(self, tmp_path: Path) -> None:
+        """check_stale_dispatches handles task queue errors gracefully."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        with patch(
+            "bid_euchre.ops.task_queue.list_packets",
+            side_effect=RuntimeError("corrupt queue"),
+        ):
+            findings = check_stale_dispatches(runtime_dir)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+
+    def test_check_stalled_lanes_task_queue_failure(self, tmp_path: Path) -> None:
+        """check_stalled_lanes handles task queue errors gracefully."""
+        with patch(
+            "bid_euchre.ops.task_queue.list_packets",
+            side_effect=RuntimeError("corrupt queue"),
+        ):
+            findings = check_stalled_lanes(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "Could not check for stalled lanes" in findings[0].summary
+
+    def test_check_idle_lanes_pool_snapshot_failure(self, tmp_path: Path) -> None:
+        """check_idle_lanes handles pool snapshot failure gracefully."""
+        with patch(
+            "bid_euchre.ops.worker_pool.take_pool_snapshot",
+            side_effect=RuntimeError("registry missing"),
+        ):
+            findings = check_idle_lanes(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "Could not check for idle lanes" in findings[0].summary
+
+    def test_check_escalations_bus_failure(self) -> None:
+        """check_escalations handles message bus failure gracefully."""
+        with patch(
+            "bid_euchre.ops.message_bus.escalate_unacked",
+            side_effect=RuntimeError("bus dir missing"),
+        ):
+            findings = check_escalations()
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "Could not check for unacked alerts" in findings[0].summary
+
+    def test_check_auto_dispatch_pool_snapshot_failure(self, tmp_path: Path) -> None:
+        """check_auto_dispatch handles pool snapshot failure gracefully."""
+        with patch(
+            "bid_euchre.ops.worker_pool.take_pool_snapshot",
+            side_effect=RuntimeError("tmux not running"),
+        ):
+            findings = check_auto_dispatch(tmp_path)
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert "Could not check for auto-dispatch" in findings[0].summary
+
+
+class TestMonitorCycleRobustness:
+    """Prove that the full monitor cycle is robust to individual check failures.
+
+    ``run_monitoring_cycle()`` calls many individual checks. If one fails,
+    the others should still produce their findings.
+    """
+
+    def test_cycle_continues_after_pr_check_failure(self, tmp_path: Path) -> None:
+        """Monitor cycle produces non-PR findings even when gh fails."""
+        pool_mock = MagicMock()
+        pool_mock.workers = []
+        pool_mock.active_count = 0
+        pool_mock.idle_count = 0
+        pool_mock.parked_count = 0
+        pool_mock.retired_count = 0
+        pool_mock.available_capacity = 0
+
+        with (
+            patch(
+                "bid_euchre.ops.worker_pool.take_pool_snapshot",
+                return_value=pool_mock,
+            ),
+            patch(
+                "subprocess.run",
+                side_effect=FileNotFoundError("gh"),
+            ),
+            patch(
+                "bid_euchre.ops.message_bus.escalate_unacked",
+                return_value=[],
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[],
+            ),
+            patch(
+                "bid_euchre.ops.idle_detector.recommend_shutoff",
+                side_effect=RuntimeError("no events"),
+            ),
+        ):
+            findings = run_monitoring_cycle(
+                runtime_dir=tmp_path,
+                notify_orchestrator=False,
+                no_auto_dispatch=True,
+            )
+
+        # Should have findings from multiple checks (not just first failure).
+        categories = {f.category for f in findings}
+        # Lane health info summary should still be present.
+        assert "lane_health" in categories
+        # Escalation check should produce a finding (info or warn).
+        assert "escalation" in categories
