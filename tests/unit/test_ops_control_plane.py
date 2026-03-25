@@ -1589,3 +1589,150 @@ class TestReconcileWithAudit:
             if i.category == CAT_AUDIT_EXCHANGE and i.state == "open"
         ]
         assert len(open_audit) == 0
+
+
+# ---------------------------------------------------------------------------
+# cmd_monitor → reconcile wiring (#1684)
+# ---------------------------------------------------------------------------
+
+
+class TestMonitorReconcileWiring:
+    """Verify that cmd_monitor calls reconcile() after the monitor cycle.
+
+    The ``cmd_monitor`` function lives in ``scripts/internal/ops.py`` which
+    has a top-level ``from _repo_utils import ...`` that only resolves when
+    run via ``uv run``.  Rather than importing the CLI module directly, we
+    test the wiring contract at the library level: the monitor cycle produces
+    ``MonitorFinding`` objects and these can be fed directly into
+    ``reconcile(monitor_finding_objects=...)``.  A subprocess smoke test
+    validates the full CLI path.
+    """
+
+    def test_monitor_findings_feed_into_reconcile(self, tmp_path: Path):
+        """Monitor findings fed into reconcile() produce fleet status."""
+        from bid_euchre.ops.monitor import MonitorFinding
+
+        finding = MonitorFinding(
+            category="pr_status",
+            severity="warn",
+            summary="PR #42 has failing checks",
+            details={"pr_number": 42},
+        )
+
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_finding_objects=[finding],
+        )
+
+        assert status.cycle_count == 1
+        assert len(status.items) >= 1
+        pr_items = [i for i in status.items if i.pr_number == 42]
+        assert len(pr_items) == 1
+        assert pr_items[0].summary == "PR #42 has failing checks"
+
+        # Fleet status file should exist on disk.
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None
+        assert loaded.cycle_count == 1
+
+    def test_monitor_findings_plus_task_packets(self, tmp_path: Path):
+        """reconcile() combines monitor findings and task packets."""
+        from dataclasses import asdict
+
+        from bid_euchre.ops.monitor import MonitorFinding
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        finding = MonitorFinding(
+            category="lane_health",
+            severity="high",
+            summary="Lane author-a is unresponsive",
+            details={"lane_id": "author-a"},
+        )
+
+        packet = TaskPacket(
+            packet_id="abc123",
+            title="Test task",
+            description="A test",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-24T22:00:00Z",
+            status="approved",
+            priority="high",
+        )
+
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_finding_objects=[finding],
+            task_packets=[asdict(packet)],
+        )
+
+        assert status.cycle_count == 1
+        # Both sources should produce items.
+        lane_items = [i for i in status.items if i.lane_id == "author-a"]
+        task_items = [i for i in status.items if i.task_id == "abc123"]
+        assert len(lane_items) >= 1
+        assert len(task_items) == 1
+
+    def test_cli_monitor_reconcile_smoke(self, tmp_path: Path):
+        """CLI ``ops.py monitor --skip-pr-check`` updates fleet status."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--runtime-dir",
+                str(tmp_path),
+                "monitor",
+                "--skip-pr-check",
+                "--no-notify",
+                "--no-recovery",
+                "--no-auto-dispatch",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        # Monitor should succeed (may exit 1 for high-severity findings
+        # but should not crash).
+        assert result.returncode in (
+            0,
+            1,
+        ), f"Monitor crashed: stderr={result.stderr[:500]}"
+
+        # Fleet status file should have been written by reconcile().
+        loaded = load_fleet_status(tmp_path)
+        assert (
+            loaded is not None
+        ), f"reconcile() did not write fleet_status.json; stdout={result.stdout[:300]}"
+        assert loaded.cycle_count >= 1
+
+    def test_cli_no_reconcile_flag(self, tmp_path: Path):
+        """CLI ``--no-reconcile`` skips fleet status update."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--runtime-dir",
+                str(tmp_path),
+                "monitor",
+                "--skip-pr-check",
+                "--no-notify",
+                "--no-recovery",
+                "--no-auto-dispatch",
+                "--no-reconcile",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode in (0, 1)
+
+        # No fleet status file should exist.
+        assert load_fleet_status(tmp_path) is None
