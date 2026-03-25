@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}500 — Bad Deal{% endblock %}
+
+{% block content %}
+<div class="error-page" role="alert" aria-label="Server error">
+    <div class="error-card">
+        <h2 class="error-title">500</h2>
+        <p class="error-subtitle">Bad Deal</p>
+        <p class="error-detail">
+            Something went wrong on our end.
+            The deck got stuck — please try again in a moment.
+        </p>
+        <a href="/" class="btn btn--play-again">Back to Table</a>
+    </div>
+</div>
+{% endblock %}

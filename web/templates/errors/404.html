@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}404 — Hand Not Found{% endblock %}
+
+{% block content %}
+<div class="error-page" role="alert" aria-label="Page not found">
+    <div class="error-card">
+        <h2 class="error-title">404</h2>
+        <p class="error-subtitle">Hand Not Found</p>
+        <p class="error-detail">
+            That game link doesn't exist or has expired.
+            The cards may have been shuffled elsewhere.
+        </p>
+        <a href="/" class="btn btn--play-again">Back to Table</a>
+    </div>
+</div>
+{% endblock %}
