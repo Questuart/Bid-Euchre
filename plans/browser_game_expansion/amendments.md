@@ -1,7 +1,7 @@
 # Browser Game Expansion and Pilot Readiness -- Amendments
 
 **Governing plan:** `plans/browser_game_expansion/governing_plan.md`
-**Last updated:** 2026-03-24 (hand-sorting UX requirement)
+**Last updated:** 2026-03-25 (Phase 2 gap reconciliation after user proving)
 
 ---
 
@@ -62,6 +62,57 @@ The operator requested leaderboard and forum features during the Phase 4
 planning discussion. These features depend on the invite-code identity layer
 from Phase 3 but do not block the existing Validation and Launch critical
 path. They are positioned as a parallel track.
+
+---
+
+## BGE-3 -- Phase 2 gap reconciliation after user proving (2026-03-25)
+
+**PR:** this amendment
+
+**What changed:**
+
+1. **Phase 2 reverted from COMPLETE to IN_PROGRESS.** User proving on
+   2026-03-25 revealed that Phase 2 Steps 2, 3 were never implemented despite
+   being marked COMPLETE in checkpoints. Steps 4, 5 are only PARTIAL.
+2. **SP-2-01 and SP-2-02 reverted from completed to partial** in the sub-plan
+   registry, with specific issue references for each unshipped item.
+3. **PR-4 and PR-5 marked PARTIAL** in the PR roadmap. Gap analysis tables
+   added documenting exactly what shipped vs what was planned.
+4. **6 new issues filed** for unshipped scope:
+   - #1844 — Persistent last-trick display (PR-4 scope)
+   - #1845 — Action rail / event feed (PR-4 scope)
+   - #1846 — Dealer/declarer/turn markers (PR-4 scope)
+   - #1847 — Touch-safe tap-select/confirm (PR-5 scope)
+   - #1848 — Pace controls UI (PR-5 scope)
+   - #1849 — Help drawer / rules surface (PR-5 scope)
+5. **4 existing issues confirmed as launch-blocking:**
+   - #1842 — Hand result screen never renders (engine auto-advances)
+   - #1841 — Match completion screen not rendering
+   - #1838 — Moon/loner bid labels show (10) not (20)/(40)
+   - #1839 — Moon card exchange silent
+6. **Follow-up PR sequence added** to PR roadmap: PR-4b through PR-5c,
+   with dependency chain rooted at PR-4b (engine auto-advance fix).
+7. **Launch-blocking classification** added to Phase 2 checkpoints.
+
+**Root cause of drift:**
+The overnight fleet marked steps complete based on successful PR merge and
+passing CI, not on end-to-end feature verification. PRs shipped CSS/template
+code for features that were never wired through the engine or route layer.
+The `hand_result.html` template exists with moon/loner banners and animated
+scoring, but the engine auto-deals the next hand before the template can
+render.
+
+**Impact:**
+Phase 2 cannot close until at least the launch-blocking items are fixed.
+Phase 4 validation (SP-4-01) is also affected — Playwright tests fail
+partly because the features they test do not exist.
+
+**Launch-blocking vs nice-to-have classification:**
+
+| Category | Issues | Rationale |
+|----------|--------|-----------|
+| **Launch-blocking** | #1842, #1841, #1838, #1839, #1844, #1846 | Core gameplay is broken (no hand results, no match end) or misleading (wrong point values, silent exchange, no trick/turn visibility) |
+| **Nice-to-have** | #1845, #1847, #1848, #1849 | Improves UX but game is playable without action rail, tap-confirm, pace controls, or help drawer |
 
 Use this file only after the governing plan is locked and execution uncovers
 scope changes that should not be edited directly into the governing plan.
