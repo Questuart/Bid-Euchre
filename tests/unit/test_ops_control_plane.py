@@ -1875,6 +1875,8 @@ class TestMonitorReconcileWiring:
                 "--no-notify",
                 "--no-recovery",
                 "--no-auto-dispatch",
+                "--now",
+                NOW_ISO,
             ],
             capture_output=True,
             text=True,
