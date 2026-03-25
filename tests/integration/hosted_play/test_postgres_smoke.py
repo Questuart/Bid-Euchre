@@ -35,6 +35,9 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
+
+pytestmark = pytest.mark.integration
+
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from starlette.testclient import TestClient

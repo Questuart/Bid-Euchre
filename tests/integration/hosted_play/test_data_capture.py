@@ -16,6 +16,9 @@ from __future__ import annotations
 import json
 
 import pytest
+
+pytestmark = pytest.mark.integration
+
 from starlette.testclient import TestClient
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine

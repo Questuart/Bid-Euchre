@@ -11,6 +11,10 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.integration
+
 
 def run_experiment(
     config_path: str,
@@ -108,17 +112,21 @@ def test_compare_runs_identical_runs():
         assert "summary" in data
 
         # Verify no significant differences
-        assert data["summary"]["significant_changes"] == 0, \
-            "Identical runs should show no significant differences"
+        assert (
+            data["summary"]["significant_changes"] == 0
+        ), "Identical runs should show no significant differences"
 
         # Verify all metrics have p-value close to 1.0 (no difference)
         for comparison in data["comparisons"]:
-            assert not comparison["is_significant"], \
-                f"Metric {comparison['metric']} incorrectly marked as significant"
-            assert comparison["p_value"] >= 0.5, \
-                f"Metric {comparison['metric']} has suspiciously low p-value: {comparison['p_value']}"
-            assert abs(comparison["effect_size"]) < 0.1, \
-                f"Metric {comparison['metric']} has non-negligible effect size: {comparison['effect_size']}"
+            assert not comparison[
+                "is_significant"
+            ], f"Metric {comparison['metric']} incorrectly marked as significant"
+            assert (
+                comparison["p_value"] >= 0.5
+            ), f"Metric {comparison['metric']} has suspiciously low p-value: {comparison['p_value']}"
+            assert (
+                abs(comparison["effect_size"]) < 0.1
+            ), f"Metric {comparison['metric']} has non-negligible effect size: {comparison['effect_size']}"
 
 
 def test_compare_runs_different_strategies():
@@ -263,8 +271,9 @@ def test_compare_runs_missing_baseline():
 
         # Should fail with error
         assert result.returncode != 0, "Should fail for missing baseline"
-        assert "not found" in result.stderr.lower(), \
-            f"Should report missing baseline: {result.stderr}"
+        assert (
+            "not found" in result.stderr.lower()
+        ), f"Should report missing baseline: {result.stderr}"
 
 
 def test_compare_runs_deterministic_bootstrap():
@@ -308,14 +317,18 @@ def test_compare_runs_deterministic_bootstrap():
         # Verify identical results
         for comp_a, comp_b in zip(data_a["comparisons"], data_b["comparisons"]):
             assert comp_a["metric"] == comp_b["metric"]
-            assert comp_a["baseline_ci"] == comp_b["baseline_ci"], \
-                f"Bootstrap CIs should be deterministic for {comp_a['metric']}"
-            assert comp_a["candidate_ci"] == comp_b["candidate_ci"], \
-                f"Bootstrap CIs should be deterministic for {comp_a['metric']}"
-            assert comp_a["delta_ci"] == comp_b["delta_ci"], \
-                f"Bootstrap delta CIs should be deterministic for {comp_a['metric']}"
-            assert comp_a["p_value"] == comp_b["p_value"], \
-                f"Bootstrap p-values should be deterministic for {comp_a['metric']}"
+            assert (
+                comp_a["baseline_ci"] == comp_b["baseline_ci"]
+            ), f"Bootstrap CIs should be deterministic for {comp_a['metric']}"
+            assert (
+                comp_a["candidate_ci"] == comp_b["candidate_ci"]
+            ), f"Bootstrap CIs should be deterministic for {comp_a['metric']}"
+            assert (
+                comp_a["delta_ci"] == comp_b["delta_ci"]
+            ), f"Bootstrap delta CIs should be deterministic for {comp_a['metric']}"
+            assert (
+                comp_a["p_value"] == comp_b["p_value"]
+            ), f"Bootstrap p-values should be deterministic for {comp_a['metric']}"
 
 
 def test_compare_runs_json_parseable():

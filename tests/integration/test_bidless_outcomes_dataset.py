@@ -13,6 +13,8 @@ import tempfile
 import pandas as pd
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 class TestBidlessOutcomesDatasetWorkflow:
     """Test bidless outcomes dataset emission via run_experiment.py."""
@@ -28,11 +30,16 @@ class TestBidlessOutcomesDatasetWorkflow:
         """--emit-bidless-outcomes-dataset creates parquet, jsonl, and meta files."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "5",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "5",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-outcomes-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -44,7 +51,9 @@ class TestBidlessOutcomesDatasetWorkflow:
         assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
 
         # Find the run directory
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         assert len(run_dirs) == 1
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
 
@@ -65,11 +74,16 @@ class TestBidlessOutcomesDatasetWorkflow:
         """Outcomes dataset has per-hand granularity with correct columns."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "10",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "10",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-outcomes-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -80,7 +94,9 @@ class TestBidlessOutcomesDatasetWorkflow:
 
         assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -101,7 +117,9 @@ class TestBidlessOutcomesDatasetWorkflow:
             "tricks_team1",
             "team0_win",
         }
-        assert set(df.columns) == expected_columns, f"Unexpected columns: {set(df.columns)}"
+        assert (
+            set(df.columns) == expected_columns
+        ), f"Unexpected columns: {set(df.columns)}"
 
         # Check row count: per-hand granularity
         # quick_test.yaml: 2 strategies × 2 scenarios × 10 hands = 40 rows
@@ -114,11 +132,16 @@ class TestBidlessOutcomesDatasetWorkflow:
         """In self_play mode, strategy_id and matchup_id are set correctly."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "5",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "5",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-outcomes-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -129,7 +152,9 @@ class TestBidlessOutcomesDatasetWorkflow:
 
         assert result.returncode == 0
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -150,11 +175,16 @@ class TestBidlessOutcomesDatasetWorkflow:
         """team0_win is correctly computed: 1.0=win, 0.5=tie, 0.0=loss."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "50",  # More samples to get all three outcomes
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "50",  # More samples to get all three outcomes
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-outcomes-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -165,7 +195,9 @@ class TestBidlessOutcomesDatasetWorkflow:
 
         assert result.returncode == 0
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -186,15 +218,22 @@ class TestBidlessOutcomesDatasetWorkflow:
         # Verify tricks sum to 10
         assert ((df["tricks_team0"] + df["tricks_team1"]) == 10).all()
 
-    def test_outcomes_dataset_hand_id_uniqueness_across_strategies_scenarios(self, temp_run_dir):
+    def test_outcomes_dataset_hand_id_uniqueness_across_strategies_scenarios(
+        self, temp_run_dir
+    ):
         """hand_id is globally unique across all strategies and scenarios."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/strategy_comparison.yaml",
-                "--seed", "42",
-                "--n_per", "10",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/strategy_comparison.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "10",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-outcomes-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -205,7 +244,11 @@ class TestBidlessOutcomesDatasetWorkflow:
 
         assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("strategy_comparison_42_")]
+        run_dirs = [
+            d
+            for d in os.listdir(temp_run_dir)
+            if d.startswith("strategy_comparison_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -224,11 +267,16 @@ class TestBidlessOutcomesDatasetWorkflow:
         """bidless_outcomes_meta.json contains correct metadata."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "10",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "10",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-outcomes-dataset",
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -239,7 +287,9 @@ class TestBidlessOutcomesDatasetWorkflow:
 
         assert result.returncode == 0
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -256,11 +306,16 @@ class TestBidlessOutcomesDatasetWorkflow:
         """Without --emit-bidless-outcomes-dataset, no outcomes files are created."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "5",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "5",
+                "--run-dir",
+                temp_run_dir,
                 # Note: no --emit-bidless-outcomes-dataset flag
             ],
             env={**os.environ, "PYTHONPATH": "src"},
@@ -271,7 +326,9 @@ class TestBidlessOutcomesDatasetWorkflow:
 
         assert result.returncode == 0
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -279,17 +336,24 @@ class TestBidlessOutcomesDatasetWorkflow:
         if os.path.isdir(datasets_dir):
             files = os.listdir(datasets_dir)
             outcomes_files = [f for f in files if f.startswith("bidless_outcomes")]
-            assert len(outcomes_files) == 0, f"Found outcomes files without flag: {outcomes_files}"
+            assert (
+                len(outcomes_files) == 0
+            ), f"Found outcomes files without flag: {outcomes_files}"
 
     def test_both_bidless_flags_emit_both_datasets(self, temp_run_dir):
         """--emit-bidless-dataset and --emit-bidless-outcomes-dataset can be used together."""
         result = subprocess.run(
             [
-                "python", "experiments/run_experiment.py",
-                "--config", "experiments/configs/quick_test.yaml",
-                "--seed", "42",
-                "--n_per", "5",
-                "--run-dir", temp_run_dir,
+                "python",
+                "experiments/run_experiment.py",
+                "--config",
+                "experiments/configs/quick_test.yaml",
+                "--seed",
+                "42",
+                "--n_per",
+                "5",
+                "--run-dir",
+                temp_run_dir,
                 "--emit-bidless-dataset",
                 "--emit-bidless-outcomes-dataset",
             ],
@@ -301,7 +365,9 @@ class TestBidlessOutcomesDatasetWorkflow:
 
         assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
 
-        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")]
+        run_dirs = [
+            d for d in os.listdir(temp_run_dir) if d.startswith("quick_test_42_")
+        ]
         run_dir = os.path.join(temp_run_dir, run_dirs[0])
         datasets_dir = os.path.join(run_dir, "datasets")
 
@@ -311,10 +377,16 @@ class TestBidlessOutcomesDatasetWorkflow:
 
         # Feature dataset is per-seat (4× more rows than outcomes)
         df_features = pd.read_parquet(os.path.join(datasets_dir, "bidless.parquet"))
-        df_outcomes = pd.read_parquet(os.path.join(datasets_dir, "bidless_outcomes.parquet"))
+        df_outcomes = pd.read_parquet(
+            os.path.join(datasets_dir, "bidless_outcomes.parquet")
+        )
 
         # quick_test: 2 strategies × 2 scenarios × 5 hands = 20 hands
         # Features: 20 hands × 4 seats = 80 rows
         # Outcomes: 20 hands = 20 rows
-        assert len(df_features) == 80, f"Features should have 80 rows, got {len(df_features)}"
-        assert len(df_outcomes) == 20, f"Outcomes should have 20 rows, got {len(df_outcomes)}"
+        assert (
+            len(df_features) == 80
+        ), f"Features should have 80 rows, got {len(df_features)}"
+        assert (
+            len(df_outcomes) == 20
+        ), f"Outcomes should have 20 rows, got {len(df_outcomes)}"

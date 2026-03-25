@@ -5,6 +5,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.integration
+
 
 def run_experiment(
     config_path: str,
@@ -56,8 +60,10 @@ def test_runner_enforces_work_budget():
         )
 
         assert result.returncode != 0, "Should fail when budget exceeded"
-        assert "Total hands budget exceeded" in result.stderr or "Total hands budget exceeded" in result.stdout, \
-            f"Should mention budget exceeded. stderr: {result.stderr}, stdout: {result.stdout}"
+        assert (
+            "Total hands budget exceeded" in result.stderr
+            or "Total hands budget exceeded" in result.stdout
+        ), f"Should mention budget exceeded. stderr: {result.stderr}, stdout: {result.stdout}"
 
 
 def test_runner_allows_force_override():
@@ -70,7 +76,9 @@ def test_runner_allows_force_override():
             run_dir=tmpdir,
         )
 
-        assert result.returncode == 0, f"Should succeed with --force. stderr: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Should succeed with --force. stderr: {result.stderr}"
 
         # Verify run directory was created
         run_dirs = list(Path(tmpdir).glob("*"))
@@ -90,7 +98,9 @@ def test_runner_allows_runs_within_budget():
             run_dir=tmpdir,
         )
 
-        assert result.returncode == 0, f"Should succeed within budget. stderr: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Should succeed within budget. stderr: {result.stderr}"
 
         # Verify run completed
         run_dirs = list(Path(tmpdir).glob("*"))
@@ -111,8 +121,9 @@ def test_runner_budget_check_uses_config_name():
         )
 
         assert result.returncode != 0, "Should fail when budget exceeded"
-        assert "quick_test" in (result.stderr + result.stdout), \
-            "Error message should mention config name"
+        assert "quick_test" in (
+            result.stderr + result.stdout
+        ), "Error message should mention config name"
 
 
 def test_runner_no_budget_for_unlisted_configs():
@@ -126,4 +137,6 @@ def test_runner_no_budget_for_unlisted_configs():
             run_dir=tmpdir,
         )
 
-        assert result.returncode == 0, f"Should succeed for unlisted config. stderr: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Should succeed for unlisted config. stderr: {result.stderr}"

@@ -14,6 +14,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.integration
 import yaml
 
 CONFIG_PATH = "experiments/configs/quick_test.yaml"
@@ -58,7 +60,9 @@ def _run_experiment_once(tmp_path: Path, label: str) -> Path:
         )
 
     run_dirs = [d for d in run_base.iterdir() if d.is_dir()]
-    assert len(run_dirs) == 1, f"Expected 1 run dir under {run_base}, got {len(run_dirs)}: {run_dirs}"
+    assert (
+        len(run_dirs) == 1
+    ), f"Expected 1 run dir under {run_base}, got {len(run_dirs)}: {run_dirs}"
     return run_dirs[0]
 
 

@@ -7,7 +7,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
+
+pytestmark = pytest.mark.integration
 
 
 class TestBiddingDatasetHandIdUniqueness:
@@ -35,7 +38,12 @@ class TestBiddingDatasetHandIdUniqueness:
                 "--emit-bidding-dataset",
             ]
             result = subprocess.run(
-                cmd, check=True, capture_output=True, text=True, cwd=os.getcwd(), env=env
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+                cwd=os.getcwd(),
+                env=env,
             )
             assert result.returncode == 0, f"Runner failed: {result.stderr}"
 

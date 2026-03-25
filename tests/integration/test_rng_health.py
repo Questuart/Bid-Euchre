@@ -16,6 +16,8 @@ from typing import List
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from bid_euchre.core.cards import Card
 from bid_euchre.sim.deals import generate_deal, generate_initial_leader
 from bid_euchre.sim.simulation import simulate_many_hands
@@ -24,10 +26,7 @@ from bid_euchre.strategy.baselines import AlwaysHighestLegalStrategy
 
 def _card_signature(hands: List[List[Card]]) -> tuple:
     """Create a hashable signature for a deal."""
-    return tuple(
-        tuple((c.suit, c.rank) for c in hand)
-        for hand in hands
-    )
+    return tuple(tuple((c.suit, c.rank) for c in hand) for hand in hands)
 
 
 class TestLeaderDistribution:
@@ -101,15 +100,14 @@ class TestDealDistinctness:
         n = 100
 
         signatures = [
-            _card_signature(generate_deal(seed=seed, deal_id=i))
-            for i in range(n)
+            _card_signature(generate_deal(seed=seed, deal_id=i)) for i in range(n)
         ]
 
         # Check no consecutive duplicates
         for i in range(n - 1):
-            assert signatures[i] != signatures[i + 1], (
-                f"Consecutive deals {i} and {i+1} are identical (stuck state)"
-            )
+            assert (
+                signatures[i] != signatures[i + 1]
+            ), f"Consecutive deals {i} and {i + 1} are identical (stuck state)"
 
     def test_all_deals_distinct_in_batch(self) -> None:
         """All deals in a batch should be unique."""
@@ -117,14 +115,11 @@ class TestDealDistinctness:
         n = 1000
 
         signatures = [
-            _card_signature(generate_deal(seed=seed, deal_id=i))
-            for i in range(n)
+            _card_signature(generate_deal(seed=seed, deal_id=i)) for i in range(n)
         ]
 
         unique_count = len(set(signatures))
-        assert unique_count == n, (
-            f"Expected {n} unique deals, got {unique_count}"
-        )
+        assert unique_count == n, f"Expected {n} unique deals, got {unique_count}"
 
 
 class TestDeterminism:
@@ -189,9 +184,9 @@ class TestDealIntegrity:
 
             assert len(hands) == 4, f"Expected 4 hands, got {len(hands)}"
             for seat, hand in enumerate(hands):
-                assert len(hand) == 10, (
-                    f"Deal {deal_id} seat {seat}: expected 10 cards, got {len(hand)}"
-                )
+                assert (
+                    len(hand) == 10
+                ), f"Deal {deal_id} seat {seat}: expected 10 cards, got {len(hand)}"
 
     def test_deal_card_counts_valid(self) -> None:
         """Each (suit, rank) should appear at most twice (double deck)."""
@@ -203,9 +198,9 @@ class TestDealIntegrity:
 
             counts = Counter((c.suit, c.rank) for c in all_cards)
             for card_key, count in counts.items():
-                assert count <= 2, (
-                    f"Deal {deal_id}: {card_key} appears {count} times (max 2)"
-                )
+                assert (
+                    count <= 2
+                ), f"Deal {deal_id}: {card_key} appears {count} times (max 2)"
 
 
 class TestSeedSpaceDistribution:
@@ -221,17 +216,22 @@ class TestSeedSpaceDistribution:
 
             # At least 3 of 4 hands should be different
             unique_hands = len(set(signatures))
-            assert unique_hands >= 3, (
-                f"Deal {deal_id}: only {unique_hands} unique hands out of 4"
-            )
+            assert (
+                unique_hands >= 3
+            ), f"Deal {deal_id}: only {unique_hands} unique hands out of 4"
 
-    @pytest.mark.parametrize("contract_type,trump_suit", [
-        ("suit", "H"),
-        ("suit", "S"),
-        ("high", None),
-        ("low", None),
-    ])
-    def test_trick_distribution_bounded(self, contract_type: str, trump_suit: str | None) -> None:
+    @pytest.mark.parametrize(
+        "contract_type,trump_suit",
+        [
+            ("suit", "H"),
+            ("suit", "S"),
+            ("high", None),
+            ("low", None),
+        ],
+    )
+    def test_trick_distribution_bounded(
+        self, contract_type: str, trump_suit: str | None
+    ) -> None:
         """Trick counts should be reasonably distributed (not degenerate)."""
         seed = 42
         n = 200
@@ -249,12 +249,12 @@ class TestSeedSpaceDistribution:
         avg_t1 = result["avg_team1"]
 
         # Verify averages sum to 10 (10 tricks per hand)
-        assert abs((avg_t0 + avg_t1) - 10.0) < 0.01, (
-            f"Expected avg_team0 + avg_team1 = 10, got {avg_t0 + avg_t1}"
-        )
+        assert (
+            abs((avg_t0 + avg_t1) - 10.0) < 0.01
+        ), f"Expected avg_team0 + avg_team1 = 10, got {avg_t0 + avg_t1}"
 
         # Distribution should not be degenerate (one team winning all)
         t0_ratio = avg_t0 / 10.0
-        assert 0.1 < t0_ratio < 0.9, (
-            f"Trick distribution too skewed: Team0={t0_ratio:.2%}"
-        )
+        assert (
+            0.1 < t0_ratio < 0.9
+        ), f"Trick distribution too skewed: Team0={t0_ratio:.2%}"

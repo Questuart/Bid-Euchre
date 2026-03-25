@@ -11,6 +11,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.integration
 import yaml
 
 SUITE_PATH = "experiments/suites/baseline_tiny.yaml"
@@ -34,23 +36,21 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
     cmd = [
         "python",
         "scripts/run_suite.py",
-        "--suite", SUITE_PATH,
-        "--seed", str(SEED),
-        "--n-per", str(N_PER),
-        "--run-dir", str(tmp_path),
-        "--no-reports"  # Speed up test
+        "--suite",
+        SUITE_PATH,
+        "--seed",
+        str(SEED),
+        "--n-per",
+        str(N_PER),
+        "--run-dir",
+        str(tmp_path),
+        "--no-reports",  # Speed up test
     ]
 
     env = {**os.environ, "PYTHONPATH": "src"}
 
     try:
-        subprocess.run(
-            cmd,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError as e:
         pytest.fail(
             f"Suite runner failed:\n"
@@ -86,13 +86,15 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
         f"Directories: {sorted(new_dirs)}"
     )
 
-    assert len(member_run_dirs) == 3, (
-        f"Expected 3 member run directories, found {len(member_run_dirs)}"
-    )
+    assert (
+        len(member_run_dirs) == 3
+    ), f"Expected 3 member run directories, found {len(member_run_dirs)}"
 
     # Verify rollup directory structure
     assert (rollup_dir / "meta.json").exists(), "Missing rollup meta.json"
-    assert (rollup_dir / "suite_effective.yaml").exists(), "Missing suite_effective.yaml"
+    assert (
+        rollup_dir / "suite_effective.yaml"
+    ).exists(), "Missing suite_effective.yaml"
     assert (rollup_dir / "rollup.json").exists(), "Missing rollup.json"
     assert (rollup_dir / "reports" / "ROLLUP.md").exists(), "Missing reports/ROLLUP.md"
 
@@ -112,9 +114,9 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
     assert rollup["suite_seed"] == SEED, f"suite_seed should be {SEED}"
     assert rollup["suite_n_per"] == N_PER, f"suite_n_per should be {N_PER}"
     assert "configs" in rollup, "rollup.json missing 'configs' field"
-    assert len(rollup["configs"]) == 3, (
-        f"Expected 3 configs in rollup.json, found {len(rollup['configs'])}"
-    )
+    assert (
+        len(rollup["configs"]) == 3
+    ), f"Expected 3 configs in rollup.json, found {len(rollup['configs'])}"
 
     # Verify each config entry in rollup
     for config in rollup["configs"]:
@@ -122,20 +124,23 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
         assert "run_id" in config, "config missing 'run_id'"
         assert "run_dir" in config, "config missing 'run_dir'"
         assert "status" in config, "config missing 'status'"
-        assert config["status"] in ["ok", "failed"], f"Invalid status: {config['status']}"
+        assert config["status"] in [
+            "ok",
+            "failed",
+        ], f"Invalid status: {config['status']}"
 
         # Verify run_dir is relative (sibling directory name, not absolute path)
         run_dir_value = config["run_dir"]
-        assert not run_dir_value.startswith("/"), (
-            f"run_dir should be relative (sibling dir name), not absolute: {run_dir_value}"
-        )
-        assert not run_dir_value.startswith("data/"), (
-            f"run_dir should be relative (sibling dir name), not path: {run_dir_value}"
-        )
+        assert not run_dir_value.startswith(
+            "/"
+        ), f"run_dir should be relative (sibling dir name), not absolute: {run_dir_value}"
+        assert not run_dir_value.startswith(
+            "data/"
+        ), f"run_dir should be relative (sibling dir name), not path: {run_dir_value}"
         # Should be just the directory name (e.g., "baseline_greedy_42_20260106_213640")
-        assert "/" not in run_dir_value, (
-            f"run_dir should be a single directory name (no slashes): {run_dir_value}"
-        )
+        assert (
+            "/" not in run_dir_value
+        ), f"run_dir should be a single directory name (no slashes): {run_dir_value}"
 
     # Load and verify meta.json (schema v2)
     with (rollup_dir / "meta.json").open("r") as f:
@@ -143,13 +148,19 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
 
     assert meta["schema_version"] == 2, "meta.json schema_version should be 2"
     assert "run_id" in meta, "meta.json missing 'run_id'"
-    assert meta["run_id"].startswith("suite_"), "rollup run_id should start with 'suite_'"
+    assert meta["run_id"].startswith(
+        "suite_"
+    ), "rollup run_id should start with 'suite_'"
     assert "created_at_utc" in meta, "meta.json missing 'created_at_utc'"
-    assert meta["created_at_utc"].endswith("Z"), "created_at_utc should be UTC (end with Z)"
+    assert meta["created_at_utc"].endswith(
+        "Z"
+    ), "created_at_utc should be UTC (end with Z)"
     assert "git_sha" in meta, "meta.json missing 'git_sha'"
     assert meta["config_path"] == SUITE_PATH, "config_path should point to suite file"
     assert "config_sha256" in meta, "meta.json missing 'config_sha256'"
-    assert meta["experiment_name"] == "baseline_tiny", "experiment_name should match suite_name"
+    assert (
+        meta["experiment_name"] == "baseline_tiny"
+    ), "experiment_name should match suite_name"
 
     # Verify suite-specific fields in meta.json
     assert "suite" in meta, "meta.json missing 'suite' object"
@@ -159,9 +170,9 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
     assert suite_meta["seed"] == SEED, f"seed should be {SEED} in suite metadata"
     assert suite_meta["n_per"] == N_PER, f"n_per should be {N_PER} in suite metadata"
     assert "member_run_ids" in suite_meta, "suite metadata missing 'member_run_ids'"
-    assert len(suite_meta["member_run_ids"]) == 3, (
-        f"Expected 3 member_run_ids, found {len(suite_meta['member_run_ids'])}"
-    )
+    assert (
+        len(suite_meta["member_run_ids"]) == 3
+    ), f"Expected 3 member_run_ids, found {len(suite_meta['member_run_ids'])}"
 
     # Load and verify suite_effective.yaml
     with (rollup_dir / "suite_effective.yaml").open("r") as f:
@@ -180,15 +191,13 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
 
     # Verify each member run directory has required files
     for run_dir in member_run_dirs:
-        assert (run_dir / "meta.json").exists(), (
-            f"Missing meta.json in {run_dir.name}"
-        )
-        assert (run_dir / "config_effective.yaml").exists(), (
-            f"Missing config_effective.yaml in {run_dir.name}"
-        )
-        assert (run_dir / "results").is_dir(), (
-            f"Missing results/ directory in {run_dir.name}"
-        )
+        assert (run_dir / "meta.json").exists(), f"Missing meta.json in {run_dir.name}"
+        assert (
+            run_dir / "config_effective.yaml"
+        ).exists(), f"Missing config_effective.yaml in {run_dir.name}"
+        assert (
+            run_dir / "results"
+        ).is_dir(), f"Missing results/ directory in {run_dir.name}"
 
         # Verify --no-reports worked (reports/ exists but is empty or only has dirs)
         reports_dir = run_dir / "reports"
@@ -204,6 +213,6 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
             run_meta = json.load(f)
 
         assert "run_id" in run_meta, f"run_id missing in {run_dir.name}/meta.json"
-        assert "schema_version" in run_meta, (
-            f"schema_version missing in {run_dir.name}/meta.json"
-        )
+        assert (
+            "schema_version" in run_meta
+        ), f"schema_version missing in {run_dir.name}/meta.json"
