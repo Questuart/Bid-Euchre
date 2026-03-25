@@ -2194,3 +2194,268 @@ class TestControllerPersistenceAndDedupe:
         assert "items" in data
         assert "summary" in data
         assert data["summary"]["total"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Edge-Case Hardening — concurrent reconcile+ack race
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentReconcileAckRace:
+    """Prove that ack state is not lost when reconcile runs concurrently.
+
+    Scenario: A consumer acks an item and saves to disk between two
+    reconcile cycles. The second cycle must load the acked state from disk
+    and preserve it during merge, even if the in-memory FleetStatus from
+    the first reconcile was never updated with the ack.
+    """
+
+    def test_ack_between_reconcile_cycles_is_preserved(self, tmp_path: Path):
+        """Ack written to disk between two reconcile() calls is not lost."""
+        finding = _monitor_finding(
+            severity="high",
+            summary="Lane stalled",
+            details={"lane_id": "author-a"},
+        )
+
+        # Cycle 1: derive and persist.
+        status1 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=NOW_ISO,
+        )
+        item_id = status1.items[0].item_id
+        assert status1.items[0].state == STATE_OPEN
+
+        # Simulate external consumer: load, ack, save — without going
+        # through the reconcile function (mimics a concurrent process).
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None
+        assert ack_item(loaded, item_id) is True
+        save_fleet_status(loaded, tmp_path)
+
+        # Cycle 2: reconcile with same finding — should pick up acked state.
+        later = "2026-03-24T23:00:00+00:00"
+        status2 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=later,
+        )
+        matched = [i for i in status2.items if i.item_id == item_id]
+        assert len(matched) == 1
+        assert matched[0].state == STATE_ACKED
+
+    def test_suppress_between_reconcile_cycles_is_preserved(self, tmp_path: Path):
+        """Suppress written between two reconcile() calls is not lost."""
+        finding = _monitor_finding(
+            severity="warn",
+            summary="PR #99 failing",
+            details={"number": 99},
+        )
+
+        status1 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=NOW_ISO,
+        )
+        item_id = status1.items[0].item_id
+
+        # Simulate external suppress.
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None
+        assert suppress_item(loaded, item_id) is True
+        save_fleet_status(loaded, tmp_path)
+
+        # Cycle 2: reconcile with same finding — suppressed state persists.
+        later = "2026-03-24T23:00:00+00:00"
+        status2 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=later,
+        )
+        matched = [i for i in status2.items if i.item_id == item_id]
+        assert len(matched) == 1
+        assert matched[0].state == STATE_SUPPRESSED
+
+    def test_ack_then_finding_disappears_clears_correctly(self, tmp_path: Path):
+        """Acked item whose finding disappears transitions to cleared."""
+        finding = _monitor_finding(
+            severity="high",
+            summary="Lane dead",
+            details={"lane_id": "author-b"},
+        )
+
+        # Cycle 1: create item, ack it externally.
+        status1 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[finding],
+            now_iso=NOW_ISO,
+        )
+        item_id = status1.items[0].item_id
+        loaded = load_fleet_status(tmp_path)
+        assert loaded is not None
+        ack_item(loaded, item_id)
+        save_fleet_status(loaded, tmp_path)
+
+        # Cycle 2: finding gone — acked item should auto-clear.
+        later = "2026-03-24T23:00:00+00:00"
+        status2 = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[],
+            now_iso=later,
+        )
+        matched = [i for i in status2.items if i.item_id == item_id]
+        assert len(matched) == 1
+        assert matched[0].state == STATE_CLEARED
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Edge-Case Hardening — missing fleet_status.json on first boot
+# ---------------------------------------------------------------------------
+
+
+class TestFirstBootMissingFleetStatus:
+    """Prove that the first reconcile cycle works correctly when there is no
+    previous fleet_status.json on disk (cold start / first boot).
+    """
+
+    def test_first_boot_empty_runtime_dir(self, tmp_path: Path):
+        """Reconcile works on a completely empty runtime directory."""
+        # The directory exists but is empty — no fleet_status.json.
+        status = reconcile(
+            runtime_dir=tmp_path,
+            now_iso=NOW_ISO,
+        )
+        assert status.cycle_count == 1
+        assert len(status.items) == 0
+        # File should now exist.
+        assert (tmp_path / "fleet_status.json").exists()
+
+    def test_first_boot_runtime_dir_does_not_exist(self, tmp_path: Path):
+        """Reconcile creates the runtime directory if it doesn't exist."""
+        nested = tmp_path / "deep" / "runtime"
+        assert not nested.exists()
+
+        status = reconcile(
+            runtime_dir=nested,
+            monitor_findings=[_monitor_finding(severity="warn", summary="test")],
+            now_iso=NOW_ISO,
+        )
+        assert status.cycle_count == 1
+        assert len(status.items) == 1
+        assert (nested / "fleet_status.json").exists()
+
+    def test_first_boot_with_findings_produces_all_new_items(self, tmp_path: Path):
+        """On first boot, all findings become new open items (no merge)."""
+        findings = [
+            _monitor_finding(
+                severity="high",
+                summary="Lane A dead",
+                details={"lane_id": "author-a"},
+            ),
+            _monitor_finding(
+                severity="warn",
+                summary="PR #50 failing",
+                category="pr_status",
+                details={"number": 50},
+            ),
+        ]
+
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=findings,
+            now_iso=NOW_ISO,
+        )
+        assert status.cycle_count == 1
+        assert len(status.open_items) == 2
+        # All items should have first_seen_at == NOW_ISO (not carried forward).
+        for item in status.items:
+            assert item.first_seen_at == NOW_ISO
+
+    def test_load_fleet_status_empty_file(self, tmp_path: Path):
+        """An empty fleet_status.json returns None (not crash)."""
+        (tmp_path / "fleet_status.json").write_text("")
+        assert load_fleet_status(tmp_path) is None
+
+    def test_load_fleet_status_whitespace_only(self, tmp_path: Path):
+        """Whitespace-only fleet_status.json returns None."""
+        (tmp_path / "fleet_status.json").write_text("   \n  ")
+        assert load_fleet_status(tmp_path) is None
+
+    def test_load_fleet_status_truncated_json(self, tmp_path: Path):
+        """Truncated JSON (partial write) returns None."""
+        (tmp_path / "fleet_status.json").write_text('{"items": [{"item_id": "abc"')
+        assert load_fleet_status(tmp_path) is None
+
+    def test_load_fleet_status_wrong_type_list(self, tmp_path: Path):
+        """fleet_status.json containing a JSON list recovers gracefully."""
+        (tmp_path / "fleet_status.json").write_text("[]")
+        # list → from_dict handles non-dict by returning empty FleetStatus.
+        result = load_fleet_status(tmp_path)
+        assert result is not None
+        assert len(result.items) == 0
+        assert result.cycle_count == 0
+
+    def test_load_fleet_status_wrong_type_string(self, tmp_path: Path):
+        """fleet_status.json containing a JSON string returns None."""
+        (tmp_path / "fleet_status.json").write_text('"just a string"')
+        result = load_fleet_status(tmp_path)
+        # String has no .get() and is not a dict — should be caught.
+        assert result is not None
+        assert len(result.items) == 0
+
+    def test_load_fleet_status_wrong_type_number(self, tmp_path: Path):
+        """fleet_status.json containing a JSON number returns None."""
+        (tmp_path / "fleet_status.json").write_text("42")
+        result = load_fleet_status(tmp_path)
+        assert result is not None
+        assert len(result.items) == 0
+
+    def test_from_dict_skips_malformed_items(self):
+        """FleetStatus.from_dict skips items with invalid severity/state."""
+        data = {
+            "items": [
+                {
+                    "item_id": "good",
+                    "severity": "high",
+                    "category": "test",
+                    "source": "test",
+                    "summary": "valid item",
+                    "first_seen_at": NOW_ISO,
+                    "last_seen_at": NOW_ISO,
+                },
+                {
+                    "item_id": "bad_severity",
+                    "severity": "INVALID_LEVEL",
+                    "category": "test",
+                    "source": "test",
+                    "summary": "bad severity",
+                    "first_seen_at": NOW_ISO,
+                    "last_seen_at": NOW_ISO,
+                },
+                {
+                    # Missing required fields entirely.
+                    "item_id": "missing_fields",
+                },
+            ],
+            "generated_at": NOW_ISO,
+            "cycle_count": 5,
+        }
+        status = FleetStatus.from_dict(data)
+        # Only the valid item should survive.
+        assert len(status.items) == 1
+        assert status.items[0].item_id == "good"
+        assert status.cycle_count == 5
+
+    def test_reconcile_recovers_after_corrupt_file(self, tmp_path: Path):
+        """Reconcile works even when previous fleet_status.json is garbled."""
+        # Write garbled data.
+        (tmp_path / "fleet_status.json").write_text('{"items": "not_a_list"}')
+        status = reconcile(
+            runtime_dir=tmp_path,
+            monitor_findings=[_monitor_finding(severity="warn", summary="test")],
+            now_iso=NOW_ISO,
+        )
+        # Should start fresh (cycle 1) since previous is unloadable.
+        assert status.cycle_count == 1
+        assert len(status.items) == 1

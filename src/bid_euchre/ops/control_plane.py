@@ -179,11 +179,27 @@ class FleetStatus:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FleetStatus:
-        items = [ActionableItem(**item) for item in data.get("items", [])]
+        items: list[ActionableItem] = []
+        raw_items = data.get("items", []) if isinstance(data, dict) else []
+        if not isinstance(raw_items, list):
+            logger.warning(
+                "fleet_status items is not a list (got %s), resetting",
+                type(raw_items).__name__,
+            )
+            raw_items = []
+        for raw_item in raw_items:
+            try:
+                items.append(ActionableItem(**raw_item))
+            except (TypeError, ValueError) as exc:
+                # Skip malformed items rather than crashing the entire load.
+                logger.warning("Skipping malformed item in fleet status: %s", exc)
+                continue
+        generated_at = data.get("generated_at", "") if isinstance(data, dict) else ""
+        cycle_count = data.get("cycle_count", 0) if isinstance(data, dict) else 0
         return cls(
             items=items,
-            generated_at=data.get("generated_at", ""),
-            cycle_count=data.get("cycle_count", 0),
+            generated_at=generated_at,
+            cycle_count=cycle_count,
         )
 
 
@@ -724,9 +740,20 @@ def load_fleet_status(runtime_dir: Path | None = None) -> FleetStatus | None:
     if not path.exists():
         return None
     try:
-        data = json.loads(path.read_text())
+        raw = path.read_text()
+        if not raw.strip():
+            logger.warning("Empty fleet status file at %s", path)
+            return None
+        data = json.loads(raw)
         return FleetStatus.from_dict(data)
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+    except (
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+        AttributeError,
+        OSError,
+    ) as exc:
         logger.warning("Could not load fleet status from %s: %s", path, exc)
         return None
 

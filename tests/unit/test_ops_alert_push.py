@@ -478,3 +478,118 @@ class TestConstants:
         assert SEVERITY_URGENT in PUSHABLE_SEVERITIES
         assert SEVERITY_INFO not in PUSHABLE_SEVERITIES
         assert SEVERITY_WARN not in PUSHABLE_SEVERITIES
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Edge-Case Hardening — malformed push_state.json recovery
+# ---------------------------------------------------------------------------
+
+
+class TestMalformedPushStateRecovery:
+    """Prove that malformed push_state.json files are handled gracefully.
+
+    Push state can become corrupt due to partial writes, disk full, or
+    manual editing. The system must return a fresh PushState and continue
+    operating rather than crashing.
+    """
+
+    def test_empty_file_returns_fresh_state(self, tmp_path: Path) -> None:
+        """An empty push_state.json returns a fresh PushState."""
+        (tmp_path / PUSH_STATE_FILE).write_text("")
+        state = load_push_state(runtime_dir=tmp_path)
+        assert state.items == {}
+        assert state.last_evaluation_at == ""
+
+    def test_whitespace_only_file_returns_fresh_state(self, tmp_path: Path) -> None:
+        """Whitespace-only push_state.json returns a fresh PushState."""
+        (tmp_path / PUSH_STATE_FILE).write_text("   \n\n  ")
+        state = load_push_state(runtime_dir=tmp_path)
+        assert state.items == {}
+
+    def test_truncated_json_returns_fresh_state(self, tmp_path: Path) -> None:
+        """Truncated JSON (partial write) returns a fresh PushState."""
+        (tmp_path / PUSH_STATE_FILE).write_text('{"items": {"abc": {"item_id": "ab')
+        state = load_push_state(runtime_dir=tmp_path)
+        assert state.items == {}
+
+    def test_items_not_a_dict_returns_fresh_state(self, tmp_path: Path) -> None:
+        """push_state.json with items as a list instead of dict recovers."""
+        (tmp_path / PUSH_STATE_FILE).write_text(
+            json.dumps({"items": ["not", "a", "dict"]})
+        )
+        state = load_push_state(runtime_dir=tmp_path)
+        assert state.items == {}
+
+    def test_malformed_item_record_skipped(self, tmp_path: Path) -> None:
+        """Individual malformed item records are skipped, valid ones preserved."""
+        data = {
+            "items": {
+                "good_item": {
+                    "item_id": "good_item",
+                    "last_pushed_at": NOW.isoformat(),
+                    "push_count": 3,
+                    "severity_at_push": "high",
+                },
+                "bad_item": {
+                    "item_id": "bad_item",
+                    # Missing required fields — will fail PushItemRecord(**v).
+                },
+                "extra_fields_item": {
+                    "item_id": "extra_fields_item",
+                    "last_pushed_at": NOW.isoformat(),
+                    "push_count": 1,
+                    "severity_at_push": "urgent",
+                    "unexpected_field": "should cause TypeError",
+                },
+            },
+            "last_evaluation_at": NOW.isoformat(),
+        }
+        (tmp_path / PUSH_STATE_FILE).write_text(json.dumps(data))
+        state = load_push_state(runtime_dir=tmp_path)
+        # Only the good_item should survive.
+        assert "good_item" in state.items
+        assert state.items["good_item"].push_count == 3
+        # The bad and extra-fields items were skipped.
+        assert "bad_item" not in state.items
+        assert "extra_fields_item" not in state.items
+        assert state.last_evaluation_at == NOW.isoformat()
+
+    def test_json_array_instead_of_object(self, tmp_path: Path) -> None:
+        """push_state.json containing a JSON array returns fresh state."""
+        (tmp_path / PUSH_STATE_FILE).write_text("[1, 2, 3]")
+        state = load_push_state(runtime_dir=tmp_path)
+        assert state.items == {}
+
+    def test_recovery_allows_subsequent_operations(self, tmp_path: Path) -> None:
+        """After recovering from corrupt state, normal push cycle works."""
+        # Start with corrupt data.
+        (tmp_path / PUSH_STATE_FILE).write_text("CORRUPT DATA!!!")
+        state = load_push_state(runtime_dir=tmp_path)
+        assert state.items == {}
+
+        # Normal push operation should work.
+        record_push(state, "new_item", SEVERITY_HIGH, now=NOW)
+        assert "new_item" in state.items
+        assert state.items["new_item"].push_count == 1
+
+        # Save and reload — should work cleanly.
+        save_push_state(state, runtime_dir=tmp_path)
+        reloaded = load_push_state(runtime_dir=tmp_path)
+        assert "new_item" in reloaded.items
+        assert reloaded.items["new_item"].push_count == 1
+
+    def test_from_dict_with_none_items(self) -> None:
+        """PushState.from_dict handles items=None gracefully."""
+        data: dict = {"items": None, "last_evaluation_at": ""}
+        state = PushState.from_dict(data)
+        assert state.items == {}
+
+    def test_evaluate_push_with_recovered_state(self) -> None:
+        """evaluate_push_needed works normally with a recovered (empty) state."""
+        item = _item(item_id="test123", severity=SEVERITY_HIGH)
+        fleet = _fleet(item)
+        # Recovered state is empty — all items should be flagged as new.
+        recovered_state = PushState()
+        result = evaluate_push_needed(fleet, _idle(True), recovered_state, now=NOW)
+        assert len(result) == 1
+        assert result[0].item_id == "test123"
