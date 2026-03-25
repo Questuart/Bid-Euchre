@@ -1181,6 +1181,338 @@ class TestActiveWorkGuard:
 
 
 # ---------------------------------------------------------------------------
+# False-stall regression proving run (#1679)
+# ---------------------------------------------------------------------------
+
+
+class TestFalseStallRegression:
+    """Prove stall guard from #1618 prevents false positives (#1679).
+
+    Key scenario: a lane has *stale* stall state from when it was idle, but is
+    now actively working.  The active-work guard must suppress the false stall
+    and reset the persisted observation.
+    """
+
+    def test_stale_observation_with_active_lane_no_false_stall(
+        self, tmp_path: Path
+    ) -> None:
+        """Pre-seeded stale stall state does NOT produce a false stall finding
+        when the lane is actively working (spinner present)."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 24, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-24T11:00:00Z")
+
+        # Pre-seed stall state: lane was idle for 5 cycles (well above threshold)
+        _save_stall_state(
+            _default_stall_state_path(runtime_dir),
+            {
+                "observations": {
+                    pkt.owner: {
+                        "packet_id": pkt.packet_id,
+                        "activity_epoch": 9999,
+                        "unchanged_count": 5,
+                        "recovery_count": 0,
+                    }
+                }
+            },
+        )
+
+        nudges: list[tuple[str, str]] = []
+
+        def mock_nudge(lane_id: str, packet_id: str) -> None:
+            nudges.append((lane_id, packet_id))
+
+        def probe(_: str) -> int:
+            return 9999  # Same epoch as stale observation (looks unchanged)
+
+        def capture(_: str) -> str:
+            # Lane is actively working — spinner visible
+            return "Implementing changes...\n⏺ Running Bash(git diff)…  3s\n"
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            findings = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=mock_nudge,
+                _capture_fn=capture,
+            )
+
+        # Active-work guard prevents false stall
+        assert len(findings) == 0, f"Expected no stall findings, got: {findings}"
+        assert len(nudges) == 0, "No nudge should be attempted on active lane"
+
+        # Verify stale observation was reset
+        state_path = _default_stall_state_path(runtime_dir)
+        import json as _json
+
+        state = _json.loads(state_path.read_text())
+        obs = state["observations"][pkt.owner]
+        assert obs["unchanged_count"] == 0, "Stale unchanged_count should be reset"
+        assert obs["recovery_count"] == 0, "Recovery count should be reset"
+
+    def test_stale_recovery_count_reset_by_active_work(self, tmp_path: Path) -> None:
+        """Pre-seeded recovery_count (from prior nudge) is reset when lane
+        shows active work, preventing immediate escalation."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 24, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-24T11:00:00Z")
+
+        # Pre-seed: lane was nudged once (recovery_count=1), still stalled
+        _save_stall_state(
+            _default_stall_state_path(runtime_dir),
+            {
+                "observations": {
+                    pkt.owner: {
+                        "packet_id": pkt.packet_id,
+                        "activity_epoch": 9999,
+                        "unchanged_count": 3,
+                        "recovery_count": 1,
+                    }
+                }
+            },
+        )
+
+        def probe(_: str) -> int:
+            return 9999
+
+        def capture(_: str) -> str:
+            return "Working...\n✻ Edit(src/foo.py)...\n"
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            findings = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda *_: None,
+                _capture_fn=capture,
+            )
+
+        assert len(findings) == 0
+        # Verify recovery_count is reset — next genuine stall will nudge, not escalate
+        import json as _json
+
+        state = _json.loads(_default_stall_state_path(runtime_dir).read_text())
+        obs = state["observations"][pkt.owner]
+        assert obs["recovery_count"] == 0
+
+    def test_active_lane_transitions_to_idle_is_detected(self, tmp_path: Path) -> None:
+        """Lane that was active then becomes idle IS correctly detected
+        as stalled after the required consecutive cycles.
+
+        Active phase: activity epoch changes each cycle (work happening).
+        Idle phase: epoch stops changing + no spinner → stall detected.
+        """
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 24, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-24T11:00:00Z")
+
+        # Activity epochs: changing during active work, then frozen.
+        # Cycles 1-3: epoch changes (active). Cycle 4: first frozen epoch
+        # (unchanged_count stays 0 because epoch just changed from 3000→9999).
+        # Cycle 5: same epoch (unchanged_count=1). Cycle 6: same epoch
+        # (unchanged_count=2, hits default threshold).
+        probe_values = iter([1000, 2000, 3000, 9999, 9999, 9999])
+
+        def probe(_: str) -> int:
+            return next(probe_values)
+
+        def capture(_: str) -> str:
+            # Only called when stall threshold is hit — pane is idle
+            return "All done.\n$\n"
+
+        nudges: list[tuple[str, str]] = []
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycles 1-3: changing epoch → unchanged_count resets, no stall
+            for i in range(3):
+                f = check_stalled_lanes(
+                    runtime_dir,
+                    now=now,
+                    _activity_probe=probe,
+                    _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
+                    _capture_fn=capture,
+                )
+                assert len(f) == 0, f"Active cycle {i+1} should not stall: {f}"
+
+            # Cycle 4: epoch changes to 9999 (new value) — unchanged_count=0
+            f4 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
+                _capture_fn=capture,
+            )
+            assert len(f4) == 0
+
+            # Cycle 5: same epoch 9999 — unchanged_count=1 (below threshold)
+            f5 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
+                _capture_fn=capture,
+            )
+            assert len(f5) == 0
+
+            # Cycle 6: same epoch 9999 — unchanged_count=2 → stall detected
+            f6 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
+                _capture_fn=capture,
+            )
+
+        assert len(f6) >= 1, "Idle lane should be detected as stalled"
+        assert "stalled" in f6[0].summary or "re-nudged" in f6[0].summary
+        assert len(nudges) == 1, "Should have nudged the now-idle lane"
+
+    def test_make_check_running_not_flagged_as_stalled(self, tmp_path: Path) -> None:
+        """A lane running ``make check-quiet`` with progress indicators is NOT
+        flagged as stalled, even though the activity epoch is unchanged
+        (make check can take several minutes with no tmux epoch change)."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 24, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-24T11:00:00Z")
+
+        def probe(_: str) -> int:
+            return 9999  # Unchanged epoch — make check is long-running
+
+        def capture(_: str) -> str:
+            return (
+                "$ make check-quiet\n"
+                "ruff check --force-exclude .\n"
+                "All checks passed!\n"
+                "ruff format --check .\n"
+                "148 files already formatted\n"
+                "⏺ Running Bash(make check-quiet)…  4m 12s\n"
+            )
+
+        nudges: list[tuple[str, str]] = []
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Run enough cycles to exceed stall threshold
+            for _ in range(5):
+                findings = check_stalled_lanes(
+                    runtime_dir,
+                    now=now,
+                    _activity_probe=probe,
+                    _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
+                    _capture_fn=capture,
+                )
+                assert (
+                    len(findings) == 0
+                ), f"make check should not trigger stall: {findings}"
+
+        assert len(nudges) == 0, "No nudge during make check"
+
+    def test_make_check_not_flagged_as_approval_stall(self, tmp_path: Path) -> None:
+        """``make check`` output with progress indicators does not trigger
+        approval-stall detection either."""
+        pane_content = {
+            "author-a": (
+                "$ make check-quiet\n"
+                "ruff check --force-exclude .\n"
+                "uv run python -m pytest tests/\n"
+                "⏺ Running Bash(make check-quiet)…  3m 45s\n"
+            ),
+        }
+
+        def capture_fn(lane_id: str) -> str | None:
+            return pane_content.get(lane_id)
+
+        with patch(
+            "bid_euchre.ops.worker_pool._resolve_tmux_target",
+            return_value="steward:platform.1",
+        ):
+            findings = check_approval_stalls(
+                runtime_dir=tmp_path,
+                _capture_fn=capture_fn,
+                _notify_fn=lambda *_: None,
+            )
+
+        assert len(findings) == 0
+
+    def test_genuinely_idle_lane_detected_from_fresh_state(
+        self, tmp_path: Path
+    ) -> None:
+        """A genuinely idle lane with no spinner IS correctly flagged as
+        stalled after the required consecutive unchanged cycles."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 24, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-24T11:00:00Z")
+
+        def probe(_: str) -> int:
+            return 9999
+
+        def capture(_: str) -> str:
+            # No spinner, no progress — genuinely idle
+            return "Last output was a while ago.\nSome old result.\n$\n"
+
+        nudges: list[tuple[str, str]] = []
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycle 1: first observation
+            f1 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
+                _capture_fn=capture,
+            )
+            assert len(f1) == 0  # Below threshold
+
+            # Cycle 2: unchanged_count=1 (still below default threshold of 2)
+            f2 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
+                _capture_fn=capture,
+            )
+            assert len(f2) == 0
+
+            # Cycle 3: unchanged_count=2 >= threshold → stall detected
+            f3 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                _activity_probe=probe,
+                _nudge_fn=lambda lid, pid: nudges.append((lid, pid)),
+                _capture_fn=capture,
+            )
+
+        assert len(f3) == 1
+        assert "stalled" in f3[0].summary or "re-nudged" in f3[0].summary
+        assert len(nudges) == 1, "Should have nudged the genuinely idle lane"
+
+
+# ---------------------------------------------------------------------------
 # check_merged_dispatches tests (Gap A: auto-merge bypass)
 # ---------------------------------------------------------------------------
 
