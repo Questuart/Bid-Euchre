@@ -27,16 +27,21 @@ import argparse
 import os
 import sys
 
-# Ensure the repo root is importable so ``web.*`` resolves.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
-from web.db import (  # noqa: E402
-    InviteCode,
-    create_tables,
-    generate_invite_code,
-    init_engine,
-    make_session_factory,
-)
+try:
+    from web.db import (
+        InviteCode,
+        create_tables,
+        generate_invite_code,
+        init_engine,
+        make_session_factory,
+    )
+except ModuleNotFoundError:
+    print(
+        "Error: web package not found. Run from repo root with:\n"
+        "  uv run python scripts/internal/manage_invite_codes.py ...",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 
 def _get_session():
