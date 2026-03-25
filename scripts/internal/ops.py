@@ -2209,17 +2209,28 @@ def cmd_supervisor(args: argparse.Namespace) -> int:
 
 
 def cmd_monitor(args: argparse.Namespace) -> int:
-    """Run a single ops monitoring cycle (SP-3-08)."""
+    """Run a single ops monitoring cycle (SP-3-08).
+
+    After collecting findings, the controller projection is updated via
+    ``reconcile()`` so that ``fleet_status.json`` stays current.  Pass
+    ``--no-reconcile`` to skip the projection update (useful in tests or
+    when only findings output is needed).
+    """
+    from dataclasses import asdict as _asdict
+
+    from bid_euchre.ops.control_plane import reconcile as _reconcile
     from bid_euchre.ops.monitor import (
         format_findings_json,
         format_findings_text,
         run_monitoring_cycle,
     )
+    from bid_euchre.ops.task_queue import list_packets
 
     skip_pr = getattr(args, "skip_pr_check", False)
     no_notify = getattr(args, "no_notify", False)
     no_recovery = getattr(args, "no_recovery", False)
     no_auto_dispatch = getattr(args, "no_auto_dispatch", False)
+    no_reconcile = getattr(args, "no_reconcile", False)
 
     findings = run_monitoring_cycle(
         runtime_dir=args.runtime_dir,
@@ -2233,6 +2244,19 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         print(json.dumps(format_findings_json(findings), indent=2))
     else:
         print(format_findings_text(findings))
+
+    # Update the controller projection so fleet_status.json reflects the
+    # latest monitor findings and task queue state.
+    if not no_reconcile:
+        try:
+            task_dicts = [_asdict(p) for p in list_packets(root=args.runtime_dir)]
+        except Exception:
+            task_dicts = None
+        _reconcile(
+            runtime_dir=args.runtime_dir,
+            monitor_finding_objects=findings,
+            task_packets=task_dicts,
+        )
 
     # Exit 1 if any high-severity findings
     has_high = any(f.severity == "high" for f in findings)
@@ -3555,6 +3579,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-auto-dispatch",
         action="store_true",
         help="Disable auto-dispatch of approved packets to idle lanes",
+    )
+    monitor_parser.add_argument(
+        "--no-reconcile",
+        action="store_true",
+        help="Skip controller projection update (fleet_status.json) after monitor sweep",
     )
 
     # fleet (SP-4-07: controller projection read-only view)
