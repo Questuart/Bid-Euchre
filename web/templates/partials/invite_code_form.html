@@ -1,0 +1,39 @@
+{# Invite code entry form partial.
+   Context variables:
+     - error (optional): str — error message to display
+#}
+<div id="invite-code-form" style="text-align:center; padding:2rem 1rem;">
+    <h2 style="font-size:1.5rem; margin-bottom:0.5rem;">Enter Invite Code</h2>
+    <p style="color:var(--color-text-muted, #bdbdbd); margin-bottom:1.5rem; font-size:0.95rem;">
+        Enter your invite code to access the game.
+    </p>
+
+    {% if error %}
+    <div class="invite-error" style="color:#e53935; margin-bottom:1rem; font-size:0.9rem;">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post"
+          action="/enter-code"
+          hx-post="/enter-code"
+          hx-target="#invite-code-form"
+          hx-swap="outerHTML">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:0.75rem;">
+            <input id="invite-code-input"
+                   name="code"
+                   type="text"
+                   maxlength="12"
+                   required
+                   autofocus
+                   autocomplete="off"
+                   autocapitalize="characters"
+                   spellcheck="false"
+                   placeholder="e.g. A3X7KP9Q"
+                   style="text-transform:uppercase; text-align:center; font-size:1.3rem;
+                          letter-spacing:0.15em; padding:0.6rem 1rem; width:14rem;
+                          font-family:monospace;">
+            <button type="submit" class="btn btn--play-again">Enter Game</button>
+        </div>
+    </form>
+</div>

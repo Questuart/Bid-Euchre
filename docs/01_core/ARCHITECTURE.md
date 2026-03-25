@@ -101,6 +101,7 @@ that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 - `generate_rung_tables.py` — Canonical CSV table generation for Arc D v2 rung reports
 - `github_pr_state.py` — GitHub CLI wrappers for PR metadata and CI status
 - `manage_artifacts.py` — Artifact lifecycle CLI (status, supersession, quarantine, prune)
+- `manage_invite_codes.py` — Invite code admin CLI (generate, list, revoke) for browser game pilot access
 - `plan_review_driver.py` — Plan review loop orchestrator (Codex -> fix -> re-review cycles with fallback alerting)
 - `play_policy_gate.py` — Play policy stability gate
 - `review_common.py` — Shared severity constants and predicates for the review pipeline
@@ -273,6 +274,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_interpretability.py` | Interpretability pipeline (SHAP, selection paths, decision comparison) |
 | `scripts/internal/generate_interpretability_charts.py` | Interpretability chart generation from CSV data |
 | `scripts/internal/manage_artifacts.py` | Artifact lifecycle CLI (status, supersession, quarantine, prune) |
+| `scripts/internal/manage_invite_codes.py` | Invite code admin CLI (generate, list, revoke) for browser game pilot access |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/plan_review_driver.py` | Plan review loop orchestrator (Codex -> fix -> re-review cycles with fallback alerting) |
 | `scripts/internal/test_codex_plan_review_live.py` | Live smoke/quick/full test for Codex CLI plan review pipeline |

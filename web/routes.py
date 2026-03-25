@@ -25,7 +25,7 @@ from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
 from bid_euchre.strategy.bidding import BidAction
 
 from .ai_manager import AIManager
-from .db import Decision, Hand, Match, Player
+from .db import Decision, Hand, InviteCode, Match, Player
 
 router = APIRouter()
 
@@ -305,14 +305,92 @@ async def ready(request: Request):
 
 @router.get("/", response_class=HTMLResponse)
 async def landing(request: Request):
-    """Landing page — create game form."""
+    """Landing page — invite code entry form."""
     templates = _get_templates(request)
     return templates.TemplateResponse("landing.html", {"request": request})
 
 
+@router.post("/enter-code")
+async def enter_code(
+    request: Request,
+    code: str = Form(...),
+):
+    """Validate an invite code and redirect to the game.
+
+    If the code is valid and unused, creates a new Player and binds the
+    code.  If the code was already redeemed, returns the existing player's
+    link.  Invalid or revoked codes show an error on the landing page.
+
+    HTMX-aware: when the request comes from HTMX, returns an HX-Redirect
+    header so the client performs a full navigation to the game page.
+    """
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        normalized = code.strip().upper()
+        invite = session.query(InviteCode).filter_by(code=normalized).first()
+
+        # --- Reject invalid / revoked codes ---
+        if invite is None:
+            ctx = {"request": request, "error": "Invalid invite code."}
+            return HTMLResponse(
+                templates.get_template("partials/invite_code_form.html").render(ctx),
+                status_code=200,
+            )
+
+        if invite.status == "revoked":
+            ctx = {
+                "request": request,
+                "error": "This invite code has been revoked.",
+            }
+            return HTMLResponse(
+                templates.get_template("partials/invite_code_form.html").render(ctx),
+                status_code=200,
+            )
+
+        # --- Already redeemed — return existing player link ---
+        if invite.status == "redeemed" and invite.player_id is not None:
+            player = session.query(Player).get(invite.player_id)
+            if player is not None:
+                redirect_url = f"/play/{player.link_uuid}"
+                # HTMX-aware redirect
+                if request.headers.get("HX-Request"):
+                    return HTMLResponse(
+                        "",
+                        headers={"HX-Redirect": redirect_url},
+                    )
+                return RedirectResponse(url=redirect_url, status_code=302)
+
+        # --- Active code — create player and redeem ---
+        link_uuid = str(uuid.uuid4())
+        player = Player(link_uuid=link_uuid)
+        session.add(player)
+        session.flush()
+
+        invite.status = "redeemed"
+        invite.player_id = player.id
+        invite.redeemed_at = datetime.now(timezone.utc)
+        session.commit()
+
+        redirect_url = f"/play/{link_uuid}"
+        # HTMX-aware redirect
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                "",
+                headers={"HX-Redirect": redirect_url},
+            )
+        return RedirectResponse(url=redirect_url, status_code=302)
+    finally:
+        session.close()
+
+
 @router.post("/new")
 async def create_game(request: Request):
-    """Create a new game link and redirect to the play page."""
+    """Create a new game link and redirect to the play page.
+
+    Legacy route — kept for backwards compatibility.  New pilot access
+    goes through ``/enter-code``.
+    """
     session = _get_session(request)
     try:
         link_uuid = str(uuid.uuid4())
