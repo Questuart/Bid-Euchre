@@ -27,7 +27,7 @@ GUARDED_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"^\s*gh\s+pr\s+merge\b"),
     re.compile(r"uv\s+run\s+python\s+scripts/internal/ops\.py\s+task\s+dispatch\b"),
     re.compile(r"uv\s+run\s+python\s+scripts/internal/ops\.py\s+workers\s+dispatch\b"),
-    re.compile(r"dispatch_to_worker\s*\("),
+    re.compile(r"(?:uv\s+run\s+)?python[3]?\s.*dispatch_to_worker\s*\("),
 ]
 
 

@@ -132,7 +132,8 @@ monitoring infrastructure.
 11. **Send rebase nudge** to lanes at HIGH divergence:
     ```bash
     uv run python scripts/internal/ops.py message send \
-      --from orchestrator --to <lane> --type supervisor_alert \
+      --from orchestrator --to <lane> --type escalation \
+      --priority high \
       --summary "Branch diverged 16+ commits from main — rebase before continuing"
     ```
 

@@ -23,8 +23,9 @@ import sys
 
 # --- Tag extraction ----------------------------------------------------------
 
-# Strip markdown code fences and inline code before scanning for channel tags.
-# This prevents pasted <channel> examples from being audited as real ingress.
+# Strip markdown code fences and neutralise inline code before scanning for
+# channel tags.  This prevents pasted <channel> examples from being audited
+# as real ingress while preserving backtick content inside real channel bodies.
 _CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`[^`]+`")
 
@@ -39,14 +40,29 @@ _CHANNEL_RE = re.compile(
 )
 
 
-def _strip_code_blocks(text: str) -> str:
-    """Remove markdown code fences and inline code spans from *text*.
+def _neutralise_inline_code(m: re.Match[str]) -> str:
+    """Replace ``<channel`` inside an inline-code match with a safe token.
 
-    Returns the text with code blocks replaced by empty strings so that
-    ``<channel>`` tags pasted as examples inside code are not matched.
+    The backtick delimiters and the rest of the span are preserved so that
+    real channel bodies containing inline code (e.g. ``use `git status` ``)
+    are not damaged.
+    """
+    span = m.group(0)
+    if "<channel" in span:
+        return span.replace("<channel", "&lt;channel")
+    return span
+
+
+def _strip_code_blocks(text: str) -> str:
+    """Remove fenced code blocks and neutralise ``<channel`` inside inline code.
+
+    Fenced blocks (triple-backtick) are removed entirely.  Inline backtick
+    spans are *preserved* but any ``<channel`` inside them is replaced with
+    ``&lt;channel`` so the tag regex will not match pasted examples, while
+    the surrounding backtick content is kept intact for real channel bodies.
     """
     text = _CODE_FENCE_RE.sub("", text)
-    return _INLINE_CODE_RE.sub("", text)
+    return _INLINE_CODE_RE.sub(_neutralise_inline_code, text)
 
 
 def extract_channel_blocks(text: str) -> list[tuple[str, str]]:

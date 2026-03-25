@@ -250,7 +250,7 @@ def format_ack_confirmation(result: AckResult) -> str:
         lines.append("")
         lines.append("Candidates:")
         for cid in result.candidates:
-            lines.append(f"  {cid[:8]}")
+            lines.append(f"  {cid}")
         return "\n".join(lines)
 
     return f"\u274c {result.message}"
