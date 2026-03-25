@@ -3,12 +3,14 @@
      - link_uuid: str — player's game link UUID
      - turn_number: int — current turn for idempotency
      - auction: list[dict] — auction transcript entries
-       Each entry: {seat, n, action, contract? (if action == "bid")}
+       Each entry: {seat, n, action, contract? (if action == "bid"), bid_type?}
      - current_high_bid: int — highest bid so far (0 if no bids yet)
      - dealer_seat: int — seat number of the dealer
+     - bid_type: str — current winning bid type ("regular", "moon", or "loner")
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set bid_type_labels = {"regular": "", "moon": " Moon", "loner": " Loner"} %}
 
 <div id="bid-panel">
     <h3>Auction</h3>
@@ -31,7 +33,13 @@
                         {% if entry.action == "pass" %}
                             Pass
                         {% else %}
-                            {{ entry.n }}
+                            {% if entry.get("bid_type", "regular") == "moon" %}
+                                Moon
+                            {% elif entry.get("bid_type", "regular") == "loner" %}
+                                Loner
+                            {% else %}
+                                {{ entry.n }}
+                            {% endif %}
                             {% if entry.contract in suit_symbols %}
                                 {{ suit_symbols[entry.contract] }}
                             {% elif entry.contract == "HIGH" %}
@@ -57,13 +65,29 @@
         <input type="hidden" name="turn_number" value="{{ turn_number }}">
 
         <div class="bid-controls">
-            <label for="bid-level">Bid:</label>
-            <select id="bid-level" name="bid_n">
-                <option value="0">Pass</option>
-                {% for n in range(current_high_bid + 1, 11) %}
-                <option value="{{ n }}">{{ n }}</option>
-                {% endfor %}
+            {# Bid type selector #}
+            <label for="bid-type">Type:</label>
+            <select id="bid-type" name="bid_type"
+                    onchange="updateBidControls(this.value)">
+                <option value="regular"
+                    {% if bid_type|default("regular") not in ["regular"] %}disabled{% endif %}
+                >Regular</option>
+                <option value="moon"
+                    {% if bid_type|default("regular") == "loner" %}disabled{% endif %}
+                >Moon (10)</option>
+                <option value="loner">Loner (10)</option>
             </select>
+
+            {# Bid level — only for regular bids #}
+            <span id="bid-level-wrapper">
+                <label for="bid-level">Bid:</label>
+                <select id="bid-level" name="bid_n">
+                    <option value="0">Pass</option>
+                    {% for n in range(current_high_bid + 1, 11) %}
+                    <option value="{{ n }}">{{ n }}</option>
+                    {% endfor %}
+                </select>
+            </span>
 
             <label for="bid-contract">Contract:</label>
             <select id="bid-contract" name="bid_contract">
@@ -77,10 +101,43 @@
 
             <button type="submit">Submit Bid</button>
         </div>
+
+        {# Pass button — always visible as a quick action #}
+        <div class="bid-pass">
+            <button type="button"
+                    onclick="submitPass(this)"
+                    class="pass-btn">Pass</button>
+        </div>
     </form>
 
     {% if current_high_bid > 0 %}
-    <p class="bid-info">Current high bid: {{ current_high_bid }}</p>
+    <p class="bid-info">
+        Current high bid: {{ current_high_bid }}
+        {{ bid_type_labels.get(bid_type|default("regular"), "") }}
+    </p>
     {% endif %}
     <p class="bid-info">Dealer: {{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</p>
 </div>
+
+<script>
+function updateBidControls(bidType) {
+    var levelWrapper = document.getElementById('bid-level-wrapper');
+    var levelSelect = document.getElementById('bid-level');
+    if (bidType === 'moon' || bidType === 'loner') {
+        levelWrapper.style.display = 'none';
+        // Moon/loner are always level 10 — set hidden value
+        levelSelect.value = '10';
+    } else {
+        levelWrapper.style.display = '';
+    }
+}
+
+function submitPass(btn) {
+    var form = btn.closest('form');
+    // Set form fields for a pass
+    form.querySelector('[name="bid_n"]').value = '0';
+    form.querySelector('[name="bid_type"]').value = 'regular';
+    // Trigger HTMX submission
+    htmx.trigger(form, 'submit');
+}
+</script>

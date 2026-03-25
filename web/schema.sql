@@ -40,11 +40,18 @@ CREATE TABLE IF NOT EXISTS hands (
     dealer_seat INTEGER NOT NULL CHECK (dealer_seat BETWEEN 0 AND 3),
     status TEXT NOT NULL CHECK (status IN ('in_progress', 'redeal', 'complete')),
     winning_bid_n INTEGER,
+    winning_bid_type TEXT CHECK (
+        winning_bid_type IS NULL
+        OR winning_bid_type IN ('regular', 'moon', 'loner')
+    ),
     winning_contract TEXT CHECK (
         winning_contract IS NULL
         OR winning_contract IN ('C', 'D', 'H', 'S', 'HIGH', 'LOW')
     ),
     bidder_seat INTEGER CHECK (bidder_seat IS NULL OR bidder_seat BETWEEN 0 AND 3),
+    sitting_out_seat INTEGER CHECK (
+        sitting_out_seat IS NULL OR sitting_out_seat BETWEEN 0 AND 3
+    ),
     contract_type TEXT CHECK (
         contract_type IS NULL OR contract_type IN ('suit', 'high', 'low')
     ),

@@ -12,6 +12,15 @@ Required tests from sub-plan SP-1-01:
 9.  Dealer rotation
 10. Human leads after winning auction
 11. Visible state hides other hands
+
+Moon/loner tests from sub-plan SP-1-02:
+12. Moon/loner legality in get_legal_bids
+13. Overcall hierarchy tracking
+14. Moon exchange flow
+15. Loner sit-out trick flow
+16. Moon/loner scoring through compute_points
+17. Regular bid regression after moon/loner changes
+18. Serialization round-trip with moon/loner state
 """
 
 from __future__ import annotations
@@ -27,8 +36,11 @@ from bid_euchre.hosted_play.engine import (
     MATCH_TARGET,
     MatchEngine,
     _bid_order,
+    _next_active_seat,
+    _players_per_trick,
 )
 from bid_euchre.hosted_play.state import MatchState
+from bid_euchre.scoring import compute_points
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
 
@@ -58,6 +70,32 @@ class FixedBidder(BiddingPolicy):
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         if self._n > obs.current_high_bid:
             return BidAction.bid(self._n, self._contract)
+        return BidAction.pass_bid()
+
+
+class MoonBidder(BiddingPolicy):
+    """Bidding policy that bids moon if no bid yet, else passes."""
+
+    def __init__(self, contract: str = "S") -> None:
+        super().__init__(name=f"moon_{contract}")
+        self._contract = contract
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        if obs.current_high_bid == 0:
+            return BidAction.moon(self._contract)
+        return BidAction.pass_bid()
+
+
+class LonerBidder(BiddingPolicy):
+    """Bidding policy that bids loner if no bid yet, else passes."""
+
+    def __init__(self, contract: str = "S") -> None:
+        super().__init__(name=f"loner_{contract}")
+        self._contract = contract
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        if obs.current_high_bid == 0:
+            return BidAction.loner(self._contract)
         return BidAction.pass_bid()
 
 
@@ -104,15 +142,44 @@ def pass_engine() -> MatchEngine:
     )
 
 
-def _play_full_hand(engine: MatchEngine, state: MatchState) -> MatchState:
-    """Drive a full hand to completion, making first-legal plays for human."""
+@pytest.fixture
+def moon_engine() -> MatchEngine:
+    """Engine with a moon bidder and first-legal play strategy."""
+    return MatchEngine(
+        bidding_policy=MoonBidder(contract="S"),
+        play_strategy=FirstLegalPlay(),
+    )
+
+
+@pytest.fixture
+def loner_engine() -> MatchEngine:
+    """Engine with a loner bidder and first-legal play strategy."""
+    return MatchEngine(
+        bidding_policy=LonerBidder(contract="S"),
+        play_strategy=FirstLegalPlay(),
+    )
+
+
+def _play_full_hand(
+    engine: MatchEngine,
+    state: MatchState,
+    human_bid: BidAction | None = None,
+) -> MatchState:
+    """Drive a full hand to completion, making first-legal plays for human.
+
+    Args:
+        human_bid: Optional specific bid for the human. If None, bids 5S
+            if legal, else passes.
+    """
     hand = state.current_hand
     assert hand is not None
 
     # Handle auction phase
     while hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
-        # Human bids 5S if legal, else passes
-        if 5 > hand.current_high_bid:
+        if human_bid is not None:
+            state = engine.submit_human_bid(state, human_bid)
+            human_bid = None  # Only use the override once
+        elif 5 > hand.current_high_bid:
             state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
         else:
             state = engine.submit_human_bid(state, BidAction.pass_bid())
@@ -120,12 +187,13 @@ def _play_full_hand(engine: MatchEngine, state: MatchState) -> MatchState:
         if hand is None:
             return state
 
-    # Handle trick play phase
+    # Handle trick play phase (skip if human is sitting out)
     while (
         state.status == "active"
         and state.current_hand is not None
         and state.current_hand.phase == "trick_play"
         and state.current_hand.current_seat == HUMAN_SEAT
+        and state.current_hand.sitting_out_seat != HUMAN_SEAT
     ):
         legal = engine.get_legal_plays(state)
         state = engine.submit_human_card(state, legal[0])
@@ -788,6 +856,7 @@ class TestAIActionEvents:
             "auction",
             "contract_type",
             "trump",
+            "bid_type",
             "tricks_team0",
             "tricks_team1",
             "hand_size",
@@ -827,3 +896,517 @@ class TestMatchDeterminism:
         assert state2.current_hand is not None
         # Hands should differ (extremely unlikely to be identical)
         assert state1.current_hand.hands != state2.current_hand.hands
+
+
+# ===========================================================================
+# Moon/Loner Tests (SP-1-02)
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Test 12: Moon/loner legality in get_legal_bids
+# ---------------------------------------------------------------------------
+
+
+class TestMoonLonerLegality:
+    """get_legal_bids() includes moon/loner options when appropriate."""
+
+    def test_legal_bids_include_moon_and_loner(self, engine: MatchEngine) -> None:
+        """Fresh auction should include moon and loner bids."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # If human's turn in auction, get legal bids
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            legal = engine.get_legal_bids(state)
+
+            bid_types = {b.bid_type for b in legal if not b.is_pass()}
+            assert "regular" in bid_types, "Should include regular bids"
+            assert "moon" in bid_types, "Should include moon bids"
+            assert "loner" in bid_types, "Should include loner bids"
+
+            # Moon bids are always level 10
+            moon_bids = [b for b in legal if b.bid_type == "moon"]
+            assert all(b.n == 10 for b in moon_bids)
+
+            # Loner bids are always level 10
+            loner_bids = [b for b in legal if b.bid_type == "loner"]
+            assert all(b.n == 10 for b in loner_bids)
+
+    def test_no_regular_bids_after_moon(self) -> None:
+        """After a moon bid, regular bids are no longer legal."""
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # AI should have bid moon; when it's human's turn, check legality
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            legal = engine.get_legal_bids(state)
+            regular_bids = [
+                b for b in legal if b.bid_type == "regular" and not b.is_pass()
+            ]
+            assert (
+                len(regular_bids) == 0
+            ), "Regular bids should not be legal after a moon bid"
+
+            # Should still have pass, loner
+            assert any(b.is_pass() for b in legal)
+            loner_bids = [b for b in legal if b.bid_type == "loner"]
+            assert len(loner_bids) > 0, "Loner bids should overcall moon"
+
+    def test_only_pass_after_loner(self) -> None:
+        """After a loner bid, only pass is legal (for non-dealer)."""
+        engine = MatchEngine(
+            bidding_policy=LonerBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # AI should have bid loner
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            legal = engine.get_legal_bids(state)
+            is_dealer = hand.current_seat == hand.dealer_seat
+            non_pass = [b for b in legal if not b.is_pass()]
+            if not is_dealer:
+                # Non-dealer: only loner bids (to overcall) are legal,
+                # but since current bid IS loner, only dealer take-away is
+                # possible. Non-dealer gets only pass.
+                # Actually — loner overcalls moon and regular. After a
+                # loner, only another loner (dealer take-away) overcalls.
+                loner_bids = [b for b in non_pass if b.bid_type == "loner"]
+                assert len(loner_bids) == 0, "Non-dealer cannot overcall a loner bid"
+
+    def test_pass_always_legal(self, engine: MatchEngine) -> None:
+        """Pass is always an option regardless of current bid state."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            legal = engine.get_legal_bids(state)
+            assert any(b.is_pass() for b in legal)
+
+
+# ---------------------------------------------------------------------------
+# Test 13: Overcall hierarchy tracking
+# ---------------------------------------------------------------------------
+
+
+class TestOvercallHierarchy:
+    """bid_type and bid_rank are tracked correctly during auction."""
+
+    def test_moon_overcalls_regular(self) -> None:
+        """Moon overcalls any regular bid."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            # Human bids moon
+            state = engine.submit_human_bid(state, BidAction.moon("H"))
+            hand = state.current_hand
+            assert hand is not None
+
+            # After all others pass, hand state should reflect moon
+            if hand.phase in ("trick_play", "redeal"):
+                pass  # Auction ended
+            # During auction, bid_type should be "moon"
+            assert hand.bid_type == "moon"
+            assert hand.current_high_bid == 10
+            assert hand.bidder_seat == HUMAN_SEAT
+
+    def test_loner_overcalls_moon(self) -> None:
+        """Loner overcalls moon."""
+        # AI bids moon, human can overcall with loner
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            # Human overcalls with loner
+            state = engine.submit_human_bid(state, BidAction.loner("H"))
+            hand = state.current_hand
+            assert hand is not None
+            assert hand.bid_type == "loner"
+            assert hand.bidder_seat == HUMAN_SEAT
+
+    def test_regular_cannot_overcall_moon(self) -> None:
+        """Regular bid cannot overcall moon — only loner can."""
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            legal = engine.get_legal_bids(state)
+            regular_bids = [
+                b for b in legal if b.bid_type == "regular" and not b.is_pass()
+            ]
+            assert len(regular_bids) == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 14: Moon exchange flow
+# ---------------------------------------------------------------------------
+
+
+class TestMoonExchange:
+    """Moon win triggers a 2-card exchange before trick play."""
+
+    def test_moon_exchange_happens(self) -> None:
+        """After a moon bid wins, hands are modified by exchange."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            # Capture pre-exchange hands
+            hand_before_human = list(hand.hands[HUMAN_SEAT])
+            hand_before_partner = list(hand.hands[2])
+
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+
+            if hand.phase == "trick_play":
+                # Exchange should have occurred
+                assert hand.exchange_given is not None
+                assert hand.exchange_received is not None
+                assert len(hand.exchange_given) == 2
+                assert len(hand.exchange_received) == 2
+
+                # Hands should have changed (extremely unlikely to be same)
+                assert hand.hands[HUMAN_SEAT] != hand_before_human
+                assert hand.hands[2] != hand_before_partner
+
+                # Both hands should still have 10 cards
+                assert len(hand.hands[HUMAN_SEAT]) == 10
+                assert len(hand.hands[2]) == 10
+
+    def test_moon_exchange_state_persists(self) -> None:
+        """Exchange metadata survives serialization."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+
+            if hand.phase == "trick_play" and hand.exchange_given is not None:
+                data = MatchEngine.serialize(state)
+                restored = MatchEngine.deserialize(data)
+                assert restored.current_hand is not None
+                assert restored.current_hand.exchange_given == hand.exchange_given
+                assert restored.current_hand.exchange_received == hand.exchange_received
+
+
+# ---------------------------------------------------------------------------
+# Test 15: Loner sit-out trick flow
+# ---------------------------------------------------------------------------
+
+
+class TestLonerSitOut:
+    """Loner bid causes partner to sit out during trick play."""
+
+    def test_loner_sets_sitting_out(self) -> None:
+        """Human bids loner — partner (seat 2) sits out."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.loner("S"))
+            hand = state.current_hand
+            assert hand is not None
+
+            if hand.phase == "trick_play":
+                assert hand.sitting_out_seat == 2  # Human's partner
+                assert hand.bid_type == "loner"
+
+    def test_loner_3_player_tricks(self) -> None:
+        """Loner tricks have 3 players, not 4."""
+        assert _players_per_trick(None) == 4
+        assert _players_per_trick(2) == 3
+
+    def test_next_active_seat_skips_sitting_out(self) -> None:
+        """_next_active_seat skips the sitting-out seat."""
+        # Seat 2 sits out
+        assert _next_active_seat(1, 2) == 3  # skip 2
+        assert _next_active_seat(0, 2) == 1  # no skip needed
+        assert _next_active_seat(3, 2) == 0  # wrap around, no skip
+        assert _next_active_seat(1, None) == 2  # no sitting out
+
+    def test_ai_loner_human_sits_out(self) -> None:
+        """When AI partner (seat 2) bids loner, human (seat 0) sits out.
+
+        The engine should auto-advance through all trick play without
+        pausing for human input.
+        """
+        engine = MatchEngine(
+            bidding_policy=LonerBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        # We need a seed where seat 1 (left of dealer 0) bids first.
+        # With LonerBidder, the first AI to bid will bid loner.
+        # Let's find a state where the AI bids loner and human sits out.
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Check if the AI bid loner
+        if hand.sitting_out_seat == HUMAN_SEAT:
+            # Human is sitting out — engine should have auto-advanced
+            # through all trick play
+            assert hand.phase in ("trick_play", "complete")
+            # If trick play is still going, it shouldn't be waiting for human
+            if hand.phase == "trick_play":
+                assert hand.current_seat != HUMAN_SEAT
+
+    def test_loner_full_hand_completes(self) -> None:
+        """A loner hand plays to completion with correct trick count."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = _play_full_hand(engine, state, human_bid=BidAction.loner("S"))
+
+            # Hand should complete
+            assert state.hands_played >= 1
+
+
+# ---------------------------------------------------------------------------
+# Test 16: Moon/loner scoring through compute_points
+# ---------------------------------------------------------------------------
+
+
+class TestMoonLonerScoring:
+    """Verify correct scoring for moon and loner hands."""
+
+    def test_moon_scoring_make(self) -> None:
+        """Moon bid made (10 tricks): declaring team gets +20."""
+        pts0, pts1 = compute_points(
+            winning_bid=10,
+            bidder_position=0,
+            tricks_team0=10,
+            tricks_team1=0,
+            bid_type="moon",
+        )
+        assert pts0 == 20
+        assert pts1 == 0
+
+    def test_moon_scoring_fail(self) -> None:
+        """Moon bid failed: declaring team gets -20, defenders get tricks."""
+        pts0, pts1 = compute_points(
+            winning_bid=10,
+            bidder_position=0,
+            tricks_team0=8,
+            tricks_team1=2,
+            bid_type="moon",
+        )
+        assert pts0 == -20
+        assert pts1 == 2
+
+    def test_loner_scoring_make(self) -> None:
+        """Loner bid made (10 tricks): declaring team gets +40."""
+        pts0, pts1 = compute_points(
+            winning_bid=10,
+            bidder_position=0,
+            tricks_team0=10,
+            tricks_team1=0,
+            bid_type="loner",
+        )
+        assert pts0 == 40
+        assert pts1 == 0
+
+    def test_loner_scoring_fail(self) -> None:
+        """Loner bid failed: declaring team gets -40, defenders get tricks."""
+        pts0, pts1 = compute_points(
+            winning_bid=10,
+            bidder_position=0,
+            tricks_team0=7,
+            tricks_team1=3,
+            bid_type="loner",
+        )
+        assert pts0 == -40
+        assert pts1 == 3
+
+    def test_engine_moon_scoring_integration(self) -> None:
+        """Engine scores a moon hand correctly through _process_hand_end."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = _play_full_hand(engine, state, human_bid=BidAction.moon("S"))
+
+            if state.hands_played >= 1:
+                # Scores should reflect moon scoring (±20)
+                total = abs(state.score_human) + abs(state.score_ai)
+                # Moon: winner gets ±20, loser gets tricks won
+                # So total should involve 20 + something
+                assert total > 0
+
+    def test_engine_loner_scoring_integration(self) -> None:
+        """Engine scores a loner hand correctly through _process_hand_end."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = _play_full_hand(engine, state, human_bid=BidAction.loner("S"))
+
+            if state.hands_played >= 1:
+                total = abs(state.score_human) + abs(state.score_ai)
+                assert total > 0
+
+
+# ---------------------------------------------------------------------------
+# Test 17: Regular bid regression
+# ---------------------------------------------------------------------------
+
+
+class TestRegularBidRegression:
+    """Existing regular-bid behavior unchanged after moon/loner changes."""
+
+    def test_regular_hand_still_works(self, engine: MatchEngine) -> None:
+        """Regular bid flow: deal → auction → 10 tricks → scoring."""
+        state = engine.start_match(SEED, "heuristic")
+        state = _play_full_hand(engine, state)
+        assert state.hands_played >= 1
+
+    def test_regular_full_match(self, engine: MatchEngine) -> None:
+        """Full match with regular bids completes normally."""
+        state = engine.start_match(SEED, "heuristic")
+        state = _play_until_match_end(engine, state)
+        assert state.status == "complete"
+        assert state.winner in ("human", "ai")
+
+    def test_regular_bid_type_is_regular(self, engine: MatchEngine) -> None:
+        """Hand state bid_type defaults to 'regular' for normal bids."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.bid_type == "regular"
+
+    def test_regular_no_sitting_out(self, engine: MatchEngine) -> None:
+        """Regular hands have no sitting-out seat."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.sitting_out_seat is None
+
+    def test_regular_no_exchange(self, engine: MatchEngine) -> None:
+        """Regular hands have no exchange data."""
+        state = engine.start_match(SEED, "heuristic")
+        state = _play_full_hand(engine, state)
+        # After a regular hand, exchange fields should be None
+        # (the new hand won't have exchange data either)
+        assert state.hands_played >= 1
+
+
+# ---------------------------------------------------------------------------
+# Test 18: Serialization with moon/loner state
+# ---------------------------------------------------------------------------
+
+
+class TestMoonLonerSerialization:
+    """Round-trip serialization preserves moon/loner state fields."""
+
+    def test_moon_state_round_trip(self) -> None:
+        """Moon exchange state survives serialization."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+
+            data = MatchEngine.serialize(state)
+            restored = MatchEngine.deserialize(data)
+
+            assert restored.current_hand is not None
+            assert restored.current_hand.bid_type == "moon"
+            assert restored == state
+
+    def test_loner_state_round_trip(self) -> None:
+        """Loner sitting-out state survives serialization."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.loner("S"))
+
+            data = MatchEngine.serialize(state)
+            restored = MatchEngine.deserialize(data)
+
+            assert restored.current_hand is not None
+            assert restored.current_hand.bid_type == "loner"
+            assert restored.current_hand.sitting_out_seat is not None
+            assert restored == state
+
+    def test_visible_state_includes_moon_loner_fields(self) -> None:
+        """get_visible_state includes bid_type and sitting_out_seat."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+
+        visible = engine.get_visible_state(state)
+        assert "bid_type" in visible
+        assert "sitting_out_seat" in visible

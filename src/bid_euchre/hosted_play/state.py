@@ -94,6 +94,12 @@ class HandState:
     trump: str | None = None
     current_trick: TrickState | None = None
     completed_tricks: list[TrickResult] = field(default_factory=list)
+    bid_type: str = "regular"  # "regular" | "moon" | "loner"
+    sitting_out_seat: int | None = None  # loner: partner sits out
+    exchange_given: list[list[str]] | None = None  # moon: cards given to partner
+    exchange_received: list[list[str]] | None = (
+        None  # moon: cards received from partner
+    )
     tricks_team0: int = 0
     tricks_team1: int = 0
     points_team0: int = 0
@@ -113,6 +119,10 @@ class HandState:
             "winning_bid": self.winning_bid,
             "contract_type": self.contract_type,
             "trump": self.trump,
+            "bid_type": self.bid_type,
+            "sitting_out_seat": self.sitting_out_seat,
+            "exchange_given": self.exchange_given,
+            "exchange_received": self.exchange_received,
             "current_trick": (
                 None if self.current_trick is None else self.current_trick.to_dict()
             ),
@@ -145,6 +155,14 @@ class HandState:
             ),
             contract_type=data.get("contract_type"),
             trump=data.get("trump"),
+            bid_type=data.get("bid_type", "regular"),
+            sitting_out_seat=(
+                None
+                if data.get("sitting_out_seat") is None
+                else int(data["sitting_out_seat"])
+            ),
+            exchange_given=data.get("exchange_given"),
+            exchange_received=data.get("exchange_received"),
             current_trick=(
                 None
                 if data.get("current_trick") is None
