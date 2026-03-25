@@ -276,14 +276,21 @@ async def health():
 
 @router.get("/ready")
 async def ready(request: Request):
-    """Readiness probe — checks DB connectivity.
+    """Readiness probe — checks DB read and write capability.
 
-    Returns 200 if the database is reachable, 503 otherwise.
+    Returns 200 if the database supports both reads and writes, 503 otherwise.
     """
     try:
         session = _get_session(request)
         try:
+            # Read check
             session.execute(text("SELECT 1"))
+            # Write check — session-scoped temp table, cleaned up on close
+            session.execute(
+                text("CREATE TEMPORARY TABLE IF NOT EXISTS _ready_check (v INTEGER)")
+            )
+            session.execute(text("INSERT INTO _ready_check (v) VALUES (1)"))
+            session.execute(text("DELETE FROM _ready_check"))
         finally:
             session.close()
     except Exception:
