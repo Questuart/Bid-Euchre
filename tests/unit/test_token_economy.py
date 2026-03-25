@@ -16,6 +16,7 @@ from bid_euchre.ops.token_economy import (
     _compute_duration_minutes,
     _infer_lane_from_slug,
     _JNLSessionAgg,
+    _purge_jsonl_records,
     _safe_int,
     _scan_jsonl_file,
     import_project_jsonl,
@@ -225,6 +226,40 @@ def _make_user_msg(
     return json.dumps(obj)
 
 
+def _make_assistant_msg_with_tool(
+    session_id: str,
+    tool_name: str,
+    command: str,
+    input_tokens: int = 100,
+    output_tokens: int = 50,
+    timestamp: str = "2026-03-25T10:05:00.000Z",
+) -> str:
+    """Create a JSONL line for an assistant message containing a tool_use block."""
+    obj = {
+        "type": "assistant",
+        "sessionId": session_id,
+        "timestamp": timestamp,
+        "cwd": "/Users/test/Bid-Euchre-steward-author",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Running command..."},
+                {
+                    "type": "tool_use",
+                    "id": "tool-001",
+                    "name": tool_name,
+                    "input": {"command": command},
+                },
+            ],
+            "usage": {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            },
+        },
+    }
+    return json.dumps(obj)
+
+
 def _make_system_msg(session_id: str) -> str:
     """Create a JSONL line for a system message."""
     obj = {
@@ -355,6 +390,104 @@ class TestScanJsonlFile:
         f = tmp_path / "does-not-exist.jsonl"
         assert _scan_jsonl_file(f) is None
 
+    def test_git_commits_counted(self, tmp_path: Path):
+        """Scanner counts git commit tool_use blocks."""
+        sid = "sess-gc-1"
+        lines = [
+            _make_assistant_msg(sid),
+            _make_assistant_msg_with_tool(
+                sid, "Bash", 'git commit -m "fix: something"'
+            ),
+            _make_assistant_msg_with_tool(sid, "Bash", 'git commit -m "feat: another"'),
+        ]
+        f = tmp_path / "sess-gc-1.jsonl"
+        f.write_text("\n".join(lines) + "\n")
+
+        agg = _scan_jsonl_file(f)
+        assert agg is not None
+        assert agg.git_commits == 2
+        assert agg.git_pushes == 0
+
+    def test_git_pushes_counted(self, tmp_path: Path):
+        """Scanner counts git push tool_use blocks."""
+        sid = "sess-gc-2"
+        lines = [
+            _make_assistant_msg(sid),
+            _make_assistant_msg_with_tool(
+                sid, "Bash", "git push -u origin fix/something"
+            ),
+        ]
+        f = tmp_path / "sess-gc-2.jsonl"
+        f.write_text("\n".join(lines) + "\n")
+
+        agg = _scan_jsonl_file(f)
+        assert agg is not None
+        assert agg.git_commits == 0
+        assert agg.git_pushes == 1
+
+    def test_git_commit_and_push_in_single_command(self, tmp_path: Path):
+        """A chained command with both git commit and git push counts both."""
+        sid = "sess-gc-3"
+        lines = [
+            _make_assistant_msg(sid),
+            _make_assistant_msg_with_tool(
+                sid,
+                "Bash",
+                'git commit -m "fix: thing" && git push -u origin branch',
+            ),
+        ]
+        f = tmp_path / "sess-gc-3.jsonl"
+        f.write_text("\n".join(lines) + "\n")
+
+        agg = _scan_jsonl_file(f)
+        assert agg is not None
+        assert agg.git_commits == 1
+        assert agg.git_pushes == 1
+
+    def test_non_bash_tool_not_counted(self, tmp_path: Path):
+        """Only Bash tool invocations are checked for git commands."""
+        sid = "sess-gc-4"
+        # A non-Bash tool with "git commit" in its input should not count
+        obj = {
+            "type": "assistant",
+            "sessionId": sid,
+            "timestamp": "2026-03-25T10:00:00Z",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool-x",
+                        "name": "Edit",
+                        "input": {"command": "git commit -m 'edit'"},
+                    }
+                ],
+                "usage": {"input_tokens": 100, "output_tokens": 50},
+            },
+        }
+        lines = [json.dumps(obj)]
+        f = tmp_path / "sess-gc-4.jsonl"
+        f.write_text("\n".join(lines) + "\n")
+
+        agg = _scan_jsonl_file(f)
+        assert agg is not None
+        assert agg.git_commits == 0
+
+    def test_zero_commits_when_no_tool_use(self, tmp_path: Path):
+        """Sessions without tool_use blocks have zero git_commits."""
+        sid = "sess-gc-5"
+        lines = [
+            _make_user_msg(sid),
+            _make_assistant_msg(sid),
+        ]
+        f = tmp_path / "sess-gc-5.jsonl"
+        f.write_text("\n".join(lines) + "\n")
+
+        agg = _scan_jsonl_file(f)
+        assert agg is not None
+        assert agg.git_commits == 0
+        assert agg.git_pushes == 0
+
 
 # ---------------------------------------------------------------------------
 # _build_record_from_jsonl
@@ -405,6 +538,89 @@ class TestBuildRecordFromJsonl:
             lane_id="author-b",
         )
         assert rec.project_path == "<inferred-lane:author-b>"
+
+    def test_git_commits_propagated(self, tmp_path: Path):
+        """Git commit counts from the scanner flow through to the record."""
+        agg = _JNLSessionAgg(
+            session_id="sess-102",
+            input_tokens=500,
+            output_tokens=200,
+            git_commits=3,
+            git_pushes=2,
+        )
+        rec = _build_record_from_jsonl(
+            agg,
+            source_path=tmp_path / "test.jsonl",
+            source_hash="ghi789",
+            now="2026-03-25T12:00:00Z",
+            lane_id="author-a",
+        )
+        assert rec.git_commits == 3
+        assert rec.git_pushes == 2
+
+    def test_zero_git_commits_stored_as_none(self, tmp_path: Path):
+        """Sessions with zero commits store git_commits as None (sparse)."""
+        agg = _JNLSessionAgg(
+            session_id="sess-103",
+            input_tokens=100,
+            output_tokens=50,
+            git_commits=0,
+            git_pushes=0,
+        )
+        rec = _build_record_from_jsonl(
+            agg,
+            source_path=tmp_path / "test.jsonl",
+            source_hash="jkl012",
+            now="2026-03-25T12:00:00Z",
+            lane_id=None,
+        )
+        assert rec.git_commits is None
+        assert rec.git_pushes is None
+
+
+# ---------------------------------------------------------------------------
+# _purge_jsonl_records
+# ---------------------------------------------------------------------------
+
+
+class TestPurgeJsonlRecords:
+    def test_purges_project_jsonl_keeps_session_meta(self, tmp_path: Path):
+        """Purge removes project-jsonl records but keeps session-meta."""
+        usage_file = tmp_path / "session_usage.jsonl"
+        records = [
+            json.dumps({"session_id": "s1", "source_type": "session-meta"}),
+            json.dumps({"session_id": "s2", "source_type": "project-jsonl"}),
+            json.dumps({"session_id": "s3", "source_type": "project-jsonl"}),
+            json.dumps({"session_id": "s4", "source_type": "session-meta"}),
+        ]
+        usage_file.write_text("\n".join(records) + "\n")
+
+        removed = _purge_jsonl_records(tmp_path)
+        assert removed == 2
+
+        remaining = [
+            json.loads(line) for line in usage_file.read_text().strip().splitlines()
+        ]
+        assert len(remaining) == 2
+        assert all(r["source_type"] == "session-meta" for r in remaining)
+
+    def test_purge_empty_store(self, tmp_path: Path):
+        """Purge on empty store returns 0."""
+        assert _purge_jsonl_records(tmp_path) == 0
+
+    def test_purge_no_jsonl_records(self, tmp_path: Path):
+        """Purge when all records are session-meta removes nothing."""
+        usage_file = tmp_path / "session_usage.jsonl"
+        records = [
+            json.dumps({"session_id": "s1", "source_type": "session-meta"}),
+        ]
+        usage_file.write_text("\n".join(records) + "\n")
+
+        removed = _purge_jsonl_records(tmp_path)
+        assert removed == 0
+
+        remaining = usage_file.read_text().strip().splitlines()
+        assert len(remaining) == 1
 
 
 # ---------------------------------------------------------------------------
