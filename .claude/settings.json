@@ -78,7 +78,8 @@
   },
   "permissions": {
     "allow": [
-      "Edit(.claude/skills/**/SKILL.md)"
+      "Edit(.claude/skills/**/SKILL.md)",
+      "Write(.claude/skills/**/SKILL.md)"
     ]
   },
   "enabledPlugins": {
