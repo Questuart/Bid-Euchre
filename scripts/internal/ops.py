@@ -215,6 +215,8 @@ def cmd_worktrees(args: argparse.Namespace) -> int:
         return cmd_worktrees_quarantine(args)
     if wt_action == "archive":
         return cmd_worktrees_archive(args)
+    if wt_action == "register-all":
+        return cmd_worktrees_register_all(args)
 
     from bid_euchre.ops.worktrees import (
         list_worktrees_git,
@@ -285,6 +287,52 @@ def cmd_worktrees(args: argparse.Namespace) -> int:
             print(f"\nWarnings: {len(report.warnings)}")
             for w in report.warnings:
                 print(f"  ⚠ {w}")
+
+    return 0
+
+
+def cmd_worktrees_register_all(args: argparse.Namespace) -> int:
+    """Scan git worktrees and create/update registry entries for steward lanes."""
+    from bid_euchre.ops.worktrees import register_all_worktrees
+
+    registry_dir = args.runtime_dir / "worktree_registry"
+    results = register_all_worktrees(registry_dir)
+
+    if args.json:
+        data = [
+            {
+                "lane_id": r.lane_id,
+                "worktree_path": r.worktree_path,
+                "action": r.action,
+                "reason": r.reason,
+            }
+            for r in results
+        ]
+        print(json.dumps(data, indent=2))
+    else:
+        created = [r for r in results if r.action == "created"]
+        updated = [r for r in results if r.action == "updated"]
+        skipped = [r for r in results if r.action == "skipped"]
+
+        print(
+            f"Registered {len(created)} new, updated {len(updated)}, skipped {len(skipped)}"
+        )
+        print()
+
+        if created:
+            print("Created:")
+            for r in created:
+                print(f"  {r.lane_id:20s} {r.worktree_path}")
+
+        if updated:
+            print("Updated:")
+            for r in updated:
+                print(f"  {r.lane_id:20s} {r.reason}")
+
+        if skipped:
+            print(f"\nSkipped ({len(skipped)}):")
+            for r in skipped:
+                print(f"  {r.lane_id:20s} {r.reason}")
 
     return 0
 
@@ -3005,6 +3053,11 @@ def build_parser() -> argparse.ArgumentParser:
     archive_parser.add_argument("path", type=str, help="Worktree path to archive")
     archive_parser.add_argument(
         "--force", action="store_true", help="Force removal even if dirty"
+    )
+
+    wt_sub.add_parser(
+        "register-all",
+        help="Scan git worktrees and register all steward lanes",
     )
 
     # events (with nested "drain" subcommand)

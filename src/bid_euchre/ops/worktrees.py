@@ -876,3 +876,242 @@ def archive_worktree(
         )
     except Exception:  # noqa: BLE001
         logger.warning("Failed to emit archive event for %s", worktree_path)
+
+
+# ---------------------------------------------------------------------------
+# Bulk registration: scan git worktrees → populate registry
+# ---------------------------------------------------------------------------
+
+#: Explicit mapping from steward worktree directory names to lane_ids.
+#: The primary author lane uses a bare suffix ("author") which maps to
+#: "author-a"; all others strip the "Bid-Euchre-steward-" prefix.
+_STEWARD_DIR_TO_LANE: dict[str, str] = {
+    "Bid-Euchre-steward-author": "author-a",
+    "Bid-Euchre-steward-author-b": "author-b",
+    "Bid-Euchre-steward-author-c": "author-c",
+    "Bid-Euchre-steward-author-d": "author-d",
+    "Bid-Euchre-steward-author-scratch": "author-scratch",
+    "Bid-Euchre-steward-brws-author-a": "brws-author-a",
+    "Bid-Euchre-steward-brws-author-b": "brws-author-b",
+    "Bid-Euchre-steward-brws-author-c": "brws-author-c",
+    "Bid-Euchre-steward-brws-author-d": "brws-author-d",
+    "Bid-Euchre-steward-flex-a": "flex-a",
+    "Bid-Euchre-steward-flex-b": "flex-b",
+    "Bid-Euchre-steward-flex-c": "flex-c",
+    "Bid-Euchre-steward-review": "review",
+    "Bid-Euchre-steward-ops": "ops",
+}
+
+
+def derive_lane_id(worktree_dir_name: str) -> str | None:
+    """Derive a lane_id from a worktree directory name.
+
+    Uses an explicit mapping for known steward worktrees. Falls back to
+    stripping the ``Bid-Euchre-steward-`` prefix for unknown steward
+    worktrees. Returns None for non-steward worktrees (main checkout,
+    ephemeral ``work-*`` worktrees, etc.).
+
+    Args:
+        worktree_dir_name: The basename of the worktree directory
+            (e.g., ``"Bid-Euchre-steward-author-b"``).
+
+    Returns:
+        Lane identifier string, or None if the worktree is not a
+        recognized steward lane.
+    """
+    # Exact match in the known mapping.
+    if worktree_dir_name in _STEWARD_DIR_TO_LANE:
+        return _STEWARD_DIR_TO_LANE[worktree_dir_name]
+
+    # Fallback: strip prefix for unknown steward worktrees.
+    prefix = "Bid-Euchre-steward-"
+    if worktree_dir_name.startswith(prefix):
+        suffix = worktree_dir_name[len(prefix) :]
+        if suffix:
+            return suffix
+
+    return None
+
+
+def derive_lane_class(lane_id: str) -> str:
+    """Derive the functional lane class from a lane_id.
+
+    Args:
+        lane_id: Lane identifier (e.g., ``"author-b"``, ``"ops"``).
+
+    Returns:
+        One of ``"ops"``, ``"review"``, ``"scratch"``, ``"author"``.
+    """
+    if lane_id == "ops":
+        return "ops"
+    if lane_id == "review":
+        return "review"
+    if lane_id.endswith("-scratch"):
+        return "scratch"
+    # author-*, brws-author-*, flex-* are all author-class lanes.
+    return "author"
+
+
+def derive_visibility(lane_id: str) -> str:
+    """Derive the default visibility for a lane.
+
+    Foreground lanes are supervisory roles visible in the dashboard's
+    primary pane. Background lanes are author/flex workers displayed
+    in the secondary section.
+
+    Args:
+        lane_id: Lane identifier.
+
+    Returns:
+        ``"foreground"`` or ``"background"``.
+    """
+    if lane_id in ("ops", "review", "orchestrator", "dashboard", "issues"):
+        return "foreground"
+    return "background"
+
+
+@dataclass
+class RegistrationResult:
+    """Result of registering one worktree."""
+
+    lane_id: str
+    worktree_path: str
+    action: str  # "created" | "updated" | "skipped"
+    reason: str
+
+
+def register_all_worktrees(
+    registry_dir: Path | None = None,
+    *,
+    git_worktrees: list[GitWorktree] | None = None,
+    now_iso: str | None = None,
+) -> list[RegistrationResult]:
+    """Scan git worktrees and create/update registry entries for steward lanes.
+
+    For each git worktree whose directory name maps to a known steward
+    lane, creates a v2 registry JSON file if none exists, or updates the
+    existing entry's ``last_active`` and ``branch`` fields.
+
+    Skips:
+    - The main checkout (bare or ``.git`` is a directory)
+    - Non-steward worktrees (no lane_id derivable)
+    - Worktrees that already have a current registry entry (unless
+      branch has changed)
+
+    Args:
+        registry_dir: Override for registry directory. Defaults to
+            ``.claude/runtime/worktree_registry``.
+        git_worktrees: Pre-loaded list of git worktrees. If None,
+            calls ``list_worktrees_git()`` to discover them.
+        now_iso: Override for the current timestamp (ISO 8601).
+
+    Returns:
+        List of ``RegistrationResult`` describing what was done for each
+        worktree.
+    """
+    if registry_dir is None:
+        registry_dir = DEFAULT_REGISTRY_DIR
+    registry_dir.mkdir(parents=True, exist_ok=True)
+
+    if git_worktrees is None:
+        git_worktrees = list_worktrees_git()
+
+    if now_iso is None:
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Load existing registry entries by lane_id for dedup.
+    existing_by_lane: dict[str, dict[str, Any]] = {}
+    for entry in list_worktrees_registry(registry_dir):
+        lid = entry.get("lane_id", "")
+        if lid:
+            existing_by_lane[lid] = entry
+
+    results: list[RegistrationResult] = []
+
+    for git_wt in git_worktrees:
+        # Skip bare and main checkout.
+        if git_wt.bare or is_main_worktree(git_wt.path):
+            continue
+
+        dir_name = Path(git_wt.path).name
+        lane_id = derive_lane_id(dir_name)
+
+        if lane_id is None:
+            results.append(
+                RegistrationResult(
+                    lane_id=dir_name,
+                    worktree_path=git_wt.path,
+                    action="skipped",
+                    reason="Not a recognized steward lane",
+                )
+            )
+            continue
+
+        lane_class = derive_lane_class(lane_id)
+        visibility = derive_visibility(lane_id)
+
+        # Check if already registered.
+        existing = existing_by_lane.get(lane_id)
+        if existing is not None:
+            # Update branch and last_active if branch changed.
+            if existing.get("branch") != git_wt.branch:
+                existing["branch"] = git_wt.branch
+                existing["last_active"] = now_iso
+                entry_file = registry_dir / f"{lane_id}.json"
+                entry_file.write_text(json.dumps(existing, indent=2) + "\n")
+                results.append(
+                    RegistrationResult(
+                        lane_id=lane_id,
+                        worktree_path=git_wt.path,
+                        action="updated",
+                        reason=f"Branch updated to {git_wt.branch}",
+                    )
+                )
+            else:
+                results.append(
+                    RegistrationResult(
+                        lane_id=lane_id,
+                        worktree_path=git_wt.path,
+                        action="skipped",
+                        reason="Already registered with current branch",
+                    )
+                )
+            continue
+
+        # Create new registry entry.
+        entry_data: dict[str, Any] = {
+            "schema_version": 2,
+            "lane_id": lane_id,
+            "lane_class": lane_class,
+            "worktree_path": git_wt.path,
+            "branch": git_wt.branch,
+            "class": "persistent",
+            "created_at": now_iso,
+            "last_active": now_iso,
+            "session_id": None,
+            "ttl_hours": None,
+            "display_name": None,
+            "tmux_session": "steward",
+            "tmux_window": None,
+            "tmux_pane": None,
+            "cmux_workspace_ref": None,
+            "cmux_surface_ref": None,
+            "legacy_role": None,
+            "session_handle": f"steward:{lane_id}",
+            "visibility": visibility,
+        }
+
+        entry_file = registry_dir / f"{lane_id}.json"
+        entry_file.write_text(json.dumps(entry_data, indent=2) + "\n")
+
+        results.append(
+            RegistrationResult(
+                lane_id=lane_id,
+                worktree_path=git_wt.path,
+                action="created",
+                reason="New registry entry",
+            )
+        )
+        logger.info("Registered lane %r from %s", lane_id, git_wt.path)
+
+    return results

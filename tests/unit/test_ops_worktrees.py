@@ -13,11 +13,15 @@ from bid_euchre.ops.worktrees import (
     GitWorktree,
     _update_registry_cleanup_state,
     classify_cleanup_candidates,
+    derive_lane_class,
+    derive_lane_id,
+    derive_visibility,
     is_main_worktree,
     is_protected,
     is_worktree_dirty,
     list_worktrees_registry,
     reconcile,
+    register_all_worktrees,
 )
 
 
@@ -1252,3 +1256,291 @@ class TestUpdateRegistryCleanupState:
             tmp_path / "no_such_dir", "/tmp/wt", "quarantined"
         )
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# derive_lane_id / derive_lane_class / derive_visibility
+# ---------------------------------------------------------------------------
+
+
+class TestDeriveLaneId:
+    """Tests for derive_lane_id()."""
+
+    @pytest.mark.parametrize(
+        ("dir_name", "expected"),
+        [
+            ("Bid-Euchre-steward-author", "author-a"),
+            ("Bid-Euchre-steward-author-b", "author-b"),
+            ("Bid-Euchre-steward-author-c", "author-c"),
+            ("Bid-Euchre-steward-author-d", "author-d"),
+            ("Bid-Euchre-steward-author-scratch", "author-scratch"),
+            ("Bid-Euchre-steward-brws-author-a", "brws-author-a"),
+            ("Bid-Euchre-steward-brws-author-b", "brws-author-b"),
+            ("Bid-Euchre-steward-brws-author-c", "brws-author-c"),
+            ("Bid-Euchre-steward-brws-author-d", "brws-author-d"),
+            ("Bid-Euchre-steward-flex-a", "flex-a"),
+            ("Bid-Euchre-steward-flex-b", "flex-b"),
+            ("Bid-Euchre-steward-flex-c", "flex-c"),
+            ("Bid-Euchre-steward-review", "review"),
+            ("Bid-Euchre-steward-ops", "ops"),
+        ],
+    )
+    def test_known_steward_lanes(self, dir_name: str, expected: str) -> None:
+        assert derive_lane_id(dir_name) == expected
+
+    def test_unknown_steward_fallback(self) -> None:
+        """Unknown steward prefix still derives a lane_id via suffix stripping."""
+        assert derive_lane_id("Bid-Euchre-steward-custom-lane") == "custom-lane"
+
+    def test_non_steward_returns_none(self) -> None:
+        assert derive_lane_id("Bid-Euchre") is None
+        assert derive_lane_id("some-other-dir") is None
+        assert derive_lane_id("work-fix-bug") is None
+
+    def test_bare_prefix_returns_none(self) -> None:
+        """Just the prefix with nothing after returns None."""
+        assert derive_lane_id("Bid-Euchre-steward-") is None
+
+
+class TestDeriveLaneClass:
+    """Tests for derive_lane_class()."""
+
+    @pytest.mark.parametrize(
+        ("lane_id", "expected"),
+        [
+            ("ops", "ops"),
+            ("review", "review"),
+            ("author-scratch", "scratch"),
+            ("author-a", "author"),
+            ("author-b", "author"),
+            ("brws-author-a", "author"),
+            ("flex-a", "author"),
+        ],
+    )
+    def test_class_derivation(self, lane_id: str, expected: str) -> None:
+        assert derive_lane_class(lane_id) == expected
+
+
+class TestDeriveVisibility:
+    """Tests for derive_visibility()."""
+
+    def test_foreground_lanes(self) -> None:
+        for lane_id in ("ops", "review", "orchestrator", "dashboard", "issues"):
+            assert derive_visibility(lane_id) == "foreground"
+
+    def test_background_lanes(self) -> None:
+        for lane_id in (
+            "author-a",
+            "author-b",
+            "brws-author-a",
+            "flex-a",
+            "author-scratch",
+        ):
+            assert derive_visibility(lane_id) == "background"
+
+
+# ---------------------------------------------------------------------------
+# register_all_worktrees
+# ---------------------------------------------------------------------------
+
+
+class TestRegisterAllWorktrees:
+    """Tests for register_all_worktrees()."""
+
+    @pytest.fixture()
+    def registry_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / "worktree_registry"
+        d.mkdir()
+        return d
+
+    def _make_git_worktrees(self, tmp_path: Path) -> list[GitWorktree]:
+        """Create fake git worktrees with realistic directory names.
+
+        Creates actual directories with .git files (linked worktree style)
+        so is_main_worktree() returns False for them.
+        """
+        worktrees = []
+        names = [
+            "Bid-Euchre-steward-author",
+            "Bid-Euchre-steward-author-b",
+            "Bid-Euchre-steward-brws-author-a",
+            "Bid-Euchre-steward-ops",
+            "Bid-Euchre-steward-review",
+            "Bid-Euchre-steward-flex-a",
+        ]
+        for name in names:
+            wt_dir = tmp_path / name
+            wt_dir.mkdir()
+            # Write a .git file (not directory) to simulate a linked worktree.
+            (wt_dir / ".git").write_text("gitdir: /fake/.git/worktrees/x\n")
+            worktrees.append(
+                GitWorktree(
+                    path=str(wt_dir),
+                    head="abc123",
+                    branch=f"feature/{name}",
+                )
+            )
+        return worktrees
+
+    def test_creates_entries_for_all_steward_lanes(
+        self, registry_dir: Path, tmp_path: Path
+    ) -> None:
+        """Creates registry entries for all recognized steward worktrees."""
+        git_wts = self._make_git_worktrees(tmp_path)
+
+        results = register_all_worktrees(
+            registry_dir,
+            git_worktrees=git_wts,
+            now_iso="2026-03-24T12:00:00+00:00",
+        )
+
+        created = [r for r in results if r.action == "created"]
+        assert len(created) == 6
+
+        # Verify files were written.
+        json_files = sorted(registry_dir.glob("*.json"))
+        assert len(json_files) == 6
+
+        # Verify specific lane.
+        data = json.loads((registry_dir / "author-a.json").read_text())
+        assert data["lane_id"] == "author-a"
+        assert data["lane_class"] == "author"
+        assert data["visibility"] == "background"
+        assert data["schema_version"] == 2
+        assert data["class"] == "persistent"
+        assert data["session_handle"] == "steward:author-a"
+
+    def test_ops_and_review_are_foreground(
+        self, registry_dir: Path, tmp_path: Path
+    ) -> None:
+        """Ops and review lanes get foreground visibility."""
+        git_wts = self._make_git_worktrees(tmp_path)
+
+        register_all_worktrees(
+            registry_dir,
+            git_worktrees=git_wts,
+            now_iso="2026-03-24T12:00:00+00:00",
+        )
+
+        ops_data = json.loads((registry_dir / "ops.json").read_text())
+        assert ops_data["visibility"] == "foreground"
+
+        review_data = json.loads((registry_dir / "review.json").read_text())
+        assert review_data["visibility"] == "foreground"
+
+    def test_skips_already_registered(self, registry_dir: Path, tmp_path: Path) -> None:
+        """Skips worktrees that already have a matching registry entry."""
+        # Pre-register author-a.
+        _write_registry_entry(
+            registry_dir,
+            "author-a.json",
+            lane_id="author-a",
+            worktree_path="/old/path",
+            branch="feature/Bid-Euchre-steward-author",
+        )
+
+        git_wts = self._make_git_worktrees(tmp_path)
+
+        results = register_all_worktrees(
+            registry_dir,
+            git_worktrees=git_wts,
+            now_iso="2026-03-24T12:00:00+00:00",
+        )
+
+        author_a = [r for r in results if r.lane_id == "author-a"]
+        assert len(author_a) == 1
+        assert author_a[0].action == "skipped"
+
+    def test_updates_branch_when_changed(
+        self, registry_dir: Path, tmp_path: Path
+    ) -> None:
+        """Updates existing entry when branch has changed."""
+        # Pre-register with old branch.
+        _write_registry_entry(
+            registry_dir,
+            "ops.json",
+            lane_id="ops",
+            worktree_path="/old/path",
+            branch="old-branch",
+        )
+
+        # Create the ops worktree with a new branch.
+        wt_dir = tmp_path / "Bid-Euchre-steward-ops"
+        wt_dir.mkdir()
+        (wt_dir / ".git").write_text("gitdir: /fake/.git/worktrees/x\n")
+        git_wts = [GitWorktree(path=str(wt_dir), head="abc123", branch="new-branch")]
+
+        results = register_all_worktrees(
+            registry_dir,
+            git_worktrees=git_wts,
+            now_iso="2026-03-24T12:00:00+00:00",
+        )
+
+        ops_result = [r for r in results if r.lane_id == "ops"]
+        assert len(ops_result) == 1
+        assert ops_result[0].action == "updated"
+
+        data = json.loads((registry_dir / "ops.json").read_text())
+        assert data["branch"] == "new-branch"
+
+    def test_skips_main_checkout(self, registry_dir: Path, tmp_path: Path) -> None:
+        """Skips the main checkout (has .git directory, not file)."""
+        main_dir = tmp_path / "Bid-Euchre"
+        main_dir.mkdir()
+        # Main checkout has a .git directory.
+        (main_dir / ".git").mkdir()
+
+        git_wts = [GitWorktree(path=str(main_dir), head="abc", branch="main")]
+
+        results = register_all_worktrees(
+            registry_dir,
+            git_worktrees=git_wts,
+            now_iso="2026-03-24T12:00:00+00:00",
+        )
+
+        assert len(results) == 0
+
+    def test_skips_non_steward_worktrees(
+        self, registry_dir: Path, tmp_path: Path
+    ) -> None:
+        """Non-steward worktrees are skipped with an appropriate reason."""
+        wt_dir = tmp_path / "work-fix-bug"
+        wt_dir.mkdir()
+        (wt_dir / ".git").write_text("gitdir: /fake/.git/worktrees/x\n")
+
+        git_wts = [GitWorktree(path=str(wt_dir), head="abc", branch="fix/bug")]
+
+        results = register_all_worktrees(
+            registry_dir,
+            git_worktrees=git_wts,
+            now_iso="2026-03-24T12:00:00+00:00",
+        )
+
+        assert len(results) == 1
+        assert results[0].action == "skipped"
+        assert "Not a recognized steward lane" in results[0].reason
+
+    def test_idempotent_on_second_run(self, registry_dir: Path, tmp_path: Path) -> None:
+        """Running register-all twice produces no new created entries."""
+        git_wts = self._make_git_worktrees(tmp_path)
+
+        # First run.
+        results1 = register_all_worktrees(
+            registry_dir,
+            git_worktrees=git_wts,
+            now_iso="2026-03-24T12:00:00+00:00",
+        )
+        created1 = [r for r in results1 if r.action == "created"]
+        assert len(created1) == 6
+
+        # Second run.
+        results2 = register_all_worktrees(
+            registry_dir,
+            git_worktrees=git_wts,
+            now_iso="2026-03-24T12:05:00+00:00",
+        )
+        created2 = [r for r in results2 if r.action == "created"]
+        assert len(created2) == 0
+        # All should be skipped (same branch).
+        skipped = [r for r in results2 if r.action == "skipped"]
+        assert len(skipped) == 6
