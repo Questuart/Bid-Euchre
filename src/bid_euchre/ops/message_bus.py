@@ -1017,7 +1017,9 @@ def check_ack_status(
 
     If the message is still in a non-terminal status (``pending`` or
     ``delivered``) but its ``payload.ttl_seconds`` has elapsed, returns
-    ``'expired'`` instead of the raw status (#1601).
+    ``'expired'`` instead of the raw status (#1601).  P0 (urgent)
+    messages are exempt from TTL expiry and never report ``'expired'``
+    (#1666).
 
     This lets a sender verify that the recipient has acknowledged a message
     without reading the full inbox.
@@ -1047,7 +1049,8 @@ def check_ack_status(
 
     # Honor TTL expiry: if the message is non-terminal and its TTL has
     # elapsed, report "expired" rather than the stale status (#1601).
-    if status in ("pending", "delivered"):
+    # P0 (urgent) messages never auto-expire via TTL (#1666).
+    if status in ("pending", "delivered") and latest.get("priority") != "urgent":
         ttl = latest.get("payload", {}).get("ttl_seconds")
         if ttl is not None:
             created = latest.get("created_at", "")
@@ -1147,8 +1150,13 @@ def escalate_unacked(
 
         # Skip messages whose TTL has already elapsed (#1601) — expired
         # messages should not trigger escalation.
+        # P0 (urgent) messages are TTL-exempt — always eligible (#1666).
         ttl = rec.get("payload", {}).get("ttl_seconds")
-        if ttl is not None and current_time - created_ts > ttl:
+        if (
+            ttl is not None
+            and rec.get("priority") != "urgent"
+            and current_time - created_ts > ttl
+        ):
             continue
 
         # Create and send an escalation message
@@ -1219,6 +1227,9 @@ def check_expired(
             # Skip terminal states AND acked — only pending/delivered can expire.
             # acked → expired is not a valid transition (#1596).
             if status in ("acked", "resolved", "expired", "dead_lettered"):
+                continue
+            # P0 (urgent) messages never auto-expire via TTL (#1666)
+            if rec.get("priority") == "urgent":
                 continue
 
             ttl = rec.get("payload", {}).get("ttl_seconds")
