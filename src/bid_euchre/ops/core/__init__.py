@@ -1,8 +1,9 @@
-"""Core ops framework — project-agnostic abstract interfaces.
+"""Core ops framework — abstract interfaces and concrete implementations.
 
 This package defines the abstract base classes (ABCs) for the steward ops
-platform.  Repo-specific adapters implement these contracts, enabling the
-core orchestration loop to be reused across different projects.
+platform, plus concrete implementations that delegate to the existing
+module-level functions.  Repo-specific adapters implement these contracts,
+enabling the core orchestration loop to be reused across different projects.
 
 The four pillars:
 
@@ -11,6 +12,11 @@ The four pillars:
 - **AbstractTaskQueue** — manages durable task packet lifecycle
 - **AbstractWorkerPool** — manages worker lane lifecycle and dispatch
 
+Concrete implementations (Platform-10 PR2):
+
+- **ControlPlaneController** — wraps ``bid_euchre.ops.control_plane``
+- **MonitorService** — wraps ``bid_euchre.ops.monitor``
+
 Usage::
 
     from bid_euchre.ops.core import (
@@ -18,19 +24,25 @@ Usage::
         AbstractMonitor,
         AbstractTaskQueue,
         AbstractWorkerPool,
+        ControlPlaneController,
+        MonitorService,
     )
 """
 
+from bid_euchre.ops.core.controller import ControlPlaneController
 from bid_euchre.ops.core.interfaces import (
     AbstractController,
     AbstractMonitor,
     AbstractTaskQueue,
     AbstractWorkerPool,
 )
+from bid_euchre.ops.core.monitor import MonitorService
 
 __all__ = [
     "AbstractController",
     "AbstractMonitor",
     "AbstractTaskQueue",
     "AbstractWorkerPool",
+    "ControlPlaneController",
+    "MonitorService",
 ]

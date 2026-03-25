@@ -336,24 +336,30 @@ class TestPartialSubclasses:
 
 
 class TestModuleExports:
-    """Verify __init__.py __all__ matches the expected ABCs."""
+    """Verify __init__.py __all__ contains all expected names."""
 
-    def test_all_exports(self) -> None:
+    def test_all_exports_include_abcs(self) -> None:
         import bid_euchre.ops.core as core_mod
 
-        expected = {
+        expected_abcs = {
             "AbstractController",
             "AbstractMonitor",
             "AbstractTaskQueue",
             "AbstractWorkerPool",
         }
-        assert set(core_mod.__all__) == expected
+        assert expected_abcs.issubset(set(core_mod.__all__))
 
-    def test_all_are_abc_subclasses(self) -> None:
-        """Every exported name is an ABC (cannot be instantiated)."""
+    def test_abcs_are_not_instantiable(self) -> None:
+        """ABC exports cannot be instantiated directly."""
         import bid_euchre.ops.core as core_mod
 
-        for name in core_mod.__all__:
+        abc_names = [
+            "AbstractController",
+            "AbstractMonitor",
+            "AbstractTaskQueue",
+            "AbstractWorkerPool",
+        ]
+        for name in abc_names:
             cls = getattr(core_mod, name)
             with pytest.raises(TypeError):
                 cls()  # type: ignore[abstract]
