@@ -3,7 +3,7 @@
 **ID:** SP-4-07
 **Date:** 2026-03-24
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Pre-Platform-9 / transport-consolidation follow-up
-**Status:** in_progress
+**Status:** complete
 **Owner:** orchestrator
 
 ---
@@ -236,7 +236,7 @@ orchestration lifecycle test.
 - `#1571`
 - `#1569`
 
-### PR 3 -- Hook surfacing and local guardrails (IN PROGRESS)
+### PR 3 -- Hook surfacing and local guardrails ✅ SHIPPED (#1719, #1764)
 
 **Goal:** Make unresolved urgent state mechanically visible and block unsafe
 local actions where appropriate.
@@ -318,6 +318,11 @@ local actions where appropriate.
 | #1714 | test(ops): prove stall guard prevents false positives (#1679) | Proving run 4 — 6 tests |
 | #1715 | fix(ops): wire audit_mcp_outbound into live PostToolUse hook (#1685) | PR 3/4 — outbound audit runtime wiring |
 | #1718 | test(ops): prove unread-alert replay through controller projection (#1681) | Proving run 1 — 10 tests |
+| #1719 | feat(ops): add UserPromptSubmit hook for mechanical alert injection (#1608) | PR 3 — alert surfacing at prompt boundary |
+| #1730 | test(ops): prove noise discrimination in controller projection (#1682) | Proving run 2 — noise vs blocker discrimination |
+| #1755 | fix(ops): wire inbox + audit inputs into controller reconcile (#1751) | PR 2/4 — controller reads inbox + audit state |
+| #1760 | feat(ops): wire audit_channel_tag into live UserPromptSubmit hook (#1752) | PR 3/4 — inbound audit runtime wiring |
+| #1764 | feat(ops): add PreToolUse guardrail that blocks risky actions when urgent state unresolved (#1753) | PR 3 — risky-action guardrail |
 
 ## Test Strategy
 
@@ -390,7 +395,7 @@ orchestrator does not manually poll raw inbox state.
 message bus survive across session boundaries and are mechanically surfaced
 by `reconcile()` as actionable items with correct severity.
 
-### Proving run 2 -- noise discrimination
+### Proving run 2 -- noise discrimination ✅ PASSED (PR #1730)
 
 Generate many info/warn findings plus one real blocker.
 
@@ -398,6 +403,11 @@ Generate many info/warn findings plus one real blocker.
 
 - only the blocker becomes interrupt-like
 - routine findings remain visible but do not spam operator flow
+
+**Result:** Integration tests prove that when many info/warn findings and one
+real blocker coexist, only the blocker is surfaced as interrupt-like urgent
+state. Routine findings remain visible at lower severity without spamming
+operator flow.
 
 ### Proving run 3 -- persistence and dedupe ✅ PASSED (PR #1712)
 
@@ -425,7 +435,7 @@ Keep one lane actively working while earlier observations suggest trouble.
 handles false-stall scenarios: pre-seeded stale state, recovery count
 transitions, and lane activity discrimination.
 
-### Proving run 5 -- real remote loop
+### Proving run 5 -- real remote loop ✅ PASSED (2026-03-25, Telegram messages 83-86)
 
 Run one real remote exchange through the chosen channel path.
 
@@ -436,6 +446,13 @@ Run one real remote exchange through the chosen channel path.
 - both directions are durably audited
 - controller state reflects the exchange correctly
 
+**Result:** End-to-end Telegram loop proven on 2026-03-25. Inbound delivery
+confirmed (messages received via `<channel>` tags), outbound reply confirmed
+(orchestrator replied via `reply` MCP tool), both directions durably audited
+(PR #1715 outbound PostToolUse hook, PR #1760 inbound UserPromptSubmit hook),
+controller state reflects exchanges (PR #1755 wires audit inputs into
+`reconcile()`).
+
 ## Exit Criteria
 
 This sub-plan is complete only when:
@@ -444,11 +461,11 @@ This sub-plan is complete only when:
   truth for urgent/routine operator state — **DONE** (`src/bid_euchre/ops/control_plane.py`, PR #1633; wired into monitor cycle, PR #1699)
 - [x] one automated integration test proves `detect -> surface -> ack -> clear`
   — **DONE** (PRs #1707, #1712, #1718: 28 integration tests covering controller lifecycle, persistence/dedup/clear, and unread-alert replay)
-- [ ] unresolved urgent state can no longer be silently ignored at normal
-  orchestrator interaction boundaries — **PENDING** (requires PR 3: UserPromptSubmit/PreToolUse hook surfacing)
-- [ ] Platform-8b is runtime-wired, not library-only — **PARTIAL** (PR #1643 closed; #1715 wired outbound audit into PostToolUse hook; inbound runtime wiring still needed)
-- [ ] one real channel-backed remote loop is proven end to end
-  — **PENDING** (Telegram inbound proven via PR #1616; outbound audit hook live via #1715; full loop proving run not yet executed)
+- [x] unresolved urgent state can no longer be silently ignored at normal
+  orchestrator interaction boundaries — **DONE** (PR #1719 UserPromptSubmit hook injects unresolved alerts at prompt boundary; PR #1764 PreToolUse guardrail blocks risky actions when urgent state unresolved)
+- [x] Platform-8b is runtime-wired, not library-only — **DONE** (PR #1715 outbound audit into PostToolUse hook; PR #1760 inbound audit_channel_tag into UserPromptSubmit hook; PR #1755 wires inbox + audit inputs into controller reconcile)
+- [x] one real channel-backed remote loop is proven end to end
+  — **DONE** (Telegram e2e proven 2026-03-25, messages 83-86: inbound delivery, outbound reply, both directions audited, controller state updated)
 - [x] `#1289` has a decision note backed by the transport comparison matrix
   — **DONE** (`plans/sessions/2026-03-24_transport-comparison-adr.md`, PR #1650)
 
@@ -459,6 +476,7 @@ This sub-plan is complete only when:
 | 2026-03-24 | SP-4-07 drafted as proposed. 5-PR roadmap covering controller, hooks, audit wiring, and transport ADR. |
 | 2026-03-24 | Status updated to in_progress. 3 of 5 PRs shipped: PR #1618 (stabilization gate — TTL expiry, escalation dedup, stall guard fixes), PR #1633 (controller projection module with `reconcile()`, `derive_items()`, `load_fleet_status()`), PR #1650 (transport comparison ADR — closes #1289 with Option B). PR #1643 (audit runtime wiring) is open. PR 3 (hook surfacing) remains pending. 2 of 6 exit criteria met. |
 | 2026-03-25 | Checkpoint reconciliation (flex-c). Major progress across all deliverables. **Controller now live:** #1699 wires `reconcile()` into monitor cycle. **Substrate hardening:** #1701 (permission stall detection), #1703 (urgent TTL exemption), #1704 (fleet idle auto-shutoff), #1708 (SKILL.md edit permission). **Runtime wiring:** #1715 wires outbound MCP audit into PostToolUse hook; #1643 (broader audit wiring PR) closed. **Proving runs:** Run 1 passed (#1718, 10 tests — unread-alert replay), Run 3 passed (#1712, 7 tests — persistence/dedup/clear), Run 4 passed (#1714, 6 tests — false-stall regression). **Integration tests:** #1707 (11 controller projection integration tests). 3 of 6 exit criteria now met (controller, integration tests, transport ADR). Remaining: hook surfacing (PR 3), full Platform-8b inbound wiring, real remote loop proving run (Run 5). |
+| 2026-03-25 | **SP-4-07 COMPLETE** (author-a closeout). All 6 exit criteria met. Final PRs: #1719 (UserPromptSubmit hook for alert injection), #1764 (PreToolUse guardrail for risky actions), #1760 (inbound audit_channel_tag wired into UserPromptSubmit hook), #1755 (inbox + audit inputs wired into controller reconcile), #1730 (proving run 2: noise discrimination). All 5 proving runs passed. Telegram e2e remote loop proven 2026-03-25 (messages 83-86). 25+ PRs shipped across the full SP-4-07 roadmap. |
 
 ## Notes
 
