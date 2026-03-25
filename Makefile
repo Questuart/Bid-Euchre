@@ -1,4 +1,4 @@
-.PHONY: help sync ensure-venv repo-lint lint test check check-quiet notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d review-smoke review-quick review-full promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
+.PHONY: help sync ensure-venv repo-lint lint test check check-quiet notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d review-smoke review-quick review-full promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check browser-smoke
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -28,6 +28,7 @@ help:
 	@echo "  make notebook-run       - execute notebooks (SMOKE mode, ~10s)"
 	@echo "  make notebook-run-full  - execute notebooks (QUICK mode, ~2-5min)"
 	@echo "  make notebook-run-arc-d - execute Arc D notebooks (SMOKE mode)"
+	@echo "  make browser-smoke      - Playwright browser smoke suite (requires: pip install playwright && playwright install chromium)"
 	@echo "  make review-smoke       - SMOKE test review infrastructure (~30s)"
 	@echo "  make review-quick       - QUICK test review infrastructure (~5min, needs Codex auth)"
 	@echo "  make review-full        - FULL test review infrastructure (~15min, needs Codex auth)"
@@ -57,7 +58,7 @@ lint:
 
 test:
 	@echo ">>> Pytest (fast suite)"
-	PYTHONPATH=.:src $(PYTHON) -m pytest -q -m "not slow" tests/
+	PYTHONPATH=.:src $(PYTHON) -m pytest -q -m "not slow and not browser" --ignore=tests/browser tests/
 
 ensure-venv:
 	@[ -d .venv ] || { echo ">>> Bootstrapping venv (fresh worktree detected)"; uv sync --extra dev; }
@@ -119,6 +120,11 @@ review-full: ## FULL test review infrastructure (~15min, needs Codex auth)
 docs-check:
 	@echo ">>> Docs freshness check"
 	$(PYTHON) scripts/check_docs_freshness.py
+
+browser-smoke: ensure-venv
+	@echo ">>> Browser smoke suite (Playwright)"
+	@$(PYTHON) -c "import playwright" 2>/dev/null || { echo "ERROR: playwright not installed."; echo "  Run: uv pip install playwright pytest-playwright && playwright install chromium"; exit 1; }
+	PYTHONPATH=.:src $(PYTHON) -m pytest -q -m "browser" tests/browser/
 
 GATE_OUTPUT_DIR ?= /tmp/promotion-gate-artifacts
 ARTIFACT_DIR ?=

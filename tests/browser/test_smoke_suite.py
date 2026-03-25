@@ -1,0 +1,349 @@
+"""Browser smoke suite — 5 critical paths for the hosted Bid Euchre game.
+
+Tests exercise the full browser flow through Playwright against a live
+FastAPI server.  They validate:
+
+1. Start game → bid → play trick → verify score
+2. Moon bid submission → verify moon-specific UI
+3. Invite code → join game → verify nickname
+4. Full hand → verify hand-result transition
+5. Landing page → invalid code → error display
+
+These tests are NOT included in ``make check``.  Run via::
+
+    make browser-smoke
+
+See ``plans/browser_game_expansion/governing_plan.md`` Phase 4 for context.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import pytest
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
+
+from .conftest import enter_game
+
+# Lazy import — only used at runtime when playwright is available
+_expect = None
+
+
+def _get_expect():
+    """Lazy-load playwright's expect to avoid import errors."""
+    global _expect
+    if _expect is None:
+        from playwright.sync_api import expect
+
+        _expect = expect
+    return _expect
+
+
+# ---------------------------------------------------------------------------
+# Test 1: Start game → bid → play trick → verify score
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.browser
+def test_start_game_bid_play_verify_score(
+    page: Page,
+    live_server: str,
+    invite_code: str,
+) -> None:
+    """Full happy path: invite → nickname → select AI → bid → play → score.
+
+    Validates that:
+    - The invite code flow works end to end
+    - Model selection starts a match
+    - Auction phase shows bid controls
+    - A pass bid can be submitted
+    - The game advances through AI turns
+    - The score bar is visible during play
+    """
+    enter_game(page, live_server, invite_code, "SmokePlayer")
+
+    # Select the heuristic AI model and start match
+    page.select_option("select[name='model_id']", "heuristic")
+    page.click("button:has-text('Start Match')")
+
+    # Wait for the game board to show auction or trick play
+    # (AI may auto-advance through auction before we see it)
+    page.wait_for_selector("#game-board", timeout=10000)
+
+    # The game should be in one of the active phases
+    game_board = page.locator("#game-board")
+    game_board.wait_for(timeout=10000)
+
+    # Check that we have either the bid panel or trick area
+    # (depends on whether AI has already bid)
+    has_bid_panel = page.locator("#bid-panel").count() > 0
+    has_trick_area = page.locator("#trick-area").count() > 0
+    has_hand = page.locator("#human-hand").count() > 0
+
+    assert (
+        has_bid_panel or has_trick_area
+    ), "Expected bid panel or trick area after starting match"
+    assert has_hand, "Expected human hand to be visible"
+
+    # If in auction, submit a pass bid
+    if has_bid_panel:
+        page.click("button.pass-btn")
+        # Wait for the board to update after bid submission
+        page.wait_for_timeout(2000)
+
+    # After passing (or if AI already completed auction), we should see
+    # either trick play or the hand result if AI wrapped up everything
+    page.wait_for_selector("#score-bar, #hand-result, #trick-area", timeout=15000)
+
+    # Verify score bar is present during play
+    score_bar = page.locator("#score-bar")
+    if score_bar.count() > 0:
+        # Score bar should contain "You:" and "AI:" labels
+        score_text = score_bar.inner_text()
+        assert "You:" in score_text, f"Expected 'You:' in score bar, got: {score_text}"
+        assert "AI:" in score_text, f"Expected 'AI:' in score bar, got: {score_text}"
+
+    # If in trick play, play a card
+    legal_cards = page.locator(".card--legal")
+    if legal_cards.count() > 0:
+        legal_cards.first.click()
+        # Wait for the board to update
+        page.wait_for_timeout(2000)
+
+    # Verify the game is still running (board has content)
+    assert (
+        page.locator("#game-board").inner_html().strip()
+    ), "Game board should not be empty after playing"
+
+
+# ---------------------------------------------------------------------------
+# Test 2: Moon bid UI availability
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.browser
+def test_moon_bid_ui_available(
+    page: Page,
+    live_server: str,
+    invite_code: str,
+) -> None:
+    """Verify the moon bid option is available in the auction UI.
+
+    The bid panel should include the Moon option in the bid type selector.
+    We verify the UI structure rather than making a specific game-state
+    dependent assertion about scoring, since the dealt hand is random.
+    """
+    enter_game(page, live_server, invite_code, "MoonTester")
+
+    # Start a match
+    page.select_option("select[name='model_id']", "heuristic")
+    page.click("button:has-text('Start Match')")
+    page.wait_for_selector("#game-board", timeout=10000)
+
+    # If we're in auction phase, check for moon option
+    bid_panel = page.locator("#bid-panel")
+    if bid_panel.count() > 0:
+        # The bid type selector should have Moon and Loner options
+        bid_type_select = page.locator("#bid-type")
+        _get_expect()(bid_type_select).to_be_visible()
+
+        # Verify Moon option exists
+        moon_option = bid_type_select.locator("option[value='moon']")
+        assert moon_option.count() > 0, "Moon option should exist in bid type selector"
+
+        # Verify Loner option exists
+        loner_option = bid_type_select.locator("option[value='loner']")
+        assert (
+            loner_option.count() > 0
+        ), "Loner option should exist in bid type selector"
+
+        # Select Moon and verify the bid level wrapper hides
+        bid_type_select.select_option("moon")
+        page.wait_for_timeout(500)
+
+        # Moon is always level 10, so the level selector should be hidden
+        level_wrapper = page.locator("#bid-level-wrapper")
+        # The JS hides it via display:none
+        is_hidden = level_wrapper.evaluate(
+            "el => window.getComputedStyle(el).display === 'none'"
+        )
+        assert is_hidden, "Bid level wrapper should be hidden when Moon is selected"
+
+
+# ---------------------------------------------------------------------------
+# Test 3: Invite code → join game → verify nickname
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.browser
+def test_invite_code_join_verify_nickname(
+    page: Page,
+    live_server: str,
+    invite_code: str,
+) -> None:
+    """Verify the invite code → nickname → game flow displays the nickname.
+
+    Validates that:
+    - The landing page shows the invite code form
+    - A valid code redirects to the game page
+    - The nickname form appears and accepts input
+    - After setting nickname, the model select screen greets the player
+    """
+    # Navigate to landing page
+    page.goto(live_server)
+    page.wait_for_load_state("domcontentloaded")
+
+    # Verify landing page structure
+    _get_expect()(page.locator("#invite-code-form")).to_be_visible()
+    _get_expect()(page.locator("#invite-code-input")).to_be_visible()
+
+    # Enter invite code
+    page.fill("#invite-code-input", invite_code)
+    page.click("button:has-text('Enter Game')")
+
+    # Wait for redirect to play page
+    page.wait_for_url("**/play/**", timeout=5000)
+
+    # Should see nickname form
+    _get_expect()(page.locator("#nickname-form")).to_be_visible()
+    _get_expect()(page.locator("#nickname-input")).to_be_visible()
+
+    # Set nickname
+    test_nickname = "TestNickname42"
+    page.fill("#nickname-input", test_nickname)
+    page.click("button:has-text('Set Nickname')")
+
+    # Wait for model selection to appear
+    page.wait_for_selector("#model-select", timeout=5000)
+
+    # Verify the welcome message includes the nickname
+    welcome_text = page.locator("#model-select h2").inner_text()
+    assert (
+        test_nickname in welcome_text
+    ), f"Expected nickname '{test_nickname}' in welcome text, got: {welcome_text}"
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Full hand → verify hand-result transition
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.browser
+def test_full_hand_verify_transition(
+    page: Page,
+    live_server: str,
+    invite_code: str,
+) -> None:
+    """Play through a complete hand and verify the hand result screen appears.
+
+    This test starts a game and repeatedly submits actions (pass bids and
+    card plays) until the hand completes, then verifies the hand-result
+    transition UI displays correctly.
+
+    Note: This test may take a while due to the full hand flow. Timeout
+    is generous to accommodate AI thinking time.
+    """
+    enter_game(page, live_server, invite_code, "HandFlowTester")
+
+    # Start a match
+    page.select_option("select[name='model_id']", "heuristic")
+    page.click("button:has-text('Start Match')")
+    page.wait_for_selector("#game-board", timeout=10000)
+
+    # Play through the hand by repeatedly taking actions
+    max_actions = 50  # Safety limit
+    hand_complete = False
+
+    for _ in range(max_actions):
+        # Check if hand result is showing
+        if page.locator("#hand-result").count() > 0:
+            hand_complete = True
+            break
+
+        # Check if match result is showing (match ended)
+        if page.locator("#match-result").count() > 0:
+            hand_complete = True
+            break
+
+        # Try to submit a pass bid if in auction
+        pass_btn = page.locator("button.pass-btn")
+        if pass_btn.count() > 0 and pass_btn.is_visible():
+            pass_btn.click()
+            page.wait_for_timeout(1000)
+            continue
+
+        # Try to play a legal card if in trick play
+        legal_cards = page.locator(".card--legal")
+        if legal_cards.count() > 0:
+            legal_cards.first.click()
+            page.wait_for_timeout(1000)
+            continue
+
+        # Nothing to do — wait for AI to advance
+        page.wait_for_timeout(1000)
+
+    assert hand_complete, (
+        "Expected hand to complete within action limit. "
+        f"Current page content: {page.locator('#game-board').inner_text()[:200]}"
+    )
+
+    # If we got a hand result, verify its structure
+    hand_result = page.locator("#hand-result")
+    if hand_result.count() > 0:
+        # Should show a result title (Made/Set/Moon/Loner)
+        result_title = page.locator(".result-title")
+        assert result_title.count() > 0, "Hand result should have a result title"
+        title_text = result_title.inner_text()
+        assert any(
+            kw in title_text for kw in ["Made", "Set", "Moon", "Loner", "Win", "Lose"]
+        ), f"Unexpected result title: {title_text}"
+
+        # Should show scoring details
+        result_table = page.locator(".result-table, .score-table")
+        assert result_table.count() > 0, "Hand result should show scoring table"
+
+        # Should show match score
+        match_score = page.locator(".result-match-score, .final-score")
+        assert match_score.count() > 0, "Hand result should show match score"
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Invalid invite code shows error
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.browser
+def test_invalid_invite_code_shows_error(
+    page: Page,
+    live_server: str,
+) -> None:
+    """Verify that entering an invalid invite code shows an error message.
+
+    This is a negative path test ensuring the access control system
+    provides clear feedback for bad codes.
+    """
+    page.goto(live_server)
+    page.wait_for_load_state("domcontentloaded")
+
+    # Enter an invalid code
+    page.fill("#invite-code-input", "INVALID9")
+    page.click("button:has-text('Enter Game')")
+
+    # Wait for the form to update (HTMX swaps the form content)
+    page.wait_for_timeout(2000)
+
+    # The error message should be visible
+    error_div = page.locator(".invite-error")
+    _get_expect()(error_div).to_be_visible(timeout=5000)
+
+    error_text = error_div.inner_text()
+    assert (
+        "Invalid" in error_text or "invalid" in error_text
+    ), f"Expected 'Invalid' in error message, got: {error_text}"
+
+    # Should still be on the landing page (not redirected)
+    assert (
+        "/play/" not in page.url
+    ), f"Should not redirect with invalid code, but URL is: {page.url}"
