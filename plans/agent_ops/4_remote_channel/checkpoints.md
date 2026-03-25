@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-25 by author-a (SP-4-07 complete; Step 3 COMPLETE — all 6 exit criteria met, all 5 proving runs passed, 25+ PRs shipped)
+**Last updated:** 2026-03-25 by analyst (reconcile overnight groundwork for Steps 5/6 — #1836)
 
 ---
 
@@ -27,8 +27,8 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Step 2: Platform-8b repo-owned remote audit trail and runtime wiring | IN_PROGRESS | 2026-03-24 | author-a + orchestrator | SP-4-06 shipped the audit library, but issue #1573 correctly reopens the slice: runtime callers, controller integration, and real inbound/outbound proving are still pending. PR #1616 fixed Telegram inbound (#1615) — ops lane moved to detached worktree to stop competing bun processes from consuming `getUpdates`. Inbound now proven working (test message confirmed 2026-03-24). |
 | Step 3: SP-4-07 controller-first control plane and transport evaluation | COMPLETE | 2026-03-25 | author-a + author-b + flex-c | 25+ PRs shipped. Key: #1618 (stabilization), #1633 (controller), #1650 (transport ADR), #1699 (controller live), #1719 (UserPromptSubmit hook), #1764 (PreToolUse guardrail), #1760 (inbound audit hook), #1755 (inbox+audit into reconcile), #1715 (outbound audit hook). All 5 proving runs passed (#1718, #1730, #1712, #1714, Telegram e2e). All 6 exit criteria met. |
 | Step 4: Platform-9a idle-attention alerts and acknowledgement loop | IN_PROGRESS | 2026-03-25 | overnight fleet | SP-4-08 groundwork shipped: alert push evaluator, Telegram adapter, ack parser, controller mutation, unit/integration tests (PRs #1815-#1820). **E2E wiring NOT complete** — `run_push_cycle()` prints but does not send via Telegram MCP; no live consumer of `execute_remote_ack()`. Exit criteria E3/E4/E7/E9 unmet. See #1826. |
-| Step 5: Platform-9b away-from-desk queue-moving proving run | BLOCKED | -- | -- | Blocked on Platform-9a plus controller-backed remote delivery. |
-| Step 6: Platform-9c first hardening pass and Phase 4 handoff | BLOCKED | -- | -- | Fix real proving-run issues, update docs, and record known gaps. |
+| Step 5: Platform-9b away-from-desk queue-moving proving run | BLOCKED | -- | -- | Blocked on Platform-9a E2E wiring (#1826). **Groundwork shipped:** queue priority scorer (#1802), away-mode detection (#1806), away-mode wiring (#1815). Remaining: E2E integration after 9a completes. |
+| Step 6: Platform-9c first hardening pass and Phase 4 handoff | BLOCKED | -- | -- | Fix real proving-run issues, update docs, and record known gaps. **Platform-10 groundwork shipped:** core ops ABCs (#1807), extract core ops (#1813), repo adapter (#1817). These are library-level components; integration deferred to Phase 5 scope. |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
 
@@ -44,6 +44,8 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | completed (library only) | Step 2 |
 | SP-4-07 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | completed | Step 3 |
 | SP-4-08 | `plans/agent_ops/4_remote_channel/sub/2026-03-25_platform-9a-idle-attention-alerts.md` | in_progress | Step 4 |
+| SP-4-09 | _(no sub-plan file — retroactive registration)_ | in_progress (groundwork only) | Step 5 |
+| SP-4-10 | _(no sub-plan file — retroactive registration)_ | in_progress (groundwork only) | Step 6 |
 
 ### Shared Surface Ownership
 
@@ -97,3 +99,4 @@ implementation.
 | 2026-03-24 | SP-4-07 IN_PROGRESS (author-a + author-b). Three PRs shipped or in-flight: PR #1618 stabilization gate (merged — TTL expiry, escalation dedup, stall guard), PR #1633 controller projection module (merged — SP-4-07 PR 2), PR #1643 audit runtime wiring (open — SP-4-07 PR 4, wires audit trail into runtime paths and controller). Step 3 moved from PENDING to IN_PROGRESS. |
 | 2026-03-25 | SP-4-07 major progress reconciliation (flex-c). 10 additional PRs merged since last update: #1699 (controller wired into monitor cycle — controller now live), #1701 (permission stall detection), #1703 (urgent TTL exemption), #1704 (fleet idle auto-shutoff), #1707 (11 controller integration tests), #1708 (SKILL.md edit permission), #1712 (proving run 3: persistence/dedup/clear — 7 tests passed), #1714 (proving run 4: false-stall regression — 6 tests passed), #1715 (outbound audit wired into PostToolUse hook), #1718 (proving run 1: unread-alert replay — 10 tests passed). PR #1643 closed. 4 of 6 exit criteria now met. Remaining: PR 3 (hook surfacing/guardrails) and proving run 5 (real remote loop). |
 | 2026-03-25 | **SP-4-07 COMPLETE** (author-a). All 6 exit criteria met. Final deliveries: #1719 (UserPromptSubmit alert injection), #1764 (PreToolUse guardrail), #1760 (inbound audit hook), #1755 (inbox+audit into reconcile), #1730 (proving run 2: noise discrimination). All 5 proving runs passed. Telegram e2e remote loop proven (messages 83-86). Step 3 marked COMPLETE, Step 4 unblocked (BLOCKED → PENDING). |
+| 2026-03-25 | **Checkpoint reconciliation** (analyst, #1836). Steps 5/6 annotated with shipped groundwork PRs: Platform-9b (#1802, #1806, #1815), Platform-10 (#1807, #1813, #1817). Sub-plan registry updated with SP-4-09 (9b) and SP-4-10 (10). Both remain BLOCKED on 9a E2E wiring (#1826) for integration. |
