@@ -14,6 +14,7 @@ from bid_euchre.ops.audit_trail import (
     VALID_EXCHANGE_TYPES,
     AuditRecord,
     append_record,
+    audit_download_attachment,
     audit_edit,
     audit_inbound,
     audit_react,
@@ -655,19 +656,56 @@ class TestAuditEdit:
         assert record.content_hash == content_hash(long_body)
 
 
+class TestAuditDownloadAttachment:
+    def test_basic_download(self, tmp_path: Path) -> None:
+        record = audit_download_attachment(
+            file_id="AgACAgIAAxkBAAIBZ",
+            audit_dir=tmp_path,
+        )
+        assert record.direction == "outbound"
+        assert record.exchange_type == "download_attachment"
+        assert record.channel_source == "telegram"
+        assert record.sender_identity == "orchestrator"
+        assert record.chat_id == ""
+        assert record.metadata == {"file_id": "AgACAgIAAxkBAAIBZ"}
+        assert record.content_hash == content_hash("AgACAgIAAxkBAAIBZ")
+
+    def test_download_with_chat_id(self, tmp_path: Path) -> None:
+        record = audit_download_attachment(
+            file_id="AgACAgIAAxkBAAIBZ",
+            chat_id="8122530898",
+            audit_dir=tmp_path,
+        )
+        assert record.chat_id == "8122530898"
+
+    def test_download_persisted(self, tmp_path: Path) -> None:
+        audit_download_attachment(file_id="file-001", audit_dir=tmp_path)
+        records = read_records(audit_dir=tmp_path)
+        assert len(records) == 1
+        assert records[0].exchange_type == "download_attachment"
+        assert records[0].direction == "outbound"
+
+    def test_download_returns_record(self, tmp_path: Path) -> None:
+        returned = audit_download_attachment(file_id="file-002", audit_dir=tmp_path)
+        persisted = read_records(audit_dir=tmp_path)
+        assert len(persisted) == 1
+        assert returned == persisted[0]
+
+
 class TestOutboundWrapperIntegration:
     """Cross-wrapper tests verifying they coexist in the same audit log."""
 
     def test_mixed_outbound_sequence(self, tmp_path: Path) -> None:
-        """All three wrapper types write to the same log and can be read back."""
+        """All four wrapper types write to the same log and can be read back."""
         audit_reply(chat_id="123", body="Hello", audit_dir=tmp_path)
         audit_react(chat_id="123", message_id="1", emoji="👍", audit_dir=tmp_path)
         audit_edit(chat_id="123", message_id="2", body="Updated", audit_dir=tmp_path)
+        audit_download_attachment(file_id="file-X", audit_dir=tmp_path)
 
         records = read_records(audit_dir=tmp_path)
-        assert len(records) == 3
+        assert len(records) == 4
         types = [r.exchange_type for r in records]
-        assert types == ["reply", "react", "edit"]
+        assert types == ["reply", "react", "edit", "download_attachment"]
         assert all(r.direction == "outbound" for r in records)
 
     def test_outbound_filter(self, tmp_path: Path) -> None:
