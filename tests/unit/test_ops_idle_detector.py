@@ -10,6 +10,7 @@ import pytest
 
 from bid_euchre.ops.events import EVENTS_FILE
 from bid_euchre.ops.idle_detector import (
+    CONTROL_PLANE_LANES,
     DEFAULT_THRESHOLD_MINUTES,
     MEANINGFUL_EVENT_TYPES,
     IdleStatus,
@@ -145,6 +146,56 @@ class TestGetActiveLaneIds:
         _register_lane(runtime_dir, "author-c", session_id=None)
         result = _get_active_lane_ids(runtime_dir)
         assert sorted(result) == ["author-a", "author-b"]
+
+    def test_control_plane_lanes_excluded(self, runtime_dir: Path) -> None:
+        """Control-plane lanes (orchestrator, ops, review) must be excluded."""
+        for lane in CONTROL_PLANE_LANES:
+            _register_lane(runtime_dir, lane, session_id=f"sess-{lane}")
+        assert _get_active_lane_ids(runtime_dir) == []
+
+    def test_control_plane_excluded_but_impl_included(self, runtime_dir: Path) -> None:
+        """Implementation lanes still detected alongside control-plane lanes."""
+        _register_lane(runtime_dir, "orchestrator", session_id="sess-orch")
+        _register_lane(runtime_dir, "ops", session_id="sess-ops")
+        _register_lane(runtime_dir, "author-a", session_id="sess-001")
+        result = _get_active_lane_ids(runtime_dir)
+        assert result == ["author-a"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: _find_last_meaningful_event — control-plane filtering
+# ---------------------------------------------------------------------------
+
+
+class TestFindLastMeaningfulEventControlPlane:
+    """Events from control-plane lanes must not reset the idle timer."""
+
+    def test_event_from_orchestrator_ignored(self, events_dir: Path) -> None:
+        ts = datetime(2026, 3, 24, 14, 0, 0, tzinfo=timezone.utc)
+        _write_event(events_dir, "task_completed", ts, lane_id="orchestrator")
+        assert _find_last_meaningful_event(events_dir) is None
+
+    def test_event_from_ops_ignored(self, events_dir: Path) -> None:
+        ts = datetime(2026, 3, 24, 14, 0, 0, tzinfo=timezone.utc)
+        _write_event(events_dir, "ci_success", ts, lane_id="ops")
+        assert _find_last_meaningful_event(events_dir) is None
+
+    def test_event_from_review_ignored(self, events_dir: Path) -> None:
+        ts = datetime(2026, 3, 24, 14, 0, 0, tzinfo=timezone.utc)
+        _write_event(events_dir, "review_verdict", ts, lane_id="review")
+        assert _find_last_meaningful_event(events_dir) is None
+
+    def test_impl_event_found_despite_later_control_plane_event(
+        self, events_dir: Path
+    ) -> None:
+        """An implementation lane event should be found even when a newer
+        control-plane event exists."""
+        ts_impl = datetime(2026, 3, 24, 12, 0, 0, tzinfo=timezone.utc)
+        ts_cp = datetime(2026, 3, 24, 14, 0, 0, tzinfo=timezone.utc)
+        _write_event(events_dir, "task_completed", ts_impl, lane_id="author-a")
+        _write_event(events_dir, "task_completed", ts_cp, lane_id="orchestrator")
+        result = _find_last_meaningful_event(events_dir)
+        assert result == ts_impl
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +345,81 @@ class TestIsFleetIdle:
             now=now,
         )
         assert result.idle is True
+
+    def test_control_plane_lanes_do_not_prevent_idle(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Issue #1774: control-plane crons running must not mask fleet idle.
+
+        With all implementation lanes idle and ops/review/orchestrator crons
+        running, is_fleet_idle(threshold_minutes=30) must return idle=True.
+        """
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts, lane_id="author-a")
+
+        # Control-plane lanes are all "active" (have sessions)
+        _register_lane(runtime_dir, "orchestrator", session_id="sess-orch")
+        _register_lane(runtime_dir, "ops", session_id="sess-ops")
+        _register_lane(runtime_dir, "review", session_id="sess-review")
+
+        result = is_fleet_idle(
+            threshold_minutes=30,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert result.idle is True
+        assert result.active_lanes == []
+
+    def test_impl_lane_active_prevents_idle_with_control_plane(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Issue #1774: one implementation lane active → not idle, even with
+        control-plane lanes also active."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts, lane_id="author-a")
+
+        # Control-plane lanes active
+        _register_lane(runtime_dir, "orchestrator", session_id="sess-orch")
+        _register_lane(runtime_dir, "ops", session_id="sess-ops")
+        # Plus one implementation lane active
+        _register_lane(runtime_dir, "author-b", session_id="sess-impl")
+
+        result = is_fleet_idle(
+            threshold_minutes=30,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert result.idle is False
+        assert "author-b" in result.active_lanes
+        assert "orchestrator" not in result.active_lanes
+        assert "ops" not in result.active_lanes
+
+    def test_control_plane_events_do_not_reset_timer(
+        self, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """Events from control-plane lanes should not reset the idle timer."""
+        now = datetime(2026, 3, 24, 15, 0, 0, tzinfo=timezone.utc)
+
+        # Old implementation event (120m ago)
+        old_ts = now - timedelta(minutes=120)
+        _write_event(events_dir, "task_completed", old_ts, lane_id="author-a")
+
+        # Recent control-plane event (5m ago) — should NOT reset timer
+        recent_ts = now - timedelta(minutes=5)
+        _write_event(events_dir, "task_completed", recent_ts, lane_id="orchestrator")
+
+        result = is_fleet_idle(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert result.idle is True
+        assert result.idle_minutes == pytest.approx(120.0, abs=0.1)
 
     def test_idle_status_dataclass_fields(
         self, events_dir: Path, runtime_dir: Path
