@@ -33,6 +33,11 @@ logger = logging.getLogger("ops.idle_detector")
 # Default idle threshold in minutes.
 DEFAULT_THRESHOLD_MINUTES = 90
 
+# Control-plane lanes that are always running (crons, monitoring, review
+# polling) and should NOT count when determining fleet idleness.  Only
+# implementation lanes (author, browser-author, flex, analyst) matter.
+CONTROL_PLANE_LANES = frozenset({"orchestrator", "ops", "review"})
+
 # Event types that reset the idle timer.  These represent genuine fleet-level
 # progress, not infrastructure bookkeeping.  Every type here MUST be in
 # VALID_EVENT_TYPES (events.py) AND emitted by at least one production path.
@@ -93,6 +98,11 @@ def _find_last_meaningful_event(
 
     for event in events:  # Already sorted most-recent-first
         etype = event.get("event_type", "")
+        lane = event.get("lane_id", "")
+        # Skip events emitted by control-plane lanes — they run crons that
+        # generate infrastructure events and should not reset the idle timer.
+        if lane in CONTROL_PLANE_LANES:
+            continue
         if etype in MEANINGFUL_EVENT_TYPES:
             try:
                 return datetime.fromisoformat(event["timestamp"])
@@ -127,7 +137,7 @@ def _get_active_lane_ids(
             continue
         lane_id = data.get("lane_id", "")
         session_id = data.get("session_id")
-        if session_id and lane_id:
+        if session_id and lane_id and lane_id not in CONTROL_PLANE_LANES:
             active.append(lane_id)
 
     return active
