@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.token_economy import (
+    SCHEMA_VERSION,
     AntiPattern,
     AttributionQuality,
     AttributionResult,
@@ -421,7 +422,7 @@ class TestImportUsageData:
         assert rec["source_path"].endswith(fname)
         assert len(rec["source_hash"]) == 64  # SHA-256 hex digest
         assert rec["import_timestamp"]  # non-empty
-        assert rec["schema_version"] == 1
+        assert rec["schema_version"] == SCHEMA_VERSION
 
     def test_non_dict_json_rejected(self, usage_dir: Path, output_dir: Path) -> None:
         """JSON files containing arrays instead of dicts are rejected."""
@@ -449,7 +450,7 @@ class TestSessionRecord:
 
     def test_schema_version(self) -> None:
         rec = SessionRecord(session_id="test")
-        assert rec.schema_version == 1
+        assert rec.schema_version == SCHEMA_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -1441,8 +1442,14 @@ class TestAutoImport:
         output_dir = tmp_path / "token_economy"
         output_dir.mkdir()
 
-        # Patch DEFAULT_USAGE_DIR so auto-import reads from our fake source
-        with patch("bid_euchre.ops.token_economy.DEFAULT_USAGE_DIR", usage_dir):
+        # Patch DEFAULT_USAGE_DIR and DEFAULT_PROJECTS_DIR so auto-import
+        # reads only from our fake sources (not the real ~/.claude/ tree).
+        empty_projects = tmp_path / "projects"
+        empty_projects.mkdir()
+        with (
+            patch("bid_euchre.ops.token_economy.DEFAULT_USAGE_DIR", usage_dir),
+            patch("bid_euchre.ops.token_economy.DEFAULT_PROJECTS_DIR", empty_projects),
+        ):
             result = dashboard_token_economy(output_dir=output_dir, auto_import=True)
 
         assert result != {}, "Auto-import should populate the store"
