@@ -140,7 +140,12 @@ def _urgent_finding() -> dict:
 
 
 def _urgent_bus_message() -> dict:
-    """A fabricated urgent bus message with an old timestamp."""
+    """A fabricated urgent bus message.
+
+    All callers pass ``unacked_message_age_minutes=0`` to bypass the
+    wall-clock age check, so the ``created_at`` value is irrelevant
+    for detection — it only needs to be a valid ISO 8601 timestamp.
+    """
     return {
         "message_id": "urgent-noise-test-001",
         "from_lane": "author-c",
@@ -201,6 +206,7 @@ class TestNoiseDiscrimination:
             monitor_findings=findings,
             unacked_messages=[urgent_msg],
             now_iso=NOW_ISO,
+            unacked_message_age_minutes=0,
         )
         status = FleetStatus(items=items, generated_at=NOW_ISO, cycle_count=1)
 
@@ -221,6 +227,7 @@ class TestNoiseDiscrimination:
             monitor_findings=findings,
             unacked_messages=[urgent_msg],
             now_iso=NOW_ISO,
+            unacked_message_age_minutes=0,
         )
         status = FleetStatus(items=items, generated_at=NOW_ISO, cycle_count=1)
 
@@ -242,6 +249,7 @@ class TestNoiseDiscrimination:
             monitor_findings=findings,
             unacked_messages=[urgent_msg],
             now_iso=NOW_ISO,
+            unacked_message_age_minutes=0,
         )
         status = FleetStatus(items=items, generated_at=NOW_ISO, cycle_count=1)
 
@@ -321,6 +329,7 @@ class TestNoiseDiscriminationPersistence:
             monitor_findings=findings,
             unacked_messages=[urgent_msg],
             now_iso=NOW_ISO,
+            unacked_message_age_minutes=0,
         )
 
         assert len(status.urgent_items) == 1
@@ -341,6 +350,7 @@ class TestNoiseDiscriminationPersistence:
             monitor_findings=findings,
             unacked_messages=[urgent_msg],
             now_iso=NOW_ISO,
+            unacked_message_age_minutes=0,
         )
 
         d = status.to_dict()
@@ -368,6 +378,7 @@ class TestNoiseDiscriminationCLI:
             monitor_findings=findings,
             unacked_messages=[urgent_msg],
             now_iso=NOW_ISO,
+            unacked_message_age_minutes=0,
         )
         status = FleetStatus(items=items, generated_at=NOW_ISO, cycle_count=5)
 
@@ -410,6 +421,7 @@ class TestNoiseDiscriminationCLI:
             monitor_findings=findings,
             unacked_messages=[urgent_msg],
             now_iso=NOW_ISO,
+            unacked_message_age_minutes=0,
         )
         status = FleetStatus(items=items, generated_at=NOW_ISO, cycle_count=3)
 
