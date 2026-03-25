@@ -47,11 +47,22 @@ Other sub-plans or steps that must complete first.
 
 ## Validation
 
-How to verify correctness before marking COMPLETE.
+How to verify correctness before marking COMPLETE. Every sub-plan must
+include at least one **integration-level** verification — not just "unit
+tests pass" but proof the feature works end-to-end.
 
-- [ ] Test command: `uv run python -m pytest tests/unit/test_X.py`
-- [ ] Smoke check: description
-- [ ] Manual verification: description
+### Pass/Fail Criteria
+
+Define specific, observable conditions that prove the work is done:
+
+- [ ] **Test command:** `uv run python -m pytest tests/unit/test_X.py -v`
+  - Expected: ≥N tests pass, 0 failures
+- [ ] **Integration check:** `<command that exercises the feature end-to-end>`
+  - Expected: `<specific output or behavior>`
+- [ ] **Wiring proof (for library code):** `grep -c <function_name> src/bid_euchre/<caller>.py`
+  - Expected: ≥ 1 (at least one non-test caller exists)
+- [ ] **Smoke check:** description
+- [ ] `make check` passes
 
 ## Planned Outputs
 

@@ -250,27 +250,34 @@ uv run python scripts/compare_runs.py \
 A PR is “done” only when all of these are true:
 
 1) **Tests are green**
-   - At minimum: `pytest -m "not slow"`
+   - At minimum: `pytest -m “not slow”`
    - If you touched rules/legality/scoring or the simulation loop: run integration too.
 
-2) **Reproduce command and tests run are documented**
+2) **Test criteria defined and verified**
+   - Every PR must define specific, verifiable pass/fail conditions — not just
+     “tests pass” but what observable outcome proves the feature works.
+   - Include at least one verification command with expected result in the PR
+     description's `## Test Criteria` section.
+   - These criteria must be verified before claiming the PR is done.
+
+3) **Reproduce command and tests run are documented**
    - Provide the exact command you ran (include config paths and `--seed` where relevant).
    - List every test command you executed so reviewers can rerun them.
 
-3) **The PR description includes the PR URL and supporting context**
+4) **The PR description includes the PR URL and supporting context**
    - Record the PR URL as reported by `gh`; do not claim a PR exists before you can cite the URL.
    - Summarize the reproduce command + tests run in the PR description (can be the same text as above).
 
-4) **Worktree-only workflow**
+5) **Worktree-only workflow**
    - All edits must happen inside a dedicated worktree; never switch branches on the shared checkout or commit from `main`.
 
-5) **No generated artifacts committed**
+6) **No generated artifacts committed**
    - Do **not** commit `data/runs/` or `data/reports/` (ignored by design).
 
-6) **Behavior changes are intentional**
+7) **Behavior changes are intentional**
    - If you changed core rules or outcomes, you must add/adjust tests to lock behavior (see Testing Expectations).
 
-7) **METRICS.md compliance verified (if touching evaluation/reporting)**
+8) **METRICS.md compliance verified (if touching evaluation/reporting)**
    - If you changed evaluation, reporting, or logged fields, verify compliance with `docs/01_core/METRICS.md`
    - Check required fields (Section 2), breakouts (Section 6), uncertainty statistics (Section 7)
    - Cross-reference with `docs/03_TODO/CODEBASE_CONSISTENCY.md` for known gaps
@@ -524,7 +531,7 @@ for a single step but subordinate to the governing plan.
 | `assumptions` | Conditions assumed true; if violated, escalate |
 | `dependencies` | Other sub-plans or steps that must complete first |
 | `planned changes` | Files to be modified or created |
-| `validation` | How to verify correctness |
+| `validation` | How to verify correctness (must include specific pass/fail criteria) |
 | `planned outputs` | Artifacts to be produced |
 | `observed outputs` | Filled during/after execution |
 | `outcome` | Final status, PR link, deviations |

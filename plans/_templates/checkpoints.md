@@ -8,13 +8,18 @@
 
 ## Step Progress
 
-| Step | Status | Date | Agent/Session | Notes |
-|------|--------|------|---------------|-------|
-| Step 0: <name> | PENDING | -- | -- | -- |
-| Step 1: <name> | PENDING | -- | -- | -- |
-| Step 2: <name> | PENDING | -- | -- | -- |
+| Step | Status | Validates | Date | Agent/Session | Notes |
+|------|--------|-----------|------|---------------|-------|
+| Step 0: <name> | PENDING | `<verification command>` → `<expected result>` | -- | -- | -- |
+| Step 1: <name> | PENDING | `<verification command>` → `<expected result>` | -- | -- | -- |
+| Step 2: <name> | PENDING | `<verification command>` → `<expected result>` | -- | -- | -- |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
+
+**Validates column:** Every step must define at least one specific, observable
+pass/fail condition — not just "tests pass" but a concrete verification command
+and expected result. A step cannot be marked `COMPLETE` unless its Validates
+condition has been verified.
 
 ## Active Sub-Plans
 

@@ -37,6 +37,14 @@ sequence here. For each step, specify:
 
 - **Commands:** Exact CLI commands to run
 - **Validates:** Conditions that must hold before proceeding
+- **Pass/Fail Criteria:** Specific, observable conditions that prove the step
+  is done — not just "tests pass" but what outcome proves the feature works.
+  Each step must include at least one verification command and expected result.
+  Example:
+  ```
+  - `uv run python -m pytest tests/unit/test_audit.py -v` passes (≥8 tests)
+  - `grep -c audit_reply src/bid_euchre/ops/*.py` returns ≥ 1
+  ```
 - **Error recovery:** What to do when something fails
 - **Outputs:** Artifacts produced
 
