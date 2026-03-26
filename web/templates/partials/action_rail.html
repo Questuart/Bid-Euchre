@@ -4,7 +4,7 @@
          {"kind": "auction"|"trick"|"system", "text": str}
      - action_rail_label (optional): heading override
 #}
-{% set rail_items = action_rail or [] %}
+{% set rail_items = action_rail | default([], true) %}
 
 <aside id="action-rail" class="action-rail" role="region" aria-label="{{ action_rail_label | default('Game action rail') }}" aria-live="polite">
     <h3>{{ action_rail_label | default("Action Rail") }}</h3>

@@ -18,6 +18,7 @@
 {% set hand_bid_type = bid_type | default("regular") %}
 {% set exchange_given_cards = exchange_given | default([], true) %}
 {% set exchange_received_cards = exchange_received | default([], true) %}
+{% set partner_seat_label = seat_labels.get((bidder_seat + 2) % 4, "Partner") %}
 
 {# Determine if the declaring team made their bid #}
 {% set declarer_team = 0 if bidder_seat in [0, 2] else 1 %}
@@ -104,14 +105,14 @@
 
         {% if hand_bid_type == "moon" and exchange_given_cards and exchange_received_cards %}
             <div class="result-exchange" aria-label="Moon exchange summary">
-                <p class="exchange-title"><strong>Moon exchange</strong></p>
+                <p class="exchange-title"><strong>Moon Exchange</strong></p>
                 <p class="exchange-details">
-                    Given {{ exchange_given_cards|length }} to partner:
-                    {% for card in exchange_given_cards %}<span class="card-text">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                    Given {{ exchange_given_cards|length }} to partner ({{ partner_seat_label }}):
+                    {% for card in exchange_given_cards %}<span class="card-text" aria-label="{{ suit_symbols.get(card[0], card[0]) }}{{ card[1] }}">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
                 </p>
                 <p class="exchange-details">
-                    Received {{ exchange_received_cards|length }} from partner:
-                    {% for card in exchange_received_cards %}<span class="card-text">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                    Received {{ exchange_received_cards|length }} from partner ({{ partner_seat_label }}):
+                    {% for card in exchange_received_cards %}<span class="card-text" aria-label="{{ suit_symbols.get(card[0], card[0]) }}{{ card[1] }}">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
                 </p>
             </div>
         {% endif %}
