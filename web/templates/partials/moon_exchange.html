@@ -1,0 +1,106 @@
+{# Moon exchange interaction / review partial.
+   Context variables:
+     - phase: str — "moon_exchange" or "moon_exchange_review"
+     - link_uuid: str — player's game link UUID
+     - turn_number: int — current turn for idempotency
+     - bidder_seat: int — moon declarer seat
+     - human_hand: list[list[str, str]] — human-visible hand
+     - exchange_step: str | None — "partner_to_mooner" | "mooner_to_partner"
+     - exchange_given: list[list[str]] | None — cards given by mooner
+     - exchange_received: list[list[str]] | None — cards received by mooner
+#}
+{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set partner_seat = ((bidder_seat | int) + 2) % 4 %}
+{% set you_are_mooner = (bidder_seat | int) == 0 %}
+{% set given_cards = exchange_given | default([], true) %}
+{% set received_cards = exchange_received | default([], true) %}
+
+{% if phase == "moon_exchange" %}
+    {% if exchange_step == "partner_to_mooner" %}
+        {% set exchange_title = "Moon Exchange: Choose 2 Cards to Send" %}
+        {% set exchange_text = "Your partner declared moon. Choose the 2 cards you will send to them." %}
+    {% else %}
+        {% set exchange_title = "Moon Exchange: Choose 2 Cards to Return" %}
+        {% set exchange_text = "You have received 2 cards from your partner. Choose the 2 cards you will return." %}
+    {% endif %}
+
+    <section id="moon-exchange" class="hand" role="region" aria-label="Moon exchange">
+        <h3>{{ exchange_title }}</h3>
+        <p class="bid-info">{{ exchange_text }}</p>
+
+        {% if received_cards and exchange_step == "mooner_to_partner" %}
+            <p class="bid-info">
+                Received:
+                {% for card in received_cards %}
+                    <span class="card-text">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </p>
+        {% endif %}
+
+        <form method="post"
+              action="/play/{{ link_uuid }}/moon-exchange"
+              hx-post="/play/{{ link_uuid }}/moon-exchange"
+              hx-target="#game-board"
+              hx-swap="innerHTML"
+              aria-label="Choose two moon exchange cards">
+            <input type="hidden" name="turn_number" value="{{ turn_number }}">
+            <div class="card-fan" role="group" aria-label="Select exactly 2 cards">
+                {% for card in human_hand %}
+                    {% set suit = card[0] %}
+                    {% set rank = card[1] %}
+                    {% set suit_class = suit_classes.get(suit, "spades") %}
+                    {% set suit_sym = suit_symbols.get(suit, suit) %}
+                    {% set suit_name = suit_names.get(suit, suit) %}
+                    <label class="card card--{{ suit_class }}">
+                        <input type="checkbox" name="card_indices" value="{{ loop.index0 }}">
+                        <span class="card__rank" aria-hidden="true">{{ rank }}</span>
+                        <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
+                        <span class="sr-only">{{ rank }} of {{ suit_name }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn--play-card">Confirm Exchange</button>
+        </form>
+    </section>
+{% else %}
+    {% if you_are_mooner %}
+        {% set review_given = given_cards %}
+        {% set review_received = received_cards %}
+        {% set review_intro = "You declared moon." %}
+    {% elif partner_seat == 0 %}
+        {% set review_given = received_cards %}
+        {% set review_received = given_cards %}
+        {% set review_intro = "Your partner declared moon." %}
+    {% else %}
+        {% set review_given = given_cards %}
+        {% set review_received = received_cards %}
+        {% set review_intro = seat_labels.get(bidder_seat, "Declarer") ~ " declared moon." %}
+    {% endif %}
+
+    <section id="moon-exchange-review" class="hand" role="region" aria-label="Moon exchange review">
+        <h3>Moon Exchange Complete</h3>
+        <p class="bid-info">{{ review_intro }}</p>
+        <p class="bid-info">
+            Given:
+            {% for card in review_given %}
+                <span class="card-text">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        </p>
+        <p class="bid-info">
+            Received:
+            {% for card in review_received %}
+                <span class="card-text">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        </p>
+        <form method="post"
+              action="/play/{{ link_uuid }}/next"
+              hx-post="/play/{{ link_uuid }}/next"
+              hx-target="#game-board"
+              hx-swap="innerHTML">
+            <button type="submit" class="btn btn--next-step">Next</button>
+        </form>
+    </section>
+{% endif %}

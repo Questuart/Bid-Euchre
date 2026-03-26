@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     hand_id INTEGER NOT NULL REFERENCES hands(id) ON DELETE CASCADE,
     turn_number INTEGER NOT NULL CHECK (turn_number >= 0),
     seat INTEGER NOT NULL CHECK (seat BETWEEN 0 AND 3),
-    phase TEXT NOT NULL CHECK (phase IN ('bid', 'play')),
+    phase TEXT NOT NULL CHECK (phase IN ('bid', 'play', 'moon_exchange')),
     actor_type TEXT NOT NULL CHECK (actor_type IN ('human', 'ai')),
     decision_source TEXT NOT NULL,
     legal_actions_json TEXT NOT NULL,

@@ -1,0 +1,25 @@
+{# Unified reveal progression control.
+   Context variables:
+     - link_uuid: str — player's game link UUID
+     - next_reason: str | None — "auction" | "trick" | "redeal"
+#}
+{% if next_reason == "auction" %}
+    {% set next_text = "Auction paused after the latest action." %}
+{% elif next_reason == "trick" %}
+    {% set next_text = "Trick complete. Reveal the next trick when ready." %}
+{% elif next_reason == "redeal" %}
+    {% set next_text = "All players passed. Continue to the redeal." %}
+{% else %}
+    {% set next_text = "Continue when ready." %}
+{% endif %}
+
+<div id="next-controls" class="game-control-panel next-controls" role="region" aria-label="Continue game flow">
+    <p class="next-controls__text">{{ next_text }}</p>
+    <form method="post"
+          action="/play/{{ link_uuid }}/next"
+          hx-post="/play/{{ link_uuid }}/next"
+          hx-target="#game-board"
+          hx-swap="innerHTML">
+        <button type="submit" class="btn btn--next-step">Next</button>
+    </form>
+</div>

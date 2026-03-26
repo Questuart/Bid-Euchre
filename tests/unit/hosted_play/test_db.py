@@ -461,6 +461,25 @@ class TestDecisionCRUD:
         with pytest.raises(Exception):
             session.flush()
 
+    def test_decision_accepts_moon_exchange_phase(self, session):
+        match, hand = self._make_hand(session)
+        decision = Decision(
+            match_id=match.id,
+            hand_id=hand.id,
+            turn_number=0,
+            seat=0,
+            phase="moon_exchange",
+            actor_type="human",
+            decision_source="human",
+            legal_actions_json="[]",
+            chosen_action_json="[0, 1]",
+            game_state_json="{}",
+        )
+        session.add(decision)
+        session.flush()
+
+        assert decision.id is not None
+
     def test_decision_seat_constraint(self, session):
         match, hand = self._make_hand(session)
         d = Decision(

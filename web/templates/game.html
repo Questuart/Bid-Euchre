@@ -46,7 +46,7 @@
         {% include "partials/hand_result.html" %}
 
     {# ---- Active game phases: auction and trick play ---- #}
-    {% elif phase in ("auction", "trick_play", "redeal") %}
+    {% elif phase in ("auction", "trick_play", "redeal", "moon_exchange", "moon_exchange_review") %}
         {% include "partials/game_board.html" %}
 
     {% endif %}

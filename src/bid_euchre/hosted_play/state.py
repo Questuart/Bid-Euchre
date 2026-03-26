@@ -100,6 +100,9 @@ class HandState:
     exchange_received: list[list[str]] | None = (
         None  # moon: cards received from partner
     )
+    exchange_step: str | None = None  # "partner_to_mooner" | "mooner_to_partner"
+    revealed_auction_count: int = 0
+    revealed_trick_count: int = 0
     tricks_team0: int = 0
     tricks_team1: int = 0
     points_team0: int = 0
@@ -123,6 +126,9 @@ class HandState:
             "sitting_out_seat": self.sitting_out_seat,
             "exchange_given": self.exchange_given,
             "exchange_received": self.exchange_received,
+            "exchange_step": self.exchange_step,
+            "revealed_auction_count": self.revealed_auction_count,
+            "revealed_trick_count": self.revealed_trick_count,
             "current_trick": (
                 None if self.current_trick is None else self.current_trick.to_dict()
             ),
@@ -163,6 +169,9 @@ class HandState:
             ),
             exchange_given=data.get("exchange_given"),
             exchange_received=data.get("exchange_received"),
+            exchange_step=data.get("exchange_step"),
+            revealed_auction_count=int(data.get("revealed_auction_count", 0)),
+            revealed_trick_count=int(data.get("revealed_trick_count", 0)),
             current_trick=(
                 None
                 if data.get("current_trick") is None

@@ -22,7 +22,7 @@
         {% if bidder_seat == seat %}
             <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
         {% endif %}
-        {% if current_seat == seat %}
+        {% if show_turn_marker | default(true, true) and current_seat == seat %}
             <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
         {% endif %}
         {% if sitting_out_seat == seat %}
@@ -100,7 +100,6 @@
     <div id="last-trick" class="trick-area last-trick" role="region" aria-label="Last completed trick">
         <h3>Last Trick</h3>
         <div class="trick-table trick-table--compact">
-            {# Top: AI Partner #}
             <div class="trick-slot trick-slot--top">
                 {% if 2 in last_ns.cards %}
                     {% set card = last_ns.cards[2] %}
