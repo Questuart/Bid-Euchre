@@ -795,6 +795,32 @@ class TestImportProjectJsonl:
         assert rollup["totals"]["input_tokens"] == 1000
         assert rollup["totals"]["output_tokens"] == 500
 
+    def test_force_reimport_rebuilds_attributions(self, tmp_path: Path):
+        """Force mode should recompute attributions after purging JSONL rows."""
+        from unittest.mock import patch
+
+        sid = "sess-600"
+        projects_dir = self._setup_project_dir(
+            tmp_path,
+            "-Users-test-Bid-Euchre-steward-author",
+            {
+                sid: [
+                    _make_assistant_msg(sid, input_tokens=200, output_tokens=100),
+                ],
+            },
+        )
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        with patch("bid_euchre.ops.token_economy.attribute_sessions") as mock_attr:
+            import_project_jsonl(
+                projects_dir=projects_dir,
+                output_dir=output_dir,
+                force=True,
+            )
+
+        mock_attr.assert_called_once_with(output_dir=output_dir)
+
 
 # ---------------------------------------------------------------------------
 # Existing infer_lane_from_path coverage (regression tests)
