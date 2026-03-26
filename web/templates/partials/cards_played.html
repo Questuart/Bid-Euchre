@@ -1,0 +1,53 @@
+{# Collapsible played-cards history.
+   Context variables:
+     - completed_tricks: list[dict] — completed trick records
+     - current_trick: dict | None — current trick, optionally with plays
+     - cards_played_label (optional): heading override
+#}
+{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set trick_history = completed_tricks | default([], true) %}
+{% set live_trick = current_trick | default(None, true) %}
+{% set has_live_trick = live_trick and live_trick.plays %}
+
+{% if trick_history or has_live_trick %}
+    <details class="cards-played" id="cards-played">
+        <summary>{{ cards_played_label | default("Cards Played") }}</summary>
+        <div class="cards-played__body">
+            {% if has_live_trick %}
+                <section class="cards-played__trick">
+                    <h4>Current Trick</h4>
+                    <ol class="cards-played__list">
+                        {% for play in live_trick.plays %}
+                            <li class="cards-played__item">
+                                <span class="cards-played__seat">{{ seat_labels.get(play[0], "Seat " ~ play[0]) }}</span>
+                                <span class="cards-played__card">{{ suit_symbols.get(play[1][0], play[1][0]) }} {{ play[1][1] }}</span>
+                            </li>
+                        {% endfor %}
+                    </ol>
+                </section>
+            {% endif %}
+
+            {% set total_tricks = trick_history | length %}
+            {% for trick in trick_history | reverse %}
+                {% set trick_number = total_tricks - loop.index0 %}
+                <section class="cards-played__trick">
+                    <h4>Trick {{ trick_number }}</h4>
+                    <ol class="cards-played__list">
+                        {% for play in trick.plays %}
+                            <li class="cards-played__item">
+                                <span class="cards-played__seat">{{ seat_labels.get(play[0], "Seat " ~ play[0]) }}</span>
+                                <span class="cards-played__card">{{ suit_symbols.get(play[1][0], play[1][0]) }} {{ play[1][1] }}</span>
+                            </li>
+                        {% endfor %}
+                    </ol>
+                    {% if trick.winner is not none %}
+                        <p class="cards-played__winner">
+                            Won by {{ seat_labels.get(trick.winner, "Seat " ~ trick.winner) }}
+                        </p>
+                    {% endif %}
+                </section>
+            {% endfor %}
+        </div>
+    </details>
+{% endif %}

@@ -140,6 +140,8 @@
         <p class="hands-count">Hands played: {{ hands_played }}</p>
     </div>
 
+    {% include "partials/cards_played.html" %}
+
     <form method="post"
           action="/play/{{ link_uuid | default("") }}/next-hand"
           hx-post="/play/{{ link_uuid | default("") }}/next-hand"
