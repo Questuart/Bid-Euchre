@@ -48,7 +48,7 @@ jobs:
         run: |
           git diff --quiet -- assets/dashboard/ && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Open dashboard update PR
+      - name: Open or update dashboard PR
         if: steps.changes.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,8 +70,12 @@ jobs:
               --base main \
               --head "$BRANCH")
             echo "Created PR: $PR_URL"
-            # Enable auto-merge if the repo setting allows it
-            gh pr merge "$BRANCH" --auto --squash --delete-branch 2>/dev/null || echo "Auto-merge not available — PR will need manual merge"
+            PR_NUMBER=$(gh pr view "$BRANCH" --json number -q '.number')
           else
             echo "PR #$EXISTING already exists — branch updated via force-push"
+            PR_NUMBER="$EXISTING"
           fi
+
+          # Re-queue auto-merge on every update so the dashboard PR can
+          # self-close once the lightweight required checks report.
+          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch 2>/dev/null || echo "Auto-merge not available — PR will need manual merge"
