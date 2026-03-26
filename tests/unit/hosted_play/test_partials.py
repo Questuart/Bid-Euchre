@@ -479,7 +479,7 @@ class TestTrick:
         )
         assert "trick-area" in html
 
-    def test_last_trick_renders_when_available(self, env):
+    def test_last_trick_is_not_rendered(self, env):
         tmpl = env.get_template("partials/trick.html")
         html = tmpl.render(
             current_trick={"leader": 0, "plays": []},
@@ -496,13 +496,7 @@ class TestTrick:
             tricks_team0=4,
             tricks_team1=1,
         )
-        assert "Last Trick" in html
-        assert "AI Left" in html
-        assert "AI Partner" in html
-        assert "AI Right" in html
-        assert "\u2666" in html
-        assert "\u2660" in html
-        assert "won" in html
+        assert "Last Trick" not in html
 
     def test_markers_for_dealer_turn_declarer_and_sitout(self, env):
         """Markers render for dealer/turn/declarer/sitting out states."""
@@ -1268,6 +1262,40 @@ class TestActionRail:
         assert "action-rail__item--auction" in html
         assert "action-rail__item--trick" in html
         assert "action-rail__item--system" in html
+
+
+class TestCardsPlayed:
+    def test_cards_played_toggle_renders_completed_tricks(self, env):
+        tmpl = env.get_template("partials/cards_played.html")
+        html = tmpl.render(
+            completed_tricks=[
+                {
+                    "plays": [[1, ["D", "A"]], [0, ["S", "K"]]],
+                    "winner": 1,
+                },
+                {
+                    "plays": [[2, ["H", "Q"]], [3, ["C", "10"]]],
+                    "winner": 2,
+                },
+            ],
+            current_trick=None,
+        )
+        assert 'id="cards-played"' in html
+        assert "Cards Played" in html
+        assert "Trick 2" in html
+        assert "AI Partner" in html
+        assert "♣ 10" in html
+        assert "Won by AI Partner" in html
+
+    def test_cards_played_toggle_renders_current_trick(self, env):
+        tmpl = env.get_template("partials/cards_played.html")
+        html = tmpl.render(
+            completed_tricks=[],
+            current_trick={"leader": 0, "plays": [[0, ["S", "A"]], [1, ["H", "10"]]]},
+        )
+        assert "Current Trick" in html
+        assert "You" in html
+        assert "♠ A" in html
 
 
 class TestAccessibilityScore:
