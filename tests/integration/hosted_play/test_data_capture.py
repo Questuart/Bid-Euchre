@@ -22,8 +22,8 @@ pytestmark = pytest.mark.integration
 from starlette.testclient import TestClient
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
+from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.app import create_app
-from web.config import HostedPlayConfig
 from web.db import Decision, Hand, Match, Player
 from web.export import REQUIRED_FIELDS, export_decisions
 
@@ -36,7 +36,7 @@ from web.export import REQUIRED_FIELDS, export_decisions
 def config(tmp_path):
     """File-based SQLite config for test isolation."""
     db_path = tmp_path / "test_data_capture.db"
-    return HostedPlayConfig(database_url=f"sqlite:///{db_path}")
+    return make_hosted_play_test_config(tmp_path, database_url=f"sqlite:///{db_path}")
 
 
 @pytest.fixture()
@@ -74,7 +74,7 @@ def _set_nickname(client: TestClient, link_uuid: str, nickname: str = "Tester"):
     )
 
 
-def _select_ai(client: TestClient, link_uuid: str, model_id: str = "heuristic"):
+def _select_ai(client: TestClient, link_uuid: str, model_id: str = "olsa"):
     """Select AI model and return the response."""
     return client.post(
         f"/play/{link_uuid}/select-ai",
@@ -218,7 +218,7 @@ class TestDataCapturePipeline:
             match_row = session.query(Match).filter_by(player_id=player.id).first()
             assert match_row is not None, "Match row not created"
             assert match_row.status == "active"
-            assert match_row.ai_model == "heuristic"
+            assert match_row.ai_model == "olsa"
             assert match_row.seed is not None
 
             # Hand row exists (first hand is dealt on match creation)
@@ -268,7 +268,7 @@ class TestDataCapturePipeline:
             assert len(ai_decisions) > 0, "No AI decision rows logged"
 
             for d in ai_decisions:
-                assert d.decision_source == "heuristic"
+                assert d.decision_source == "olsa"
                 assert d.phase in ("bid", "play")
         finally:
             session.close()

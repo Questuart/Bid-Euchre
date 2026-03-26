@@ -110,15 +110,16 @@ updated model serving, improved game flow, and pilot access control.
 
 ## 11. Model Serving (Expansion)
 
-- The default browser-facing bidding model becomes **OLSa**, backed by the
-  R3 `full_ols_av` artifact loaded through `ActionValueBidder`.
+- The browser-facing bidding roster contains exactly two options:
+  - **OLSa**, backed by the Arc D v2 R3 `full_ols_av` artifact loaded
+    through `ActionValueBidder`
+  - **Bud Bot**, backed by the Arc D v2 R3 `gbt_av` artifact loaded
+    through `GBTActionValueBidder`
 - The previous `hybrid_olsa` (`HybridOLSaBidder`) is removed from the
   visible pilot roster because it only produces regular bids and is not
   moon/loner-capable.
-- `heuristic` may remain as an internal smoke/fallback model but must not
-  be the default visible pilot choice.
-- The visible model selector may be collapsed to a single approved option
-  (`OLSa`) if that yields a cleaner pilot UX.
+- `heuristic` is not part of the browser-visible roster and must not be
+  used as a silent browser fallback.
 - All AI seats continue to use the same model and `GluttonStrategy` for
   card play (unchanged from §5).
 

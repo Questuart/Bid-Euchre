@@ -7,6 +7,7 @@ turns.  Delegates **all** rule evaluation to existing ``core/``, ``sim/``,
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from typing import Any
 
@@ -146,6 +147,7 @@ class MatchEngine:
         """Create a new match, deal the first hand, and advance AI."""
         self.last_ai_events = []
         state = MatchState(seed=seed, ai_model=ai_model)
+        state.dealer_seat = random.Random(seed).randrange(_NUM_PLAYERS)
         state = self._deal_new_hand(state)
         state = self._advance_ai(state)
         return state

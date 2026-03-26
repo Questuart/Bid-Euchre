@@ -1,14 +1,12 @@
 """AI model roster management for hosted play.
 
-Expansion roster: ``heuristic`` (always available, smoke/fallback) and
-``olsa`` (R3 ``full_ols_av`` ``ActionValueBidder``, available when an
-artifact path is configured).  Models are preloaded once at app startup
-and cached in ``app.state.ai_manager``.  Routes never load artifacts on
-demand.
+The browser-facing roster is intentionally narrow:
 
-The V1 ``hybrid_olsa`` roster entry has been removed because
-``HybridOLSaBidder`` only produces regular bids and is not moon/loner-
-capable.  See ``plans/browser_game_expansion/governing_plan.md`` §5.2.
+- ``olsa`` -> ``OLSa`` backed by the Arc D v2 R3 OLS action-value artifact
+- ``bud_bot`` -> ``Bud Bot`` backed by the Arc D v2 R3 GBT action-value artifact
+
+Both models are preloaded once at app startup and cached in
+``app.state.ai_manager``. Routes never load artifacts on demand.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ import os
 from dataclasses import dataclass
 
 from bid_euchre.strategy.base import Strategy
-from bid_euchre.strategy.bidding import BiddingPolicy, HeuristicSuitBidder
+from bid_euchre.strategy.bidding import BiddingPolicy
 from bid_euchre.strategy.greedy import GluttonStrategy
 
 from .config import HostedPlayConfig
@@ -40,11 +38,9 @@ class ModelInfo:
 class AIManager:
     """Preloads approved bidding policies and play strategies at startup.
 
-    The expansion roster is configuration-backed (no database
-    ``model_registry`` table).  ``heuristic`` is always available as a
-    smoke/fallback model; ``olsa`` is loaded when
-    ``config.olsa_artifact`` points to a valid ``action_value_olsa_v1``
-    artifact file.
+    The browser roster is configuration-backed (no database
+    ``model_registry`` table). Startup fails loudly when the approved
+    artifact-backed roster cannot be loaded.
     """
 
     def __init__(self, config: HostedPlayConfig) -> None:
@@ -64,35 +60,53 @@ class AIManager:
         return self.available_models[model_id]
 
     def list_available(self) -> list[ModelInfo]:
-        """Return all models available for selection, ordered by id."""
-        return sorted(self.available_models.values(), key=lambda m: m.id)
+        """Return all models available for selection in UI order."""
+        return list(self.available_models.values())
 
     # ------------------------------------------------------------------
     # Internal — model loading
     # ------------------------------------------------------------------
 
     def _load_models(self, config: HostedPlayConfig) -> None:
-        """Register and preload the approved expansion roster."""
-        # 1. heuristic — always available (smoke/fallback)
-        self.available_models["heuristic"] = ModelInfo(
-            id="heuristic",
-            name="Heuristic",
-            description="Rule-based bidder with greedy play strategy.",
-            bidding_policy=HeuristicSuitBidder(),
-            play_strategy=GluttonStrategy(),
-        )
-
-        # 2. olsa — R3 full_ols_av ActionValueBidder, available when artifact
-        #    path is set and the artifact loads successfully.
+        """Register and preload the approved browser roster."""
         self._try_load_olsa(config)
+        self._try_load_bud_bot(config)
 
-        # Validate default_model_id is available
-        if self.default_model_id not in self.available_models:
-            logger.warning(
-                "Default model %r not in roster; falling back to 'heuristic'",
-                self.default_model_id,
+        expected_roster = {"olsa", "bud_bot"}
+        missing_models = sorted(expected_roster - self.available_models.keys())
+        if missing_models:
+            raise RuntimeError(
+                "Approved browser AI roster incomplete. Missing: "
+                f"{missing_models}. Configure valid OLSa and Bud Bot artifacts "
+                "before startup."
             )
-            self.default_model_id = "heuristic"
+
+        if self.default_model_id not in self.available_models:
+            raise RuntimeError(
+                "Default model "
+                f"{self.default_model_id!r} is not in the approved browser roster "
+                f"{sorted(self.available_models)}"
+            )
+
+    def _resolve_candidate_paths(
+        self,
+        artifact_path: str | None,
+        config: HostedPlayConfig,
+    ) -> list[str]:
+        """Resolve artifact candidates from the configured path."""
+        if not artifact_path:
+            return []
+
+        candidates: list[str] = []
+        if config.models_dir and not os.path.isabs(artifact_path):
+            if os.path.isfile(artifact_path):
+                candidates.append(artifact_path)
+                candidates.append(os.path.join(config.models_dir, artifact_path))
+            else:
+                candidates.append(os.path.join(config.models_dir, artifact_path))
+        else:
+            candidates.append(artifact_path)
+        return candidates
 
     def _try_load_olsa(self, config: HostedPlayConfig) -> None:
         """Attempt to load the OLSa model (ActionValueBidder).
@@ -102,25 +116,7 @@ class AIManager:
         2. If CWD path doesn't exist **or** loading from it fails, fall back to
            ``models_dir / artifact_path``.
         """
-        artifact_path = config.olsa_artifact
-        if not artifact_path:
-            return
-
-        # Build ordered list of candidate paths to try.
-        candidates: list[str] = []
-        if config.models_dir and not os.path.isabs(artifact_path):
-            if os.path.isfile(artifact_path):
-                # CWD path exists — try it first, models_dir as fallback.
-                candidates.append(artifact_path)
-                candidates.append(os.path.join(config.models_dir, artifact_path))
-            else:
-                # CWD path missing — try models_dir only.
-                candidates.append(os.path.join(config.models_dir, artifact_path))
-        else:
-            # Absolute path or no models_dir — use as-is.
-            candidates.append(artifact_path)
-
-        for path in candidates:
+        for path in self._resolve_candidate_paths(config.olsa_artifact, config):
             if not os.path.isfile(path):
                 continue
             try:
@@ -129,10 +125,7 @@ class AIManager:
                 self.available_models["olsa"] = ModelInfo(
                     id="olsa",
                     name="OLSa",
-                    description=(
-                        "Action-value bidder (R3 full_ols_av) with "
-                        "greedy play strategy."
-                    ),
+                    description=("Action-value bidder with Glutton card play."),
                     bidding_policy=ActionValueBidder(
                         artifact_path=path,
                         name="olsa",
@@ -151,5 +144,38 @@ class AIManager:
 
         logger.info(
             "OLSa artifact configured but not loadable: %s",
-            artifact_path,
+            config.olsa_artifact,
+        )
+
+    def _try_load_bud_bot(self, config: HostedPlayConfig) -> None:
+        """Attempt to load the Bud Bot model (GBTActionValueBidder)."""
+        for path in self._resolve_candidate_paths(config.gbt_artifact, config):
+            if not os.path.isfile(path):
+                continue
+            try:
+                from bid_euchre.strategy.bidding import GBTActionValueBidder
+
+                self.available_models["bud_bot"] = ModelInfo(
+                    id="bud_bot",
+                    name="Bud Bot",
+                    description=("Gradient-boosted bidder with Glutton card play."),
+                    bidding_policy=GBTActionValueBidder(
+                        artifact_path=path,
+                        name="bud_bot",
+                        skip_behavioral_check=True,
+                    ),
+                    play_strategy=GluttonStrategy(),
+                )
+                logger.info("Loaded Bud Bot model from %s", path)
+                return
+            except Exception:
+                logger.warning(
+                    "Failed to load Bud Bot from %s",
+                    path,
+                    exc_info=True,
+                )
+
+        logger.info(
+            "Bud Bot artifact configured but not loadable: %s",
+            config.gbt_artifact,
         )

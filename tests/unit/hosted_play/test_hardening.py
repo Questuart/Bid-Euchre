@@ -16,9 +16,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from starlette.testclient import TestClient
 
+from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.app import _run_self_test, create_app
 from web.cleanup import DEFAULT_MAX_MATCH_AGE, expire_stale_matches
-from web.config import HostedPlayConfig
 from web.db import (
     Match,
     Player,
@@ -36,8 +36,7 @@ from web.middleware import MAX_ACTIVE_MATCHES_PER_PLAYER, check_match_limit
 @pytest.fixture()
 def config(tmp_path):
     """File-based SQLite config for test isolation."""
-    db_path = tmp_path / "test.db"
-    return HostedPlayConfig(database_url=f"sqlite:///{db_path}")
+    return make_hosted_play_test_config(tmp_path)
 
 
 @pytest.fixture()
@@ -135,7 +134,7 @@ class TestMatchRateLimit:
 
         resp = client.post(
             f"/play/{link_uuid}/select-ai",
-            data={"model_id": "heuristic"},
+            data={"model_id": "olsa"},
         )
         assert resp.status_code == 429
         assert "limit" in resp.text.lower() or "Match limit" in resp.text
@@ -440,7 +439,7 @@ class TestStartupCleanup:
         engine.dispose()
 
         # Now start the app — cleanup should fire
-        config = HostedPlayConfig(database_url=db_url)
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
         app = create_app(config=config)
         with TestClient(app) as _client:
             # Verify the match was marked abandoned
