@@ -18,6 +18,8 @@ See ``plans/browser_game_expansion/governing_plan.md`` Phase 4 for context.
 
 from __future__ import annotations
 
+import re
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -39,6 +41,38 @@ def _get_expect():
 
         _expect = expect
     return _expect
+
+
+def _current_hand_number(page: Page) -> int | None:
+    """Extract the visible hand number from the score bar."""
+    hand_info = page.locator("#score-bar .hand-info")
+    if hand_info.count() > 0:
+        text = hand_info.inner_text()
+    else:
+        game_board = page.locator("#game-board")
+        if game_board.count() == 0:
+            return None
+        text = game_board.inner_text()
+    match = re.search(r"Hand\s+(\d+)", text)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _wait_for_hand_number(page: Page, timeout_ms: int = 10000) -> int:
+    """Wait until the game board exposes a visible hand number."""
+    page.wait_for_function(
+        """
+        () => {
+            const board = document.querySelector('#game-board');
+            return !!board && /Hand\\s+\\d+/.test(board.innerText);
+        }
+        """,
+        timeout=timeout_ms,
+    )
+    hand_number = _current_hand_number(page)
+    assert hand_number is not None, "Expected score bar hand number to render"
+    return hand_number
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +174,17 @@ def test_moon_bid_ui_available(
     # Start a match
     page.select_option("select[name='model_id']", "heuristic")
     page.click("button:has-text('Start Match')")
-    page.wait_for_selector("#game-board", timeout=10000)
+    page.wait_for_function(
+        """
+        () => {
+            const board = document.querySelector('#game-board');
+            if (!board) return false;
+            return /Hand\\s+\\d+/.test(board.innerText) ||
+                document.querySelector('#match-result') !== null;
+        }
+        """,
+        timeout=10000,
+    )
 
     # If we're in auction phase, check for moon option
     bid_panel = page.locator("#bid-panel")
@@ -161,6 +205,7 @@ def test_moon_bid_ui_available(
 
         # Select Moon and verify the bid level wrapper hides
         bid_type_select.select_option("moon")
+        bid_type_select.dispatch_event("change")
         page.wait_for_timeout(500)
 
         # Moon is always level 10, so the level selector should be hidden
@@ -250,20 +295,28 @@ def test_full_hand_verify_transition(
     # Start a match
     page.select_option("select[name='model_id']", "heuristic")
     page.click("button:has-text('Start Match')")
-    page.wait_for_selector("#game-board", timeout=10000)
+    initial_hand_number = _wait_for_hand_number(page)
 
-    # Play through the hand by repeatedly taking actions
-    max_actions = 50  # Safety limit
+    # Play through the hand by repeatedly taking actions. The current product
+    # auto-deals the next hand immediately after scoring, so the observable
+    # success condition is either a match result or the visible hand number
+    # advancing beyond the starting hand.
+    deadline = time.monotonic() + 120.0
+    actions_taken = 0
     hand_complete = False
 
-    for _ in range(max_actions):
-        # Check if hand result is showing
-        if page.locator("#hand-result").count() > 0:
+    while time.monotonic() < deadline:
+        actions_taken += 1
+        # Check if match result is showing (match ended)
+        if page.locator("#match-result").count() > 0:
             hand_complete = True
             break
 
-        # Check if match result is showing (match ended)
-        if page.locator("#match-result").count() > 0:
+        current_hand_number = _current_hand_number(page)
+        if (
+            current_hand_number is not None
+            and current_hand_number > initial_hand_number
+        ):
             hand_complete = True
             break
 
@@ -271,23 +324,31 @@ def test_full_hand_verify_transition(
         pass_btn = page.locator("button.pass-btn")
         if pass_btn.count() > 0 and pass_btn.is_visible():
             pass_btn.click()
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(250)
             continue
 
         # Try to play a legal card if in trick play
         legal_cards = page.locator(".card--legal")
         if legal_cards.count() > 0:
             legal_cards.first.click()
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(250)
             continue
 
         # Nothing to do — wait for AI to advance
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(500)
 
     assert hand_complete, (
-        "Expected hand to complete within action limit. "
+        "Expected hand to complete within time budget. "
+        f"Actions taken: {actions_taken}. "
         f"Current page content: {page.locator('#game-board').inner_text()[:200]}"
     )
+
+    # If the match ended outright, the match-result assertions above are enough.
+    # Otherwise verify we advanced into the next hand.
+    if page.locator("#match-result").count() == 0:
+        next_hand_number = _current_hand_number(page)
+        assert next_hand_number is not None
+        assert next_hand_number > initial_hand_number
 
     # If we got a hand result, verify its structure
     hand_result = page.locator("#hand-result")
