@@ -28,6 +28,24 @@ monitoring infrastructure.
 
 ## Workflow
 
+### Session Timing Rule
+
+Record a single `fleet_start_time` at the beginning of the run and reuse it for
+every later Telegram or remote status update. Do not hand-estimate elapsed
+times.
+
+When a check-in summary is relayed outside the local terminal:
+
+1. Reuse the original UTC start timestamp for the run.
+2. Compute `elapsed = now - fleet_start_time`.
+3. Format it consistently as `T+<hours>h<minutes:02d>m`.
+
+Examples:
+
+- `T+0h05m`
+- `T+1h20m`
+- `T+2h00m`
+
 ### Phase 1 — Inbox Poll (MANDATORY FIRST STEP)
 
 1. **Read pending inbox messages (priority-sorted):**
@@ -180,6 +198,10 @@ monitoring infrastructure.
     ALERTS:     <list any unresolved HIGH alerts>
     NEXT:       <recommended action>
     ```
+
+15. **If you send the summary to Telegram or another remote channel,**
+   prefix it with the computed elapsed value from `fleet_start_time`, not a
+   manually estimated string.
 
 ## Integration with /run-fleet
 

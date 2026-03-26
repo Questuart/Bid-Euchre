@@ -19,7 +19,16 @@ mergeable throughput across all defined tracks.
 Before entering the main dispatch loop:
 
 1. Recover context (`/recovering-context` or read MEMORY.md)
-2. **Set up inbox polling cron** — ensures inbox is read even if the
+2. **Record `fleet_start_time` once for the whole run** — use a single
+   timezone-aware UTC timestamp and keep reusing it in every Telegram or remote
+   status update.
+   ```
+   fleet_start_time = <UTC timestamp captured at session start>
+   elapsed = now - fleet_start_time
+   format elapsed as T+<hours>h<minutes:02d>m
+   ```
+   Never hand-estimate elapsed strings like `T+50min` or `T+2h`.
+3. **Set up inbox polling cron** — ensures inbox is read even if the
    orchestrator gets absorbed in a long task and skips check-in cycles.
    **Deduplicate first:** list existing crons and delete any stale
    inbox-poll cron before creating a new one (prevents duplicates when
@@ -34,14 +43,14 @@ Before entering the main dispatch loop:
    ```
    This is the backup mechanism. The primary mechanism is step 0 of every
    dispatch cycle (see Dispatch Discipline below).
-3. Check dashboard health: `uv run python scripts/internal/ops.py dashboard --json`
-4. Bulk-refresh idle lanes:
+4. Check dashboard health: `uv run python scripts/internal/ops.py dashboard --json`
+5. Bulk-refresh idle lanes:
    ```bash
    uv run python scripts/internal/ops.py lane refresh --all-idle
    ```
-5. Triage inbox and open issues; route ambiguous or multi-PR shaping work to
+6. Triage inbox and open issues; route ambiguous or multi-PR shaping work to
    `steward-analyst`
-6. Define Wave 1 candidates
+7. Define Wave 1 candidates
 
 ## Primary Goal
 
