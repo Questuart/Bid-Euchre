@@ -542,6 +542,25 @@ class TestProbeTmuxPane:
             call_args = mock_run.call_args[0][0]
             assert "steward:platform.1" in call_args
 
+    def test_without_runtime_dir_uses_default_registry(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Default .claude/runtime registry should be honored when present."""
+        registry_dir = tmp_path / ".claude" / "runtime" / "worktree_registry"
+        registry_dir.mkdir(parents=True)
+        entry = {"tmux_window": "platform", "tmux_pane": "1"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        monkeypatch.chdir(tmp_path)
+
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="12345\n")
+            result = _probe_tmux_pane("author-a", "steward")
+            assert result is True
+            call_args = mock_run.call_args[0][0]
+            assert call_args[3] == "steward:platform.1"
+
 
 # ---------------------------------------------------------------------------
 # Select worker
@@ -1096,6 +1115,31 @@ class TestRetireWorker:
         assert result.executed is True
         mock_vis.assert_called_once_with("author-a", "hidden", runtime_dir)
 
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    @patch(f"{_WORKER_POOL}._probe_tmux_pane", return_value=True)
+    @patch(f"{_WORKER_POOL}._get_lane_task_id", return_value=None)
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    def test_retire_uses_registry_target(
+        self,
+        mock_vis: MagicMock,
+        mock_task: MagicMock,
+        mock_probe: MagicMock,
+        mock_subprocess: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        registry_dir = runtime_dir / "worktree_registry"
+        registry_dir.mkdir(parents=True, exist_ok=True)
+        (registry_dir / "author-a.json").write_text(
+            json.dumps({"tmux_window": "platform", "tmux_pane": "1"})
+        )
+        mock_subprocess.return_value = MagicMock(returncode=0)
+
+        result = retire_worker("author-a", runtime_dir=runtime_dir)
+
+        assert result.executed is True
+        call_args = mock_subprocess.call_args[0][0]
+        assert call_args[3] == "steward:platform.1"
+
     @patch(f"{_WORKER_POOL}._probe_tmux_pane", return_value=False)
     @patch(f"{_WORKER_POOL}._get_lane_task_id", return_value=None)
     @patch(f"{_DASHBOARD}.set_lane_visibility")
@@ -1220,7 +1264,9 @@ class TestTakePoolSnapshot:
         mock_vis.side_effect = lambda lane: (
             "foreground" if lane.lane_id == "author-a" else "background"
         )
-        mock_probe.side_effect = lambda lid, _: lid == "author-a"
+        mock_probe.side_effect = lambda lid, _session, runtime_dir=None: (
+            lid == "author-a"
+        )
         mock_task.side_effect = lambda lid, rd=None: (
             "pkt1" if lid == "author-a" else None
         )
@@ -1881,6 +1927,25 @@ class TestNudgePane:
             call_args = mock_run.call_args[0][0]
             assert call_args[3] == "steward:platform.1"
 
+    def test_nudge_uses_default_runtime_registry(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Default .claude/runtime registry should be used when available."""
+        registry_dir = tmp_path / ".claude" / "runtime" / "worktree_registry"
+        registry_dir.mkdir(parents=True)
+        entry = {"tmux_window": "platform", "tmux_pane": "1"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        monkeypatch.chdir(tmp_path)
+
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = nudge_pane("author-a", "pkt789")
+            assert result.executed is True
+            call_args = mock_run.call_args[0][0]
+            assert call_args[3] == "steward:platform.1"
+
 
 # ---------------------------------------------------------------------------
 # Reset worktree
@@ -2178,6 +2243,25 @@ class TestClearSession:
             result = clear_session("author-b", runtime_dir=tmp_path)
             assert result.executed is True
             assert "steward:platform.1" in result.reason
+            call_args = mock_run.call_args[0][0]
+            assert call_args[3] == "steward:platform.1"
+
+    def test_clear_uses_default_runtime_registry(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Default .claude/runtime registry should be used when available."""
+        registry_dir = tmp_path / ".claude" / "runtime" / "worktree_registry"
+        registry_dir.mkdir(parents=True)
+        entry = {"tmux_window": "platform", "tmux_pane": "1"}
+        (registry_dir / "author-a.json").write_text(json.dumps(entry))
+        monkeypatch.chdir(tmp_path)
+
+        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = clear_session("author-a")
+            assert result.executed is True
             call_args = mock_run.call_args[0][0]
             assert call_args[3] == "steward:platform.1"
 
@@ -3042,7 +3126,10 @@ class TestDispatchNudgeIntegration:
 
         assert result.executed is True
         mock_nudge.assert_called_once_with(
-            "author-a", "pkt1", tmux_session=DEFAULT_TMUX_SESSION
+            "author-a",
+            "pkt1",
+            tmux_session=DEFAULT_TMUX_SESSION,
+            runtime_dir=runtime_dir,
         )
 
     @patch(f"{_DASHBOARD}.set_lane_visibility")

@@ -1172,3 +1172,38 @@ class TestAccessibilityBaseTemplate:
         tmpl = env.get_template("base.html")
         html = tmpl.render()
         assert "viewport-fit=cover" in html
+
+
+class TestGameTemplateAccessibility:
+    """Verify accessibility-sensitive behavior in the full-page game template."""
+
+    def test_mobile_ai_counts_remain_in_accessibility_tree(self, env):
+        tmpl = env.get_template("game.html")
+        html = tmpl.render(
+            phase="auction",
+            link_uuid="abc-123",
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            current_trick=None,
+            completed_tricks=[],
+            tricks_team0=0,
+            tricks_team1=0,
+            human_hand=[["S", "A"]],
+            legal_plays=None,
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            contract_type=None,
+            trump=None,
+            winning_bid=None,
+            bidder_seat=None,
+        )
+        assert 'class="ai-card-count" aria-hidden="true"' not in html
+        assert "AI Left (10)" in html
+        assert "Partner (10)" in html
+        assert "AI Right (10)" in html

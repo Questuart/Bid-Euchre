@@ -290,11 +290,7 @@ def _probe_tmux_pane(
     Returns:
         True if the lane's tmux pane exists and is running.
     """
-    target = (
-        _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
-        if runtime_dir is not None
-        else f"{tmux_session}:{lane_id}"
-    )
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
     try:
         result = subprocess.run(
             ["tmux", "display-message", "-t", target, "-p", "#{pane_pid}"],
@@ -612,7 +608,9 @@ def take_pool_snapshot(
 
         visibility = effective_visibility(lane)
         health = health_by_lane.get(lane.lane_id, "idle")
-        tmux_alive = _probe_tmux_pane(lane.lane_id, tmux_session)
+        tmux_alive = _probe_tmux_pane(
+            lane.lane_id, tmux_session, runtime_dir=runtime_dir
+        )
         task_id = _get_lane_task_id(lane.lane_id, runtime_dir)
 
         pool_status = _classify_pool_status(
@@ -785,7 +783,7 @@ def wake_worker(
         runtime_dir = Path(".claude/runtime")
 
     # Check if already alive
-    if _probe_tmux_pane(lane_id, tmux_session):
+    if _probe_tmux_pane(lane_id, tmux_session, runtime_dir=runtime_dir):
         # Already running -- just ensure visibility
         set_lane_visibility(lane_id, "foreground", runtime_dir)
         return PoolAction(
@@ -931,14 +929,15 @@ def retire_worker(
     set_lane_visibility(lane_id, "hidden", runtime_dir)
 
     # Terminate the tmux pane if alive
-    if _probe_tmux_pane(lane_id, tmux_session):
+    if _probe_tmux_pane(lane_id, tmux_session, runtime_dir=runtime_dir):
+        target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
         try:
             subprocess.run(
                 [
                     "tmux",
                     "kill-window",
                     "-t",
-                    f"{tmux_session}:{lane_id}",
+                    target,
                 ],
                 capture_output=True,
                 text=True,
@@ -1126,11 +1125,7 @@ def clear_session(
         A :class:`PoolAction` with ``action="clear_session"`` describing the
         outcome.
     """
-    target = (
-        _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
-        if runtime_dir is not None
-        else f"{tmux_session}:{lane_id}"
-    )
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
 
     try:
         subprocess.run(
@@ -1189,11 +1184,7 @@ def nudge_pane(
     Returns:
         A :class:`PoolAction` with ``action="nudge"`` describing the outcome.
     """
-    target = (
-        _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
-        if runtime_dir is not None
-        else f"{tmux_session}:{lane_id}"
-    )
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
     cmd = f"/start-task {packet_id}"
 
     try:
@@ -1516,7 +1507,9 @@ def dispatch_to_worker(
             )
 
     # 6. Nudge the target pane
-    nudge_result = nudge_pane(lane_id, packet_id, tmux_session=tmux_session)
+    nudge_result = nudge_pane(
+        lane_id, packet_id, tmux_session=tmux_session, runtime_dir=runtime_dir
+    )
 
     # 7. Record delivery outcome
     if message_id is not None:

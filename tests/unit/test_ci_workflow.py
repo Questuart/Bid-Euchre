@@ -51,22 +51,21 @@ class TestCIWorkflowStructure:
         # Always runs (to post a status even on docs-only PRs)
         assert "always()" in str(tests_job.get("if", ""))
 
-    def test_dashboard_chore_prs_are_skipped_by_ci_gates(self) -> None:
-        """Dashboard chore PRs should short-circuit heavy CI jobs."""
+    def test_dashboard_chore_prs_keep_tests_gate_but_skip_heavy_jobs(self) -> None:
+        """Dashboard chore PRs should preserve the required tests gate only."""
         skip_marker = "chore: update PR analytics dashboard"
         branch_marker = "startsWith(github.head_ref, 'chore/auto-dashboard')"
 
-        for job_name in (
-            "checks",
-            "tests-shard",
-            "notebooks",
-            "promotion-gate",
-            "tests",
-        ):
+        for job_name in ("checks", "tests-shard", "notebooks", "promotion-gate"):
             if_expr = str(self.jobs[job_name].get("if", ""))
             assert skip_marker in if_expr, f"{job_name} missing skip marker"
             assert branch_marker in if_expr, f"{job_name} missing branch marker"
             assert "github.event_name == 'push'" in if_expr
+
+        tests_if = str(self.jobs["tests"].get("if", ""))
+        assert tests_if == "always()"
+        assert skip_marker not in tests_if
+        assert branch_marker not in tests_if
 
     def test_tests_shard_is_2way_pytest_split(self) -> None:
         """The shard job uses a 2-group matrix with pytest-split."""
