@@ -15,9 +15,12 @@ import socket
 import tempfile
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator
 
 import pytest
+
+from tests.unit.hosted_play.conftest import create_browser_ai_test_artifacts
 
 try:
     import playwright  # noqa: F401
@@ -105,6 +108,8 @@ def live_server(_db_path: str) -> Generator[str, None, None]:
 
     port = _find_free_port()
     db_url = f"sqlite:///{_db_path}"
+    artifact_root = tempfile.mkdtemp(prefix="browser_ai_artifacts_")
+    olsa_artifact, gbt_artifact = create_browser_ai_test_artifacts(Path(artifact_root))
 
     config = HostedPlayConfig(
         database_url=db_url,
@@ -112,6 +117,8 @@ def live_server(_db_path: str) -> Generator[str, None, None]:
         allowed_origins=["*"],
         app_url=f"http://127.0.0.1:{port}",
         default_model_id="olsa",
+        olsa_artifact=olsa_artifact,
+        gbt_artifact=gbt_artifact,
         debug=True,
     )
 

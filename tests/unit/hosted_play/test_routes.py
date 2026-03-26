@@ -14,9 +14,9 @@ from starlette.testclient import TestClient
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
 from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
+from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.ai_manager import AIManager, ModelInfo
 from web.app import create_app
-from web.config import HostedPlayConfig
 from web.db import Decision, Hand, InviteCode, Match, Player
 
 # ---------------------------------------------------------------------------
@@ -31,8 +31,7 @@ def config(tmp_path):
     Uses a temp file rather than in-memory SQLite because in-memory
     databases aren't shared across different connections/threads.
     """
-    db_path = tmp_path / "test.db"
-    return HostedPlayConfig(database_url=f"sqlite:///{db_path}")
+    return make_hosted_play_test_config(tmp_path)
 
 
 @pytest.fixture()

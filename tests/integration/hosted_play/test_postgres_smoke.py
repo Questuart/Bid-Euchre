@@ -42,6 +42,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from starlette.testclient import TestClient
 
+from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.app import create_app
 from web.config import HostedPlayConfig, override_config
 from web.db import (
@@ -93,14 +94,14 @@ def _isolated_pg_params() -> tuple[str, str, str]:
 @pytest.fixture()
 def sqlite_config(tmp_path):
     """HostedPlayConfig backed by a file-based SQLite database."""
-    return HostedPlayConfig(database_url=_sqlite_url(tmp_path))
+    return make_hosted_play_test_config(tmp_path, database_url=_sqlite_url(tmp_path))
 
 
 @pytest.fixture()
-def pg_config():
+def pg_config(tmp_path):
     """HostedPlayConfig backed by an isolated per-process Postgres database."""
     isolated_url, _admin, _db = _isolated_pg_params()
-    return HostedPlayConfig(database_url=isolated_url)
+    return make_hosted_play_test_config(tmp_path, database_url=isolated_url)
 
 
 @pytest.fixture()

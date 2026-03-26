@@ -22,8 +22,8 @@ pytestmark = pytest.mark.integration
 from starlette.testclient import TestClient
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
+from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.app import create_app
-from web.config import HostedPlayConfig
 from web.db import Decision, Hand, Match, Player
 from web.export import REQUIRED_FIELDS, export_decisions
 
@@ -36,7 +36,7 @@ from web.export import REQUIRED_FIELDS, export_decisions
 def config(tmp_path):
     """File-based SQLite config for test isolation."""
     db_path = tmp_path / "test_data_capture.db"
-    return HostedPlayConfig(database_url=f"sqlite:///{db_path}")
+    return make_hosted_play_test_config(tmp_path, database_url=f"sqlite:///{db_path}")
 
 
 @pytest.fixture()

@@ -9,11 +9,17 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 from typing import Any
 
+import joblib
+import numpy as np
 import pytest
+from sklearn.dummy import DummyRegressor
 from sqlalchemy.orm import Session
 
+from bid_euchre.strategy.bidding import ACTION_FEATURE_NAMES, STATE_FEATURE_NAMES
+from web.config import HostedPlayConfig
 from web.db import (
     Decision,
     Hand,
@@ -91,6 +97,121 @@ def create_test_db() -> tuple:
     create_tables(engine)
     factory = make_session_factory(engine)
     return engine, factory
+
+
+def create_browser_ai_test_artifacts(base_dir: Path) -> tuple[str, str]:
+    """Write minimal browser AI artifacts for hosted-play tests.
+
+    The browser roster now requires both OLSa and Bud Bot at startup.
+    CI does not have the production artifact bundle, so tests build
+    deterministic local fixtures instead of weakening startup checks.
+    """
+    artifact_dir = base_dir / "browser_ai_artifacts"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    state_names = list(STATE_FEATURE_NAMES)
+    action_names = list(ACTION_FEATURE_NAMES)
+    bid_feature_names = state_names + action_names
+
+    def _ols_model(intercept: float, feature_names: list[str]) -> dict[str, Any]:
+        return {
+            "coefficients": [0.0] * len(feature_names),
+            "intercept": intercept,
+            "feature_names": feature_names,
+            "r_squared": 0.25,
+        }
+
+    olsa_artifact = {
+        "schema_version": "action_value_olsa_v1",
+        "models": {
+            "suit": _ols_model(1.0, bid_feature_names),
+            "high": _ols_model(0.9, bid_feature_names),
+            "low": _ols_model(0.8, bid_feature_names),
+            "pass": _ols_model(0.0, state_names),
+        },
+        "metadata": {
+            "context_features": [
+                "partner_level_same_suit",
+                "partner_level_same_color",
+                "partner_level_off_color",
+                "partner_level_high",
+                "partner_level_low",
+                "partner_passed",
+            ],
+            "arm": "full",
+        },
+    }
+    olsa_path = artifact_dir / "olsa_test_artifact.json"
+    olsa_path.write_text(json.dumps(olsa_artifact, indent=2))
+
+    bid_width = len(bid_feature_names)
+    pass_width = len(state_names)
+    X_bid = np.zeros((2, bid_width))
+    y_bid = np.array([1.0, 1.0])
+    X_pass = np.zeros((2, pass_width))
+    y_pass = np.array([0.0, 0.0])
+
+    gbt_files = {
+        "suit": ("gbt_suit.joblib", 1.0),
+        "high": ("gbt_high.joblib", 0.9),
+        "low": ("gbt_low.joblib", 0.8),
+        "pass": ("gbt_pass.joblib", 0.0),
+    }
+    for family, (filename, constant) in gbt_files.items():
+        model = DummyRegressor(strategy="constant", constant=constant)
+        if family == "pass":
+            model.fit(X_pass, y_pass)
+        else:
+            model.fit(X_bid, y_bid)
+        joblib.dump(model, artifact_dir / filename)
+
+    gbt_artifact = {
+        "schema_version": "action_value_gbt_v1",
+        "models": {
+            "suit": {
+                "model_file": "gbt_suit.joblib",
+                "feature_names": bid_feature_names,
+                "r_squared": 0.25,
+                "feature_importances": {},
+            },
+            "high": {
+                "model_file": "gbt_high.joblib",
+                "feature_names": bid_feature_names,
+                "r_squared": 0.25,
+                "feature_importances": {},
+            },
+            "low": {
+                "model_file": "gbt_low.joblib",
+                "feature_names": bid_feature_names,
+                "r_squared": 0.25,
+                "feature_importances": {},
+            },
+            "pass": {
+                "model_file": "gbt_pass.joblib",
+                "feature_names": state_names,
+                "r_squared": 0.25,
+                "feature_importances": {},
+            },
+        },
+    }
+    gbt_path = artifact_dir / "bud_bot_test_artifact.json"
+    gbt_path.write_text(json.dumps(gbt_artifact, indent=2))
+
+    return str(olsa_path), str(gbt_path)
+
+
+def make_hosted_play_test_config(tmp_path: Path, **overrides: Any) -> HostedPlayConfig:
+    """Build HostedPlayConfig with deterministic browser AI artifacts."""
+    db_path = tmp_path / "test.db"
+    olsa_artifact, gbt_artifact = create_browser_ai_test_artifacts(tmp_path)
+    defaults: dict[str, Any] = {
+        "database_url": f"sqlite:///{db_path}",
+        "default_model_id": "olsa",
+        "olsa_artifact": olsa_artifact,
+        "gbt_artifact": gbt_artifact,
+    }
+    defaults.update(overrides)
+    return HostedPlayConfig(**defaults)
 
 
 def create_test_player(session: Session, **overrides: Any) -> Player:

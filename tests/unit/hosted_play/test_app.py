@@ -7,6 +7,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 
+from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.ai_manager import AIManager
 from web.app import create_app
 from web.config import HostedPlayConfig
@@ -18,8 +19,7 @@ from web.config import HostedPlayConfig
 
 def _make_app(tmp_path):
     """Create a test app with a file-based SQLite DB."""
-    db_path = tmp_path / "test.db"
-    config = HostedPlayConfig(database_url=f"sqlite:///{db_path}")
+    config = make_hosted_play_test_config(tmp_path)
     return create_app(config=config)
 
 
@@ -47,7 +47,8 @@ class TestCreateApp:
     def test_cors_honors_configured_origins(self, tmp_path):
         """CORS middleware should use allowed_origins from config, not hardcoded '*'."""
         db_path = tmp_path / "test.db"
-        config = HostedPlayConfig(
+        config = make_hosted_play_test_config(
+            tmp_path,
             database_url=f"sqlite:///{db_path}",
             allowed_origins=["https://app.example.com", "https://staging.example.com"],
         )
