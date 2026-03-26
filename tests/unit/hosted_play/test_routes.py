@@ -461,6 +461,11 @@ class TestMatchCompletion:
                 return  # Test passed
 
             hand = state.current_hand
+            if hand is not None and hand.phase == "complete":
+                session.close()
+                client.post(f"/play/{link_uuid}/next-hand")
+                turns_played += 1
+                continue
             session.close()
 
             if hand is None:
@@ -653,6 +658,35 @@ def allpass_client(config):
         yield c, application
 
 
+class _FixedRegularBidder(BiddingPolicy):
+    """Bidding policy that bids up to 5♠ so we get deterministic non-moon flow."""
+
+    def __init__(self) -> None:
+        super().__init__(name="fixed_regular")
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        if obs.current_high_bid < 5:
+            return BidAction.bid(5, "S")
+        return BidAction.pass_bid()
+
+
+@pytest.fixture()
+def regular_ai_client(config):
+    """TestClient whose AI bids a fixed regular contract to avoid loner/moon variance."""
+    application = create_app(config=config)
+    with TestClient(application) as c:
+        ai_manager: AIManager = application.state.ai_manager
+        info = ai_manager.available_models["heuristic"]
+        ai_manager.available_models["heuristic"] = ModelInfo(
+            id=info.id,
+            name=info.name,
+            description=info.description,
+            bidding_policy=_FixedRegularBidder(),
+            play_strategy=info.play_strategy,
+        )
+        yield c, application
+
+
 class TestRedealPersistence:
     """All-pass redeal creates a Hand row marked 'redeal' with correct metadata."""
 
@@ -819,6 +853,18 @@ class TestXSSPrevention:
         # Raw tag must NOT appear
         assert '<img src=x onerror="alert(1)">' not in resp.text
         assert "&lt;img" in resp.text
+
+    def test_game_page_includes_ai_hand_counts_for_accessibility(self, client):
+        """Initial GET render should expose AI hand-count labels to screen readers."""
+        link_uuid = _setup_game(client)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Count labels should be present on first render.
+        assert "AI Left" in resp.text
+        assert "AI Partner" in resp.text
+        assert "AI Right" in resp.text
+        # Ensure accessibility-related count labels are not excluded.
+        assert 'class="ai-card-count" aria-hidden="true"' not in resp.text
 
     def test_nickname_html_escaped_in_new_match(self, client):
         """new_match() must escape HTML in the stored nickname."""
@@ -1297,14 +1343,18 @@ class TestRefreshResumeSafety:
         assert result_after is not None
         state_after, match_row_after, session_after = result_after
 
-        # Either the match continued (next hand) or completed
+        # Either the match is paused on the hand-result screen or completed
         assert state_after.hands_played >= 1
         if state_after.status == "active":
             assert state_after.current_hand is not None
-            # Scores updated from the completed hand
+            # Hand result should be visible before auto-advancing next hand
+            assert state_after.current_hand.phase == "complete"
             assert state_after.score_human != 0 or state_after.score_ai != 0
+            assert "hand-result" in resp.text
+            assert "Next Hand" in resp.text
         elif state_after.status == "complete":
             assert state_after.winner in ("human", "ai")
+            assert "match-result" in resp.text
 
         # GET rendered the persisted state, not stale or error
         assert "game-board" in resp.text
@@ -1313,8 +1363,12 @@ class TestRefreshResumeSafety:
             and state_after.current_hand.phase == "complete"
         ):
             assert "Next Hand" in resp.text
+            assert "hand-result" in resp.text
         elif state_after.status == "active":
             assert "score-bar" in resp.text
+        else:
+            assert "match-result" in resp.text
+        session_after.close()
         session_after.close()
 
     # ---- Next-hand flow --------------------------------------------------
@@ -1555,13 +1609,14 @@ class TestRefreshResumeSafety:
         assert state_after.score_ai == score_ai
         assert state_after.hands_played == hands_played
         assert "game-board" in resp_return.text
-        if (
-            state_after.current_hand is not None
-            and state_after.current_hand.phase == "complete"
-        ):
-            assert "Next Hand" in resp_return.text
+        if state_after.status == "active" and state_after.current_hand is not None:
+            if state_after.current_hand.phase == "complete":
+                assert "Next Hand" in resp_return.text
+                assert "hand-result" in resp_return.text
+            else:
+                assert "score-bar" in resp_return.text
         else:
-            assert "score-bar" in resp_return.text
+            assert "match-result" in resp_return.text
         session_after.close()
 
     # ---- 5b. Completed match → return shows result -----------------------
@@ -1571,7 +1626,7 @@ class TestRefreshResumeSafety:
         link_uuid = _setup_game(client)
 
         # Play to completion
-        for _ in range(2000):
+        for _ in range(4000):
             result = _get_match_state(app, link_uuid)
             assert result is not None
             state, match_row, session = result
@@ -1585,6 +1640,11 @@ class TestRefreshResumeSafety:
 
             if hand is None:
                 break
+
+            if hand.phase == "complete" and state.status == "active":
+                session.close()
+                client.post(f"/play/{link_uuid}/next-hand")
+                continue
 
             if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
                 if hand.current_high_bid < 5:
@@ -1631,9 +1691,8 @@ class TestRefreshResumeSafety:
         resp = client.get(f"/play/{link_uuid}")
         assert resp.status_code == 200
 
-        # A completed match has no active match → shows model selection
-        # (per game_page handler logic: no active match → model selection)
-        assert "match-result" in resp.text or "Start Match" in resp.text
+        assert "match-result" in resp.text
+        assert "Play Again" in resp.text
 
 
 # ---------------------------------------------------------------------------

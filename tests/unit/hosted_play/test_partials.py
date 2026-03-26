@@ -200,6 +200,28 @@ class TestBidPanel:
         assert 'hx-post="/play/test-uuid/bid"' in html
         assert 'hx-target="#game-board"' in html
 
+    def test_moon_bid_label_uses_20_points(self, env):
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert "Moon (20)" in html
+
+    def test_loner_bid_label_uses_40_points(self, env):
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert "Loner (40)" in html
+
     def test_moon_bid_in_transcript_has_emphasis(self, env):
         """Moon bids in the auction transcript get CSS class and badge."""
         tmpl = env.get_template("partials/bid_panel.html")
@@ -337,10 +359,13 @@ class TestHand:
             legal_plays=[0, 2],  # First and third cards are legal
             phase="trick_play",
         )
-        # Legal cards have form with hx-post
-        assert 'hx-post="/play/abc-123/play-card"' in html
-        assert 'name="card_index" value="0"' in html
-        assert 'name="card_index" value="2"' in html
+        # Legal cards appear in the shared legal play flow
+        assert 'id="card-play-form"' in html
+        assert 'id="selected-card-index"' in html
+        assert 'id="card-play-submit"' in html
+        assert 'data-card-index="0"' in html
+        assert 'data-card-index="2"' in html
+        assert 'name="card_index" value=""' in html
         assert "card--legal" in html
 
     def test_illegal_cards_are_divs(self, env):
@@ -354,8 +379,8 @@ class TestHand:
             phase="trick_play",
         )
         assert "card--illegal" in html
-        # card_index=1 should NOT appear in a form
-        assert 'name="card_index" value="1"' not in html
+        # card_index=1 should NOT be a selected legal-card payload in this phase
+        assert 'data-card-index="1"' not in html
 
     def test_turn_number_in_forms(self, env):
         tmpl = env.get_template("partials/hand.html")
@@ -380,6 +405,10 @@ class TestTrick:
         html = tmpl.render(
             current_trick={"leader": 0, "plays": []},
             completed_tricks=[],
+            dealer_seat=0,
+            bidder_seat=0,
+            current_seat=0,
+            sitting_out_seat=None,
             tricks_team0=0,
             tricks_team1=0,
         )
@@ -397,6 +426,10 @@ class TestTrick:
                 ],
             },
             completed_tricks=[],
+            dealer_seat=1,
+            bidder_seat=2,
+            current_seat=3,
+            sitting_out_seat=None,
             tricks_team0=0,
             tricks_team1=0,
         )
@@ -410,7 +443,15 @@ class TestTrick:
         # After 3 completed tricks
         html = tmpl.render(
             current_trick={"leader": 0, "plays": []},
-            completed_tricks=[{}, {}, {}],
+            completed_tricks=[
+                {"plays": [], "winner": 0},
+                {"plays": [], "winner": 1},
+                {"plays": [], "winner": 2},
+            ],
+            dealer_seat=2,
+            bidder_seat=2,
+            current_seat=0,
+            sitting_out_seat=None,
             tricks_team0=2,
             tricks_team1=1,
         )
@@ -421,11 +462,92 @@ class TestTrick:
         tmpl = env.get_template("partials/trick.html")
         html = tmpl.render(
             current_trick=None,
-            completed_tricks=[{}, {}, {}, {}, {}],
+            completed_tricks=[
+                {"plays": [], "winner": 0},
+                {"plays": [], "winner": 1},
+                {"plays": [], "winner": 2},
+                {"plays": [], "winner": 3},
+                {"plays": [], "winner": 0},
+            ],
+            dealer_seat=3,
+            bidder_seat=3,
+            current_seat=0,
+            sitting_out_seat=None,
             tricks_team0=3,
             tricks_team1=2,
         )
         assert "trick-area" in html
+
+    def test_last_trick_renders_when_available(self, env):
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": []},
+            completed_tricks=[
+                {
+                    "plays": [[1, ["D", "A"]], [2, ["S", "K"]], [3, ["H", "Q"]]],
+                    "winner": 2,
+                },
+            ],
+            dealer_seat=1,
+            bidder_seat=2,
+            current_seat=3,
+            sitting_out_seat=None,
+            tricks_team0=4,
+            tricks_team1=1,
+        )
+        assert "Last Trick" in html
+        assert "AI Left" in html
+        assert "AI Partner" in html
+        assert "AI Right" in html
+        assert "\u2666" in html  # ♦
+        assert "\u2660" in html  # ♠
+        assert "AI Partner" in html
+        assert "won" in html
+
+    def test_markers_for_dealer_turn_declarer_and_sitout(self, env):
+        """Markers render for dealer/turn/declarer/sitting out states."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 3, "plays": [[3, ["C", "10"]]]},
+            completed_tricks=[],
+            dealer_seat=1,
+            bidder_seat=2,
+            current_seat=1,
+            sitting_out_seat=0,
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert "seat-marker--dealer" in html
+        assert "seat-marker--turn" in html
+        assert "seat-marker--declarer" in html
+        assert "seat-marker--sitting-out" in html
+        assert 'title="Dealer"' in html
+        assert 'title="Current turn"' in html
+        assert 'title="Declarer"' in html
+        assert 'title="Sitting out"' in html
+
+
+# ---------------------------------------------------------------------------
+# game_controls.html
+# ---------------------------------------------------------------------------
+
+
+class TestGameControls:
+    def test_game_controls_render_pace_and_help(self, env):
+        tmpl = env.get_template("partials/game_controls.html")
+        html = tmpl.render()
+        assert 'id="pace-profile"' in html
+        assert 'name="pace_profile"' in html
+        assert '<option value="off">' in html
+        assert '<option value="fast">' in html
+        assert '<option value="normal"' in html
+        assert '<option value="slow">' in html
+        assert "Help: Bid Euchre Rules" in html
+        assert "bowers" in html
+        assert "Moon bid" in html
+        assert "Loner" in html
+        assert "High/Low" in html
+        assert "Tricks" in html
 
 
 # ---------------------------------------------------------------------------
@@ -833,6 +955,53 @@ class TestHandResult:
         )
         assert "hand-result--animated" in html
 
+    def test_next_hand_button_posts_to_next_hand(self, env):
+        """Hand results include a Next Hand control that posts to the route."""
+        html = env.get_template("partials/hand_result.html").render(
+            link_uuid="abc-123",
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert 'action="/play/abc-123/next-hand"' in html
+        assert 'hx-post="/play/abc-123/next-hand"' in html
+        assert "Next Hand" in html
+
+    def test_moon_exchange_summary_is_visible(self, env):
+        """Moon hands render exchange-given/received card summary."""
+        html = env.get_template("partials/hand_result.html").render(
+            link_uuid="abc-123",
+            winning_bid=10,
+            bidder_seat=1,
+            contract_type="suit",
+            trump="H",
+            bid_type="moon",
+            tricks_team0=6,
+            tricks_team1=4,
+            points_team0=10,
+            points_team1=0,
+            score_human=10,
+            score_ai=0,
+            hands_played=1,
+            exchange_given=[["S", "A"], ["H", "K"]],
+            exchange_received=[["C", "J"], ["D", "9"]],
+        )
+        assert "Moon Exchange" in html
+        assert "AI Left" in html
+        assert "AI Right" in html
+        assert "♠A" in html
+        assert "♥K" in html
+        assert "♣J" in html
+        assert "♦9" in html
+
 
 # ---------------------------------------------------------------------------
 # match_result.html
@@ -898,7 +1067,7 @@ class TestAccessibilityHand:
             legal_plays=[0],
             phase="trick_play",
         )
-        assert 'aria-label="Play A of Spades"' in html
+        assert 'aria-label="Select A of Spades"' in html
 
     def test_illegal_card_has_aria_label(self, env):
         tmpl = env.get_template("partials/hand.html")
@@ -1003,6 +1172,10 @@ class TestAccessibilityTrick:
         html = tmpl.render(
             current_trick={"leader": 0, "plays": []},
             completed_tricks=[],
+            dealer_seat=0,
+            bidder_seat=0,
+            current_seat=1,
+            sitting_out_seat=None,
             tricks_team0=0,
             tricks_team1=0,
         )
@@ -1017,6 +1190,10 @@ class TestAccessibilityTrick:
                 "plays": [[1, ["H", "A"]]],
             },
             completed_tricks=[],
+            dealer_seat=0,
+            bidder_seat=1,
+            current_seat=2,
+            sitting_out_seat=None,
             tricks_team0=0,
             tricks_team1=0,
         )
@@ -1027,10 +1204,40 @@ class TestAccessibilityTrick:
         html = tmpl.render(
             current_trick={"leader": 0, "plays": []},
             completed_tricks=[],
+            dealer_seat=0,
+            bidder_seat=0,
+            current_seat=3,
+            sitting_out_seat=None,
             tricks_team0=0,
             tricks_team1=0,
         )
         assert "waiting to play" in html
+
+
+# ---------------------------------------------------------------------------
+# action_rail.html
+# ---------------------------------------------------------------------------
+
+
+class TestActionRail:
+    def test_action_rail_renders_events(self, env):
+        tmpl = env.get_template("partials/action_rail.html")
+        html = tmpl.render(
+            action_rail=[
+                {"kind": "auction", "text": "AI Left passed"},
+                {"kind": "trick", "text": "AI Left won trick #1"},
+                {"kind": "system", "text": "Hand starts"},
+            ],
+            action_rail_label="Action Rail",
+        )
+        assert 'id="action-rail"' in html
+        assert "Action Rail" in html
+        assert "AI Left passed" in html
+        assert "AI Left won trick #1" in html
+        assert "Hand starts" in html
+        assert "action-rail__item--auction" in html
+        assert "action-rail__item--trick" in html
+        assert "action-rail__item--system" in html
 
 
 class TestAccessibilityScore:

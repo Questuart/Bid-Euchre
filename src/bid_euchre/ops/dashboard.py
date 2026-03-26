@@ -434,9 +434,11 @@ def build_dashboard_view(
     try:
         from bid_euchre.ops.token_economy import dashboard_token_economy
 
-        te_output_dir = (runtime_dir or Path(".claude/runtime")) / "token_economy"
+        runtime_root = runtime_dir or Path(".claude/runtime")
+        te_output_dir = runtime_root / "token_economy"
         token_economy = dashboard_token_economy(
-            output_dir=te_output_dir, auto_import=True
+            output_dir=te_output_dir,
+            auto_import=runtime_dir is None,
         )
     except Exception:
         pass  # Token economy data is optional

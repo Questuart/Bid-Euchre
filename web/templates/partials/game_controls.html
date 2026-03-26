@@ -1,0 +1,29 @@
+<div id="game-controls" class="game-controls" role="region" aria-label="Game controls">
+    <section class="game-control-panel" aria-label="Pacing controls">
+        <label for="pace-profile">AI pace</label>
+        <select id="pace-profile" name="pace_profile">
+            <option value="off">Off</option>
+            <option value="fast">Fast</option>
+            <option value="normal" selected>Normal</option>
+            <option value="slow">Slow</option>
+        </select>
+    </section>
+
+    <details id="help-drawer" class="help-drawer">
+        <summary>Help: Bid Euchre Rules</summary>
+        <div class="help-drawer__content">
+            <p>
+                Bid Euchre is a 2 v 2 team game with a 4-player hand of 20 cards:
+                one point-high card (A/K/Q/J/10/9/8/7) per suit plus bowers.
+            </p>
+            <ul>
+                <li><strong>Auction:</strong> Seat left of dealer starts bidding. Bids begin at 6, then rise.</li>
+                <li><strong>Pass:</strong> Enter 0 to pass. All four passes trigger a redeal.</li>
+                <li><strong>Moon bid:</strong> A Moon bid is always 10 and can score 20 for success or -20 on fail.</li>
+                <li><strong>Loner:</strong> A Loner bid is exactly 10 and removes your partner from tricks.</li>
+                <li><strong>Tricks:</strong> First team to 52 points wins the match.</li>
+                <li><strong>High/Low:</strong> No-trump bids rank by either high card or low card.</li>
+            </ul>
+        </div>
+    </details>
+</div>

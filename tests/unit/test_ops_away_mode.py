@@ -197,6 +197,19 @@ class TestEdgeCases:
         result = detect_operator_state(datetime.now(timezone.utc))
         assert result.state in OperatorPresence
 
+    def test_rejects_naive_datetimes(self) -> None:
+        """Naive datetime inputs should be rejected to prevent timezone bugs."""
+        naive_now = datetime.now()
+        with pytest.raises(ValueError, match="timezone-aware"):
+            detect_operator_state(
+                datetime.now(timezone.utc) - timedelta(minutes=5), now=naive_now
+            )
+        with pytest.raises(ValueError, match="timezone-aware"):
+            detect_operator_state(
+                datetime.now(),
+                now=NOW,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Custom thresholds

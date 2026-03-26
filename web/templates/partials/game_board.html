@@ -7,6 +7,10 @@
        - link_uuid: str — player's game link UUID
        - opp_left_count, partner_count, opp_right_count: int — AI hand card counts
 #}
+{% set dealer_seat = dealer_seat | default(-1, true) %}
+{% set bidder_seat = bidder_seat | default(-1, true) %}
+{% set current_seat = current_seat | default(-1, true) %}
+{% set sitting_out_seat = sitting_out_seat | default(None, true) %}
 
 {# ---- Match result (win/loss screen) ---- #}
 {% if phase == "match_result" %}
@@ -20,12 +24,27 @@
 {% elif phase in ("auction", "trick_play", "redeal") %}
 
     {# AI hands — face-down card backs with counts #}
-    <div class="ai-hands-row">
+    <div class="ai-hands-row" role="region" aria-label="AI opponent hands">
         {# Left opponent (seat 1) #}
         <div class="ai-hand-block ai-hand-block--edge">
-            <div class="ai-hand">
+            <div class="ai-seat-label">
+                {{ "AI Left" }}
+                {% if dealer_seat == 1 %}
+                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                {% endif %}
+                {% if bidder_seat == 1 %}
+                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                {% endif %}
+                {% if current_seat == 1 %}
+                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                {% endif %}
+                {% if sitting_out_seat == 1 %}
+                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                {% endif %}
+            </div>
+            <div class="ai-hand" role="img" aria-label="AI Left has {{ opp_left_count | default(0) }} cards">
                 {% for _ in range(opp_left_count | default(0)) %}
-                <div class="card-back"></div>
+                <div class="card-back" aria-hidden="true"></div>
                 {% endfor %}
             </div>
             <span class="ai-card-count">AI Left ({{ opp_left_count | default(0) }})</span>
@@ -33,9 +52,24 @@
 
         {# Partner (seat 2) #}
         <div class="ai-hand-block ai-hand-block--middle">
-            <div class="ai-hand">
+            <div class="ai-seat-label">
+                {{ "AI Partner" }}
+                {% if dealer_seat == 2 %}
+                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                {% endif %}
+                {% if bidder_seat == 2 %}
+                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                {% endif %}
+                {% if current_seat == 2 %}
+                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                {% endif %}
+                {% if sitting_out_seat == 2 %}
+                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                {% endif %}
+            </div>
+            <div class="ai-hand" role="img" aria-label="Partner has {{ partner_count | default(0) }} cards">
                 {% for _ in range(partner_count | default(0)) %}
-                <div class="card-back"></div>
+                <div class="card-back" aria-hidden="true"></div>
                 {% endfor %}
             </div>
             <span class="ai-card-count">Partner ({{ partner_count | default(0) }})</span>
@@ -43,9 +77,24 @@
 
         {# Right opponent (seat 3) #}
         <div class="ai-hand-block ai-hand-block--edge">
-            <div class="ai-hand">
+            <div class="ai-seat-label">
+                {{ "AI Right" }}
+                {% if dealer_seat == 3 %}
+                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                {% endif %}
+                {% if bidder_seat == 3 %}
+                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                {% endif %}
+                {% if current_seat == 3 %}
+                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                {% endif %}
+                {% if sitting_out_seat == 3 %}
+                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                {% endif %}
+            </div>
+            <div class="ai-hand" role="img" aria-label="AI Right has {{ opp_right_count | default(0) }} cards">
                 {% for _ in range(opp_right_count | default(0)) %}
-                <div class="card-back"></div>
+                <div class="card-back" aria-hidden="true"></div>
                 {% endfor %}
             </div>
             <span class="ai-card-count">AI Right ({{ opp_right_count | default(0) }})</span>
@@ -65,5 +114,7 @@
 
     {# Score bar — always shown during active play #}
     {% include "partials/score.html" %}
+
+    {% include "partials/action_rail.html" %}
 
 {% endif %}

@@ -1,227 +1,407 @@
 /**
- * Bid Euchre Browser Game — Client-side JavaScript
+ * Browser game interactions.
  *
- * Minimal vanilla JS (no build tooling):
- * 1. Decision timer — records how long the human takes to act
- * 2. HTMX swap hooks — resets timer on new decision prompts
- * 3. Card click handler — visual feedback on interaction
- * 4. AI response pacing — configurable delay for moon/loner bids
- *
- * The decision_time_ms hidden input is injected into every bid/play form
- * submission so the server can record human decision latency.
+ * Responsibilities:
+ * - tap/select a legal card and submit as a single confirm form
+ * - optional AI pace control (localStorage-backed)
+ * - delayed submission for pace profiles without breaking HTMX flow
  */
-
 (function () {
-    "use strict";
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return;
+    }
 
-    // -----------------------------------------------------------------------
-    // Configuration
-    // -----------------------------------------------------------------------
+    if (typeof htmx === 'undefined') {
+        return;
+    }
 
-    /**
-     * AI pacing delay range in milliseconds.
-     * After a human submits a moon or loner bid, a brief delay is added
-     * before the HTMX response is processed to give a sense of AI
-     * deliberation.  Regular bids get a shorter delay.
-     */
-    var PACING = {
-        moonMinMs: 800,
-        moonMaxMs: 1500,
-        lonerMinMs: 1000,
-        lonerMaxMs: 2000,
-        regularMinMs: 300,
-        regularMaxMs: 600
+    var PACE_STORAGE_KEY = 'be:ai-pace-profile';
+    var DEFAULT_PACE = 'normal';
+    var PACE_DELAYS_MS = {
+        off: 0,
+        fast: 250,
+        normal: 700,
+        slow: 1300,
     };
 
-    // -----------------------------------------------------------------------
-    // Decision Timer
-    // -----------------------------------------------------------------------
-
-    /** Timestamp (ms) when the current decision prompt was loaded. */
-    var decisionStart = Date.now();
-
     /**
-     * Reset the decision timer.  Called on page load and after each HTMX swap
-     * that delivers a new decision prompt.
+     * Read persisted pace profile.
      */
-    function resetTimer() {
-        decisionStart = Date.now();
+    function getStoredPace() {
+        try {
+            var value = window.localStorage.getItem(PACE_STORAGE_KEY);
+            if (value === 'off' || value === 'fast' || value === 'normal' || value === 'slow') {
+                return value;
+            }
+        } catch (_err) {
+            // localStorage unavailable in some privacy-restricted modes.
+        }
+        return DEFAULT_PACE;
     }
 
     /**
-     * Inject a hidden `decision_time_ms` input into the form that is about to
-     * submit.  HTMX fires `htmx:beforeRequest` on the element with the
-     * `hx-post` attribute — which may be a <form> or a child <button>.
-     *
-     * We walk up to the enclosing <form> to ensure the input is added in the
-     * right place.  If a previous hidden input already exists (e.g. from a
-     * duplicate event), we update its value rather than creating a second one.
-     *
-     * @param {CustomEvent} evt — htmx:beforeRequest event
+     * Persist selected pace profile.
      */
-    function injectDecisionTime(evt) {
-        var form = evt.target.closest("form");
-        if (!form) {
+    function setStoredPace(profile) {
+        try {
+            window.localStorage.setItem(PACE_STORAGE_KEY, profile);
+        } catch (_err) {
+            // Non-blocking; still keep behavior in-memory.
+        }
+    }
+
+    var currentPace = getStoredPace();
+
+    /**
+     * Resolve form pace setting from currently selected mode.
+     */
+    function paceDelayForCurrent() {
+        var delay = PACE_DELAYS_MS[currentPace] || PACE_DELAYS_MS.normal;
+        return delay;
+    }
+
+    /**
+     * Whether a form should be sent through paced submission.
+     */
+    function shouldPaceForm(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return false;
+        }
+
+        if (!form.action) {
+            return false;
+        }
+
+        return /\/play\/[0-9a-f-]+\/(bid|play-card|next-hand)$/.test(form.action);
+    }
+
+    /**
+     * Touch-capable device heuristic.
+     */
+    function isLikelyTouchDevice() {
+        return (
+            window.matchMedia('(hover: none), (pointer: coarse)').matches ||
+            ('ontouchstart' in window) ||
+            (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0)
+        );
+    }
+
+    /**
+     * Busy state used while delay timer is active.
+     */
+    function setFormBusy(form, busy) {
+        if (!(form instanceof HTMLFormElement)) {
             return;
         }
 
-        var elapsed = Date.now() - decisionStart;
-
-        var existing = form.querySelector('input[name="decision_time_ms"]');
-        if (existing) {
-            existing.value = elapsed;
-        } else {
-            var input = document.createElement("input");
-            input.type = "hidden";
-            input.name = "decision_time_ms";
-            input.value = elapsed;
-            form.appendChild(input);
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // AI Response Pacing
-    // -----------------------------------------------------------------------
-
-    /**
-     * Return a random integer in [min, max].
-     */
-    function randInt(min, max) {
-        return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-
-    /**
-     * Get the pacing delay for the current bid type.
-     * Reads the bid_type select value from the bid form if present.
-     *
-     * @param {Element} form — the form being submitted
-     * @returns {number} delay in milliseconds (0 for card plays)
-     */
-    function getPacingDelay(form) {
-        var action = form.getAttribute("action") || "";
-
-        // Only pace bid submissions, not card plays
-        if (action.indexOf("/bid") === -1) {
-            return 0;
-        }
-
-        var bidTypeSelect = form.querySelector('[name="bid_type"]');
-        if (!bidTypeSelect) {
-            return randInt(PACING.regularMinMs, PACING.regularMaxMs);
-        }
-
-        var bidType = bidTypeSelect.value;
-        if (bidType === "moon") {
-            return randInt(PACING.moonMinMs, PACING.moonMaxMs);
-        } else if (bidType === "loner") {
-            return randInt(PACING.lonerMinMs, PACING.lonerMaxMs);
-        }
-        return randInt(PACING.regularMinMs, PACING.regularMaxMs);
-    }
-
-    /**
-     * Show a pacing indicator during the AI delay.
-     * Creates a temporary element that displays "AI is thinking..." style
-     * text while the delayed response is pending.
-     */
-    function showPacingIndicator() {
-        var existing = document.getElementById("pacing-indicator");
-        if (existing) {
-            existing.classList.add("active");
-            return existing;
-        }
-
-        var indicator = document.createElement("div");
-        indicator.id = "pacing-indicator";
-        indicator.className = "pacing-indicator active";
-        indicator.innerHTML = 'AI is considering<span class="pacing-dots"></span>';
-
-        var bidPanel = document.getElementById("bid-panel");
-        if (bidPanel) {
-            bidPanel.appendChild(indicator);
-        }
-        return indicator;
-    }
-
-    /**
-     * Hide and remove the pacing indicator.
-     */
-    function hidePacingIndicator() {
-        var indicator = document.getElementById("pacing-indicator");
-        if (indicator) {
-            indicator.classList.remove("active");
-        }
-    }
-
-    /**
-     * Handle HTMX beforeSwap to apply pacing delay for bid submissions.
-     * This delays the DOM swap to create a deliberation effect.
-     *
-     * @param {CustomEvent} evt — htmx:beforeSwap event
-     */
-    function handlePacingBeforeRequest(evt) {
-        var form = evt.target.closest("form");
-        if (!form) {
+        var submitButton = form.querySelector('button[type="submit"], input[type="submit"]');
+        if (submitButton === null) {
             return;
         }
 
-        var delay = getPacingDelay(form);
-        if (delay > 0) {
-            showPacingIndicator();
+        if (busy) {
+            submitButton.dataset.autoDisabled = submitButton.disabled ? '0' : '1';
+            submitButton.disabled = true;
+            if (submitButton.dataset.labelBusy !== '1') {
+                submitButton.dataset.labelBusy = submitButton.textContent;
+                submitButton.textContent = 'Applying...';
+            }
+            return;
+        }
+
+        if (submitButton.dataset.autoDisabled === '1') {
+            submitButton.disabled = false;
+        }
+        if (submitButton.dataset.labelBusy) {
+            submitButton.textContent = submitButton.dataset.labelBusy;
+        }
+        delete submitButton.dataset.autoDisabled;
+        delete submitButton.dataset.labelBusy;
+    }
+
+    function clearFormPacingState(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        delete form.dataset.pacingBusy;
+        delete form.dataset.pacingSkip;
+        delete form.dataset.pacingArmed;
+        setFormBusy(form, false);
+    }
+
+    /**
+     * Queue HTMX form submit with pacing delay.
+     */
+    function schedulePacedSubmit(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        if (form.dataset.pacingBusy === '1') {
+            return;
+        }
+
+        var delay = paceDelayForCurrent();
+        if (!shouldPaceForm(form) || delay <= 0) {
+            form.dataset.pacingSkip = '1';
+            htmx.trigger(form, 'submit');
+            return;
+        }
+
+        form.dataset.pacingBusy = '1';
+        form.dataset.pacingArmed = '1';
+        setFormBusy(form, true);
+
+        window.setTimeout(function () {
+            if (!form.isConnected) {
+                clearFormPacingState(form);
+                return;
+            }
+
+            if (form.dataset.pacingArmed !== '1') {
+                clearFormPacingState(form);
+                return;
+            }
+
+            form.dataset.pacingSkip = '1';
+            htmx.trigger(form, 'submit');
+            delete form.dataset.pacingArmed;
+        }, delay);
+    }
+
+    function getCardPlayForm() {
+        return document.getElementById('card-play-form');
+    }
+
+    function getSelectedCardInput(form) {
+        if (form === null) {
+            return null;
+        }
+
+        return form.querySelector('#selected-card-index');
+    }
+
+    function clearCardSelection(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        var selectedCards = document.querySelectorAll('#card-play-form .card--legal.card--selected');
+        Array.prototype.forEach.call(selectedCards, function (card) {
+            card.classList.remove('card--selected');
+        });
+
+        var help = form.querySelector('#card-play-help');
+        var input = getSelectedCardInput(form);
+        if (input !== null) {
+            input.value = '';
+        }
+
+        var submitButton = form.querySelector('#card-play-submit');
+        if (submitButton instanceof HTMLElement) {
+            submitButton.disabled = true;
+        }
+
+        if (help !== null) {
+            help.textContent = 'Tap a card to select it, then tap Play card.';
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Card Click Feedback
-    // -----------------------------------------------------------------------
+    function syncCardPlayFormControls(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
 
-    /**
-     * Add a brief pressed effect when a legal card button is clicked.
-     * The actual form submission is handled by HTMX — this is purely visual.
-     *
-     * @param {Event} evt — click event on a .card--legal button
-     */
-    function onCardClick(evt) {
-        var card = evt.currentTarget;
-        card.style.transform = "translateY(-4px) scale(0.95)";
-        // Let HTMX handle the rest; the card will be replaced on swap.
-    }
+        var input = getSelectedCardInput(form);
+        var submitButton = form.querySelector('#card-play-submit');
+        var touchCard = form.querySelector('.card--legal.card--selected');
+        var hasSelection = input !== null && input.value !== '' && touchCard !== null;
 
-    // -----------------------------------------------------------------------
-    // Event Binding
-    // -----------------------------------------------------------------------
+        if (submitButton !== null) {
+            submitButton.disabled = !hasSelection;
+        }
 
-    /**
-     * Bind click handlers to all legal card buttons currently in the DOM.
-     * Called on page load and after each HTMX swap.
-     */
-    function bindCardHandlers() {
-        var cards = document.querySelectorAll("button.card--legal");
-        for (var i = 0; i < cards.length; i++) {
-            cards[i].addEventListener("click", onCardClick);
+        if (hasSelection === false) {
+            clearCardSelection(form);
         }
     }
 
-    // Listen for HTMX events on the document body (delegated).
-    // htmx:beforeRequest fires before any HTMX request — inject timer value
-    // and show pacing indicator.
-    document.body.addEventListener("htmx:beforeRequest", function (evt) {
-        injectDecisionTime(evt);
-        handlePacingBeforeRequest(evt);
-    });
+    function selectCard(form, button) {
+        if (!(form instanceof HTMLFormElement) || !(button instanceof HTMLElement)) {
+            return;
+        }
 
-    // htmx:afterSwap fires after HTMX replaces content — reset timer,
-    // hide pacing indicator, and rebind card handlers for the new DOM content.
-    document.body.addEventListener("htmx:afterSwap", function () {
-        hidePacingIndicator();
-        resetTimer();
-        bindCardHandlers();
-    });
+        var input = getSelectedCardInput(form);
+        if (input === null) {
+            return;
+        }
 
-    // Initial binding on page load.
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", bindCardHandlers);
-    } else {
-        bindCardHandlers();
+        var previous = document.querySelectorAll('#card-play-form .card--legal.card--selected');
+        Array.prototype.forEach.call(previous, function (card) {
+            card.classList.remove('card--selected');
+        });
+        button.classList.add('card--selected');
+
+        var idx = button.getAttribute('data-card-index');
+        input.value = String(idx === null ? '' : idx);
+
+        var submitButton = form.querySelector('#card-play-submit');
+        if (submitButton !== null) {
+            submitButton.disabled = false;
+        }
+
+        var help = form.querySelector('#card-play-help');
+        if (help !== null) {
+            if (isLikelyTouchDevice()) {
+                help.textContent = 'Card selected. Tap Play card to submit.';
+            } else {
+                help.textContent = 'Card selected. Submitting...';
+            }
+        }
     }
+
+    function initPaceControl() {
+        var select = document.getElementById('pace-profile');
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        if (['off', 'fast', 'normal', 'slow'].indexOf(currentPace) === -1) {
+            currentPace = DEFAULT_PACE;
+        }
+
+        select.value = currentPace;
+
+        select.addEventListener('change', function (event) {
+            var newValue = event.target.value;
+            if (newValue !== 'off' && newValue !== 'fast' && newValue !== 'normal' && newValue !== 'slow') {
+                currentPace = DEFAULT_PACE;
+            } else {
+                currentPace = newValue;
+            }
+            setStoredPace(currentPace);
+        });
+    }
+
+    function attachDelegatedHandlers() {
+        document.addEventListener('click', function (event) {
+            var target = event.target;
+
+            var submitButton = target.closest('#card-play-submit');
+            if (submitButton !== null) {
+                event.preventDefault();
+                var form = getCardPlayForm();
+                if (form === null) {
+                    return;
+                }
+                var input = getSelectedCardInput(form);
+                var help = form.querySelector('#card-play-help');
+
+                if (input === null || input.value === '') {
+                    if (help !== null) {
+                        help.textContent = 'Select a legal card first.';
+                    }
+                    return;
+                }
+
+                schedulePacedSubmit(form);
+                return;
+            }
+
+            var card = target.closest('.card--legal[data-card-index]');
+            if (card === null) {
+                return;
+            }
+
+            var handForm = getCardPlayForm();
+            if (handForm === null) {
+                return;
+            }
+
+            event.preventDefault();
+
+            selectCard(handForm, card);
+
+            if (!isLikelyTouchDevice()) {
+                schedulePacedSubmit(handForm);
+                return;
+            }
+        });
+
+        document.addEventListener('submit', function (event) {
+            var form = event.target;
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+
+            if (form.dataset.pacingSkip === '1') {
+                delete form.dataset.pacingSkip;
+                return;
+            }
+
+            if (!shouldPaceForm(form)) {
+                return;
+            }
+
+            event.preventDefault();
+            schedulePacedSubmit(form);
+        }, true);
+
+        document.addEventListener('htmx:afterRequest', function (event) {
+            var form = event.detail && event.detail.elt ? event.detail.elt : event.target;
+            if (form instanceof Element) {
+                form = form.closest('form') || form;
+            }
+            if (form instanceof HTMLFormElement) {
+                clearFormPacingState(form);
+            }
+        }, true);
+
+        document.addEventListener('htmx:sendError', function (event) {
+            var form = event.detail && event.detail.elt ? event.detail.elt : event.target;
+            if (form instanceof Element) {
+                form = form.closest('form') || form;
+            }
+            if (form instanceof HTMLFormElement) {
+                clearFormPacingState(form);
+            }
+        }, true);
+
+        document.addEventListener('htmx:responseError', function (event) {
+            var form = event.detail && event.detail.elt ? event.detail.elt : event.target;
+            if (form instanceof Element) {
+                form = form.closest('form') || form;
+            }
+            if (form instanceof HTMLFormElement) {
+                clearFormPacingState(form);
+            }
+        }, true);
+
+        document.body.addEventListener('htmx:afterSwap', function (event) {
+            var target = event.target;
+            if (!(target instanceof Element) || target.id !== 'game-board') {
+                return;
+            }
+            clearCardSelection(getCardPlayForm());
+            syncCardPlayFormControls(getCardPlayForm());
+        }, true);
+
+        document.addEventListener('DOMContentLoaded', function () {
+            var form = getCardPlayForm();
+            syncCardPlayFormControls(form);
+            initPaceControl();
+        });
+    }
+
+    function initialize() {
+        initPaceControl();
+        attachDelegatedHandlers();
+
+        var form = getCardPlayForm();
+        clearCardSelection(form);
+        syncCardPlayFormControls(form);
+    }
+
+    initialize();
 })();

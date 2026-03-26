@@ -1,0 +1,22 @@
+{# Action rail / event feed.
+   Context variables:
+     - action_rail: list[dict] — ordered event objects:
+         {"kind": "auction"|"trick"|"system", "text": str}
+     - action_rail_label (optional): heading override
+#}
+{% set rail_items = action_rail | default([], true) %}
+
+<aside id="action-rail" class="action-rail" role="region" aria-label="{{ action_rail_label | default('Game action rail') }}" aria-live="polite">
+    <h3>{{ action_rail_label | default("Action Rail") }}</h3>
+    {% if rail_items %}
+        <ul class="action-rail__list">
+            {% for event in rail_items %}
+                <li class="action-rail__item action-rail__item--{{ event.kind | default('event') }}">
+                    {{ event.text }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="action-rail__empty">Waiting for game actions.</p>
+    {% endif %}
+</aside>

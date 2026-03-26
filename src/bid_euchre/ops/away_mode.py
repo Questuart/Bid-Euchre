@@ -186,7 +186,12 @@ def detect_operator_state(
             reason="No known operator interaction — assuming extended away",
         )
 
-    elapsed = now - last_interaction
+    if last_interaction.tzinfo is None or now.tzinfo is None:
+        raise ValueError("last_interaction and now must be timezone-aware")
+
+    now_utc = now.astimezone(timezone.utc)
+    interaction_utc = last_interaction.astimezone(timezone.utc)
+    elapsed = now_utc - interaction_utc
     minutes_inactive = elapsed.total_seconds() / 60.0
 
     # Negative elapsed means last_interaction is in the future (clock skew).

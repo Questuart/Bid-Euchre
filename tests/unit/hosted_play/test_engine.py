@@ -210,6 +210,11 @@ def _play_until_match_end(engine: MatchEngine, state: MatchState) -> MatchState:
         assert hand is not None
         iterations += 1
 
+        if hand.phase == "complete":
+            # Match is not finished yet, but the hand paused on the result
+            # screen. Advance explicitly to continue testing full-match flow.
+            state = engine.advance_to_next_hand(state)
+            continue
         if hand.phase == "auction":
             if hand.current_seat != HUMAN_SEAT:
                 # In exceptional cases, force AI catch-up to keep the helper moving.
@@ -269,6 +274,27 @@ class TestFullHandFlow:
 
         # The match should have played at least one hand
         assert state.hands_played >= 1
+
+    def test_hand_completion_pauses_for_result_screen(
+        self, engine: MatchEngine
+    ) -> None:
+        """A completed hand remains complete and does not auto-deal the next hand."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+        initial_deal_id = hand.deal_id
+        initial_dealer = state.dealer_seat
+
+        state = _play_full_hand(engine, state)
+
+        hand = state.current_hand
+        assert hand is not None
+        if state.status == "active":
+            assert hand.phase == "complete"
+            assert hand.deal_id == initial_deal_id
+            assert state.dealer_seat == initial_dealer
+        else:
+            assert state.status == "complete"
 
 
 # ---------------------------------------------------------------------------
@@ -602,6 +628,11 @@ class TestDealerRotation:
         assert state.hands_played >= 1
         # Dealer should stay until explicit transition
         assert state.dealer_seat == initial_dealer
+        if state.status == "active" and state.hands_played >= 1:
+            state = engine.advance_to_next_hand(state)
+            # Dealer should have advanced
+            expected = (initial_dealer + 1) % 4
+            assert state.dealer_seat == expected
 
     def test_dealer_rotates_on_redeal(self) -> None:
         """Dealer rotates after deal_after_redeal() on all-pass."""

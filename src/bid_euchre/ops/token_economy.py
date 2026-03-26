@@ -1815,7 +1815,7 @@ def _ensure_imported(output_dir: Path) -> None:
         result = import_usage_data(output_dir=output_dir)
 
         # Also scan per-project JSONL telemetry (v2.1.80+ format)
-        jsonl_result = import_project_jsonl(output_dir=output_dir)
+        jsonl_result = import_project_jsonl(output_dir=output_dir, force=True)
 
         # Always attribute when attributions were missing, even if the
         # re-import found no new sessions (data may already be present).

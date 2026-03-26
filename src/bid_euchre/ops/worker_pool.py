@@ -609,7 +609,9 @@ def take_pool_snapshot(
         visibility = effective_visibility(lane)
         health = health_by_lane.get(lane.lane_id, "idle")
         tmux_alive = _probe_tmux_pane(
-            lane.lane_id, tmux_session, runtime_dir=runtime_dir
+            lane.lane_id,
+            tmux_session,
+            runtime_dir=runtime_dir,
         )
         task_id = _get_lane_task_id(lane.lane_id, runtime_dir)
 
@@ -1129,7 +1131,13 @@ def clear_session(
 
     try:
         subprocess.run(
-            ["tmux", "send-keys", "-t", target, "/clear", "Enter"],
+            ["tmux", "send-keys", "-t", target, "/clear"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, "Enter"],
             check=True,
             capture_output=True,
             timeout=5,
@@ -1189,7 +1197,13 @@ def nudge_pane(
 
     try:
         subprocess.run(
-            ["tmux", "send-keys", "-t", target, cmd, "Enter"],
+            ["tmux", "send-keys", "-t", target, cmd],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, "Enter"],
             check=True,
             capture_output=True,
             timeout=5,
@@ -1508,7 +1522,10 @@ def dispatch_to_worker(
 
     # 6. Nudge the target pane
     nudge_result = nudge_pane(
-        lane_id, packet_id, tmux_session=tmux_session, runtime_dir=runtime_dir
+        lane_id,
+        packet_id,
+        tmux_session=tmux_session,
+        runtime_dir=runtime_dir,
     )
 
     # 7. Record delivery outcome

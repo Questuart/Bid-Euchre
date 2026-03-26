@@ -182,21 +182,24 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                 # so the output stream stays machine-parseable.
                 # In single-shot mode, emit indented JSON for readability.
                 if watch:
-                    print(json.dumps(format_dashboard_json(view)))
+                    print(json.dumps(format_dashboard_json(view)), flush=True)
                 else:
-                    print(json.dumps(format_dashboard_json(view), indent=2))
+                    print(json.dumps(format_dashboard_json(view), indent=2), flush=True)
             else:
                 if watch:
                     # Clear screen for clean refresh (text mode only —
                     # ANSI escapes would corrupt JSON output)
                     print("\033[2J\033[H", end="", flush=True)
-                print(format_dashboard_text(view))
+                print(format_dashboard_text(view), flush=True)
 
             if not watch:
                 break
 
             if not args.json:
-                print(f"\n--- Refreshing every {interval}s (Ctrl+C to stop) ---")
+                print(
+                    f"\n--- Refreshing every {interval}s (Ctrl+C to stop) ---",
+                    flush=True,
+                )
             sys.stdout.flush()
             time.sleep(interval)
     except KeyboardInterrupt:
@@ -3064,186 +3067,202 @@ def cmd_usage(args: argparse.Namespace) -> int:
 
 def cmd_away(args: argparse.Namespace) -> int:
     """Operator away-mode detection and queue priority reorder (Platform-9b)."""
+
+    from datetime import datetime as _dt_type
+
+    def _parse_aware_iso(value: str, label: str) -> tuple[_dt_type, str]:
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
+
+        dt = _dt.fromisoformat(value)
+        if dt.tzinfo is None:
+            raise ValueError(f"{label} must include timezone information")
+        return dt.astimezone(_tz.utc), label
+
     action = getattr(args, "away_action", None)
 
-    if action == "status":
-        from datetime import datetime as _dt
+    try:
+        if action == "status":
+            from datetime import datetime as _dt
 
-        from bid_euchre.ops.away_mode import (
-            EscalationThresholds,
-            detect_operator_state,
-        )
-
-        # Parse --now override
-        now = None
-        if getattr(args, "now", None):
-            now = _dt.fromisoformat(args.now)
-            if now.tzinfo is None:
-                from datetime import timezone as _tz
-
-                now = now.replace(tzinfo=_tz.utc)
-
-        # Parse --last-interaction or auto-detect from events
-        last_interaction = None
-        if getattr(args, "last_interaction", None):
-            last_interaction = _dt.fromisoformat(args.last_interaction)
-            if last_interaction.tzinfo is None:
-                from datetime import timezone as _tz
-
-                last_interaction = last_interaction.replace(tzinfo=_tz.utc)
-        else:
-            # Auto-detect: find the most recent UserPromptSubmit event
-            try:
-                from bid_euchre.ops.events import read_events
-
-                events_dir = args.runtime_dir / "events" if args.runtime_dir else None
-                events = read_events(events_dir, limit=200)
-                for evt in events:
-                    if evt.get("event_type") == "user_prompt":
-                        ts = evt.get("timestamp", "")
-                        if ts:
-                            last_interaction = _dt.fromisoformat(ts)
-                            break
-            except Exception:
-                pass  # No events found — last_interaction stays None
-
-        # Build thresholds (override individual values if provided)
-        thresholds = None
-        idle_m = getattr(args, "idle", None)
-        away_m = getattr(args, "away_minutes", None)
-        ext_m = getattr(args, "extended_away_minutes", None)
-        if idle_m is not None or away_m is not None or ext_m is not None:
             from bid_euchre.ops.away_mode import (
-                DEFAULT_AWAY_MINUTES,
-                DEFAULT_EXTENDED_AWAY_MINUTES,
-                DEFAULT_IDLE_MINUTES,
+                EscalationThresholds,
+                detect_operator_state,
             )
 
-            thresholds = EscalationThresholds(
-                idle_minutes=idle_m if idle_m is not None else DEFAULT_IDLE_MINUTES,
-                away_minutes=away_m if away_m is not None else DEFAULT_AWAY_MINUTES,
-                extended_away_minutes=(
-                    ext_m if ext_m is not None else DEFAULT_EXTENDED_AWAY_MINUTES
-                ),
-            )
+            # Parse --now override
+            now = None
+            if getattr(args, "now", None):
+                now, _ = _parse_aware_iso(args.now, "--now")
 
-        result = detect_operator_state(
-            last_interaction,
-            thresholds=thresholds,
-            now=now,
-        )
-
-        if args.json:
-            data = {
-                "state": result.state.value,
-                "escalation_tier": result.escalation_tier,
-                "minutes_inactive": round(result.minutes_inactive, 1),
-                "last_interaction": (
-                    result.last_interaction.isoformat()
-                    if result.last_interaction
-                    else None
-                ),
-                "thresholds": {
-                    "idle_minutes": result.thresholds.idle_minutes,
-                    "away_minutes": result.thresholds.away_minutes,
-                    "extended_away_minutes": result.thresholds.extended_away_minutes,
-                },
-                "reason": result.reason,
-            }
-            print(json.dumps(data, indent=2))
-        else:
-            tier_labels = {
-                0: "PRESENT",
-                1: "IDLE",
-                2: "AWAY",
-                3: "EXTENDED_AWAY",
-            }
-            label = tier_labels.get(result.escalation_tier, "UNKNOWN")
-            print(f"Operator State: {label} (tier {result.escalation_tier})")
-            print(f"  Minutes inactive: {result.minutes_inactive:.0f}")
-            if result.last_interaction:
-                print(f"  Last interaction: {result.last_interaction.isoformat()}")
-            else:
-                print("  Last interaction: (unknown)")
-            print(f"  Reason: {result.reason}")
-            print(
-                f"  Thresholds: idle={result.thresholds.idle_minutes:.0f}m, "
-                f"away={result.thresholds.away_minutes:.0f}m, "
-                f"extended={result.thresholds.extended_away_minutes:.0f}m"
-            )
-        return 0
-
-    elif action == "reorder":
-        from datetime import datetime as _dt
-
-        from bid_euchre.ops.queue_priority import reorder_queue
-        from bid_euchre.ops.task_queue import list_packets
-
-        task_queue_root = args.runtime_dir / "task_queue"
-
-        # Parse --now override
-        now = None
-        if getattr(args, "now", None):
-            now = _dt.fromisoformat(args.now)
-            if now.tzinfo is None:
-                from datetime import timezone as _tz
-
-                now = now.replace(tzinfo=_tz.utc)
-
-        preferred_lane = getattr(args, "preferred_lane", None)
-        status_filter = getattr(args, "status_filter", "pending")
-
-        # Load all packets (unfiltered), let reorder_queue handle status filtering
-        packets = list_packets(task_queue_root)
-        ordered = reorder_queue(
-            packets,
-            now=now,
-            preferred_lane=preferred_lane,
-            status_filter=status_filter,
-        )
-
-        if args.json:
-            items = []
-            for pkt, score in ordered:
-                items.append(
-                    {
-                        "packet_id": pkt.packet_id,
-                        "title": pkt.title,
-                        "priority": pkt.priority,
-                        "owner": pkt.owner,
-                        "status": pkt.status,
-                        "score": {
-                            "total": round(score.total, 2),
-                            "age": round(score.age_score, 2),
-                            "priority": round(score.priority_score, 2),
-                            "dependency": round(score.dependency_score, 2),
-                            "affinity": round(score.affinity_score, 2),
-                        },
-                    }
+            # Parse --last-interaction or auto-detect from events
+            last_interaction = None
+            if getattr(args, "last_interaction", None):
+                last_interaction, _ = _parse_aware_iso(
+                    args.last_interaction, "--last-interaction"
                 )
-            print(json.dumps(items, indent=2))
-        else:
-            if not ordered:
-                print(f"No {status_filter} packets to reorder.")
             else:
-                print(f"Queue Priority Order ({len(ordered)} packets):\n")
-                for rank, (pkt, score) in enumerate(ordered, 1):
-                    owner_str = pkt.owner or "(unassigned)"
-                    print(
-                        f"  {rank}. [{score.total:6.1f}]  {pkt.packet_id}  "
-                        f"{pkt.priority:6s}  {owner_str:15s}  {pkt.title}"
-                    )
-                    print(
-                        f"     age={score.age_score:.1f}  "
-                        f"priority={score.priority_score:.1f}  "
-                        f"dep={score.dependency_score:.1f}  "
-                        f"affinity={score.affinity_score:.1f}"
-                    )
-        return 0
+                # Auto-detect: find the most recent UserPromptSubmit event
+                try:
+                    from bid_euchre.ops.events import read_events
 
-    else:
+                    events_dir = (
+                        args.runtime_dir / "events" if args.runtime_dir else None
+                    )
+                    events = read_events(events_dir, limit=200)
+                    for evt in events:
+                        if evt.get("event_type") == "user_prompt":
+                            ts = evt.get("timestamp", "")
+                            if ts:
+                                last_interaction = _dt.fromisoformat(ts)
+                                break
+                except Exception:
+                    pass  # No events found — last_interaction stays None
+
+                if last_interaction is not None and last_interaction.tzinfo is None:
+                    print(
+                        "Error: event timestamp from history is naive; "
+                        "expected timezone-aware ISO-8601 (e.g. +00:00)",
+                        file=sys.stderr,
+                    )
+                    return 2
+
+            # Build thresholds (override individual values if provided)
+            thresholds = None
+            idle_m = getattr(args, "idle", None)
+            away_m = getattr(args, "away_minutes", None)
+            ext_m = getattr(args, "extended_away_minutes", None)
+            if idle_m is not None or away_m is not None or ext_m is not None:
+                from bid_euchre.ops.away_mode import (
+                    DEFAULT_AWAY_MINUTES,
+                    DEFAULT_EXTENDED_AWAY_MINUTES,
+                    DEFAULT_IDLE_MINUTES,
+                )
+
+                thresholds = EscalationThresholds(
+                    idle_minutes=idle_m if idle_m is not None else DEFAULT_IDLE_MINUTES,
+                    away_minutes=away_m if away_m is not None else DEFAULT_AWAY_MINUTES,
+                    extended_away_minutes=(
+                        ext_m if ext_m is not None else DEFAULT_EXTENDED_AWAY_MINUTES
+                    ),
+                )
+
+            result = detect_operator_state(
+                last_interaction,
+                thresholds=thresholds,
+                now=now,
+            )
+
+            if args.json:
+                data = {
+                    "state": result.state.value,
+                    "escalation_tier": result.escalation_tier,
+                    "minutes_inactive": round(result.minutes_inactive, 1),
+                    "last_interaction": (
+                        result.last_interaction.isoformat()
+                        if result.last_interaction
+                        else None
+                    ),
+                    "thresholds": {
+                        "idle_minutes": result.thresholds.idle_minutes,
+                        "away_minutes": result.thresholds.away_minutes,
+                        "extended_away_minutes": result.thresholds.extended_away_minutes,
+                    },
+                    "reason": result.reason,
+                }
+                print(json.dumps(data, indent=2))
+            else:
+                tier_labels = {
+                    0: "PRESENT",
+                    1: "IDLE",
+                    2: "AWAY",
+                    3: "EXTENDED_AWAY",
+                }
+                label = tier_labels.get(result.escalation_tier, "UNKNOWN")
+                print(f"Operator State: {label} (tier {result.escalation_tier})")
+                print(f"  Minutes inactive: {result.minutes_inactive:.0f}")
+                if result.last_interaction:
+                    print(f"  Last interaction: {result.last_interaction.isoformat()}")
+                else:
+                    print("  Last interaction: (unknown)")
+                print(f"  Reason: {result.reason}")
+                print(
+                    f"  Thresholds: idle={result.thresholds.idle_minutes:.0f}m, "
+                    f"away={result.thresholds.away_minutes:.0f}m, "
+                    f"extended={result.thresholds.extended_away_minutes:.0f}m"
+                )
+            return 0
+
+        if action == "reorder":
+            from datetime import datetime as _dt
+
+            from bid_euchre.ops.queue_priority import reorder_queue
+            from bid_euchre.ops.task_queue import list_packets
+
+            task_queue_root = args.runtime_dir / "task_queue"
+
+            # Parse --now override
+            now = None
+            if getattr(args, "now", None):
+                now, _ = _parse_aware_iso(args.now, "--now")
+
+            preferred_lane = getattr(args, "preferred_lane", None)
+            status_filter = getattr(args, "status_filter", "pending")
+
+            # Load all packets (unfiltered), let reorder_queue handle status filtering
+            packets = list_packets(task_queue_root)
+            ordered = reorder_queue(
+                packets,
+                now=now,
+                preferred_lane=preferred_lane,
+                status_filter=status_filter,
+            )
+
+            if args.json:
+                items = []
+                for pkt, score in ordered:
+                    items.append(
+                        {
+                            "packet_id": pkt.packet_id,
+                            "title": pkt.title,
+                            "priority": pkt.priority,
+                            "owner": pkt.owner,
+                            "status": pkt.status,
+                            "score": {
+                                "total": round(score.total, 2),
+                                "age": round(score.age_score, 2),
+                                "priority": round(score.priority_score, 2),
+                                "dependency": round(score.dependency_score, 2),
+                                "affinity": round(score.affinity_score, 2),
+                            },
+                        }
+                    )
+                print(json.dumps(items, indent=2))
+            else:
+                if not ordered:
+                    print(f"No {status_filter} packets to reorder.")
+                else:
+                    print(f"Queue Priority Order ({len(ordered)} packets):\n")
+                    for rank, (pkt, score) in enumerate(ordered, 1):
+                        owner_str = pkt.owner or "(unassigned)"
+                        print(
+                            f"  {rank}. [{score.total:6.1f}]  {pkt.packet_id}  "
+                            f"{pkt.priority:6s}  {owner_str:15s}  {pkt.title}"
+                        )
+                        print(
+                            f"     age={score.age_score:.1f}  "
+                            f"priority={score.priority_score:.1f}  "
+                            f"dep={score.dependency_score:.1f}  "
+                            f"affinity={score.affinity_score:.1f}"
+                        )
+            return 0
+
         print("Usage: ops.py away {status|reorder}", file=sys.stderr)
         return 1
+
+    except ValueError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 2
 
 
 def build_parser() -> argparse.ArgumentParser:
