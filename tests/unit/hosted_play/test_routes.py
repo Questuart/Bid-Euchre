@@ -686,6 +686,23 @@ def regular_ai_client(config):
         yield c, application
 
 
+@pytest.fixture()
+def moon_exchange_client(config):
+    """TestClient whose AI always passes so the human can declare moon."""
+    application = create_app(config=config)
+    with TestClient(application) as c:
+        ai_manager: AIManager = application.state.ai_manager
+        info = ai_manager.available_models["olsa"]
+        ai_manager.available_models["olsa"] = ModelInfo(
+            id=info.id,
+            name=info.name,
+            description=info.description,
+            bidding_policy=_AlwaysPassBidder(),
+            play_strategy=info.play_strategy,
+        )
+        yield c, application
+
+
 class TestRedealPersistence:
     """All-pass redeal creates a Hand row marked 'redeal' with correct metadata."""
 
@@ -722,7 +739,7 @@ class TestRedealPersistence:
         )
         assert resp.status_code == 200
 
-        # Verify the hand row for the redealt hand
+        # Verify the current hand row is marked redeal and no new hand exists yet
         session = app.state.session_factory()
         try:
             redeal_hand = (
@@ -733,22 +750,19 @@ class TestRedealPersistence:
             assert redeal_hand.deal_id == original_deal_id
             assert redeal_hand.dealer_seat == original_dealer
 
-            # Verify a new hand row exists for the next deal
+            # The next deal should not start until the player clicks Next
             next_hand = (
                 session.query(Hand)
                 .filter_by(match_id=match_id)
                 .filter(Hand.deal_id > original_deal_id)
                 .first()
             )
-            assert next_hand is not None, "Expected Hand row for the post-redeal hand"
-            assert next_hand.status == "in_progress"
-            assert next_hand.deal_id == original_deal_id + 1
-            assert next_hand.dealer_seat == (original_dealer + 1) % 4
+            assert next_hand is None
         finally:
             session.close()
 
-    def test_match_state_has_new_hand_after_redeal(self, allpass_client):
-        """After redeal, serialized match state shows the new hand (not redeal)."""
+    def test_next_advances_to_new_hand_after_redeal(self, allpass_client):
+        """Redeal pauses until /next, then serialized state shows the new hand."""
         client, app = allpass_client
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
@@ -776,12 +790,112 @@ class TestRedealPersistence:
         assert result2 is not None
         state2, _, session2 = result2
 
-        # Match state should show the new hand in auction phase
-        new_hand = state2.current_hand
-        assert new_hand is not None
-        assert new_hand.phase == "auction"
+        redeal_hand = state2.current_hand
+        assert redeal_hand is not None
+        assert redeal_hand.phase == "redeal"
         assert state2.hands_played == 0  # Redeals don't count
         session2.close()
+
+        for _ in range(4):
+            client.post(f"/play/{link_uuid}/next")
+            result3 = _get_match_state(app, link_uuid)
+            assert result3 is not None
+            state3, _, session3 = result3
+            try:
+                new_hand = state3.current_hand
+                assert new_hand is not None
+                if new_hand.phase == "auction":
+                    assert new_hand.deal_id == hand.deal_id + 1
+                    break
+            finally:
+                session3.close()
+        else:
+            pytest.fail("Expected /next to advance from redeal to the next hand")
+
+
+class TestMoonExchangeRoutes:
+    def test_human_moon_bid_renders_exchange_form(self, moon_exchange_client):
+        client, app = moon_exchange_client
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        session.close()
+
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "auction"
+        assert hand.current_seat == HUMAN_SEAT
+
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            data={
+                "turn_number": hand.turn_number,
+                "bid_n": 10,
+                "bid_contract": "S",
+                "bid_type": "moon",
+            },
+        )
+        assert resp.status_code == 200
+        assert "Moon Exchange" in resp.text
+        assert "/moon-exchange" in resp.text
+
+    def test_submit_moon_exchange_moves_to_review(self, moon_exchange_client):
+        client, app = moon_exchange_client
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        session.close()
+
+        hand = state.current_hand
+        assert hand is not None
+
+        client.post(
+            f"/play/{link_uuid}/bid",
+            data={
+                "turn_number": hand.turn_number,
+                "bid_n": 10,
+                "bid_contract": "S",
+                "bid_type": "moon",
+            },
+        )
+
+        result2 = _get_match_state(app, link_uuid)
+        assert result2 is not None
+        state2, _, session2 = result2
+        session2.close()
+        hand2 = state2.current_hand
+        assert hand2 is not None
+        assert hand2.phase == "moon_exchange"
+
+        resp = client.post(
+            f"/play/{link_uuid}/moon-exchange",
+            data={
+                "turn_number": hand2.turn_number,
+                "card_indices": ["0", "1"],
+            },
+        )
+        assert resp.status_code == 200
+        assert "Moon Exchange Complete" in resp.text
+
+        result3 = _get_match_state(app, link_uuid)
+        assert result3 is not None
+        state3, _, session3 = result3
+        try:
+            hand3 = state3.current_hand
+            assert hand3 is not None
+            assert hand3.phase == "moon_exchange_review"
+            assert hand3.exchange_given is not None
+            assert hand3.exchange_received is not None
+        finally:
+            session3.close()
 
 
 # ---------------------------------------------------------------------------

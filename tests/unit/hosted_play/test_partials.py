@@ -500,9 +500,8 @@ class TestTrick:
         assert "AI Left" in html
         assert "AI Partner" in html
         assert "AI Right" in html
-        assert "\u2666" in html  # ♦
-        assert "\u2660" in html  # ♠
-        assert "AI Partner" in html
+        assert "\u2666" in html
+        assert "\u2660" in html
         assert "won" in html
 
     def test_markers_for_dealer_turn_declarer_and_sitout(self, env):
@@ -544,6 +543,41 @@ class TestGameControls:
         assert "Moon and loner" in html
         assert "High/Low" in html
         assert "+52 or -52" in html
+
+
+class TestMoonExchange:
+    def test_moon_exchange_selection_renders_form(self, env):
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            phase="moon_exchange",
+            link_uuid="abc-123",
+            turn_number=7,
+            bidder_seat=0,
+            human_hand=[["S", "A"], ["H", "K"], ["D", "Q"]],
+            exchange_step="mooner_to_partner",
+            exchange_received=[["S", "J"], ["C", "A"]],
+            exchange_given=None,
+        )
+        assert 'action="/play/abc-123/moon-exchange"' in html
+        assert 'name="card_indices"' in html
+        assert 'value="0"' in html
+        assert "Confirm Exchange" in html
+
+    def test_moon_exchange_review_renders_next(self, env):
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            phase="moon_exchange_review",
+            link_uuid="abc-123",
+            turn_number=8,
+            bidder_seat=0,
+            human_hand=[],
+            exchange_step=None,
+            exchange_received=[["S", "J"], ["C", "A"]],
+            exchange_given=[["D", "T"], ["H", "Q"]],
+        )
+        assert "Moon Exchange Complete" in html
+        assert 'action="/play/abc-123/next"' in html
+        assert "Next" in html
 
 
 # ---------------------------------------------------------------------------

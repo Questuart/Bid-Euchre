@@ -188,6 +188,17 @@ def _play_full_hand(
         if hand is None:
             return state
 
+    while (
+        state.current_hand is not None and state.current_hand.phase == "moon_exchange"
+    ):
+        state = engine.submit_human_moon_exchange(state, [0, 1])
+
+    while (
+        state.current_hand is not None
+        and state.current_hand.phase == "moon_exchange_review"
+    ):
+        state = engine.advance_after_moon_review(state)
+
     # Handle trick play phase (skip if human is sitting out)
     while (
         state.status == "active"
@@ -225,6 +236,10 @@ def _play_until_match_end(engine: MatchEngine, state: MatchState) -> MatchState:
                 state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
             else:
                 state = engine.submit_human_bid(state, BidAction.pass_bid())
+        elif hand.phase == "moon_exchange":
+            state = engine.submit_human_moon_exchange(state, [0, 1])
+        elif hand.phase == "moon_exchange_review":
+            state = engine.advance_after_moon_review(state)
         elif hand.phase == "trick_play":
             if hand.current_seat == HUMAN_SEAT:
                 legal = engine.get_legal_plays(state)
@@ -1162,8 +1177,8 @@ class TestOvercallHierarchy:
 class TestMoonExchange:
     """Moon win triggers a 2-card exchange before trick play."""
 
-    def test_moon_exchange_happens(self) -> None:
-        """After a moon bid wins, hands are modified by exchange."""
+    def test_human_mooner_must_choose_return_cards(self) -> None:
+        """Human declarer enters an interactive moon exchange phase."""
         engine = MatchEngine(
             bidding_policy=AlwaysPassBidder(),
             play_strategy=FirstLegalPlay(),
@@ -1173,28 +1188,58 @@ class TestMoonExchange:
         assert hand is not None
 
         if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
-            # Capture pre-exchange hands
-            hand_before_human = list(hand.hands[HUMAN_SEAT])
-            hand_before_partner = list(hand.hands[2])
-
             state = engine.submit_human_bid(state, BidAction.moon("S"))
             hand = state.current_hand
             assert hand is not None
+            assert hand.phase == "moon_exchange"
+            assert hand.exchange_step == "mooner_to_partner"
+            assert hand.exchange_received is not None
+            assert len(hand.exchange_received) == 2
+            assert len(hand.hands[HUMAN_SEAT]) == 12
 
-            if hand.phase == "trick_play":
-                # Exchange should have occurred
+            state = engine.submit_human_moon_exchange(state, [0, 1])
+            hand = state.current_hand
+            assert hand is not None
+            assert hand.phase == "moon_exchange_review"
+            assert hand.exchange_given is not None
+            assert len(hand.exchange_given) == 2
+            assert len(hand.hands[HUMAN_SEAT]) == 10
+            assert len(hand.hands[2]) == 10
+
+    def test_human_partner_must_choose_gift_cards(self) -> None:
+        """Human partner enters an interactive moon exchange phase."""
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        for seed in range(1, 40):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if (
+                hand is not None
+                and hand.phase == "auction"
+                and hand.current_seat == HUMAN_SEAT
+                and hand.bid_type == "moon"
+                and hand.bidder_seat == 2
+            ):
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+                hand = state.current_hand
+                assert hand is not None
+                assert hand.phase == "moon_exchange"
+                assert hand.exchange_step == "partner_to_mooner"
+                assert hand.current_seat == HUMAN_SEAT
+
+                state = engine.submit_human_moon_exchange(state, [0, 1])
+                hand = state.current_hand
+                assert hand is not None
+                assert hand.phase == "moon_exchange_review"
                 assert hand.exchange_given is not None
                 assert hand.exchange_received is not None
-                assert len(hand.exchange_given) == 2
-                assert len(hand.exchange_received) == 2
-
-                # Hands should have changed (extremely unlikely to be same)
-                assert hand.hands[HUMAN_SEAT] != hand_before_human
-                assert hand.hands[2] != hand_before_partner
-
-                # Both hands should still have 10 cards
                 assert len(hand.hands[HUMAN_SEAT]) == 10
-                assert len(hand.hands[2]) == 10
+                return
+
+        pytest.fail("Could not find a seed where AI partner declares moon")
 
     def test_moon_exchange_state_persists(self) -> None:
         """Exchange metadata survives serialization."""
@@ -1211,12 +1256,18 @@ class TestMoonExchange:
             hand = state.current_hand
             assert hand is not None
 
-            if hand.phase == "trick_play" and hand.exchange_given is not None:
+            if hand.phase == "moon_exchange":
+                state = engine.submit_human_moon_exchange(state, [0, 1])
+                hand = state.current_hand
+                assert hand is not None
+
+            if hand.phase == "moon_exchange_review" and hand.exchange_given is not None:
                 data = MatchEngine.serialize(state)
                 restored = MatchEngine.deserialize(data)
                 assert restored.current_hand is not None
                 assert restored.current_hand.exchange_given == hand.exchange_given
                 assert restored.current_hand.exchange_received == hand.exchange_received
+                assert restored.current_hand.exchange_step == hand.exchange_step
 
 
 # ---------------------------------------------------------------------------

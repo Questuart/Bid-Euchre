@@ -3,7 +3,8 @@
 
    Context variables:
      All variables required by the included partials, plus:
-       - phase: str — "auction", "trick_play", "hand_result", "match_result", "redeal"
+       - phase: str — "auction", "trick_play", "moon_exchange", "moon_exchange_review",
+                      "hand_result", "match_result", "redeal"
        - link_uuid: str — player's game link UUID
        - opp_left_count, partner_count, opp_right_count: int — AI hand card counts
 #}
@@ -11,6 +12,9 @@
 {% set bidder_seat = bidder_seat | default(-1, true) %}
 {% set current_seat = current_seat | default(-1, true) %}
 {% set sitting_out_seat = sitting_out_seat | default(None, true) %}
+{% set show_next = show_next | default(false, true) %}
+{% set can_submit_bid = can_submit_bid | default(false, true) %}
+{% set can_play_card = can_play_card | default(false, true) %}
 
 {# ---- Match result (win/loss screen) ---- #}
 {% if phase == "match_result" %}
@@ -21,7 +25,7 @@
     {% include "partials/hand_result.html" %}
 
 {# ---- Active game phases: auction and trick play ---- #}
-{% elif phase in ("auction", "trick_play", "redeal") %}
+{% elif phase in ("auction", "trick_play", "moon_exchange", "moon_exchange_review", "redeal") %}
 
     {# AI hands — face-down card backs with counts #}
     <div class="ai-hands-row" role="region" aria-label="AI opponent hands">
@@ -101,20 +105,23 @@
         </div>
     </div>
 
-    {# Trick area — always shown during active play #}
-    {% include "partials/trick.html" %}
+    {% if phase in ("auction", "trick_play", "redeal") %}
+        {% include "partials/trick.html" %}
 
-    {# Bid panel — auction phase only, when it's the human's turn #}
-    {% if phase == "auction" %}
-        {% include "partials/bid_panel.html" %}
+        {% if show_next %}
+            {% include "partials/next_controls.html" %}
+        {% endif %}
+
+        {% if phase == "auction" and can_submit_bid %}
+            {% include "partials/bid_panel.html" %}
+        {% endif %}
+
+        {% include "partials/hand.html" %}
+    {% elif phase in ("moon_exchange", "moon_exchange_review") %}
+        {% include "partials/moon_exchange.html" %}
     {% endif %}
 
-    {# Human hand — always shown during active play #}
-    {% include "partials/hand.html" %}
-
-    {# Score bar — always shown during active play #}
     {% include "partials/score.html" %}
-
     {% include "partials/action_rail.html" %}
 
 {% endif %}

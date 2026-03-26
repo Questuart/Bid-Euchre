@@ -14,7 +14,11 @@ from typing import Any
 from bid_euchre.core.rules import get_legal_indices, trick_winner
 from bid_euchre.scoring import compute_points
 from bid_euchre.sim.deals import generate_deal
-from bid_euchre.sim.exchange import perform_exchange
+from bid_euchre.sim.exchange import (
+    perform_exchange,
+    select_mooner_discards,
+    select_partner_gifts,
+)
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import (
     BidAction,
@@ -176,6 +180,31 @@ class MatchEngine:
         state = self._advance_ai(state)
         return state
 
+    def submit_human_moon_exchange(
+        self,
+        state: MatchState,
+        card_indices: list[int],
+    ) -> MatchState:
+        """Process the human side of a moon exchange."""
+        self.last_ai_events = []
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "moon_exchange"
+        assert hand.current_seat == HUMAN_SEAT
+
+        state = self._process_moon_exchange(state, card_indices)
+        return state
+
+    def advance_after_moon_review(self, state: MatchState) -> MatchState:
+        """Continue from the moon review phase into trick play."""
+        hand = state.current_hand
+        if hand is None or hand.phase != "moon_exchange_review":
+            return state
+
+        self._start_trick_play(hand)
+        state = self._advance_ai(state)
+        return state
+
     def get_legal_bids(self, state: MatchState) -> list[BidAction]:
         """Return legal bids for the current bidder.
 
@@ -252,6 +281,7 @@ class MatchEngine:
         result["sitting_out_seat"] = hand.sitting_out_seat
         result["exchange_given"] = hand.exchange_given
         result["exchange_received"] = hand.exchange_received
+        result["exchange_step"] = hand.exchange_step
         result["current_trick"] = (
             None
             if hand.current_trick is None
@@ -487,10 +517,52 @@ class MatchEngine:
             hand.phase = "redeal"
             return state
 
-        # Moon exchange: mooner gives 2 worst cards, receives partner's 2 best
         if hand.bid_type == "moon":
-            mooner_seat = hand.bidder_seat
-            partner_seat = (mooner_seat + 2) % _NUM_PLAYERS
+            return self._start_moon_exchange(state)
+
+        # Loner: partner sits out during trick play
+        if hand.bid_type == "loner":
+            hand.sitting_out_seat = (hand.bidder_seat + 2) % _NUM_PLAYERS
+
+        self._start_trick_play(hand)
+        return state
+
+    def _start_trick_play(self, hand: HandState) -> None:
+        """Transition a resolved contract into trick play."""
+        hand.phase = "trick_play"
+        hand.exchange_step = None
+        leader = hand.bidder_seat
+        hand.current_trick = TrickState(leader=leader)
+        hand.current_seat = leader
+
+    def _move_cards(
+        self,
+        source_hand: list,
+        target_hand: list,
+        indices: list[int],
+    ) -> list:
+        """Move cards from source to target using descending indices."""
+        moved = []
+        for idx in sorted(indices, reverse=True):
+            moved.append(source_hand.pop(idx))
+        target_hand.extend(moved)
+        return moved
+
+    def _start_moon_exchange(self, state: MatchState) -> MatchState:
+        """Enter the appropriate moon exchange phase."""
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.bidder_seat is not None
+
+        mooner_seat = hand.bidder_seat
+        partner_seat = (mooner_seat + 2) % _NUM_PLAYERS
+        contract_type = hand.contract_type or "suit"
+
+        hand.current_trick = None
+        hand.exchange_given = None
+        hand.exchange_received = None
+
+        if HUMAN_SEAT not in (mooner_seat, partner_seat):
             (
                 hand.hands[mooner_seat],
                 hand.hands[partner_seat],
@@ -499,23 +571,95 @@ class MatchEngine:
             ) = perform_exchange(
                 mooner_hand=hand.hands[mooner_seat],
                 partner_hand=hand.hands[partner_seat],
-                contract_type=hand.contract_type or "suit",
+                contract_type=contract_type,
                 trump_suit=hand.trump,
             )
             hand.exchange_given = [[c.suit, c.rank] for c in cards_given]
             hand.exchange_received = [[c.suit, c.rank] for c in cards_received]
+            hand.phase = "moon_exchange_review"
+            hand.exchange_step = None
+            hand.current_seat = HUMAN_SEAT
+            return state
 
-        # Loner: partner sits out during trick play
-        if hand.bid_type == "loner":
-            hand.sitting_out_seat = (hand.bidder_seat + 2) % _NUM_PLAYERS
+        hand.phase = "moon_exchange"
+        hand.current_seat = HUMAN_SEAT
 
-        # Contract set — transition to trick play
-        hand.phase = "trick_play"
-        # Declarer leads first trick (RULES.md §5.1)
-        leader = hand.bidder_seat
-        hand.current_trick = TrickState(leader=leader)
-        hand.current_seat = leader
+        if partner_seat == HUMAN_SEAT:
+            hand.exchange_step = "partner_to_mooner"
+            return state
 
+        partner_gift_indices = select_partner_gifts(
+            hand.hands[partner_seat],
+            contract_type,
+            hand.trump,
+        )
+        partner_gifts = self._move_cards(
+            hand.hands[partner_seat],
+            hand.hands[mooner_seat],
+            partner_gift_indices,
+        )
+        hand.exchange_received = [[c.suit, c.rank] for c in partner_gifts]
+        hand.exchange_step = "mooner_to_partner"
+        return state
+
+    def _process_moon_exchange(
+        self,
+        state: MatchState,
+        card_indices: list[int],
+    ) -> MatchState:
+        """Resolve a human moon exchange choice."""
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.bidder_seat is not None
+        assert hand.phase == "moon_exchange"
+        assert hand.exchange_step in ("partner_to_mooner", "mooner_to_partner")
+
+        if len(card_indices) != 2 or len(set(card_indices)) != 2:
+            raise ValueError("Moon exchange requires exactly two distinct cards")
+
+        mooner_seat = hand.bidder_seat
+        partner_seat = (mooner_seat + 2) % _NUM_PLAYERS
+        contract_type = hand.contract_type or "suit"
+
+        if hand.exchange_step == "partner_to_mooner":
+            if any(
+                idx < 0 or idx >= len(hand.hands[partner_seat]) for idx in card_indices
+            ):
+                raise ValueError("Moon exchange indices out of range")
+            partner_gifts = self._move_cards(
+                hand.hands[partner_seat],
+                hand.hands[mooner_seat],
+                card_indices,
+            )
+            hand.exchange_received = [[c.suit, c.rank] for c in partner_gifts]
+
+            mooner_return_indices = select_mooner_discards(
+                hand.hands[mooner_seat],
+                contract_type,
+                hand.trump,
+            )
+            mooner_discards = self._move_cards(
+                hand.hands[mooner_seat],
+                hand.hands[partner_seat],
+                mooner_return_indices,
+            )
+            hand.exchange_given = [[c.suit, c.rank] for c in mooner_discards]
+        else:
+            if any(
+                idx < 0 or idx >= len(hand.hands[mooner_seat]) for idx in card_indices
+            ):
+                raise ValueError("Moon exchange indices out of range")
+            mooner_discards = self._move_cards(
+                hand.hands[mooner_seat],
+                hand.hands[partner_seat],
+                card_indices,
+            )
+            hand.exchange_given = [[c.suit, c.rank] for c in mooner_discards]
+
+        hand.turn_number += 1
+        hand.phase = "moon_exchange_review"
+        hand.exchange_step = None
+        hand.current_seat = HUMAN_SEAT
         return state
 
     # ------------------------------------------------------------------

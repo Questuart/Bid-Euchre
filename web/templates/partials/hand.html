@@ -44,6 +44,8 @@
     </div>
 
     {% if phase == "trick_play" %}
+        {% set can_play_card = can_play_card | default(legal_plays is not none, true) %}
+        {% if can_play_card %}
         <form id="card-play-form"
               class="card-play-form"
               method="post"
@@ -62,5 +64,6 @@
                 Tap a card to select it, then tap Play card.
             </p>
         </form>
+        {% endif %}
     {% endif %}
 </div>

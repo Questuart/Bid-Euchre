@@ -216,7 +216,7 @@ class Decision(Base):
     )
     phase = Column(
         String,
-        CheckConstraint("phase IN ('bid', 'play')"),
+        CheckConstraint("phase IN ('bid', 'play', 'moon_exchange')"),
         nullable=False,
     )
     actor_type = Column(
