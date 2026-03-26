@@ -20,9 +20,9 @@
 {% elif phase in ("auction", "trick_play", "redeal") %}
 
     {# AI hands — face-down card backs with counts #}
-    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
+    <div class="ai-hands-row">
         {# Left opponent (seat 1) #}
-        <div style="text-align:center; flex:0 0 auto;">
+        <div class="ai-hand-block ai-hand-block--edge">
             <div class="ai-hand">
                 {% for _ in range(opp_left_count | default(0)) %}
                 <div class="card-back"></div>
@@ -32,7 +32,7 @@
         </div>
 
         {# Partner (seat 2) #}
-        <div style="text-align:center; flex:1 1 auto;">
+        <div class="ai-hand-block ai-hand-block--middle">
             <div class="ai-hand">
                 {% for _ in range(partner_count | default(0)) %}
                 <div class="card-back"></div>
@@ -42,7 +42,7 @@
         </div>
 
         {# Right opponent (seat 3) #}
-        <div style="text-align:center; flex:0 0 auto;">
+        <div class="ai-hand-block ai-hand-block--edge">
             <div class="ai-hand">
                 {% for _ in range(opp_right_count | default(0)) %}
                 <div class="card-back"></div>

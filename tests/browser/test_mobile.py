@@ -71,6 +71,19 @@ def test_mobile_viewport_tap_targets(
             body_width <= viewport_width + 20
         ), f"Page overflows viewport: body={body_width}px, viewport={viewport_width}px"
 
+        # --- Check the auction/trick/hand/score surfaces remain on-screen together ---
+        selectors = ["#trick-area", "#human-hand", "#score-bar", "#bid-panel"]
+        for selector in selectors:
+            locator = mobile_page.locator(selector)
+            if locator.count() > 0:
+                box = locator.first.bounding_box()
+                if box is None:
+                    continue
+                assert box["y"] >= 0, f"{selector} should be above viewport top: {box}"
+                assert (
+                    box["y"] + box["height"] <= MOBILE_VIEWPORT["height"] + 5
+                ), f"{selector} overflows vertical viewport on mobile: {box}"
+
         # --- Check card sizes ---
         cards = mobile_page.locator(".card")
         card_count = cards.count()
