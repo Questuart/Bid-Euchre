@@ -69,6 +69,13 @@ class TestStripCodeBlocks:
         assert "Use" in result
         assert "to send messages" in result
 
+    def test_neutralises_closing_channel_in_inline_code(self, hook: ModuleType) -> None:
+        """Inline closing tags must not terminate real channel blocks early."""
+        text = "Body contains `</channel>` literally"
+        result = hook._strip_code_blocks(text)
+        assert "</channel>" not in result
+        assert "&lt;/channel&gt;" in result
+
     def test_preserves_inline_code_without_channel(self, hook: ModuleType) -> None:
         """Inline backtick content with no <channel is left untouched."""
         text = "Run `git status` to check"
@@ -191,6 +198,20 @@ class TestExtractChannelBlocksCodeFiltering:
         )
         blocks = hook.extract_channel_blocks(text)
         assert len(blocks) == 0
+
+    def test_inline_closing_tag_inside_real_body_does_not_truncate(
+        self, hook: ModuleType
+    ) -> None:
+        """Inline ``</channel>`` inside a real body must stay literal."""
+        text = (
+            '<channel source="telegram" chat_id="123" message_id="77" user="alice" ts="t">'
+            "Please type `</channel>` literally before you continue."
+            "</channel>"
+        )
+        blocks = hook.extract_channel_blocks(text)
+        assert len(blocks) == 1
+        assert "Please type" in blocks[0][1]
+        assert "before you continue." in blocks[0][1]
 
 
 # ---------------------------------------------------------------------------

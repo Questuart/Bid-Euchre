@@ -41,7 +41,7 @@ _CHANNEL_RE = re.compile(
 
 
 def _neutralise_inline_code(m: re.Match[str]) -> str:
-    """Replace ``<channel`` inside an inline-code match with a safe token.
+    """Replace channel tag fragments inside inline code with safe tokens.
 
     The backtick delimiters and the rest of the span are preserved so that
     real channel bodies containing inline code (e.g. ``use `git status` ``)
@@ -49,17 +49,20 @@ def _neutralise_inline_code(m: re.Match[str]) -> str:
     """
     span = m.group(0)
     if "<channel" in span:
-        return span.replace("<channel", "&lt;channel")
+        span = span.replace("<channel", "&lt;channel")
+    if "</channel>" in span:
+        span = span.replace("</channel>", "&lt;/channel&gt;")
     return span
 
 
 def _strip_code_blocks(text: str) -> str:
-    """Remove fenced code blocks and neutralise ``<channel`` inside inline code.
+    """Remove fenced code blocks and neutralise channel tags in inline code.
 
     Fenced blocks (triple-backtick) are removed entirely.  Inline backtick
-    spans are *preserved* but any ``<channel`` inside them is replaced with
-    ``&lt;channel`` so the tag regex will not match pasted examples, while
-    the surrounding backtick content is kept intact for real channel bodies.
+    spans are *preserved* but any ``<channel`` or ``</channel>`` inside them
+    is replaced with HTML-safe tokens so the tag regex will not match pasted
+    examples or accidentally terminate a real channel body early, while the
+    surrounding backtick content is kept intact for real channel bodies.
     """
     text = _CODE_FENCE_RE.sub("", text)
     return _INLINE_CODE_RE.sub(_neutralise_inline_code, text)
