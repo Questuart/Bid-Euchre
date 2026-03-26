@@ -515,6 +515,23 @@ class TestProbeTmuxPane:
         mock_run.return_value = MagicMock(returncode=1, stdout="")
         assert _probe_tmux_pane("author-a", "steward") is False
 
+    def test_probe_forwards_runtime_dir_when_omitted(self) -> None:
+        """Runtime dir defaults to the shared path when runtime_dir is omitted."""
+        with (
+            patch(f"{_WORKER_POOL}._resolve_tmux_target") as mock_resolve,
+            patch(f"{_WORKER_POOL}.subprocess.run") as mock_run,
+        ):
+            mock_resolve.return_value = "steward:platform.1"
+            mock_run.return_value = MagicMock(returncode=0, stdout="12345\n")
+            result = _probe_tmux_pane("author-a", "steward")
+
+        assert result is True
+        mock_resolve.assert_called_once_with(
+            "author-a",
+            "steward",
+            None,
+        )
+
     @patch(f"{_WORKER_POOL}.subprocess.run")
     def test_tmux_timeout(self, mock_run: MagicMock) -> None:
         import subprocess
@@ -1003,6 +1020,11 @@ class TestWakeWorker:
         assert result.error is None
         assert "already alive" in result.reason.lower()
         mock_vis.assert_called_once_with("author-a", "foreground", runtime_dir)
+        mock_probe.assert_called_once_with(
+            "author-a",
+            DEFAULT_TMUX_SESSION,
+            runtime_dir=runtime_dir,
+        )
 
     @patch(f"{_DASHBOARD}.set_lane_visibility")
     @patch(f"{_WORKER_POOL}._create_tmux_window", return_value=True)
@@ -1114,6 +1136,11 @@ class TestRetireWorker:
         result = retire_worker("author-a", runtime_dir=runtime_dir)
         assert result.executed is True
         mock_vis.assert_called_once_with("author-a", "hidden", runtime_dir)
+        mock_probe.assert_called_once_with(
+            "author-a",
+            DEFAULT_TMUX_SESSION,
+            runtime_dir=runtime_dir,
+        )
 
     @patch(f"{_WORKER_POOL}.subprocess.run")
     @patch(f"{_WORKER_POOL}._probe_tmux_pane", return_value=True)
@@ -1264,9 +1291,17 @@ class TestTakePoolSnapshot:
         mock_vis.side_effect = lambda lane: (
             "foreground" if lane.lane_id == "author-a" else "background"
         )
-        mock_probe.side_effect = lambda lid, _session, runtime_dir=None: (
-            lid == "author-a"
-        )
+
+        def mock_probe_side_effect(
+            lid: str,
+            _session: str,
+            **kwargs: object,
+        ) -> bool:
+            assert _session == "steward"
+            assert kwargs["runtime_dir"] == runtime_dir
+            return lid == "author-a"
+
+        mock_probe.side_effect = mock_probe_side_effect
         mock_task.side_effect = lambda lid, rd=None: (
             "pkt1" if lid == "author-a" else None
         )
@@ -1845,8 +1880,9 @@ class TestFormatters:
 class TestNudgePane:
     """Test nudge_pane() with mocked subprocess."""
 
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_nudge_success(self, mock_run: MagicMock) -> None:
+    def test_nudge_success(self, mock_run: MagicMock, mock_resolve: MagicMock) -> None:
         mock_run.return_value = MagicMock(returncode=0)
         result = nudge_pane("author-a", "pkt123")
         assert result.executed is True
@@ -1854,41 +1890,47 @@ class TestNudgePane:
         assert result.error is None
         assert "/start-task pkt123" in result.reason
         assert "steward:author-a" in result.reason
-        mock_run.assert_called_once_with(
-            [
-                "tmux",
-                "send-keys",
-                "-t",
-                "steward:author-a",
-                "/start-task pkt123",
-                "Enter",
-            ],
+        assert mock_run.call_count == 2
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "/start-task pkt123"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "Enter"],
             check=True,
             capture_output=True,
             timeout=5,
         )
 
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="custom:author-b")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_nudge_custom_session(self, mock_run: MagicMock) -> None:
+    def test_nudge_custom_session(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
         mock_run.return_value = MagicMock(returncode=0)
         result = nudge_pane("author-b", "pkt456", tmux_session="custom")
         assert result.executed is True
-        mock_run.assert_called_once_with(
-            [
-                "tmux",
-                "send-keys",
-                "-t",
-                "custom:author-b",
-                "/start-task pkt456",
-                "Enter",
-            ],
+        assert mock_run.call_count == 2
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "custom:author-b", "/start-task pkt456"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "custom:author-b", "Enter"],
             check=True,
             capture_output=True,
             timeout=5,
         )
 
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_nudge_subprocess_error(self, mock_run: MagicMock) -> None:
+    def test_nudge_subprocess_error(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
         import subprocess as sp
 
         mock_run.side_effect = sp.CalledProcessError(1, "tmux")
@@ -1897,8 +1939,9 @@ class TestNudgePane:
         assert result.error == "nudge_failed"
         assert result.action == "nudge"
 
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_nudge_timeout(self, mock_run: MagicMock) -> None:
+    def test_nudge_timeout(self, mock_run: MagicMock, mock_resolve: MagicMock) -> None:
         import subprocess as sp
 
         mock_run.side_effect = sp.TimeoutExpired("tmux", 5)
@@ -1906,8 +1949,11 @@ class TestNudgePane:
         assert result.executed is False
         assert result.error == "nudge_failed"
 
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_nudge_tmux_not_found(self, mock_run: MagicMock) -> None:
+    def test_nudge_tmux_not_found(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
         mock_run.side_effect = FileNotFoundError("tmux not found")
         result = nudge_pane("author-a", "pkt123")
         assert result.executed is False
@@ -1919,13 +1965,21 @@ class TestNudgePane:
         registry_dir.mkdir()
         entry = {"tmux_window": "platform", "tmux_pane": "1"}
         (registry_dir / "author-a.json").write_text(json.dumps(entry))
-        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+        with (
+            patch(f"{_WORKER_POOL}.subprocess.run") as mock_run,
+            patch(
+                f"{_WORKER_POOL}._resolve_tmux_target",
+                return_value="steward:platform.1",
+            ),
+        ):
             mock_run.return_value = MagicMock(returncode=0)
             result = nudge_pane("author-a", "pkt789", runtime_dir=tmp_path)
             assert result.executed is True
             assert "steward:platform.1" in result.reason
-            call_args = mock_run.call_args[0][0]
-            assert call_args[3] == "steward:platform.1"
+            first_call = mock_run.call_args_list[0][0][0]
+            second_call = mock_run.call_args_list[1][0][0]
+            assert first_call[3] == "steward:platform.1"
+            assert second_call[3] == "steward:platform.1"
 
     def test_nudge_uses_default_runtime_registry(
         self,
@@ -2186,38 +2240,47 @@ class TestResetWorktree:
 class TestClearSession:
     """Test clear_session() with mocked subprocess."""
 
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_clear_success(self, mock_run: MagicMock) -> None:
+    def test_clear_success(self, mock_run: MagicMock, mock_resolve: MagicMock) -> None:
         mock_run.return_value = MagicMock(returncode=0)
         result = clear_session("author-a")
         assert result.executed is True
         assert result.action == "clear_session"
         assert result.error is None
         assert "/clear" in result.reason
-        mock_run.assert_called_once_with(
-            [
-                "tmux",
-                "send-keys",
-                "-t",
-                "steward:author-a",
-                "/clear",
-                "Enter",
-            ],
+        assert mock_run.call_count == 2
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "/clear"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "Enter"],
             check=True,
             capture_output=True,
             timeout=5,
         )
 
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="custom:author-b")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_clear_custom_session(self, mock_run: MagicMock) -> None:
+    def test_clear_custom_session(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
         mock_run.return_value = MagicMock(returncode=0)
         result = clear_session("author-b", tmux_session="custom")
         assert result.executed is True
-        call_args = mock_run.call_args[0][0]
-        assert call_args[3] == "custom:author-b"
+        first_call = mock_run.call_args_list[0][0][0]
+        second_call = mock_run.call_args_list[1][0][0]
+        assert first_call[3] == "custom:author-b"
+        assert second_call[3] == "custom:author-b"
 
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_clear_subprocess_error(self, mock_run: MagicMock) -> None:
+    def test_clear_subprocess_error(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
         import subprocess as sp
 
         mock_run.side_effect = sp.CalledProcessError(1, "tmux")
@@ -2238,13 +2301,21 @@ class TestClearSession:
         registry_dir.mkdir()
         entry = {"tmux_window": "platform", "tmux_pane": "1"}
         (registry_dir / "author-b.json").write_text(json.dumps(entry))
-        with patch(f"{_WORKER_POOL}.subprocess.run") as mock_run:
+        with (
+            patch(
+                f"{_WORKER_POOL}._resolve_tmux_target",
+                return_value="steward:platform.1",
+            ),
+            patch(f"{_WORKER_POOL}.subprocess.run") as mock_run,
+        ):
             mock_run.return_value = MagicMock(returncode=0)
             result = clear_session("author-b", runtime_dir=tmp_path)
             assert result.executed is True
             assert "steward:platform.1" in result.reason
-            call_args = mock_run.call_args[0][0]
-            assert call_args[3] == "steward:platform.1"
+            first_call = mock_run.call_args_list[0][0][0]
+            second_call = mock_run.call_args_list[1][0][0]
+            assert first_call[3] == "steward:platform.1"
+            assert second_call[3] == "steward:platform.1"
 
     def test_clear_uses_default_runtime_registry(
         self,

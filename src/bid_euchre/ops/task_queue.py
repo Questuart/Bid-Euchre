@@ -81,6 +81,8 @@ KNOWN_AUTHOR_LANES = frozenset(
     }
 )
 
+_LEGACY_AUTHOR_LANES = frozenset({"author-scratch"})
+
 # Valid state transitions for the task packet lifecycle.
 # Enforced by transition_status() to prevent incoherent state from
 # misbehaving agents.
@@ -198,6 +200,29 @@ class TaskResult:
 def _now_iso() -> str:
     """Return current UTC time as ISO 8601 string."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _normalize_task_payload(data: dict[str, Any], path: str) -> dict[str, Any] | None:
+    """Normalize legacy packet payloads before dataclass validation.
+
+    Legacy `.claude/runtime/task_queue/*.json` artifacts from earlier
+    lane layouts can include retired lane names (for example
+    ``author-scratch``). Those packets should remain visible for audit
+    history but must not fail queue reads that support supervisor
+    dashboards and status checks.
+    """
+    normalized = dict(data)
+
+    owner = normalized.get("owner")
+    if owner in _LEGACY_AUTHOR_LANES:
+        logger.debug(
+            "Retaining legacy packet owner %r in %s with legacy compatibility",
+            owner,
+            path,
+        )
+        normalized["owner"] = None
+
+    return normalized
 
 
 def create_packet(
@@ -394,7 +419,7 @@ def load_packet(packet_id: str, root: Path | None = None) -> TaskPacket | None:
     if data is None:
         return None
     try:
-        return TaskPacket(**data)
+        return TaskPacket(**_normalize_task_payload(data, f"{packet_id}.json"))
     except (TypeError, ValueError) as exc:
         logger.warning("Invalid packet data for %s: %s", packet_id, exc)
         return None
@@ -458,7 +483,7 @@ def list_packets(
         if data is None:
             continue
         try:
-            pkt = TaskPacket(**data)
+            pkt = TaskPacket(**_normalize_task_payload(data, path.name))
         except (TypeError, ValueError) as exc:
             logger.warning("Skipping invalid packet %s: %s", path.name, exc)
             continue

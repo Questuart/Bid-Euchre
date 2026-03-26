@@ -911,16 +911,19 @@ class TestDashboardWatchFlag:
         assert "--watch" in result.stdout
         assert "--interval" in result.stdout
 
-    def test_single_shot_runs_via_cli(self) -> None:
+    def test_single_shot_runs_via_cli(self, tmp_path: Path) -> None:
         """Without --watch, dashboard prints once and exits with rc=0."""
         import subprocess
 
+        runtime_dir = tmp_path / "runtime"
         result = subprocess.run(
             [
                 "uv",
                 "run",
                 "python",
                 "scripts/internal/ops.py",
+                "--runtime-dir",
+                str(runtime_dir),
                 "dashboard",
                 "--no-probe",
             ],
@@ -931,7 +934,7 @@ class TestDashboardWatchFlag:
         assert result.returncode == 0
         assert "Steward Dashboard" in result.stdout
 
-    def test_watch_flag_accepted(self) -> None:
+    def test_watch_flag_accepted(self, tmp_path: Path) -> None:
         """--watch -w and --interval are accepted without error.
 
         We start watch mode with a short interval and send SIGINT after
@@ -947,6 +950,8 @@ class TestDashboardWatchFlag:
                 "run",
                 "python",
                 "scripts/internal/ops.py",
+                "--runtime-dir",
+                str(tmp_path / "runtime"),
                 "dashboard",
                 "--no-probe",
                 "--watch",
@@ -964,7 +969,7 @@ class TestDashboardWatchFlag:
         assert "Steward Dashboard" in output
         assert "Refreshing every 1s" in output
 
-    def test_single_shot_json_is_valid(self) -> None:
+    def test_single_shot_json_is_valid(self, tmp_path: Path) -> None:
         """Single-shot --json emits indented, parseable JSON."""
         import subprocess
 
@@ -975,6 +980,8 @@ class TestDashboardWatchFlag:
                 "python",
                 "scripts/internal/ops.py",
                 "--json",
+                "--runtime-dir",
+                str(tmp_path / "runtime"),
                 "dashboard",
                 "--no-probe",
             ],
@@ -988,12 +995,13 @@ class TestDashboardWatchFlag:
         # Indented output contains newlines
         assert "\n" in result.stdout
 
-    def test_watch_json_emits_ndjson(self) -> None:
+    def test_watch_json_emits_ndjson(self, tmp_path: Path) -> None:
         """--watch --json emits compact NDJSON (no ANSI escapes, no footer)."""
         import signal
         import subprocess
         import time as time_mod
 
+        runtime_dir = tmp_path / "runtime"
         proc = subprocess.Popen(
             [
                 "uv",
@@ -1001,6 +1009,8 @@ class TestDashboardWatchFlag:
                 "python",
                 "scripts/internal/ops.py",
                 "--json",
+                "--runtime-dir",
+                str(runtime_dir),
                 "dashboard",
                 "--no-probe",
                 "--watch",

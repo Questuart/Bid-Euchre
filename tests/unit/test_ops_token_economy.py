@@ -1601,6 +1601,60 @@ class TestAutoImport:
         # even though no new sessions were imported
         mock_attr.assert_called_once()
 
+    def test_stale_full_import_uses_force_for_project_jsonl(
+        self, tmp_path: Path
+    ) -> None:
+        """Project JSONL import is forced so stale runs rebuild all telemetry."""
+        import os
+        from datetime import datetime, timezone
+        from unittest.mock import MagicMock, patch
+
+        output_dir = tmp_path / "token_economy"
+        output_dir.mkdir()
+
+        usage_file = output_dir / "session_usage.jsonl"
+        usage_file.write_text(
+            json.dumps(
+                {
+                    "session_id": "s1",
+                    "input_tokens": 100,
+                    "output_tokens": 400,
+                    "duration_minutes": 10,
+                    "project_path": "/tmp/test",
+                    "imported_at": "2026-03-20T10:00:00Z",
+                    "source_hash": "abc123",
+                }
+            )
+            + "\n"
+        )
+        old_mtime = datetime.now(timezone.utc).timestamp() - 7200  # 2 hours ago
+        os.utime(usage_file, (old_mtime, old_mtime))
+
+        mock_usage = MagicMock()
+        mock_usage.sessions_imported = 0
+        mock_usage.sessions_skipped = 0
+
+        mock_jsonl = MagicMock()
+        mock_jsonl.sessions_imported = 0
+        mock_jsonl.sessions_skipped = 0
+
+        with (
+            patch(
+                "bid_euchre.ops.token_economy.import_usage_data",
+                return_value=mock_usage,
+            ) as mock_import_usage,
+            patch(
+                "bid_euchre.ops.token_economy.import_project_jsonl",
+                return_value=mock_jsonl,
+            ) as mock_import_project,
+            patch("bid_euchre.ops.token_economy.attribute_sessions") as mock_attr,
+        ):
+            _ensure_imported(output_dir)
+
+        mock_import_usage.assert_called_once_with(output_dir=output_dir)
+        mock_import_project.assert_called_once_with(output_dir=output_dir, force=True)
+        mock_attr.assert_called_once_with(output_dir=output_dir)
+
 
 # ---------------------------------------------------------------------------
 # Incomplete session exclusion tests
