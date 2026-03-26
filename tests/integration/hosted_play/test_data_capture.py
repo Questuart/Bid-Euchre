@@ -127,6 +127,34 @@ def _setup_game(client: TestClient) -> str:
     return link_uuid
 
 
+def _advance_pending_reveals(
+    client: TestClient,
+    app,
+    link_uuid: str,
+    *,
+    max_steps: int = 12,
+):
+    """Advance hidden auction/trick reveals until the state is actionable."""
+    for _ in range(max_steps):
+        result = _get_match_state(app, link_uuid)
+        assert result is not None, "Match disappeared unexpectedly"
+        state, _, session = result
+        session.close()
+
+        hand = state.current_hand
+        if hand is None:
+            return state
+
+        has_hidden_auction = hand.revealed_auction_count < len(hand.auction)
+        if not has_hidden_auction and not hand.paused_after_trick:
+            return state
+
+        resp = client.post(f"/play/{link_uuid}/next")
+        assert resp.status_code == 200
+
+    pytest.fail("Reveal state did not settle within safety limit")
+
+
 def _play_human_turns(client: TestClient, app, link_uuid: str) -> int:
     """Play human turns until at least one bid and one card play are made.
 
@@ -141,6 +169,7 @@ def _play_human_turns(client: TestClient, app, link_uuid: str) -> int:
     max_iterations = 40
 
     for _ in range(max_iterations):
+        _advance_pending_reveals(client, app, link_uuid)
         result = _get_match_state(app, link_uuid)
         assert result is not None, "Match disappeared unexpectedly"
         state, _, session = result
