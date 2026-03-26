@@ -56,6 +56,54 @@
       "problemMatcher": []
     },
     {
+      "label": "Ops dashboard",
+      "type": "shell",
+      "command": "uv run python scripts/internal/ops.py dashboard",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Ops dashboard (JSON)",
+      "type": "shell",
+      "command": "uv run python scripts/internal/ops.py dashboard --json",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Ops monitor (JSON)",
+      "type": "shell",
+      "command": "uv run python scripts/internal/ops.py monitor --skip-pr-check --no-notify --no-recovery --no-auto-dispatch --json",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Fleet status",
+      "type": "shell",
+      "command": "uv run python scripts/internal/ops.py fleet",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Ruff lint",
       "type": "shell",
       "command": "uv run ruff check src/ tests/ scripts/ experiments/",
