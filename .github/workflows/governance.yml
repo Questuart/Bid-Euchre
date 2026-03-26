@@ -12,26 +12,18 @@ concurrency:
 jobs:
   governance:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+        startsWith(github.head_ref, 'chore/auto-dashboard'))
 
     steps:
-      - name: Skip notice for dashboard chore PRs
-        if: >-
-          contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-          startsWith(github.head_ref, 'chore/auto-dashboard')
-        run: echo "::notice::Dashboard chore PR — governance reduced to a no-op pass"
-
       - name: Checkout
-        if: >-
-          !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-            startsWith(github.head_ref, 'chore/auto-dashboard'))
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: PR metadata check
-        if: >-
-          !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-            startsWith(github.head_ref, 'chore/auto-dashboard'))
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
@@ -41,9 +33,6 @@ jobs:
           fi
 
       - name: Plan file lint
-        if: >-
-          !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-            startsWith(github.head_ref, 'chore/auto-dashboard'))
         run: |
           PLAN_FILES=$(git diff --name-only origin/main...HEAD -- 'plans/*.md' 'plans/**/*.md' 2>/dev/null || true)
           if [ -n "$PLAN_FILES" ]; then
@@ -66,17 +55,11 @@ jobs:
           fi
 
       - name: Set up Python
-        if: >-
-          !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-            startsWith(github.head_ref, 'chore/auto-dashboard'))
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Infra PR metadata check (advisory)
-        if: >-
-          !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-            startsWith(github.head_ref, 'chore/auto-dashboard'))
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
@@ -90,7 +73,4 @@ jobs:
           fi
 
       - name: Governance passed
-        if: >-
-          !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-            startsWith(github.head_ref, 'chore/auto-dashboard'))
         run: echo "All governance checks passed"

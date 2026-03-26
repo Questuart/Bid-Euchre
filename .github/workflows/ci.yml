@@ -207,8 +207,11 @@ jobs:
 
   # ── Required aggregation gate ─────────────────────────────────────
   # This non-matrix job preserves the required `tests` check context
-  # so branch protection needs no migration.  It evaluates all upstream
-  # lane results and posts a single pass/fail status.
+  # for normal PRs so branch protection needs no migration. Dashboard
+  # chore PRs publish their own lightweight required checks from the
+  # dashboard workflow because GITHUB_TOKEN-authored PRs do not trigger
+  # pull_request workflows. This job evaluates all upstream lane results
+  # and posts a single pass/fail status for the remaining PR types.
   #
   # Behavior:
   #   - if: always() ensures a status is posted even on docs-only PRs
@@ -216,7 +219,12 @@ jobs:
   #   - Passes when all upstreams are success or skipped
   tests:
     needs: [changes, checks, tests-shard, notebooks, promotion-gate]
-    if: always()
+    if: >-
+      always() &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard'))))
     runs-on: ubuntu-latest
     steps:
       - name: Skip notice
@@ -225,12 +233,7 @@ jobs:
           needs.checks.result == 'skipped' &&
           needs.tests-shard.result == 'skipped' &&
           needs.notebooks.result == 'skipped'
-        run: |
-          if [[ "${{ contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') || startsWith(github.head_ref, 'chore/auto-dashboard') }}" == "true" ]]; then
-            echo "::notice::Dashboard chore PR — heavy CI jobs skipped, required gate preserved"
-          else
-            echo "::notice::Docs/plans-only PR — all heavy jobs skipped"
-          fi
+        run: echo "::notice::Docs/plans-only PR — all heavy jobs skipped"
 
       - name: Evaluate upstream results
         run: |
