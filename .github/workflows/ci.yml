@@ -216,12 +216,7 @@ jobs:
   #   - Passes when all upstreams are success or skipped
   tests:
     needs: [changes, checks, tests-shard, notebooks, promotion-gate]
-    if: >-
-      always() &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-          startsWith(github.head_ref, 'chore/auto-dashboard'))))
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Skip notice
@@ -230,7 +225,12 @@ jobs:
           needs.checks.result == 'skipped' &&
           needs.tests-shard.result == 'skipped' &&
           needs.notebooks.result == 'skipped'
-        run: echo "::notice::Docs/plans-only PR — all heavy jobs skipped"
+        run: |
+          if [[ "${{ contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') || startsWith(github.head_ref, 'chore/auto-dashboard') }}" == "true" ]]; then
+            echo "::notice::Dashboard chore PR — heavy CI jobs skipped, required gate preserved"
+          else
+            echo "::notice::Docs/plans-only PR — all heavy jobs skipped"
+          fi
 
       - name: Evaluate upstream results
         run: |
