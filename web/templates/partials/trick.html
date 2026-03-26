@@ -13,6 +13,20 @@
 {% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
 {% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set display_plays = [] %}
+{% set display_winner = None %}
+{% set display_trick_number = (completed_tricks | length) + 1 %}
+{% set display_heading = "Trick " ~ display_trick_number ~ " of 10" %}
+
+{% if current_trick %}
+    {% set display_plays = current_trick.plays %}
+{% elif completed_tricks %}
+    {% set last = completed_tricks[-1] %}
+    {% set display_plays = last.plays %}
+    {% set display_winner = last.winner %}
+    {% set display_trick_number = completed_tricks | length %}
+    {% set display_heading = "Trick " ~ display_trick_number ~ " of 10 complete" %}
+{% endif %}
 
 {% macro seat_markers(seat) %}
     <div class="seat-markers">
@@ -51,14 +65,12 @@
 {% endmacro %}
 
 {% set ns = namespace(cards={}) %}
-{% if current_trick %}
-    {% for play in current_trick.plays %}
+{% for play in display_plays %}
         {% set _ = ns.cards.update({play[0]: play[1]}) %}
-    {% endfor %}
-{% endif %}
+{% endfor %}
 
 <div id="trick-area" class="trick-area" role="region" aria-label="Current trick" aria-live="polite">
-    <h3>Trick {{ (completed_tricks | length) + 1 }} of 10</h3>
+    <h3>{{ display_heading }}</h3>
     <div class="trick-table" role="group" aria-label="Cards played this trick, score {{ tricks_team0 }} to {{ tricks_team1 }}">
         <div class="trick-slot trick-slot--top">
             {{ seat_markers(2) }}
@@ -86,97 +98,14 @@
             {{ card_slot(0) }}
         </div>
     </div>
-</div>
-
-{% if completed_tricks %}
-    {% set last = completed_tricks[-1] %}
-    {% set last_ns = namespace(cards={}) %}
-    {% if last.plays %}
-        {% for play in last.plays %}
-            {% set _ = last_ns.cards.update({play[0]: play[1]}) %}
-        {% endfor %}
+    {% if display_winner is not none %}
+        <p class="trick-winner" aria-live="polite">
+            {% if display_winner == 0 %}
+                You
+            {% else %}
+                {{ seat_labels[display_winner] if display_winner in seat_labels else ("Seat " ~ display_winner) }}
+            {% endif %}
+            won
+        </p>
     {% endif %}
-
-    <div id="last-trick" class="trick-area last-trick" role="region" aria-label="Last completed trick">
-        <h3>Last Trick</h3>
-        <div class="trick-table trick-table--compact">
-            {# Top: AI Partner #}
-            <div class="trick-slot trick-slot--top">
-                {% if 2 in last_ns.cards %}
-                    {% set card = last_ns.cards[2] %}
-                    {% set suit = card[0] %}
-                    <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played"
-                         role="img"
-                         aria-label="{{ seat_labels[2] }} played {{ card[1] }} of {{ suit_names.get(suit, suit) }}">
-                        <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
-                        <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
-                    </div>
-                {% else %}
-                    <div class="card-slot card-slot--empty">
-                        <span class="seat-label">{{ seat_labels[2] }}</span>
-                    </div>
-                {% endif %}
-            </div>
-            <div class="trick-row-middle">
-                <div class="trick-slot trick-slot--left">
-                    {% if 1 in last_ns.cards %}
-                        {% set card = last_ns.cards[1] %}
-                        {% set suit = card[0] %}
-                        <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played"
-                             role="img"
-                             aria-label="{{ seat_labels[1] }} played {{ card[1] }} of {{ suit_names.get(suit, suit) }}">
-                            <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
-                            <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
-                        </div>
-                    {% else %}
-                        <div class="card-slot card-slot--empty">
-                            <span class="seat-label">{{ seat_labels[1] }}</span>
-                        </div>
-                    {% endif %}
-                </div>
-                <div class="trick-slot trick-slot--right">
-                    {% if 3 in last_ns.cards %}
-                        {% set card = last_ns.cards[3] %}
-                        {% set suit = card[0] %}
-                        <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played"
-                             role="img"
-                             aria-label="{{ seat_labels[3] }} played {{ card[1] }} of {{ suit_names.get(suit, suit) }}">
-                            <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
-                            <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
-                        </div>
-                    {% else %}
-                        <div class="card-slot card-slot--empty">
-                            <span class="seat-label">{{ seat_labels[3] }}</span>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="trick-slot trick-slot--bottom">
-                {% if 0 in last_ns.cards %}
-                    {% set card = last_ns.cards[0] %}
-                    {% set suit = card[0] %}
-                    <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played"
-                         role="img"
-                         aria-label="{{ seat_labels[0] }} played {{ card[1] }} of {{ suit_names.get(suit, suit) }}">
-                        <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
-                        <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
-                    </div>
-                {% else %}
-                    <div class="card-slot card-slot--empty">
-                        <span class="seat-label">{{ seat_labels[0] }}</span>
-                    </div>
-                {% endif %}
-            </div>
-            <p class="trick-winner" aria-live="polite">
-                {% if last.winner is not none %}
-                    {% if last.winner == 0 %}
-                        You
-                    {% else %}
-                        {{ seat_labels[last.winner] if last.winner in seat_labels else ("Seat " ~ last.winner) }}
-                    {% endif %}
-                    won
-                {% endif %}
-            </p>
-        </div>
-    </div>
-{% endif %}
+</div>

@@ -790,7 +790,22 @@ main {
     margin-top: 0.75rem;
 }
 
+.next-controls {
+    margin: 1rem 0 0.5rem;
+    text-align: center;
+}
+
+.next-controls__reason {
+    margin: 0 0 0.5rem;
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+}
+
 .btn--next-hand {
+    min-width: 120px;
+}
+
+.btn--next-step {
     min-width: 120px;
 }
 
@@ -883,7 +898,8 @@ main {
 }
 
 .btn--play-again:hover,
-.btn--next-hand {
+.btn--next-hand,
+.btn--next-step {
     background: var(--color-legal-glow);
     color: #fff;
 }

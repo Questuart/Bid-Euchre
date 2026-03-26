@@ -179,6 +179,27 @@ def _log_decision(
     session.add(decision)
 
 
+def _has_hidden_auction(hand) -> bool:
+    """Return True when the auction transcript still has hidden entries."""
+    return hand.revealed_auction_count < len(hand.auction)
+
+
+def _awaiting_next(hand) -> bool:
+    """Whether hosted play is paused waiting on a reveal-step advance."""
+    return _has_hidden_auction(hand) or (
+        hand.phase == "trick_play" and hand.paused_after_trick
+    )
+
+
+def _next_reason(hand) -> str | None:
+    """Human-readable label for the current reveal pause."""
+    if _has_hidden_auction(hand):
+        return "Reveal the next auction action."
+    if hand.phase == "trick_play" and hand.paused_after_trick:
+        return "Continue to the next trick."
+    return None
+
+
 def _game_phase(state) -> str:
     """Map engine state to the template ``phase`` variable.
 
@@ -192,6 +213,8 @@ def _game_phase(state) -> str:
         return "model_select"
     if hand.phase == "complete":
         return "hand_result"
+    if _has_hidden_auction(hand):
+        return "auction"
     # "auction", "trick_play", or "redeal" pass through directly
     return hand.phase
 
@@ -312,25 +335,49 @@ def _build_game_context(
     """
     visible = engine.get_visible_state(state)
     hand = state.current_hand
+    phase = _game_phase(state)
+
+    if hand is not None and _has_hidden_auction(hand):
+        visible["auction"] = visible.get("auction", [])[: hand.revealed_auction_count]
+        visible["contract_type"] = None
+        visible["trump"] = None
+    if hand is not None and hand.phase == "trick_play" and hand.paused_after_trick:
+        visible["current_trick"] = None
 
     ctx: dict[str, Any] = {
         "link_uuid": link_uuid,
         "match_status": state.status,
         **visible,
     }
-    ctx["phase"] = _game_phase(state)
+    ctx["phase"] = phase
 
     # Fields only available from hand state (not in visible dict)
     if hand is not None:
-        ctx["winning_bid"] = hand.winning_bid
-        ctx["bidder_seat"] = hand.bidder_seat
-        ctx["current_high_bid"] = hand.current_high_bid
+        show_next = _awaiting_next(hand)
+        ctx["show_next"] = show_next
+        ctx["next_reason"] = _next_reason(hand)
+        ctx["winning_bid"] = None if _has_hidden_auction(hand) else hand.winning_bid
+        ctx["bidder_seat"] = None if _has_hidden_auction(hand) else hand.bidder_seat
+        ctx["current_high_bid"] = (
+            0 if _has_hidden_auction(hand) else hand.current_high_bid
+        )
         ctx["points_team0"] = hand.points_team0
         ctx["points_team1"] = hand.points_team1
         ctx["action_rail"] = _build_action_rail(visible, state)
+        ctx["show_bid_panel"] = (
+            phase == "auction"
+            and hand.phase == "auction"
+            and hand.current_seat == HUMAN_SEAT
+            and not show_next
+        )
 
         # Legal plays for the hand partial
-        if hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+        if (
+            phase == "trick_play"
+            and hand.phase == "trick_play"
+            and hand.current_seat == HUMAN_SEAT
+            and not show_next
+        ):
             ctx["legal_plays"] = engine.get_legal_plays(state)
         else:
             ctx["legal_plays"] = None
@@ -350,6 +397,9 @@ def _build_game_context(
         ctx["partner_count"] = 0
         ctx["opp_right_count"] = 0
         ctx["action_rail"] = []
+        ctx["show_next"] = False
+        ctx["next_reason"] = None
+        ctx["show_bid_panel"] = False
 
     return ctx
 
@@ -738,6 +788,10 @@ async def submit_bid(
             raise HTTPException(status_code=400, detail="Not in auction phase")
         if hand.current_seat != HUMAN_SEAT:
             raise HTTPException(status_code=400, detail="Not the human's turn")
+        if _awaiting_next(hand):
+            raise HTTPException(
+                status_code=400, detail="Advance the reveal state first"
+            )
 
         # Build bid action
         if bid_n == 0:
@@ -790,8 +844,16 @@ async def submit_bid(
             game_state=engine.get_visible_state(state),
         )
 
+        pre_auction_count = len(hand.auction)
+
         # Apply action — engine auto-advances AI
         state = engine.submit_human_bid(state, bid)
+        current_hand = state.current_hand
+        if current_hand is not None:
+            current_hand.revealed_auction_count = min(
+                len(current_hand.auction),
+                pre_auction_count + 1,
+            )
 
         # Log AI decisions captured during auto-advance
         _log_ai_decisions_after_advance(
@@ -803,7 +865,6 @@ async def submit_bid(
         )
 
         # Update hand row if hand completed or redealt
-        current_hand = state.current_hand
         if current_hand is not None and current_hand.phase == "redeal":
             # Persist the terminal redeal state before dealing next hand
             _update_hand_row(hand_row, current_hand)
@@ -866,6 +927,10 @@ async def submit_card(
             raise HTTPException(status_code=400, detail="Not in trick play phase")
         if hand.current_seat != HUMAN_SEAT:
             raise HTTPException(status_code=400, detail="Not the human's turn")
+        if _awaiting_next(hand):
+            raise HTTPException(
+                status_code=400, detail="Advance the reveal state first"
+            )
 
         # Validate legality
         legal_plays = engine.get_legal_plays(state)
@@ -893,8 +958,17 @@ async def submit_card(
             game_state=engine.get_visible_state(state),
         )
 
+        pre_completed_tricks = len(hand.completed_tricks)
+
         # Apply action — engine auto-advances AI
         state = engine.submit_human_card(state, card_index)
+        current_hand = state.current_hand
+        if (
+            current_hand is not None
+            and current_hand.phase == "trick_play"
+            and len(current_hand.completed_tricks) > pre_completed_tricks
+        ):
+            current_hand.paused_after_trick = True
 
         # Log AI decisions captured during auto-advance
         _log_ai_decisions_after_advance(
@@ -907,12 +981,57 @@ async def submit_card(
 
         # Update hand row if hand completed (redeals cannot occur during
         # card play, but keep the check consistent)
-        current_hand = state.current_hand
         if current_hand is not None and current_hand.phase == "complete":
             _update_hand_row(hand_row, current_hand)
         elif current_hand is not None:
             hand_row.hand_state_json = json.dumps(current_hand.to_dict())
 
+        _update_match_row(match_row, state)
+        session.commit()
+
+        return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+    finally:
+        session.close()
+
+
+@router.post("/play/{link_uuid}/next", response_class=HTMLResponse)
+async def next_step(
+    request: Request,
+    link_uuid: str,
+):
+    """Advance one paused auction/trick reveal step."""
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        match_row = (
+            session.query(Match)
+            .filter_by(player_id=player.id, status="active")
+            .order_by(Match.created_at.desc())
+            .first()
+        )
+        if match_row is None:
+            raise HTTPException(status_code=404, detail="No active match")
+
+        ai_manager = _get_ai_manager(request)
+        engine = _build_engine(ai_manager, match_row.ai_model)
+        state = _deserialize_state(engine, match_row.match_state_json)
+
+        hand = state.current_hand
+        if hand is None:
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+
+        if _has_hidden_auction(hand):
+            hand.revealed_auction_count += 1
+        elif hand.phase == "trick_play" and hand.paused_after_trick:
+            hand.paused_after_trick = False
+        else:
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+
+        hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
+        hand_row.hand_state_json = json.dumps(hand.to_dict())
         _update_match_row(match_row, state)
         session.commit()
 
