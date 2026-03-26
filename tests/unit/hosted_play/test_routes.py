@@ -503,6 +503,8 @@ class TestMatchCompletion:
                         "card_index": legal[0],
                     },
                 )
+            elif hand.phase == "complete":
+                client.post(f"/play/{link_uuid}/next-hand")
             else:
                 # Not human's turn — something unexpected; break
                 break
@@ -1046,6 +1048,66 @@ def _advance_to_trick_play(client: TestClient, app, link_uuid: str):
     pytest.fail("Never reached human's trick play turn")
 
 
+def _complete_one_hand(client: TestClient, app, link_uuid: str):
+    """Drive to a completed hand and return that state."""
+    for _ in range(220):
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        session.close()
+
+        if state.status == "complete":
+            pytest.fail("Match completed before one hand completed")
+
+        hand = state.current_hand
+        if hand is None:
+            pytest.fail("Match ended without a current hand")
+
+        if hand.phase == "complete":
+            return state
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            if hand.current_high_bid < 3:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": hand.current_high_bid + 1,
+                        "bid_contract": "H",
+                    },
+                )
+            else:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+        elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+            ai_manager = app.state.ai_manager
+            info = ai_manager.get_model_info(state.ai_model)
+            engine = MatchEngine(
+                bidding_policy=info.bidding_policy,
+                play_strategy=info.play_strategy,
+            )
+            legal = engine.get_legal_plays(state)
+            client.post(
+                f"/play/{link_uuid}/play-card",
+                data={
+                    "turn_number": hand.turn_number,
+                    "card_index": legal[0],
+                },
+            )
+        else:
+            # Human is not on-turn and not in a completed hand.  Poll again
+            # to make progress or fail out after safety limit.
+            pass
+
+    pytest.fail("Could not complete a hand within safety limit")
+
+
 class TestRefreshResumeSafety:
     """Proves that GET /play/{uuid} restores correct state after any action.
 
@@ -1245,8 +1307,72 @@ class TestRefreshResumeSafety:
             assert state_after.winner in ("human", "ai")
 
         # GET rendered the persisted state, not stale or error
-        assert "game-board" in resp.text and "score-bar" in resp.text
+        assert "game-board" in resp.text
+        if (
+            state_after.current_hand is not None
+            and state_after.current_hand.phase == "complete"
+        ):
+            assert "Next Hand" in resp.text
+        elif state_after.status == "active":
+            assert "score-bar" in resp.text
         session_after.close()
+
+    # ---- Next-hand flow --------------------------------------------------
+
+    def test_next_hand_after_completion_advances_state(self, client, app):
+        """POST /next-hand advances from completed hand to next hand."""
+        link_uuid = _setup_game(client)
+        state = _complete_one_hand(client, app, link_uuid)
+
+        assert state.current_hand is not None
+        assert state.current_hand.phase == "complete"
+        assert state.status == "active"
+
+        resp = client.post(f"/play/{link_uuid}/next-hand")
+        assert resp.status_code == 200
+        assert "game-board" in resp.text
+
+        result_after = _get_match_state(app, link_uuid)
+        assert result_after is not None
+        state_after, _, session_after = result_after
+
+        # Hand transition starts a fresh non-complete hand
+        assert state_after.current_hand is not None
+        assert state_after.current_hand.phase in ("auction", "trick_play")
+        assert state_after.hands_played == state.hands_played
+        assert state_after.deal_id == state.current_hand.deal_id + 1
+        assert state_after.dealer_seat == (state.dealer_seat + 1) % 4
+        session_after.close()
+
+    def test_next_hand_on_non_completed_hand_is_noop(self, client, app):
+        """POST /next-hand is idempotent unless hand.phase == complete."""
+        link_uuid = _setup_game(client)
+
+        result = _get_match_state(app, link_uuid)
+        assert result is not None
+        state_before, match_row_before, session_before = result
+
+        # Game starts in auction/trick_play with a non-complete hand.
+        hand_before = state_before.current_hand
+        assert hand_before is not None
+        assert hand_before.phase != "complete"
+
+        prior_state_json = match_row_before.match_state_json
+        resp = client.post(f"/play/{link_uuid}/next-hand")
+        assert resp.status_code == 200
+
+        result_after = _get_match_state(app, link_uuid)
+        assert result_after is not None
+        state_after, match_row_after, session_after = result_after
+
+        # No hand transition should happen
+        assert state_after.current_hand is not None
+        assert state_after.current_hand.phase == hand_before.phase
+        assert state_after.current_hand.deal_id == hand_before.deal_id
+        assert state_after.dealer_seat == state_before.dealer_seat
+        assert prior_state_json == match_row_after.match_state_json
+        session_after.close()
+        session_before.close()
 
     # ---- 4a. Double-click bid → idempotent -------------------------------
 
@@ -1428,7 +1554,14 @@ class TestRefreshResumeSafety:
         assert state_after.score_human == score_h
         assert state_after.score_ai == score_ai
         assert state_after.hands_played == hands_played
-        assert "game-board" in resp_return.text and "score-bar" in resp_return.text
+        assert "game-board" in resp_return.text
+        if (
+            state_after.current_hand is not None
+            and state_after.current_hand.phase == "complete"
+        ):
+            assert "Next Hand" in resp_return.text
+        else:
+            assert "score-bar" in resp_return.text
         session_after.close()
 
     # ---- 5b. Completed match → return shows result -----------------------
@@ -1487,6 +1620,8 @@ class TestRefreshResumeSafety:
                         "card_index": legal[0],
                     },
                 )
+            elif hand.phase == "complete":
+                client.post(f"/play/{link_uuid}/next-hand")
             else:
                 break
         else:
@@ -1498,7 +1633,7 @@ class TestRefreshResumeSafety:
 
         # A completed match has no active match → shows model selection
         # (per game_page handler logic: no active match → model selection)
-        assert "Start Match" in resp.text or "score_human" in resp.text
+        assert "match-result" in resp.text or "Start Match" in resp.text
 
 
 # ---------------------------------------------------------------------------

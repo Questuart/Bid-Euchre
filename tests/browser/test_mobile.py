@@ -48,6 +48,7 @@ def test_mobile_viewport_tap_targets(
     # Create a new context with mobile viewport
     context = browser.new_context(
         viewport=MOBILE_VIEWPORT,
+        has_touch=True,
         user_agent=(
             "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
             "AppleWebKit/605.1.15 (KHTML, like Gecko) "
@@ -134,6 +135,7 @@ def test_mobile_invite_code_input(
     """
     context = browser.new_context(
         viewport=MOBILE_VIEWPORT,
+        has_touch=True,
         user_agent=(
             "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
             "AppleWebKit/605.1.15 (KHTML, like Gecko) "

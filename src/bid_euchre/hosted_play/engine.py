@@ -631,12 +631,6 @@ class MatchEngine:
             state.winner = "human"
             return state
 
-        # Advance to the next hand when the match is still active.
-        state.dealer_seat = (state.dealer_seat + 1) % _NUM_PLAYERS
-        state.deal_id += 1
-        state = self._deal_new_hand(state)
-        state = self._advance_ai(state)
-
         return state
 
     def advance_to_next_hand(self, state: MatchState) -> MatchState:

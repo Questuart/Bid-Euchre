@@ -16,6 +16,8 @@
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
 {% set hand_bid_type = bid_type | default("regular") %}
+{% set exchange_given_cards = exchange_given | default([], true) %}
+{% set exchange_received_cards = exchange_received | default([], true) %}
 
 {# Determine if the declaring team made their bid #}
 {% set declarer_team = 0 if bidder_seat in [0, 2] else 1 %}
@@ -99,6 +101,20 @@
                 but only took {{ declarer_tricks }} tricks.
             {% endif %}
         </p>
+
+        {% if hand_bid_type == "moon" and exchange_given_cards and exchange_received_cards %}
+            <div class="result-exchange" aria-label="Moon exchange summary">
+                <p class="exchange-title"><strong>Moon exchange</strong></p>
+                <p class="exchange-details">
+                    Given {{ exchange_given_cards|length }} to partner:
+                    {% for card in exchange_given_cards %}<span class="card-text">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                </p>
+                <p class="exchange-details">
+                    Received {{ exchange_received_cards|length }} from partner:
+                    {% for card in exchange_received_cards %}<span class="card-text">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1] }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                </p>
+            </div>
+        {% endif %}
     </div>
 
     <div class="result-scoring" role="table" aria-label="Hand scoring summary">
@@ -122,4 +138,12 @@
         <p>Match score: You {{ score_human }} &mdash; AI {{ score_ai }}</p>
         <p class="hands-count">Hands played: {{ hands_played }}</p>
     </div>
+
+    <form method="post"
+          action="/play/{{ link_uuid | default("") }}/next-hand"
+          hx-post="/play/{{ link_uuid | default("") }}/next-hand"
+          hx-target="#game-board"
+          aria-label="Start next hand">
+        <button type="submit" class="btn btn--play-again">Next Hand</button>
+    </form>
 </div>

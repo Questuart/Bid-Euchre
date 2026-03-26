@@ -312,6 +312,11 @@ def test_full_hand_verify_transition(
             hand_complete = True
             break
 
+        # Hand result is now the expected intermediate state before advancing.
+        if page.locator("#hand-result").count() > 0:
+            hand_complete = True
+            break
+
         current_hand_number = _current_hand_number(page)
         if (
             current_hand_number is not None
@@ -343,12 +348,26 @@ def test_full_hand_verify_transition(
         f"Current page content: {page.locator('#game-board').inner_text()[:200]}"
     )
 
-    # If the match ended outright, the match-result assertions above are enough.
-    # Otherwise verify we advanced into the next hand.
-    if page.locator("#match-result").count() == 0:
-        next_hand_number = _current_hand_number(page)
-        assert next_hand_number is not None
-        assert next_hand_number > initial_hand_number
+    # If the match ended outright, match-result checks are sufficient.
+    if page.locator("#match-result").count() > 0:
+        return
+
+    # Verify hand-result rendered, then click through to next hand.
+    hand_result = page.locator("#hand-result")
+    _get_expect()(hand_result).to_be_visible(timeout=5000)
+    next_hand_button = page.locator(
+        "#hand-result button:has-text('Next Hand'), button:has-text('Next Hand')"
+    )
+    _get_expect()(next_hand_button).to_be_visible(timeout=5000)
+    next_hand_button.first.click()
+
+    # Next hand should render as active hand state.
+    page.wait_for_selector("#game-board", timeout=10000)
+    next_hand_number = _wait_for_hand_number(page)
+    assert next_hand_number >= initial_hand_number + 1
+
+    # Ensure we can see trick/auction/play controls after advancing.
+    page.wait_for_selector("#trick-area, #bid-panel", timeout=10000)
 
     # If we got a hand result, verify its structure
     hand_result = page.locator("#hand-result")
