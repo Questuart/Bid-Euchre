@@ -287,6 +287,30 @@ class TestBidPanel:
         )
         assert "bid-type-badge--loner" in html
 
+    def test_bid_panel_includes_ai_pace_controls(self, env):
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert 'id="ai-pace-control"' in html
+        assert 'name="ai_pace"' in html
+
+    def test_bid_form_is_paced(self, env):
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert 'id="bid-form"' in html
+        assert 'data-paced="true"' in html
+
 
 # ---------------------------------------------------------------------------
 # hand.html
@@ -312,8 +336,8 @@ class TestHand:
         # No card--legal or card--illegal during auction (plain cards)
         assert "card--legal" not in html
 
-    def test_legal_cards_are_form_buttons(self, env):
-        """During trick play, legal cards are form buttons."""
+    def test_legal_cards_use_shared_play_form(self, env):
+        """During trick play, legal cards submit via shared play form."""
         tmpl = env.get_template("partials/hand.html")
         html = tmpl.render(
             link_uuid="abc-123",
@@ -322,11 +346,19 @@ class TestHand:
             legal_plays=[0, 2],  # First and third cards are legal
             phase="trick_play",
         )
-        # Legal cards have form with hx-post
+        # Shared play-card form with hidden turn/card inputs
+        assert 'id="play-card-form"' in html
         assert 'hx-post="/play/abc-123/play-card"' in html
-        assert 'name="card_index" value="0"' in html
-        assert 'name="card_index" value="2"' in html
+        assert 'id="selected-card-index" name="card_index" value=""' in html
+        assert 'id="play-card-submit"' in html
+        # Selectable legal cards carry positional metadata
+        assert 'data-card-index="0"' in html
+        assert 'data-card-index="2"' in html
         assert "card--legal" in html
+        assert "card--playable" in html
+        # No per-card form payloads should remain.
+        assert 'name="card_index" value="0"' not in html
+        assert 'name="card_index" value="2"' not in html
 
     def test_illegal_cards_are_divs(self, env):
         """During trick play, illegal cards are plain divs."""
@@ -340,7 +372,7 @@ class TestHand:
         )
         assert "card--illegal" in html
         # card_index=1 should NOT appear in a form
-        assert 'name="card_index" value="1"' not in html
+        assert 'data-card-index="1"' not in html
 
     def test_turn_number_in_forms(self, env):
         tmpl = env.get_template("partials/hand.html")
@@ -352,6 +384,17 @@ class TestHand:
             phase="trick_play",
         )
         assert 'name="turn_number" value="42"' in html
+
+    def test_play_form_shows_selection_help(self, env):
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=8,
+            human_hand=[["S", "A"], ["H", "K"]],
+            legal_plays=[0],
+            phase="trick_play",
+        )
+        assert "Tap a legal card to select, then confirm." in html
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +454,60 @@ class TestTrick:
             tricks_team1=2,
         )
         assert "trick-area" in html
+
+    def test_trick_shows_seat_markers(self, env):
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 2, "plays": [[2, ["H", "A"]]]},
+            completed_tricks=[],
+            tricks_team0=0,
+            tricks_team1=0,
+            bidder_seat=0,
+            dealer_seat=3,
+            current_seat=1,
+            sitting_out_seat=1,
+        )
+        assert "DEC" in html
+        assert "D" in html
+        assert "TURN" in html
+        assert "SIT" in html
+
+
+class TestActionFeed:
+    """Verify action feed component content."""
+
+    def test_action_feed_shows_auction(self, env):
+        tmpl = env.get_template("partials/action_feed.html")
+        html = tmpl.render(
+            auction=[
+                {
+                    "seat": 0,
+                    "action": "bid",
+                    "n": 8,
+                    "bid_type": "moon",
+                    "contract": "S",
+                },
+                {"seat": 1, "action": "pass"},
+            ],
+            completed_tricks=[],
+            current_trick={"leader": 1, "plays": []},
+            phase="trick_play",
+        )
+        assert "Action feed" in html
+        assert "You" in html
+        assert "bid 8 moon" in html
+        assert "passed" in html
+        assert "Current trick in progress" in html
+
+    def test_action_feed_starts_empty(self, env):
+        tmpl = env.get_template("partials/action_feed.html")
+        html = tmpl.render(
+            auction=[],
+            completed_tricks=[],
+            current_trick=None,
+            phase="auction",
+        )
+        assert "Auction starting" in html
 
 
 # ---------------------------------------------------------------------------
@@ -770,6 +867,35 @@ class TestHandResult:
             hands_played=1,
         )
         assert "hand-result--animated" in html
+
+    def test_hand_result_includes_last_trick(self, env):
+        html = env.get_template("partials/hand_result.html").render(
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+            completed_tricks=[
+                {
+                    "leader": 0,
+                    "plays": [
+                        [0, ["S", "A"]],
+                        [1, ["H", "K"]],
+                        [2, ["D", "J"]],
+                        [3, ["C", "Q"]],
+                    ],
+                    "winner": 0,
+                }
+            ],
+        )
+        assert "Last trick" in html
+        assert "Trick 1 of 10" in html
 
 
 # ---------------------------------------------------------------------------

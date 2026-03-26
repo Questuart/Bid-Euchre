@@ -1,0 +1,12 @@
+{# AI pace controls for card-showing and bid pacing.
+   User preference is persisted in localStorage (pace = normal|fast|slow|instant).
+#}
+<div id="pacing-controls" class="pacing-controls" role="region" aria-label="AI pace controls">
+    <label for="ai-pace-control">AI pace</label>
+    <select id="ai-pace-control" name="ai_pace">
+        <option value="instant">Instant</option>
+        <option value="fast">Fast</option>
+        <option value="normal" selected>Normal</option>
+        <option value="slow">Slow</option>
+    </select>
+</div>

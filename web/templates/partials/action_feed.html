@@ -1,0 +1,65 @@
+{# Action feed — compact chronological feed for current hand events.
+   Context variables:
+     - auction: list[dict] — bid/seat history
+     - completed_tricks: list[dict] — completed trick payloads with winner and plays
+     - current_trick: dict | None — active trick, if any
+     - phase: str — current hand phase
+#}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set auction = auction | default([]) %}
+{% set completed_tricks = completed_tricks | default([]) %}
+{% set current_trick = current_trick | default(None) %}
+{% set phase = phase | default("") %}
+
+<aside id="action-feed" class="action-feed" role="region" aria-label="Action feed">
+    <h3>Action feed</h3>
+    <ul class="action-feed__list">
+        {% if auction %}
+            {% for entry in auction %}
+                {% set entry_bid_type = entry.get("bid_type", "regular") %}
+                <li class="action-feed__item">
+                    <span class="action-feed__seat">{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}</span>
+                    {% if entry.action == "pass" %}
+                        passed
+                    {% else %}
+                        bid {{ entry.n }}{% if entry_bid_type == "moon" %} moon{% elif entry_bid_type == "loner" %} loner{% endif %}
+                        {% if entry.contract in suit_symbols %}
+                            of {{ suit_symbols.get(entry.contract) }}
+                        {% elif entry.contract == "HIGH" %}
+                            (high)
+                        {% elif entry.contract == "LOW" %}
+                            (low)
+                        {% endif %}
+                    {% endif %}
+                </li>
+            {% endfor %}
+        {% else %}
+            <li class="action-feed__item action-feed__item--muted">Auction starting</li>
+        {% endif %}
+
+        {% if phase == "trick_play" %}
+            {% if current_trick is not none %}
+                <li class="action-feed__item action-feed__item--muted">Current trick in progress</li>
+            {% endif %}
+
+            {% if completed_tricks %}
+                {% for completed in completed_tricks[-3:] %}
+                    {% set winner = completed.get("winner") %}
+                    <li class="action-feed__item">
+                        <span class="action-feed__seat">{{ seat_labels.get(winner, "Seat " ~ winner) }}</span>
+                        won trick {{ loop.revindex0 + 1 }}{{ " / now" if loop.first else "" }}
+                    </li>
+                {% endfor %}
+            {% endif %}
+        {% elif phase == "complete" %}
+            {% if completed_tricks %}
+                {% set last = completed_tricks[-1] %}
+                {% set winner = last.get("winner") %}
+                <li class="action-feed__item action-feed__item--muted">
+                    Final trick won by {{ seat_labels.get(winner, "Seat " ~ winner) }}
+                </li>
+            {% endif %}
+        {% endif %}
+    </ul>
+</aside>

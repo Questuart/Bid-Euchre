@@ -1,4 +1,5 @@
-{# Player's hand partial — legal cards as form buttons, illegal as plain divs.
+{# Player's hand partial — tap-select/confirm card play during trick_play,
+   plain cards at all other times.
    Context variables:
      - link_uuid: str — player's game link UUID
      - turn_number: int — current turn for idempotency
@@ -9,10 +10,12 @@
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
 {% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
+{% set in_trick_play = phase == "trick_play" and legal_plays is not none %}
 
 <div id="human-hand" class="hand" role="region" aria-label="Your hand">
     <h3>Your Hand</h3>
-    <div class="card-fan" role="group" aria-label="Cards in your hand ({{ human_hand | length }})">
+    <div class="card-fan{% if in_trick_play %} card-fan--interactive{% endif %}"
+         role="group" aria-label="Cards in your hand ({{ human_hand | length }})">
         {% for card in human_hand %}
             {% set suit = card[0] %}
             {% set rank = card[1] %}
@@ -21,24 +24,17 @@
             {% set suit_sym = suit_symbols.get(suit, suit) %}
             {% set suit_name = suit_names.get(suit, suit) %}
 
-            {% if phase == "trick_play" and legal_plays is not none and idx in legal_plays %}
-                {# Legal card — clickable form button #}
-                <form method="post"
-                      action="/play/{{ link_uuid }}/play-card"
-                      hx-post="/play/{{ link_uuid }}/play-card"
-                      hx-target="#game-board"
-                      hx-swap="innerHTML"
-                      class="card-form">
-                    <input type="hidden" name="turn_number" value="{{ turn_number }}">
-                    <input type="hidden" name="card_index" value="{{ idx }}">
-                    <button type="submit"
-                            class="card card--{{ suit_class }} card--legal"
-                            title="{{ rank }}{{ suit_sym }} (click to play)"
-                            aria-label="Play {{ rank }} of {{ suit_name }}">
-                        <span class="card__rank" aria-hidden="true">{{ rank }}</span>
-                        <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
-                    </button>
-                </form>
+            {% if in_trick_play and idx in legal_plays %}
+                {# Legal card — tap-to-select or click-to-play #}
+                <button type="button"
+                        class="card card--{{ suit_class }} card--legal card--playable"
+                        title="{{ rank }}{{ suit_sym }} (tap to select)"
+                        data-card-index="{{ idx }}"
+                        aria-label="Play {{ rank }} of {{ suit_name }}"
+                        data-card-text="{{ rank }} {{ suit_name }}">
+                    <span class="card__rank" aria-hidden="true">{{ rank }}</span>
+                    <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
+                </button>
             {% else %}
                 {# Illegal or non-play-phase card — plain div #}
                 <div class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}"
@@ -51,4 +47,25 @@
             {% endif %}
         {% endfor %}
     </div>
+
+    {% if in_trick_play %}
+    <form id="play-card-form"
+          class="card-play-form"
+          method="post"
+          action="/play/{{ link_uuid }}/play-card"
+          hx-post="/play/{{ link_uuid }}/play-card"
+          hx-target="#game-board"
+          hx-swap="innerHTML">
+        <input type="hidden" name="turn_number" value="{{ turn_number }}">
+        <input type="hidden" id="selected-card-index" name="card_index" value="">
+        <div class="play-card-controls">
+            <p id="card-selection-help" class="card-selection-help" aria-live="polite">
+                Tap a legal card to select, then confirm.
+            </p>
+            <button id="play-card-submit" class="btn btn--play-card" type="submit" disabled aria-label="Play selected card">
+                Play card
+            </button>
+        </div>
+    </form>
+    {% endif %}
 </div>
