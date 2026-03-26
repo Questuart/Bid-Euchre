@@ -5,6 +5,10 @@
       "path": "."
     },
     {
+      "name": "analyst-a",
+      "path": "../Bid-Euchre-steward-analyst"
+    },
+    {
       "name": "author-a",
       "path": "../Bid-Euchre-steward-author"
     },
@@ -21,17 +25,48 @@
       "path": "../Bid-Euchre-steward-author-d"
     },
     {
-      "name": "review",
-      "path": "../Bid-Euchre-steward-review"
+      "name": "browser-a",
+      "path": "../Bid-Euchre-steward-brws-author-a"
     },
     {
-      "name": "scratch",
-      "path": "../Bid-Euchre-steward-author-scratch"
+      "name": "browser-b",
+      "path": "../Bid-Euchre-steward-brws-author-b"
+    },
+    {
+      "name": "browser-c",
+      "path": "../Bid-Euchre-steward-brws-author-c"
+    },
+    {
+      "name": "browser-d",
+      "path": "../Bid-Euchre-steward-brws-author-d"
+    },
+    {
+      "name": "flex-a",
+      "path": "../Bid-Euchre-steward-flex-a"
+    },
+    {
+      "name": "flex-b",
+      "path": "../Bid-Euchre-steward-flex-b"
+    },
+    {
+      "name": "flex-c",
+      "path": "../Bid-Euchre-steward-flex-c"
+    },
+    {
+      "name": "ops",
+      "path": "../Bid-Euchre-steward-ops"
+    },
+    {
+      "name": "review",
+      "path": "../Bid-Euchre-steward-review"
     }
   ],
   "settings": {
     "files.exclude": {
       "**/.venv": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/.ruff_cache": true,
       "**/__pycache__": true,
       "data/runs": true,
       "data/artifacts": true,
@@ -39,23 +74,32 @@
       "data/reports": true,
       "data/training": true,
       "**/*.pyc": true,
+      ".claude/runtime": true,
       ".claude/worktrees": true
     },
     "search.exclude": {
       "**/.venv": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/.ruff_cache": true,
       "**/__pycache__": true,
       "data/runs": true,
       "data/artifacts": true,
       "data/models": true,
       "data/reports": true,
       "**/*.pyc": true,
+      ".claude/runtime": true,
       ".claude/worktrees": true
     },
     "files.watcherExclude": {
       "**/.venv/**": true,
+      "**/.pytest_cache/**": true,
+      "**/.mypy_cache/**": true,
+      "**/.ruff_cache/**": true,
       "data/runs/**": true,
       "data/artifacts/**": true,
       "data/models/**": true,
+      ".claude/runtime/**": true,
       ".claude/worktrees/**": true
     },
     "python.defaultInterpreterPath": ".venv/bin/python",
@@ -75,7 +119,10 @@
     "recommendations": [
       "charliermarsh.ruff",
       "ms-python.python",
-      "eamodio.gitlens"
+      "eamodio.gitlens",
+      "redhat.vscode-yaml",
+      "tamasfe.even-better-toml",
+      "samuelcolvin.jinjahtml"
     ]
   }
 }
