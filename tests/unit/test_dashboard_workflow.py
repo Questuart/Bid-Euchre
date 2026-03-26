@@ -21,9 +21,10 @@ class TestDashboardWorkflowStructure:
     def setup_method(self) -> None:
         self.workflow = yaml.safe_load(DASHBOARD_WORKFLOW.read_text())
 
-    def test_permissions_include_pull_requests(self) -> None:
-        """Workflow needs pull-requests: write to open PRs."""
+    def test_permissions_include_pull_requests_and_checks(self) -> None:
+        """Workflow needs PR, contents, and check-run write access."""
         perms = self.workflow["permissions"]
+        assert perms.get("checks") == "write"
         assert perms.get("pull-requests") == "write"
         assert perms.get("contents") == "write"
 
@@ -60,6 +61,18 @@ class TestDashboardWorkflowStructure:
         script = step["run"]
         assert 'PR_NUMBER="$EXISTING"' in script
         assert 'gh pr merge "$PR_NUMBER" --auto --squash --delete-branch' in script
+
+    def test_required_checks_are_published_from_dashboard_workflow(self) -> None:
+        """Dashboard PRs should publish required checks directly."""
+        job = self.workflow["jobs"]["update-dashboard"]
+        step = next(s for s in job["steps"] if "gh pr create" in str(s.get("run", "")))
+        script = step["run"]
+        assert (
+            "HEAD_SHA=$(gh pr view \"$PR_NUMBER\" --json headRefOid -q '.headRefOid')"
+            in script
+        )
+        assert "repos/${GITHUB_REPOSITORY}/check-runs" in script
+        assert "for CHECK_NAME in tests governance; do" in script
 
     def test_dashboard_branch_is_not_main(self) -> None:
         """The commit target branch must not be 'main'."""
