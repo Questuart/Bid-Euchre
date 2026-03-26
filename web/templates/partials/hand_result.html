@@ -15,6 +15,12 @@
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set completed_tricks = completed_tricks | default([]) %}
+{% set bidder_seat = bidder_seat | default(none) %}
+{% set dealer_seat = dealer_seat | default(none) %}
+{% set current_seat = current_seat | default(none) %}
+{% set sitting_out_seat = sitting_out_seat | default(none) %}
+{% set link_uuid = link_uuid | default(none) %}
 {% set hand_bid_type = bid_type | default("regular") %}
 
 {# Determine if the declaring team made their bid #}
@@ -122,4 +128,59 @@
         <p>Match score: You {{ score_human }} &mdash; AI {{ score_ai }}</p>
         <p class="hands-count">Hands played: {{ hands_played }}</p>
     </div>
+
+    {% if completed_tricks %}
+        <section class="hand-result-trick hand-result-trick" aria-label="Final trick">
+            <h3>Last trick</h3>
+            {% with
+                current_trick=completed_tricks[-1],
+                completed_tricks=completed_tricks,
+                trick_number_override=completed_tricks|length,
+                bidder_seat=bidder_seat,
+                dealer_seat=dealer_seat,
+                current_seat=current_seat,
+                sitting_out_seat=sitting_out_seat
+            %}
+                {% include "partials/trick.html" %}
+            {% endwith %}
+        </section>
+    {% endif %}
+
+    {% set moon_exchange_given = exchange_given | default([], true) %}
+    {% set moon_exchange_received = exchange_received | default([], true) %}
+    {% if hand_bid_type == "moon" and moon_exchange_given and moon_exchange_received %}
+        <div class="moon-exchange" role="status" aria-live="polite">
+            <h3>Moon exchange</h3>
+            <p>
+                {% if human_declared %}
+                    You gave:
+                {% else %}
+                    {{ seat_labels.get(bidder_seat, "Bidder") }} gave:
+                {% endif %}
+                {% for card in moon_exchange_given %}
+                    <span class="exchange-card">{{ suit_symbols.get(card[0], card[0]) }}{{ card[1] }}</span>
+                {% endfor %}
+            </p>
+            <p>
+                {% if human_declared %}
+                    You received:
+                {% else %}
+                    {{ seat_labels.get(bidder_seat, "Bidder") }} received:
+                {% endif %}
+                {% for card in moon_exchange_received %}
+                    <span class="exchange-card">{{ suit_symbols.get(card[0], card[0]) }}{{ card[1] }}</span>
+                {% endfor %}
+            </p>
+        </div>
+    {% endif %}
+
+    {% if link_uuid %}
+        <form method="post"
+              action="/play/{{ link_uuid }}/next-hand"
+              hx-post="/play/{{ link_uuid }}/next-hand"
+              hx-target="#game-board"
+              hx-swap="innerHTML">
+            <button type="submit" class="btn btn--primary">Next Hand</button>
+        </form>
+    {% endif %}
 </div>

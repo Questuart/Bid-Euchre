@@ -1,14 +1,10 @@
 /**
  * Bid Euchre Browser Game — Client-side JavaScript
  *
- * Minimal vanilla JS (no build tooling):
- * 1. Decision timer — records how long the human takes to act
- * 2. HTMX swap hooks — resets timer on new decision prompts
- * 3. Card click handler — visual feedback on interaction
- * 4. AI response pacing — configurable delay for moon/loner bids
- *
- * The decision_time_ms hidden input is injected into every bid/play form
- * submission so the server can record human decision latency.
+ * - Decision timer logging
+ * - Card tap-select + confirm for human hand play
+ * - AI pacing controls + adjustable delay profiles
+ * - Optional pacing indicator during delayed AI response simulation
  */
 
 (function () {
@@ -18,55 +14,37 @@
     // Configuration
     // -----------------------------------------------------------------------
 
-    /**
-     * AI pacing delay range in milliseconds.
-     * After a human submits a moon or loner bid, a brief delay is added
-     * before the HTMX response is processed to give a sense of AI
-     * deliberation.  Regular bids get a shorter delay.
-     */
-    var PACING = {
-        moonMinMs: 800,
-        moonMaxMs: 1500,
-        lonerMinMs: 1000,
-        lonerMaxMs: 2000,
-        regularMinMs: 300,
-        regularMaxMs: 600
+    /** Storage key for AI pacing profile preference. */
+    var STORAGE_KEY = "bid_euchre_ai_pace";
+
+    /** Delay presets (milliseconds, before card resolution request is sent). */
+    var PACING_PRESETS = {
+        instant: { multiplier: 0, regularMinMs: 0, regularMaxMs: 0, moonMinMs: 0, moonMaxMs: 0, lonerMinMs: 0, lonerMaxMs: 0 },
+        fast: { multiplier: 0.6, regularMinMs: 200, regularMaxMs: 450, moonMinMs: 450, moonMaxMs: 800, lonerMinMs: 550, lonerMaxMs: 1100 },
+        normal: { multiplier: 1.0, regularMinMs: 300, regularMaxMs: 600, moonMinMs: 800, moonMaxMs: 1500, lonerMinMs: 1000, lonerMaxMs: 2000 },
+        slow: { multiplier: 1.5, regularMinMs: 500, regularMaxMs: 950, moonMinMs: 1200, moonMaxMs: 2200, lonerMinMs: 1400, lonerMaxMs: 2800 },
     };
+
+    // -----------------------------------------------------------------------
+    // State
+    // -----------------------------------------------------------------------
+
+    var decisionStart = Date.now();
 
     // -----------------------------------------------------------------------
     // Decision Timer
     // -----------------------------------------------------------------------
 
-    /** Timestamp (ms) when the current decision prompt was loaded. */
-    var decisionStart = Date.now();
-
-    /**
-     * Reset the decision timer.  Called on page load and after each HTMX swap
-     * that delivers a new decision prompt.
-     */
     function resetTimer() {
         decisionStart = Date.now();
     }
 
-    /**
-     * Inject a hidden `decision_time_ms` input into the form that is about to
-     * submit.  HTMX fires `htmx:beforeRequest` on the element with the
-     * `hx-post` attribute — which may be a <form> or a child <button>.
-     *
-     * We walk up to the enclosing <form> to ensure the input is added in the
-     * right place.  If a previous hidden input already exists (e.g. from a
-     * duplicate event), we update its value rather than creating a second one.
-     *
-     * @param {CustomEvent} evt — htmx:beforeRequest event
-     */
     function injectDecisionTime(evt) {
         var form = evt.target.closest("form");
         if (!form) {
             return;
         }
-
         var elapsed = Date.now() - decisionStart;
-
         var existing = form.querySelector('input[name="decision_time_ms"]');
         if (existing) {
             existing.value = elapsed;
@@ -80,72 +58,80 @@
     }
 
     // -----------------------------------------------------------------------
-    // AI Response Pacing
+    // Pace controls
     // -----------------------------------------------------------------------
 
-    /**
-     * Return a random integer in [min, max].
-     */
-    function randInt(min, max) {
-        return Math.floor(Math.random() * (max - min + 1)) + min;
+    function getPaceMode() {
+        var select = document.getElementById("ai-pace-control");
+        if (select && select.value in PACING_PRESETS) {
+            return select.value;
+        }
+        return "normal";
     }
 
-    /**
-     * Get the pacing delay for the current bid type.
-     * Reads the bid_type select value from the bid form if present.
-     *
-     * @param {Element} form — the form being submitted
-     * @returns {number} delay in milliseconds (0 for card plays)
-     */
-    function getPacingDelay(form) {
-        var action = form.getAttribute("action") || "";
+    function initPaceControl() {
+        var select = document.getElementById("ai-pace-control");
+        if (!select) {
+            return;
+        }
+        var saved = "normal";
+        try {
+            saved = window.localStorage.getItem(STORAGE_KEY) || "normal";
+        } catch (err) {
+            // localStorage may be unavailable in privacy modes.
+            saved = "normal";
+        }
+        if (saved in PACING_PRESETS) {
+            select.value = saved;
+        }
+    }
 
-        // Only pace bid submissions, not card plays
-        if (action.indexOf("/bid") === -1) {
+    function getPacingDelay(form) {
+        if (!(form && form.dataset && form.dataset.paced === "true")) {
+            return 0;
+        }
+        var mode = getPaceMode();
+        var preset = PACING_PRESETS[mode] || PACING_PRESETS.normal;
+        if (preset.multiplier === 0) {
             return 0;
         }
 
         var bidTypeSelect = form.querySelector('[name="bid_type"]');
-        if (!bidTypeSelect) {
-            return randInt(PACING.regularMinMs, PACING.regularMaxMs);
+        var bidType = bidTypeSelect ? bidTypeSelect.value : "regular";
+        var minMs = preset.regularMinMs;
+        var maxMs = preset.regularMaxMs;
+        if (bidType === "moon") {
+            minMs = preset.moonMinMs;
+            maxMs = preset.moonMaxMs;
+        } else if (bidType === "loner") {
+            minMs = preset.lonerMinMs;
+            maxMs = preset.lonerMaxMs;
         }
 
-        var bidType = bidTypeSelect.value;
-        if (bidType === "moon") {
-            return randInt(PACING.moonMinMs, PACING.moonMaxMs);
-        } else if (bidType === "loner") {
-            return randInt(PACING.lonerMinMs, PACING.lonerMaxMs);
-        }
-        return randInt(PACING.regularMinMs, PACING.regularMaxMs);
+        var scaledMin = Math.max(0, Math.round(minMs * preset.multiplier));
+        var scaledMax = Math.max(scaledMin, Math.round(maxMs * preset.multiplier));
+        return Math.floor(Math.random() * (scaledMax - scaledMin + 1)) + scaledMin;
     }
 
-    /**
-     * Show a pacing indicator during the AI delay.
-     * Creates a temporary element that displays "AI is thinking..." style
-     * text while the delayed response is pending.
-     */
     function showPacingIndicator() {
         var existing = document.getElementById("pacing-indicator");
         if (existing) {
             existing.classList.add("active");
             return existing;
         }
-
+        var control = document.querySelector(".pacing-controls");
         var indicator = document.createElement("div");
         indicator.id = "pacing-indicator";
         indicator.className = "pacing-indicator active";
         indicator.innerHTML = 'AI is considering<span class="pacing-dots"></span>';
-
-        var bidPanel = document.getElementById("bid-panel");
-        if (bidPanel) {
-            bidPanel.appendChild(indicator);
+        if (control) {
+            control.appendChild(indicator);
+            return indicator;
         }
+        document.body.appendChild(indicator);
         return indicator;
     }
 
-    /**
-     * Hide and remove the pacing indicator.
-     */
     function hidePacingIndicator() {
         var indicator = document.getElementById("pacing-indicator");
         if (indicator) {
@@ -153,75 +139,230 @@
         }
     }
 
-    /**
-     * Handle HTMX beforeSwap to apply pacing delay for bid submissions.
-     * This delays the DOM swap to create a deliberation effect.
-     *
-     * @param {CustomEvent} evt — htmx:beforeSwap event
-     */
-    function handlePacingBeforeRequest(evt) {
-        var form = evt.target.closest("form");
+    function clearPacingState(form) {
         if (!form) {
             return;
         }
+        if (form.dataset && form.dataset.queued === "1") {
+            form.dataset.queued = "0";
+            delete form.dataset.queued;
+        }
+    }
 
+    function onPaceModeChange(evt) {
+        var select = evt.target;
+        if (!select || !select.value) {
+            return;
+        }
+        if (!(select.value in PACING_PRESETS)) {
+            select.value = "normal";
+        }
+        try {
+            window.localStorage.setItem(STORAGE_KEY, select.value);
+        } catch (err) {
+            // Ignore — privacy mode might block storage writes.
+        }
+    }
+
+    function queuePacedSubmit(form) {
+        if (!form || form.dataset.queued === "1") {
+            return;
+        }
         var delay = getPacingDelay(form);
-        if (delay > 0) {
-            showPacingIndicator();
+        if (delay <= 0) {
+            form.dataset.queued = "1";
+            htmx.trigger(form, "submit");
+            return;
+        }
+
+        form.dataset.queued = "1";
+        showPacingIndicator();
+        setTimeout(function () {
+            htmx.trigger(form, "submit");
+        }, delay);
+    }
+
+    // -----------------------------------------------------------------------
+    // Card selection / play panel
+    // -----------------------------------------------------------------------
+
+    function isPlayCardForm(form) {
+        return form && form.id === "play-card-form";
+    }
+
+    function selectedCardLabel(form, value) {
+        if (!form) {
+            return null;
+        }
+        var buttons = form.querySelectorAll(".card--playable");
+        for (var i = 0; i < buttons.length; i += 1) {
+            if (buttons[i].getAttribute("data-card-index") === value) {
+                return buttons[i].getAttribute("data-card-text") || null;
+            }
+        }
+        return null;
+    }
+
+    function updatePlayState(form) {
+        if (!form) {
+            return;
+        }
+        var selected = form.querySelector("#selected-card-index");
+        var submit = form.querySelector("#play-card-submit");
+        var help = form.querySelector("#card-selection-help");
+        var idx = selected ? selected.value : "";
+        var hasSelection = idx !== "";
+
+        if (submit) {
+            submit.disabled = !hasSelection;
+        }
+
+        if (help) {
+            if (hasSelection) {
+                var label = selectedCardLabel(form, idx);
+                if (label) {
+                    help.textContent = "Selected: " + label + ".";
+                }
+            } else {
+                help.textContent = "Tap a legal card to select, then confirm.";
+            }
+        }
+    }
+
+    function clearSelectedCard(form) {
+        if (!form) {
+            return;
+        }
+        var cards = form.querySelectorAll(".card--playable");
+        for (var i = 0; i < cards.length; i += 1) {
+            cards[i].classList.remove("card--selected");
+        }
+        var selected = form.querySelector("#selected-card-index");
+        if (selected) {
+            selected.value = "";
+        }
+        updatePlayState(form);
+    }
+
+    function setSelectedCard(form, button, cardIndex) {
+        if (!form) {
+            return;
+        }
+        var selected = form.querySelector("#selected-card-index");
+        if (!selected) {
+            return;
+        }
+
+        var currentIdx = selected.value;
+        if (currentIdx) {
+            var prev = form.querySelector('[data-card-index="' + currentIdx + '"]');
+            if (prev) {
+                prev.classList.remove("card--selected");
+            }
+        }
+
+        button.classList.add("card--selected");
+        selected.value = cardIndex;
+        updatePlayState(form);
+    }
+
+    function onCardPlayableClick(evt) {
+        var target = evt.target.closest(".card--playable");
+        if (!target) {
+            return;
+        }
+        var form = document.getElementById("play-card-form");
+        var idx = target.getAttribute("data-card-index");
+        if (!form || !idx) {
+            return;
+        }
+        evt.preventDefault();
+        setSelectedCard(form, target, idx);
+    }
+
+    // -----------------------------------------------------------------------
+    // Event binding
+    // -----------------------------------------------------------------------
+
+    function bindCardControls() {
+        var cards = document.querySelectorAll(".card--playable");
+        for (var i = 0; i < cards.length; i += 1) {
+            cards[i].addEventListener("click", onCardPlayableClick);
+        }
+        var playForm = document.getElementById("play-card-form");
+        if (playForm) {
+            var selected = playForm.querySelector("#selected-card-index");
+            if (selected && selected.value === "") {
+                clearSelectedCard(playForm);
+            } else {
+                updatePlayState(playForm);
+            }
         }
     }
 
     // -----------------------------------------------------------------------
-    // Card Click Feedback
+    // HTMX lifecycle events
     // -----------------------------------------------------------------------
 
-    /**
-     * Add a brief pressed effect when a legal card button is clicked.
-     * The actual form submission is handled by HTMX — this is purely visual.
-     *
-     * @param {Event} evt — click event on a .card--legal button
-     */
-    function onCardClick(evt) {
-        var card = evt.currentTarget;
-        card.style.transform = "translateY(-4px) scale(0.95)";
-        // Let HTMX handle the rest; the card will be replaced on swap.
-    }
-
-    // -----------------------------------------------------------------------
-    // Event Binding
-    // -----------------------------------------------------------------------
-
-    /**
-     * Bind click handlers to all legal card buttons currently in the DOM.
-     * Called on page load and after each HTMX swap.
-     */
-    function bindCardHandlers() {
-        var cards = document.querySelectorAll("button.card--legal");
-        for (var i = 0; i < cards.length; i++) {
-            cards[i].addEventListener("click", onCardClick);
+    // Delay paced forms (currently bid form) to simulate AI thought time.
+    document.body.addEventListener("submit", function (evt) {
+        var form = evt.target.closest("form");
+        if (!form || form.dataset.paced !== "true" || form.dataset.queued === "1") {
+            return;
         }
-    }
-
-    // Listen for HTMX events on the document body (delegated).
-    // htmx:beforeRequest fires before any HTMX request — inject timer value
-    // and show pacing indicator.
-    document.body.addEventListener("htmx:beforeRequest", function (evt) {
-        injectDecisionTime(evt);
-        handlePacingBeforeRequest(evt);
+        evt.preventDefault();
+        queuePacedSubmit(form);
     });
 
-    // htmx:afterSwap fires after HTMX replaces content — reset timer,
-    // hide pacing indicator, and rebind card handlers for the new DOM content.
+    // Inject decision timings and clear pacing state before the request fires.
+    document.body.addEventListener("htmx:beforeRequest", function (evt) {
+        injectDecisionTime(evt);
+        var form = evt.target.closest("form");
+        if (form && form.dataset && form.dataset.queued === "1") {
+            clearPacingState(form);
+            hidePacingIndicator();
+        }
+    });
+
+    // Reset UI and timing after board swaps.
     document.body.addEventListener("htmx:afterSwap", function () {
         hidePacingIndicator();
         resetTimer();
-        bindCardHandlers();
+        clearSelectedCard(document.getElementById("play-card-form"));
+        initPaceControl();
+        bindCardControls();
+        var paceSelect = document.getElementById("ai-pace-control");
+        if (paceSelect) {
+            paceSelect.addEventListener("change", onPaceModeChange);
+        }
     });
 
-    // Initial binding on page load.
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", bindCardHandlers);
-    } else {
-        bindCardHandlers();
+    // Hide indicator and clear any queued state if request errors.
+    document.body.addEventListener("htmx:responseError", function (evt) {
+        hidePacingIndicator();
+        clearPacingState(evt.target.closest("form"));
+    });
+
+    // Initial boot.
+    initPaceControl();
+    if (!document.getElementById("play-card-form")) {
+        var placeholderSubmit = document.getElementById("play-card-submit");
+        if (placeholderSubmit) {
+            placeholderSubmit.disabled = true;
+        }
     }
+    var paceSelect = document.getElementById("ai-pace-control");
+    if (paceSelect) {
+        paceSelect.addEventListener("change", onPaceModeChange);
+    }
+    resetTimer();
+    bindCardControls();
+
+    // Ensure submit helper remains global for existing onclick handlers in templates.
+    window.__bidEuchreSubmitPass = function (btn) {
+        var form = btn.closest("form");
+        if (form) {
+            htmx.trigger(form, "submit");
+        }
+    };
 })();

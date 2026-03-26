@@ -4,23 +4,61 @@
      - completed_tricks: list[dict] — completed tricks for reference count
      - tricks_team0: int — tricks won by human's team (seats 0, 2)
      - tricks_team1: int — tricks won by AI team (seats 1, 3)
+     - bidder_seat: int | None — current declarer seat
+     - dealer_seat: int | None — current dealer seat
+     - current_seat: int | None — seat to act next
+     - sitting_out_seat: int | None — seat sitting out on loner hands
+     - trick_number_override: int | None — manual trick number override (e.g. hand_result)
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
 {% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "Partner", 3: "AI Right"} %}
+{% set current_trick = current_trick | default(None) %}
+{% set completed_tricks = completed_tricks | default([]) %}
+{% set bidder_seat = bidder_seat | default(none) %}
+{% set dealer_seat = dealer_seat | default(none) %}
+{% set current_seat = current_seat | default(none) %}
+{% set sitting_out_seat = sitting_out_seat | default(none) %}
 
-{# Build a dict mapping seat -> card for the current trick.
-   Uses namespace to work around Jinja2 for-loop scoping. #}
+{# If there is no active trick but there are completed tricks, show the last one.
+   This preserves the visible trick when a hand transitions to hand_result. #}
+{% set ns = namespace(current= current_trick) %}
+{% set trick_num = trick_number_override | default(completed_tricks | length + 1) %}
+{% if not current_trick and completed_tricks %}
+    {% set ns.current = completed_tricks[-1] %}
+    {% set trick_num = completed_tricks | length %}
+{% endif %}
+{% set trick_data = ns.current %}
+
+{% set marker_data = {
+    0: [],
+    1: [],
+    2: [],
+    3: [],
+} %}
+{% if bidder_seat is not none %}
+    {% set _ = marker_data[bidder_seat].append("DEC") %}
+{% endif %}
+{% if dealer_seat is not none %}
+    {% set _ = marker_data[dealer_seat].append("D") %}
+{% endif %}
+{% if current_seat is not none %}
+    {% set _ = marker_data[current_seat].append("TURN") %}
+{% endif %}
+{% if sitting_out_seat is not none %}
+    {% set _ = marker_data[sitting_out_seat].append("SIT") %}
+{% endif %}
+
 {% set ns = namespace(cards={}) %}
-{% if current_trick %}
-    {% for play in current_trick.plays %}
+{% if trick_data %}
+    {% for play in trick_data.plays %}
         {% set _ = ns.cards.update({play[0]: play[1]}) %}
     {% endfor %}
 {% endif %}
 
 <div id="trick-area" class="trick-area" role="region" aria-label="Current trick" aria-live="polite">
-    <h3>Trick {{ (completed_tricks | length) + 1 }} of 10</h3>
+    <h3>Trick {{ trick_num }} of 10{% if not current_trick and completed_tricks %} (last){% endif %}</h3>
     <div class="trick-table" role="group" aria-label="Cards played this trick, score {{ tricks_team0 }} to {{ tricks_team1 }}">
         {# Top — seat 2 (partner) #}
         <div class="trick-slot trick-slot--top">
@@ -36,6 +74,13 @@
             {% else %}
                 <div class="card-slot card-slot--empty" aria-label="{{ seat_labels[2] }}, waiting to play">
                     <span class="seat-label">{{ seat_labels[2] }}</span>
+                </div>
+            {% endif %}
+            {% if marker_data[2] %}
+                <div class="seat-marker-row">
+                    {% for flag in marker_data[2] %}
+                        <span class="seat-marker">{{ flag }}</span>
+                    {% endfor %}
                 </div>
             {% endif %}
         </div>
@@ -55,6 +100,13 @@
                 {% else %}
                     <div class="card-slot card-slot--empty" aria-label="{{ seat_labels[1] }}, waiting to play">
                         <span class="seat-label">{{ seat_labels[1] }}</span>
+                    </div>
+                {% endif %}
+                {% if marker_data[1] %}
+                    <div class="seat-marker-row">
+                        {% for flag in marker_data[1] %}
+                            <span class="seat-marker">{{ flag }}</span>
+                        {% endfor %}
                     </div>
                 {% endif %}
             </div>
@@ -78,6 +130,13 @@
                         <span class="seat-label">{{ seat_labels[3] }}</span>
                     </div>
                 {% endif %}
+                {% if marker_data[3] %}
+                    <div class="seat-marker-row">
+                        {% for flag in marker_data[3] %}
+                            <span class="seat-marker">{{ flag }}</span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
             </div>
         </div>
 
@@ -95,6 +154,13 @@
             {% else %}
                 <div class="card-slot card-slot--empty" aria-label="{{ seat_labels[0] }}, waiting to play">
                     <span class="seat-label">{{ seat_labels[0] }}</span>
+                </div>
+            {% endif %}
+            {% if marker_data[0] %}
+                <div class="seat-marker-row">
+                    {% for flag in marker_data[0] %}
+                        <span class="seat-marker">{{ flag }}</span>
+                    {% endfor %}
                 </div>
             {% endif %}
         </div>

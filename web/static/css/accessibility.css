@@ -57,6 +57,12 @@ button.card--legal:focus-visible {
     box-shadow: 0 0 0 6px rgba(76, 175, 80, 0.3);
 }
 
+button.card--playable:focus-visible {
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 6px rgba(76, 175, 80, 0.3);
+}
+
 /* Bid controls — visible ring on selects and buttons */
 .bid-controls select:focus-visible,
 .bid-controls button:focus-visible {
@@ -84,6 +90,12 @@ select:focus-visible {
     box-shadow: 0 0 0 6px rgba(76, 175, 80, 0.3);
 }
 
+.btn--play-card:focus-visible {
+    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 6px rgba(76, 175, 80, 0.3);
+}
+
 /* --------------------------------------------------------------------------
    3. Touch Target Minimums (44x44px per WCAG 2.5.5)
    --------------------------------------------------------------------------
@@ -104,6 +116,11 @@ select:focus-visible {
         min-height: 44px;
         min-width: 44px;
         padding: 0.6rem 1.25rem;
+    }
+
+    .card--playable {
+        min-width: 44px;
+        min-height: 44px;
     }
 
     /* Select dropdowns */
@@ -132,6 +149,18 @@ select:focus-visible {
         min-height: 48px;
         padding: 0.75rem 2rem;
     }
+
+    #play-card-submit,
+    .btn--play-card {
+        min-height: 44px;
+        padding-top: 0.55rem;
+        padding-bottom: 0.55rem;
+    }
+
+    #ai-pace-control {
+        min-height: 44px;
+        min-width: 110px;
+    }
 }
 
 /* --------------------------------------------------------------------------
@@ -148,6 +177,10 @@ select:focus-visible {
         transform: none;
     }
 
+    .card--playable:hover {
+        transform: none;
+    }
+
     /* Suppress button hover lift */
     .btn:hover {
         transform: none;
@@ -157,6 +190,7 @@ select:focus-visible {
     .card,
     .btn,
     .bid-controls button,
+    .btn--play-card,
     #nickname-form button,
     #model-select button {
         transition: none;

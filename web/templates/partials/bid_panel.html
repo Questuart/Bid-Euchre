@@ -15,6 +15,8 @@
 <div id="bid-panel" role="region" aria-label="Auction panel">
     <h3 id="auction-heading">Auction</h3>
 
+    {% include "partials/pacing_controls.html" %}
+
     {# Show auction transcript so far #}
     {% if auction %}
     <div class="auction-transcript" aria-label="Bidding history" aria-live="polite">
@@ -61,6 +63,8 @@
 
     {# Bid form — only shown when it's the human's turn #}
     <form method="post"
+          id="bid-form"
+          data-paced="true"
           action="/play/{{ link_uuid }}/bid"
           hx-post="/play/{{ link_uuid }}/bid"
           hx-target="#game-board"
@@ -79,8 +83,8 @@
                 >Regular</option>
                 <option value="moon"
                     {% if bid_type|default("regular") == "loner" %}disabled{% endif %}
-                >Moon (10)</option>
-                <option value="loner">Loner (10)</option>
+                >Moon (20 pts)</option>
+                <option value="loner">Loner (40 pts)</option>
             </select>
 
             {# Bid level — only for regular bids #}

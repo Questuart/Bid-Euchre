@@ -6,6 +6,8 @@
        - phase: str — "auction", "trick_play", "hand_result", "match_result", "redeal"
        - link_uuid: str — player's game link UUID
        - opp_left_count, partner_count, opp_right_count: int — AI hand card counts
+       - completed_tricks, current_trick, tricks_team0, tricks_team1
+       - bidder_seat, dealer_seat, current_seat, sitting_out_seat
 #}
 
 {# ---- Match result (win/loss screen) ---- #}
@@ -19,51 +21,63 @@
 {# ---- Active game phases: auction and trick play ---- #}
 {% elif phase in ("auction", "trick_play", "redeal") %}
 
-    {# AI hands — face-down card backs with counts #}
-    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
-        {# Left opponent (seat 1) #}
-        <div style="text-align:center; flex:0 0 auto;">
-            <div class="ai-hand">
-                {% for _ in range(opp_left_count | default(0)) %}
-                <div class="card-back"></div>
-                {% endfor %}
+    <div class="game-board">
+        <div class="game-board__row">
+            <div class="ai-hands-row">
+                {# Left opponent (seat 1) #}
+                <div class="ai-hand-cluster">
+                    <div class="ai-hand" role="img" aria-label="AI Left has {{ opp_left_count | default(0) }} cards">
+                        {% for _ in range(opp_left_count | default(0)) %}
+                        <div class="card-back" aria-hidden="true"></div>
+                        {% endfor %}
+                    </div>
+                    <span class="ai-card-count" aria-hidden="true">AI Left ({{ opp_left_count | default(0) }})</span>
+                </div>
+
+                {# Partner (seat 2) #}
+                <div class="ai-hand-cluster ai-hand-cluster--center">
+                    <div class="ai-hand" role="img" aria-label="Partner has {{ partner_count | default(0) }} cards">
+                        {% for _ in range(partner_count | default(0)) %}
+                        <div class="card-back" aria-hidden="true"></div>
+                        {% endfor %}
+                    </div>
+                    <span class="ai-card-count" aria-hidden="true">Partner ({{ partner_count | default(0) }})</span>
+                </div>
+
+                {# Right opponent (seat 3) #}
+                <div class="ai-hand-cluster">
+                    <div class="ai-hand" role="img" aria-label="AI Right has {{ opp_right_count | default(0) }} cards">
+                        {% for _ in range(opp_right_count | default(0)) %}
+                        <div class="card-back" aria-hidden="true"></div>
+                        {% endfor %}
+                    </div>
+                    <span class="ai-card-count" aria-hidden="true">AI Right ({{ opp_right_count | default(0) }})</span>
+                </div>
             </div>
-            <span class="ai-card-count">AI Left ({{ opp_left_count | default(0) }})</span>
+
+            {% include "partials/pacing_controls.html" %}
         </div>
 
-        {# Partner (seat 2) #}
-        <div style="text-align:center; flex:1 1 auto;">
-            <div class="ai-hand">
-                {% for _ in range(partner_count | default(0)) %}
-                <div class="card-back"></div>
-                {% endfor %}
+        <div class="game-board__row game-board__row--with-feed">
+            <div class="game-board__main">
+                {% include "partials/trick.html" %}
             </div>
-            <span class="ai-card-count">Partner ({{ partner_count | default(0) }})</span>
+            <div class="game-board__rail">
+                {% include "partials/action_feed.html" %}
+            </div>
         </div>
 
-        {# Right opponent (seat 3) #}
-        <div style="text-align:center; flex:0 0 auto;">
-            <div class="ai-hand">
-                {% for _ in range(opp_right_count | default(0)) %}
-                <div class="card-back"></div>
-                {% endfor %}
-            </div>
-            <span class="ai-card-count">AI Right ({{ opp_right_count | default(0) }})</span>
+        {% if phase == "auction" %}
+            {% include "partials/bid_panel.html" %}
+        {% endif %}
+
+        <div class="game-board__row">
+            {% include "partials/hand.html" %}
+        </div>
+
+        <div class="game-board__row">
+            {% include "partials/score.html" %}
         </div>
     </div>
-
-    {# Trick area — always shown during active play #}
-    {% include "partials/trick.html" %}
-
-    {# Bid panel — auction phase only, when it's the human's turn #}
-    {% if phase == "auction" %}
-        {% include "partials/bid_panel.html" %}
-    {% endif %}
-
-    {# Human hand — always shown during active play #}
-    {% include "partials/hand.html" %}
-
-    {# Score bar — always shown during active play #}
-    {% include "partials/score.html" %}
 
 {% endif %}
