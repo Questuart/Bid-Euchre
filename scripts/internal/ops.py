@@ -2325,6 +2325,22 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     else:
         print(format_findings_text(findings))
 
+    parsed_now = None
+    if getattr(args, "now", None):
+        from datetime import datetime as _dt
+
+        try:
+            parsed_now = _dt.fromisoformat(args.now)
+        except ValueError:
+            print("error: --now must be a valid ISO-8601 timestamp", file=sys.stderr)
+            return 2
+        if parsed_now.tzinfo is None:
+            print(
+                "error: --now must include a timezone offset",
+                file=sys.stderr,
+            )
+            return 2
+
     # Update the controller projection so fleet_status.json reflects the
     # latest monitor findings, task queue, inbox, and audit state.
     if not no_reconcile:
@@ -2362,7 +2378,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
             task_packets=task_dicts,
             unacked_messages=inbox_msgs,
             audit_records=audit_dicts,
-            now_iso=getattr(args, "now", None),
+            now_iso=parsed_now.isoformat() if parsed_now else None,
         )
 
     # --- Alert push cycle (Platform-9a) ---
@@ -2371,17 +2387,13 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     no_push = getattr(args, "no_push", False)
     if not no_reconcile and not no_push:
         try:
-            from datetime import datetime as _dt
-
             from bid_euchre.ops.telegram_push import run_push_cycle
 
             audit_dir = args.runtime_dir / "audit_trail" if args.runtime_dir else None
             push_result = run_push_cycle(
                 runtime_dir=args.runtime_dir,
                 audit_dir=audit_dir,
-                now=(
-                    _dt.fromisoformat(args.now) if getattr(args, "now", None) else None
-                ),
+                now=parsed_now,
             )
             if push_result is not None:
                 print(
