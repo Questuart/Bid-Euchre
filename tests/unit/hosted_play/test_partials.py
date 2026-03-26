@@ -1380,6 +1380,14 @@ class TestAccessibilityBaseTemplate:
         html = tmpl.render()
         assert "viewport-fit=cover" in html
 
+    def test_safe_area_css_present(self, env):
+        tmpl = env.get_template("base.html")
+        html = tmpl.render()
+        assert "safe-area-inset-top" in html
+        assert "safe-area-inset-right" in html
+        assert "safe-area-inset-bottom" in html
+        assert "safe-area-inset-left" in html
+
 
 class TestGameTemplateAccessibility:
     """Verify accessibility-sensitive behavior in the full-page game template."""
