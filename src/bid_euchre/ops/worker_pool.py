@@ -290,7 +290,11 @@ def _probe_tmux_pane(
     Returns:
         True if the lane's tmux pane exists and is running.
     """
-    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+    target = (
+        _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+        if runtime_dir is not None
+        else f"{tmux_session}:{lane_id}"
+    )
     try:
         result = subprocess.run(
             ["tmux", "display-message", "-t", target, "-p", "#{pane_pid}"],
@@ -1122,7 +1126,11 @@ def clear_session(
         A :class:`PoolAction` with ``action="clear_session"`` describing the
         outcome.
     """
-    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+    target = (
+        _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+        if runtime_dir is not None
+        else f"{tmux_session}:{lane_id}"
+    )
 
     try:
         subprocess.run(
@@ -1181,7 +1189,11 @@ def nudge_pane(
     Returns:
         A :class:`PoolAction` with ``action="nudge"`` describing the outcome.
     """
-    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+    target = (
+        _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+        if runtime_dir is not None
+        else f"{tmux_session}:{lane_id}"
+    )
     cmd = f"/start-task {packet_id}"
 
     try:
