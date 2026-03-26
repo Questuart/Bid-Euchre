@@ -659,6 +659,11 @@ def import_project_jsonl(
     # Recompute rollups
     _write_rollups(resolved_output)
 
+    # Force mode rebuilds the JSONL-derived portion of the usage store, which
+    # invalidates any previous attributions tied to those records.
+    if force:
+        attribute_sessions(output_dir=resolved_output)
+
     return ProjectImportResult(
         sessions_imported=imported,
         sessions_skipped=skipped,

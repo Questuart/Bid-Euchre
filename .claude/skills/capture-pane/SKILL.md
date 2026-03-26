@@ -11,7 +11,7 @@ and idle flag.
 
 ## Arguments
 
-- `[lane-id]` — Inspect a single lane (e.g., `author-a`, `flex-a`, `ops`)
+- `[lane-id]` — Inspect a single lane (e.g., `author-a`, `analyst-a`, `flex-a`, `ops`)
 - `--all` — Scan all lanes in one pass
 - `--stuck` — Show only lanes that appear stuck (permission prompts, stalled).
   Runs a full `--all` scan internally, then filters output to lanes where
@@ -34,9 +34,12 @@ Each lane maps to a tmux pane in the `steward` session:
 | Lane ID | Tmux Target | Window |
 |---------|-------------|--------|
 | orchestrator | steward:central-ops.1 | central-ops |
-| analyst | steward:central-ops.2 | central-ops |
-| ops | steward:central-ops.3 | central-ops |
-| review | steward:central-ops.4 | central-ops |
+| ops | steward:central-ops.2 | central-ops |
+| review | steward:central-ops.3 | central-ops |
+| analyst-a | steward:analyst.1 | analyst |
+| analyst-b | steward:analyst.2 | analyst |
+| analyst-c | steward:analyst.3 | analyst |
+| analyst-d | steward:analyst.4 | analyst |
 | author-a | steward:platform.1 | platform |
 | author-b | steward:platform.2 | platform |
 | author-c | steward:platform.3 | platform |
@@ -45,10 +48,9 @@ Each lane maps to a tmux pane in the `steward` session:
 | brws-author-b | steward:browser.2 | browser |
 | brws-author-c | steward:browser.3 | browser |
 | brws-author-d | steward:browser.4 | browser |
-| author-scratch | steward:scratch.1 | scratch |
-| flex-a | steward:scratch.2 | scratch |
-| flex-b | steward:scratch.3 | scratch |
-| flex-c | steward:scratch.4 | scratch |
+| flex-a | steward:flex.1 | flex |
+| flex-b | steward:flex.2 | flex |
+| flex-c | steward:flex.3 | flex |
 
 ## Workflow
 
@@ -144,6 +146,10 @@ Lane              Tokens   Stuck  Activity    Idle
 orchestrator      45k      no     WORKING     no
 ops               12k      no     IDLE        yes
 review            8k       no     COMPLETED   yes
+analyst-a         16k      no     WORKING     no
+analyst-b         0        no     EMPTY       yes
+analyst-c         0        no     EMPTY       yes
+analyst-d         0        no     EMPTY       yes
 author-a          125k     no     WORKING     no
 author-b          0        no     EMPTY       yes
 author-c          67k      YES    STUCK       no
@@ -152,12 +158,11 @@ brws-author-a     0        no     EMPTY       yes
 brws-author-b     0        no     EMPTY       yes
 brws-author-c     0        no     EMPTY       yes
 brws-author-d     0        no     EMPTY       yes
-author-scratch    0        no     EMPTY       yes
 flex-a            22k      no     WORKING     no
 flex-b            0        no     EMPTY       yes
 flex-c            0        no     EMPTY       yes
 
-Summary: 3 working, 2 idle, 1 stuck, 9 empty
+Summary: 4 working, 3 idle, 1 stuck, 10 empty
 Stuck lanes: author-c (permission prompt)
 ```
 
@@ -172,9 +177,12 @@ For efficiency, run all pane captures in one pass using this script:
 SESSION="steward"
 LANES=(
   "orchestrator:central-ops.1"
-  "analyst:central-ops.2"
-  "ops:central-ops.3"
-  "review:central-ops.4"
+  "ops:central-ops.2"
+  "review:central-ops.3"
+  "analyst-a:analyst.1"
+  "analyst-b:analyst.2"
+  "analyst-c:analyst.3"
+  "analyst-d:analyst.4"
   "author-a:platform.1"
   "author-b:platform.2"
   "author-c:platform.3"
@@ -183,14 +191,15 @@ LANES=(
   "brws-author-b:browser.2"
   "brws-author-c:browser.3"
   "brws-author-d:browser.4"
-  "author-scratch:scratch.1"
-  "flex-a:scratch.2"
-  "flex-b:scratch.3"
-  "flex-c:scratch.4"
+  "flex-a:flex.1"
+  "flex-b:flex.2"
+  "flex-c:flex.3"
 )
 
 # Detect the lane running this script so we can skip it.
 # CLAUDE_AGENT_NAME is set per-lane (e.g. "steward-flex-b").
+# The primary analyst worktree is named "steward-analyst" but maps to lane
+# "analyst-a", so normalise that special case before comparing lane IDs.
 # Fall back to parsing the worktree directory name.
 SELF_LANE=""
 if [[ -n "${CLAUDE_AGENT_NAME:-}" ]]; then
@@ -198,6 +207,10 @@ if [[ -n "${CLAUDE_AGENT_NAME:-}" ]]; then
   SELF_LANE="${CLAUDE_AGENT_NAME#steward-}"
 elif [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
   SELF_LANE="$(basename "$CLAUDE_PROJECT_DIR" | sed 's/.*steward-//')"
+fi
+
+if [[ "$SELF_LANE" == "analyst" ]]; then
+  SELF_LANE="analyst-a"
 fi
 
 for entry in "${LANES[@]}"; do
