@@ -213,9 +213,9 @@ def _build_game_context(
     ctx: dict[str, Any] = {
         "link_uuid": link_uuid,
         "match_status": state.status,
-        "phase": _game_phase(state),
         **visible,
     }
+    ctx["phase"] = _game_phase(state)
 
     # Fields only available from hand state (not in visible dict)
     if hand is not None:
@@ -468,7 +468,7 @@ async def game_page(request: Request, link_uuid: str):
                 },
             )
 
-        # Check for an active match
+        # Check for the latest match (active or complete)
         match_row = (
             session.query(Match)
             .filter_by(player_id=player.id, status="active")
@@ -477,7 +477,7 @@ async def game_page(request: Request, link_uuid: str):
         )
 
         if match_row is None:
-            # No active match — show model selection
+            # No usable match — show model selection
             ai_manager = _get_ai_manager(request)
             models = ai_manager.list_available()
             return templates.TemplateResponse(
@@ -491,12 +491,13 @@ async def game_page(request: Request, link_uuid: str):
                 },
             )
 
-        # Active match — show game board
+        # Active or completed match — restore current state
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
         state = _deserialize_state(engine, match_row.match_state_json)
         ctx = _build_game_context(engine, state, link_uuid)
         ctx["request"] = request
+        ctx["nickname"] = player.nickname
         return templates.TemplateResponse("game.html", ctx)
     finally:
         session.close()
@@ -712,10 +713,6 @@ async def submit_bid(
                 )
         elif current_hand is not None and current_hand.phase == "complete":
             _update_hand_row(hand_row, current_hand)
-            # If a new hand started after completion, ensure its row exists
-            new_hand = state.current_hand
-            if new_hand is not None and new_hand.deal_id != hand.deal_id:
-                _ensure_hand_row(session, match_row, new_hand, new_hand.deal_id)
         elif current_hand is not None:
             hand_row.hand_state_json = json.dumps(current_hand.to_dict())
 
@@ -808,12 +805,69 @@ async def submit_card(
         current_hand = state.current_hand
         if current_hand is not None and current_hand.phase == "complete":
             _update_hand_row(hand_row, current_hand)
-            # If a new hand started after completion, ensure its row exists
-            new_hand = state.current_hand
-            if new_hand is not None and new_hand.deal_id != hand.deal_id:
-                _ensure_hand_row(session, match_row, new_hand, new_hand.deal_id)
         elif current_hand is not None:
             hand_row.hand_state_json = json.dumps(current_hand.to_dict())
+
+        _update_match_row(match_row, state)
+        session.commit()
+
+        return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+    finally:
+        session.close()
+
+
+@router.post("/play/{link_uuid}/next-hand", response_class=HTMLResponse)
+async def next_hand(
+    request: Request,
+    link_uuid: str,
+):
+    """Advance from hand result to next hand."""
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        match_row = (
+            session.query(Match)
+            .filter_by(player_id=player.id, status="active")
+            .order_by(Match.created_at.desc())
+            .first()
+        )
+        if match_row is None:
+            raise HTTPException(status_code=404, detail="No active match")
+
+        ai_manager = _get_ai_manager(request)
+        engine = _build_engine(ai_manager, match_row.ai_model)
+        state = _deserialize_state(engine, match_row.match_state_json)
+
+        hand = state.current_hand
+        if hand is None:
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+
+        # Persist current hand before any hand transition
+        hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
+        if hand.phase == "complete":
+            _update_hand_row(hand_row, hand)
+
+        # Only start a new hand when we are paused on a completed hand
+        state = engine.advance_to_next_hand(state)
+
+        if state.current_hand is not None:
+            next_hand_row = _ensure_hand_row(
+                session,
+                match_row,
+                state.current_hand,
+                state.current_hand.deal_id,
+            )
+            if state.current_hand.deal_id != hand.deal_id:
+                _log_ai_decisions_after_advance(
+                    session,
+                    match_row,
+                    next_hand_row,
+                    engine,
+                    state,
+                )
 
         _update_match_row(match_row, state)
         session.commit()
