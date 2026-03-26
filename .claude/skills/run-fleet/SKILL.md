@@ -120,7 +120,8 @@ Rules:
 
 ## Analyst Routing
 
-Use `steward-analyst` when work needs deeper shaping before execution:
+Use analyst lanes (`analyst-a` through `analyst-d`) when work needs deeper
+shaping before execution:
 
 - new sub-plans or major plan refreshes
 - unclear implementation seams
@@ -128,6 +129,20 @@ Use `steward-analyst` when work needs deeper shaping before execution:
 - complex issue bundles that need richer evidence and PR decomposition
 - restart or end-of-run handoffs
 - plan/checkpoint/task-list drift relative to repo state
+
+**Dispatch method:** Use `task dispatch` for analyst lanes — they are fully
+registered in `KNOWN_AUTHOR_LANES` and support the same dispatch lifecycle as
+author lanes (auto-refresh, /clear, /start-task nudge). Do NOT fall back to
+raw `tmux send-keys` for analyst dispatch — this bypasses /clear, inbox
+tracking, and task lifecycle management.
+
+```bash
+# Correct: use task dispatch (same as author lanes)
+uv run python scripts/internal/ops.py task dispatch <packet_id> analyst-a --approve
+
+# Wrong: raw tmux send-keys (bypasses /clear and task lifecycle)
+tmux send-keys -t steward:analyst.1 "investigate X" Enter
+```
 
 Expected analyst outputs:
 
