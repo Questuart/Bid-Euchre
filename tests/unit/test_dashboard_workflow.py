@@ -53,6 +53,14 @@ class TestDashboardWorkflowStructure:
         pr_steps = [s for s in job["steps"] if "gh pr create" in str(s.get("run", ""))]
         assert len(pr_steps) >= 1, "Expected at least one step with 'gh pr create'"
 
+    def test_auto_merge_is_reasserted_for_existing_dashboard_prs(self) -> None:
+        """The workflow should queue auto-merge after every branch update."""
+        job = self.workflow["jobs"]["update-dashboard"]
+        step = next(s for s in job["steps"] if "gh pr create" in str(s.get("run", "")))
+        script = step["run"]
+        assert 'PR_NUMBER="$EXISTING"' in script
+        assert 'gh pr merge "$PR_NUMBER" --auto --squash --delete-branch' in script
+
     def test_dashboard_branch_is_not_main(self) -> None:
         """The commit target branch must not be 'main'."""
         job = self.workflow["jobs"]["update-dashboard"]

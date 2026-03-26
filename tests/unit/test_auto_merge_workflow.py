@@ -1,9 +1,9 @@
 """Regression tests for .github/workflows/auto-merge.yml structure.
 
-The auto-merge workflow enables GitHub auto-merge for owner-authored PRs.
-It fires on PR open/reopen/synchronize and retries after check suites
-complete. These tests verify the structural invariants that keep the
-workflow safe and correctly scoped.
+The auto-merge workflow enables GitHub auto-merge for owner-authored PRs
+and the auto-dashboard maintenance PRs. It fires on PR open/reopen/
+synchronize and retries after check suites complete. These tests verify
+the structural invariants that keep the workflow safe and correctly scoped.
 """
 
 from __future__ import annotations
@@ -36,11 +36,13 @@ class TestAutoMergeWorkflowStructure:
         cs_trigger = self.workflow[True]["check_suite"]
         assert "completed" in cs_trigger["types"]
 
-    def test_job_condition_gates_owner_for_pull_request(self) -> None:
-        """pull_request events must be gated to repo owner."""
+    def test_job_condition_gates_owner_and_dashboard_prs(self) -> None:
+        """pull_request events must allow the owner and auto-dashboard PRs."""
         job_if = self.jobs["enable-auto-merge"]["if"]
         assert "pull_request" in job_if
         assert "repository_owner" in job_if
+        assert "pull_request.head.ref" in job_if
+        assert "chore/auto-dashboard" in job_if
 
     def test_job_condition_gates_success_for_check_suite(self) -> None:
         """check_suite events must be gated to successful conclusions."""
@@ -66,13 +68,15 @@ class TestAutoMergeWorkflowStructure:
         assert "HEAD_SHA" in env
         assert "REPO_OWNER" in env
 
-    def test_check_suite_path_filters_owner_authored_prs(self) -> None:
-        """The check_suite retry path must filter to owner-authored PRs."""
+    def test_check_suite_path_filters_owner_and_dashboard_prs(self) -> None:
+        """The check_suite retry path must filter to eligible PRs only."""
         step = self.jobs["enable-auto-merge"]["steps"][0]
         script = step["run"]
-        # Must filter by author login matching repo owner
+        # Must filter by author login matching repo owner or the dashboard branch
         assert "author.login" in script
         assert "REPO_OWNER" in script
+        assert "headRefName" in script
+        assert "chore/auto-dashboard" in script
         # Must filter to open PRs targeting main
         assert "--state open" in script
         assert "--base main" in script

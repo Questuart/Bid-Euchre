@@ -14,11 +14,12 @@ permissions:
 jobs:
   enable-auto-merge:
     runs-on: ubuntu-latest
-    # pull_request events: must be owner-authored (gate immediately)
+    # pull_request events: owner-authored and auto-dashboard PRs are eligible
     # check_suite events: must have succeeded (eligibility checked in step)
     if: >-
       (github.event_name == 'pull_request' &&
-       github.event.pull_request.user.login == github.repository_owner)
+       (github.event.pull_request.user.login == github.repository_owner ||
+        startsWith(github.event.pull_request.head.ref, 'chore/auto-dashboard')))
       ||
       (github.event_name == 'check_suite' &&
        github.event.check_suite.conclusion == 'success')
@@ -45,12 +46,12 @@ jobs:
           elif [ "$EVENT_NAME" = "check_suite" ]; then
             echo "::group::Check suite completed for ${HEAD_SHA:0:12}"
 
-            # Find open, owner-authored PRs targeting main for this head SHA
+            # Find open, eligible PRs targeting main for this head SHA.
             prs=$(gh pr list \
               --state open \
               --base main \
-              --json number,author,headRefOid \
-              --jq ".[] | select(.headRefOid == \"${HEAD_SHA}\" and .author.login == \"${REPO_OWNER}\") | .number")
+              --json number,author,headRefName,headRefOid \
+              --jq ".[] | select(.headRefOid == \"${HEAD_SHA}\" and (.author.login == \"${REPO_OWNER}\" or (.headRefName | startswith(\"chore/auto-dashboard\")))) | .number")
 
             if [ -z "$prs" ]; then
               echo "No eligible open PRs found for SHA ${HEAD_SHA:0:12}"
