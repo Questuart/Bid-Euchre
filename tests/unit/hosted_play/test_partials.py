@@ -72,22 +72,23 @@ class ModelStub:
 class TestModelSelect:
     def test_renders_models_dropdown(self, env):
         models = [
-            ModelStub("heuristic", "Heuristic", "Rule-based"),
-            ModelStub("hybrid", "Hybrid", "Statistical bidder"),
+            ModelStub("olsa", "OLSa", "Action-value bidder"),
+            ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder"),
         ]
         tmpl = env.get_template("partials/model_select.html")
         html = tmpl.render(link_uuid="abc-123", nickname="Alice", models=models)
-        assert 'value="heuristic"' in html
-        assert "Heuristic" in html
-        assert 'value="hybrid"' in html
+        assert 'value="olsa"' in html
+        assert "OLSa" in html
+        assert 'value="bud_bot"' in html
+        assert "Bud Bot" in html
         assert "Alice" in html
         assert 'action="/play/abc-123/select-ai"' in html
 
     def test_renders_single_model(self, env):
-        models = [ModelStub("heuristic", "Heuristic", "Rule-based")]
+        models = [ModelStub("olsa", "OLSa", "Action-value bidder")]
         tmpl = env.get_template("partials/model_select.html")
         html = tmpl.render(link_uuid="x", nickname="Bob", models=models)
-        assert 'value="heuristic"' in html
+        assert 'value="olsa"' in html
         assert "Start Match" in html
 
 
@@ -533,21 +534,16 @@ class TestTrick:
 
 
 class TestGameControls:
-    def test_game_controls_render_pace_and_help(self, env):
+    def test_game_controls_render_help(self, env):
         tmpl = env.get_template("partials/game_controls.html")
         html = tmpl.render()
-        assert 'id="pace-profile"' in html
-        assert 'name="pace_profile"' in html
-        assert '<option value="off">' in html
-        assert '<option value="fast">' in html
-        assert '<option value="normal"' in html
-        assert '<option value="slow">' in html
         assert "Help: Bid Euchre Rules" in html
-        assert "bowers" in html
-        assert "Moon bid" in html
-        assert "Loner" in html
+        assert "double deck" in html
+        assert "40-card" in html
+        assert "Bowers" in html
+        assert "Moon and loner" in html
         assert "High/Low" in html
-        assert "Tricks" in html
+        assert "+52 or -52" in html
 
 
 # ---------------------------------------------------------------------------
@@ -1331,7 +1327,7 @@ class TestAccessibilityForms:
         assert 'aria-label="Set your nickname"' in html
 
     def test_model_select_has_region(self, env):
-        models = [ModelStub("heuristic", "Heuristic", "Rule-based")]
+        models = [ModelStub("olsa", "OLSa", "Action-value bidder")]
         tmpl = env.get_template("partials/model_select.html")
         html = tmpl.render(link_uuid="x", nickname="Bob", models=models)
         assert 'role="region"' in html

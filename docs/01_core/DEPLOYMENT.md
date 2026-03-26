@@ -67,9 +67,10 @@ full contract with defaults. The authoritative source is `web/config.py`
 | `SECRET_KEY` | Yes | Random per-process (dev) | Cookie/session signing |
 | `ALLOWED_ORIGINS` | No | `*` | Comma-separated CORS allowlist |
 | `APP_URL` | No | `http://localhost:8000` | Public base URL for share links |
-| `DEFAULT_MODEL_ID` | No | `olsa` | AI bidding model (falls back to `heuristic` if artifact unavailable) |
+| `DEFAULT_MODEL_ID` | No | `olsa` | AI bidding model (`olsa` or `bud_bot`) |
 | `MODELS_DIR` | No | None | Directory for model artifacts |
-| `OLSA_ARTIFACT` | No | None | Path to OLSa (ActionValueBidder) artifact |
+| `OLSA_ARTIFACT` | No | `data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json` | Path to OLSa (ActionValueBidder) artifact |
+| `GBT_ARTIFACT` | No | `data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json` | Path to Bud Bot (GBTActionValueBidder) artifact |
 | `DEBUG` | No | `false` | Enable debug mode (`1`/`true`/`yes`) |
 | `PORT` | No | `8000` | Server bind port (Render sets this) |
 

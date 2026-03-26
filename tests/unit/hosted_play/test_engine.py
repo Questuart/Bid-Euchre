@@ -25,6 +25,7 @@ Moon/loner tests from sub-plan SP-1-02:
 
 from __future__ import annotations
 
+import random
 from typing import List, Optional, Tuple
 
 import pytest
@@ -950,6 +951,15 @@ class TestAIActionEvents:
 
 class TestMatchDeterminism:
     """Same seed + config = identical results."""
+
+    def test_opening_dealer_derived_from_seed(self) -> None:
+        engine = MatchEngine(
+            bidding_policy=FixedBidder(5, "S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        state = engine.start_match(SEED, "heuristic")
+        assert state.dealer_seat == random.Random(SEED).randrange(4)
 
     def test_same_seed_same_result(self) -> None:
         engine = MatchEngine(

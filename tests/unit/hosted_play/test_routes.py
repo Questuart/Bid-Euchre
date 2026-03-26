@@ -66,7 +66,7 @@ def _set_nickname(client: TestClient, link_uuid: str, nickname: str = "Tester"):
     )
 
 
-def _select_ai(client: TestClient, link_uuid: str, model_id: str = "heuristic"):
+def _select_ai(client: TestClient, link_uuid: str, model_id: str = "olsa"):
     """Select AI model and return the response."""
     return client.post(
         f"/play/{link_uuid}/select-ai",
@@ -168,7 +168,7 @@ class TestSelectAI:
     def test_select_ai_creates_match(self, client, app):
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
-        resp = _select_ai(client, link_uuid, "heuristic")
+        resp = _select_ai(client, link_uuid, "olsa")
         assert resp.status_code == 200
 
         # Verify match exists in DB
@@ -178,7 +178,7 @@ class TestSelectAI:
         match_row = session.query(Match).filter_by(player_id=player.id).first()
         assert match_row is not None
         assert match_row.status == "active"
-        assert match_row.ai_model == "heuristic"
+        assert match_row.ai_model == "olsa"
 
         # Verify match state has a current hand
         state_data = json.loads(match_row.match_state_json)
@@ -647,8 +647,8 @@ def allpass_client(config):
     application = create_app(config=config)
     with TestClient(application) as c:
         ai_manager: AIManager = application.state.ai_manager
-        info = ai_manager.available_models["heuristic"]
-        ai_manager.available_models["heuristic"] = ModelInfo(
+        info = ai_manager.available_models["olsa"]
+        ai_manager.available_models["olsa"] = ModelInfo(
             id=info.id,
             name=info.name,
             description=info.description,
@@ -676,8 +676,8 @@ def regular_ai_client(config):
     application = create_app(config=config)
     with TestClient(application) as c:
         ai_manager: AIManager = application.state.ai_manager
-        info = ai_manager.available_models["heuristic"]
-        ai_manager.available_models["heuristic"] = ModelInfo(
+        info = ai_manager.available_models["olsa"]
+        ai_manager.available_models["olsa"] = ModelInfo(
             id=info.id,
             name=info.name,
             description=info.description,
@@ -1940,7 +1940,7 @@ class TestInviteCodeFlow:
         assert resp.status_code == 200
 
         # Select AI → game board rendered
-        resp = _select_ai(client, link_uuid, "heuristic")
+        resp = _select_ai(client, link_uuid, "olsa")
         assert resp.status_code == 200
 
     def test_htmx_enter_code_returns_hx_redirect(self, client, app):

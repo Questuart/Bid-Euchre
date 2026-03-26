@@ -29,7 +29,17 @@ class TestHostedPlayConfigDefaults:
 
     def test_default_olsa_artifact(self):
         cfg = HostedPlayConfig()
-        assert cfg.olsa_artifact is None
+        assert (
+            cfg.olsa_artifact
+            == "data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json"
+        )
+
+    def test_default_gbt_artifact(self):
+        cfg = HostedPlayConfig()
+        assert (
+            cfg.gbt_artifact
+            == "data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json"
+        )
 
     def test_default_debug(self):
         cfg = HostedPlayConfig()
@@ -112,6 +122,7 @@ class TestFromEnv:
             "APP_URL",
             "DEFAULT_MODEL_ID",
             "OLSA_ARTIFACT",
+            "GBT_ARTIFACT",
             "MODELS_DIR",
             "DEBUG",
         ):
@@ -131,6 +142,11 @@ class TestFromEnv:
         monkeypatch.setenv("OLSA_ARTIFACT", "/path/to/artifact.json")
         cfg = HostedPlayConfig.from_env()
         assert cfg.olsa_artifact == "/path/to/artifact.json"
+
+    def test_reads_gbt_artifact(self, monkeypatch):
+        monkeypatch.setenv("GBT_ARTIFACT", "/path/to/gbt.json")
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.gbt_artifact == "/path/to/gbt.json"
 
     def test_debug_true_values(self, monkeypatch):
         for val in ("1", "true", "yes", "True", "YES"):
@@ -200,7 +216,14 @@ class TestFromEnv:
         assert cfg.allowed_origins == ["*"]
         assert cfg.app_url == "http://localhost:8000"
         assert cfg.default_model_id == "olsa"
-        assert cfg.olsa_artifact is None
+        assert (
+            cfg.olsa_artifact
+            == "data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json"
+        )
+        assert (
+            cfg.gbt_artifact
+            == "data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json"
+        )
         assert cfg.models_dir is None
         assert cfg.debug is False
 
@@ -222,6 +245,7 @@ class TestOverrideGetConfig:
             "APP_URL",
             "DEFAULT_MODEL_ID",
             "OLSA_ARTIFACT",
+            "GBT_ARTIFACT",
             "MODELS_DIR",
             "DEBUG",
         ):

@@ -111,7 +111,7 @@ def live_server(_db_path: str) -> Generator[str, None, None]:
         secret_key="test-browser-secret",
         allowed_origins=["*"],
         app_url=f"http://127.0.0.1:{port}",
-        default_model_id="heuristic",
+        default_model_id="olsa",
         debug=True,
     )
 

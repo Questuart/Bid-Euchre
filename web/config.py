@@ -17,6 +17,7 @@ Variable                                   Purpose
 ``MODELS_DIR``                             Directory containing model artifacts
 ``DEFAULT_MODEL_ID``                       Default AI model identifier
 ``OLSA_ARTIFACT``                          Path to OLSa (ActionValueBidder) artifact file
+``GBT_ARTIFACT``                           Path to Bud Bot (GBTActionValueBidder) artifact file
 ``DEBUG``                                  Enable debug mode (``1``/``true``/``yes``)
 =========================================  =============================================
 """
@@ -26,6 +27,9 @@ from __future__ import annotations
 import os
 import secrets
 from dataclasses import dataclass, field
+
+_DEFAULT_OLSA_ARTIFACT = "data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json"
+_DEFAULT_GBT_ARTIFACT = "data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json"
 
 
 def _default_secret_key() -> str:
@@ -65,7 +69,8 @@ class HostedPlayConfig:
 
     # AI model roster ---------------------------------------------------
     default_model_id: str = "olsa"
-    olsa_artifact: str | None = None
+    olsa_artifact: str | None = _DEFAULT_OLSA_ARTIFACT
+    gbt_artifact: str | None = _DEFAULT_GBT_ARTIFACT
     models_dir: str | None = None
 
     # App ---------------------------------------------------------------
@@ -82,7 +87,8 @@ class HostedPlayConfig:
             allowed_origins=_parse_origins(raw_origins),
             app_url=os.environ.get("APP_URL", "http://localhost:8000"),
             default_model_id=os.environ.get("DEFAULT_MODEL_ID", "olsa"),
-            olsa_artifact=os.environ.get("OLSA_ARTIFACT"),
+            olsa_artifact=os.environ.get("OLSA_ARTIFACT", _DEFAULT_OLSA_ARTIFACT),
+            gbt_artifact=os.environ.get("GBT_ARTIFACT", _DEFAULT_GBT_ARTIFACT),
             models_dir=os.environ.get("MODELS_DIR"),
             debug=os.environ.get("DEBUG", "").lower() in ("1", "true", "yes"),
         )

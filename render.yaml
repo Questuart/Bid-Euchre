@@ -30,4 +30,4 @@ services:
       - key: MODELS_DIR
         value: /app/models
       - key: DEFAULT_MODEL_ID
-        value: heuristic
+        value: olsa
