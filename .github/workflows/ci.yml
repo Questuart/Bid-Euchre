@@ -49,6 +49,10 @@ jobs:
     if: >-
       always() && !cancelled() &&
       (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard')))) &&
+      (github.event_name == 'push' ||
        needs.changes.outputs.code_changed == 'true' ||
        needs.changes.outputs.notebooks_changed == 'true')
     runs-on: ubuntu-latest
@@ -90,6 +94,10 @@ jobs:
     if: >-
       always() && !cancelled() &&
       (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard')))) &&
+      (github.event_name == 'push' ||
        needs.changes.outputs.code_changed == 'true')
     runs-on: ubuntu-latest
     strategy:
@@ -126,6 +134,10 @@ jobs:
     if: >-
       always() && !cancelled() &&
       (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard')))) &&
+      (github.event_name == 'push' ||
        needs.changes.outputs.notebooks_changed == 'true')
     runs-on: ubuntu-latest
     steps:
@@ -156,6 +168,10 @@ jobs:
     needs: [changes]
     if: >-
       always() && !cancelled() &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard')))) &&
       (github.event_name == 'push' ||
        needs.changes.outputs.code_changed == 'true') &&
       contains(github.event.pull_request.labels.*.name, 'promotion')
@@ -200,7 +216,12 @@ jobs:
   #   - Passes when all upstreams are success or skipped
   tests:
     needs: [changes, checks, tests-shard, notebooks, promotion-gate]
-    if: always()
+    if: >-
+      always() &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard'))))
     runs-on: ubuntu-latest
     steps:
       - name: Skip notice

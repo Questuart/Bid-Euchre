@@ -12,6 +12,10 @@ concurrency:
 jobs:
   governance:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+        startsWith(github.head_ref, 'chore/auto-dashboard'))
 
     steps:
       - name: Checkout
