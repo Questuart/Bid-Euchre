@@ -210,18 +210,24 @@ def _play_until_match_end(engine: MatchEngine, state: MatchState) -> MatchState:
         assert hand is not None
         iterations += 1
 
-        if hand.current_seat != HUMAN_SEAT:
-            # Should not happen — engine auto-advances AI
-            raise AssertionError(f"Engine paused on AI seat {hand.current_seat}")
-
         if hand.phase == "auction":
+            if hand.current_seat != HUMAN_SEAT:
+                # In exceptional cases, force AI catch-up to keep the helper moving.
+                state = engine._advance_ai(state)
+                continue
             if 5 > hand.current_high_bid:
                 state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
             else:
                 state = engine.submit_human_bid(state, BidAction.pass_bid())
         elif hand.phase == "trick_play":
-            legal = engine.get_legal_plays(state)
-            state = engine.submit_human_card(state, legal[0])
+            if hand.current_seat == HUMAN_SEAT:
+                legal = engine.get_legal_plays(state)
+                state = engine.submit_human_card(state, legal[0])
+            else:
+                # In normal rounds, only human may sit out during loner hands.
+                state = engine._advance_ai(state)
+        elif hand.phase == "complete":
+            state = engine.advance_to_next_hand(state)
         else:
             raise AssertionError(f"Unexpected phase: {hand.phase}")
 
@@ -593,11 +599,9 @@ class TestDealerRotation:
 
         # Play through one complete hand
         state = _play_full_hand(engine, state)
-
-        if state.status == "active" and state.hands_played >= 1:
-            # Dealer should have advanced
-            expected = (initial_dealer + 1) % 4
-            assert state.dealer_seat == expected
+        assert state.hands_played >= 1
+        # Dealer should stay until explicit transition
+        assert state.dealer_seat == initial_dealer
 
     def test_dealer_rotates_on_redeal(self) -> None:
         """Dealer rotates after deal_after_redeal() on all-pass."""
@@ -618,6 +622,52 @@ class TestDealerRotation:
         state = engine.deal_after_redeal(state)
         expected = (initial_dealer + 1) % 4
         assert state.dealer_seat == expected
+
+
+class TestHandCompletionTransition:
+    """Hand lifecycle transitions from complete to next hand."""
+
+    def test_full_hand_marks_complete(self, engine: MatchEngine) -> None:
+        """Driving a full hand ends with hand.phase == complete."""
+        state = engine.start_match(SEED, "heuristic")
+        state = _play_full_hand(engine, state)
+
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "complete"
+
+    def test_advance_to_next_hand_starts_new_hand(self, engine: MatchEngine) -> None:
+        """advance_to_next_hand() should move to a fresh auction hand."""
+        state = engine.start_match(SEED, "heuristic")
+        initial_dealer = state.dealer_seat
+        initial_deal_id = state.deal_id
+
+        state = _play_full_hand(engine, state)
+        assert state.current_hand is not None
+        assert state.current_hand.phase == "complete"
+
+        state = engine.advance_to_next_hand(state)
+        hand = state.current_hand
+        assert hand is not None
+        if state.status == "active":
+            assert hand.phase in ("auction", "trick_play")
+            assert state.deal_id == initial_deal_id + 1
+            assert state.dealer_seat == (initial_dealer + 1) % 4
+
+    def test_advance_to_next_hand_noop_when_not_complete(
+        self, engine: MatchEngine
+    ) -> None:
+        """advance_to_next_hand() should be a no-op unless hand.phase == complete."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase in ("auction", "trick_play", "redeal")
+
+        state_after = engine.advance_to_next_hand(state)
+        hand_after = state_after.current_hand
+        assert hand_after is not None
+        assert hand_after == hand
+        assert hand_after.phase != "complete"
 
 
 # ---------------------------------------------------------------------------

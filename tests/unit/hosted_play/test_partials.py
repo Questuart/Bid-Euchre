@@ -157,6 +157,21 @@ class TestBidPanel:
         assert "High (no trump)" in html
         assert "Low (no trump)" in html
 
+    def test_moon_and_loner_labels_show_points(self, env):
+        """Moon and loner labels should display the point values shown to players."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert "Moon (20)" in html
+        assert "Loner (40)" in html
+        assert "Moon (10)" not in html
+        assert "Loner (10)" not in html
+
     def test_auction_transcript_shows_entries(self, env):
         tmpl = env.get_template("partials/bid_panel.html")
         html = tmpl.render(
@@ -752,6 +767,53 @@ class TestHandResult:
         assert "result--moon" not in html
         assert "result--loner" not in html
         assert "Made it!" in html
+
+    def test_moon_result_shows_exchange_summary(self, env):
+        """Moon results include exchange card summary."""
+        html = env.get_template("partials/hand_result.html").render(
+            link_uuid="abc-123",
+            winning_bid=10,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            bid_type="moon",
+            tricks_team0=10,
+            tricks_team1=0,
+            points_team0=20,
+            points_team1=0,
+            score_human=20,
+            score_ai=0,
+            hands_played=1,
+            exchange_given=[["S", "10"], ["D", "J"]],
+            exchange_received=[["H", "Q"], ["C", "A"]],
+        )
+        assert "Moon exchange" in html
+        assert "Given 2 to partner" in html
+        assert "Received 2 from partner" in html
+        assert "♠ 10" in html
+        assert "♦ J" in html
+        assert "♥ Q" in html
+        assert "♣ A" in html
+
+    def test_hand_result_shows_next_hand_button(self, env):
+        """Hand results should include an action to advance to the next hand."""
+        html = env.get_template("partials/hand_result.html").render(
+            link_uuid="abc-123",
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert 'hx-post="/play/abc-123/next-hand"' in html
+        assert 'hx-target="#game-board"' in html
+        assert "Next Hand" in html
 
     def test_animated_class_present(self, env):
         """All hand results have the animated class for slide-in."""

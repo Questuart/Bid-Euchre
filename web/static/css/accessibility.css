@@ -135,6 +135,44 @@ select:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
+   3b. Touch Target Minimums for Narrow Mobile Layouts
+   --------------------------------------------------------------------------
+   Pointer media queries are not always reliable in Playwright emulation, so we
+   enforce minimum touch targets at narrow breakpoints directly as well.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 375px) {
+    .card-form button.card,
+    .card--legal,
+    .bid-controls button,
+    .pass-btn,
+    #nickname-form button,
+    #model-select button,
+    #invite-code-form button,
+    .btn,
+    button[type='submit'] {
+        min-height: 44px;
+    }
+
+    .bid-controls button,
+    .pass-btn,
+    #nickname-form button,
+    #model-select button,
+    .btn,
+    button[type='submit'],
+    #invite-code-form button {
+        padding-top: 0.65rem;
+        padding-bottom: 0.65rem;
+    }
+
+    .card-form button.card,
+    .card--legal {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+/* --------------------------------------------------------------------------
    4. Reduced Motion — Extended Coverage
    --------------------------------------------------------------------------
    Supplements the base reduced-motion rules in style.css.
