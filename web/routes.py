@@ -30,6 +30,12 @@ from .middleware import check_match_limit
 
 router = APIRouter()
 
+_AI_MODEL_DISPLAY_NAMES = {
+    "olsa": "OLSa",
+    "bud_bot": "Bud Bot",
+}
+_PLAY_POLICY_DISPLAY_NAME = "Glutton"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -426,6 +432,8 @@ def _build_game_context(
     ctx: dict[str, Any] = {
         "link_uuid": link_uuid,
         "match_status": state.status,
+        "ai_model_name": _AI_MODEL_DISPLAY_NAMES.get(state.ai_model, state.ai_model),
+        "play_policy_name": _PLAY_POLICY_DISPLAY_NAME,
         **visible,
     }
     ctx["phase"] = _display_phase(state)

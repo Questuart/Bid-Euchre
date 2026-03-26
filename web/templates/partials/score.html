@@ -14,6 +14,8 @@
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set strategy_model_name = ai_model_name | default(None, true) %}
+{% set strategy_play_name = play_policy_name | default("Glutton", true) %}
 
 <div id="score-bar" class="score-bar" role="status" aria-label="Match score and hand information" aria-live="polite">
     <div class="score-section" aria-label="Match score: You {{ score_human }}, AI {{ score_ai }}">
@@ -63,6 +65,14 @@
     {% elif phase == "auction" %}
     <div class="contract-info">
         <span>Auction in progress</span>
+    </div>
+    {% endif %}
+
+    {% if strategy_model_name %}
+    <div class="strategy-info" aria-label="Current browser AI strategy">
+        <span>Strategy: {{ strategy_model_name }} bidding</span>
+        <span class="info-separator" aria-hidden="true">&middot;</span>
+        <span>Card play: {{ strategy_play_name }}</span>
     </div>
     {% endif %}
 
