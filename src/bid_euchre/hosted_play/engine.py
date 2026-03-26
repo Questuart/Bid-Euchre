@@ -222,7 +222,7 @@ class MatchEngine:
         """Return state visible to the human player.
 
         Includes: own hand, current trick, completed tricks, scores, auction
-        transcript, phase, bid_type, sitting_out_seat.
+        transcript, phase, bid_type, sitting_out_seat, exchange cards.
         Excludes: other players' hands.
         """
         hand = state.current_hand
@@ -248,6 +248,8 @@ class MatchEngine:
         result["trump"] = hand.trump
         result["bid_type"] = hand.bid_type
         result["sitting_out_seat"] = hand.sitting_out_seat
+        result["exchange_given"] = hand.exchange_given
+        result["exchange_received"] = hand.exchange_received
         result["current_trick"] = (
             None
             if hand.current_trick is None
@@ -629,9 +631,22 @@ class MatchEngine:
             state.winner = "human"
             return state
 
-        # Deal next hand
+        # Advance to the next hand when the match is still active.
         state.dealer_seat = (state.dealer_seat + 1) % _NUM_PLAYERS
         state.deal_id += 1
         state = self._deal_new_hand(state)
+        state = self._advance_ai(state)
 
+        return state
+
+    def advance_to_next_hand(self, state: MatchState) -> MatchState:
+        """Advance from a completed hand to the next hand and auto-play AI."""
+        hand = state.current_hand
+        if hand is None or hand.phase != "complete" or state.status != "active":
+            return state
+
+        state.dealer_seat = (state.dealer_seat + 1) % _NUM_PLAYERS
+        state.deal_id += 1
+        state = self._deal_new_hand(state)
+        state = self._advance_ai(state)
         return state
