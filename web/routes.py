@@ -196,6 +196,109 @@ def _game_phase(state) -> str:
     return hand.phase
 
 
+def _format_auction_event(seat: int | None, action: dict[str, Any]) -> str:
+    """Format a single auction event for the action rail."""
+    seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+    seat_label = seat_labels.get(int(seat), f"Seat {seat}")
+
+    if action.get("action") == "pass":
+        return f"{seat_label} passed"
+
+    bid_type = action.get("bid_type", "regular")
+    if bid_type == "moon":
+        return f"{seat_label} bid Moon"
+    if bid_type == "loner":
+        return f"{seat_label} bid Loner"
+
+    # Regular bid
+    n = action.get("n", 0)
+    contract = action.get("contract", "")
+    if contract == "HIGH":
+        contract_label = "High"
+    elif contract == "LOW":
+        contract_label = "Low"
+    else:
+        contract_label = str(contract)
+    return f"{seat_label} bid {n} {contract_label}"
+
+
+def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
+    """Build an event feed from auction/trick/redeal transitions.
+
+    The list is capped to the most recent 12 entries for compact rendering.
+    """
+    hand = state.current_hand
+    if hand is None:
+        return []
+
+    seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+    events: list[dict[str, str]] = []
+
+    # Auction activity (in order).
+    for entry in visible.get("auction", []):
+        events.append(
+            {
+                "kind": "auction",
+                "text": _format_auction_event(entry.get("seat"), entry),
+            }
+        )
+
+    # Completed tricks so the user can inspect a simple event log.
+    for idx, trick in enumerate(visible.get("completed_tricks", []), start=1):
+        winner = trick.get("winner")
+        if winner is None:
+            continue
+        winner_label = seat_labels.get(int(winner), f"Seat {winner}")
+        events.append(
+            {
+                "kind": "trick",
+                "text": f"{winner_label} won trick #{idx}",
+            }
+        )
+
+    # Redeal transition.
+    if hand.phase == "redeal":
+        events.append(
+            {"kind": "system", "text": "All players passed; redeal starting."}
+        )
+
+    # Hand-complete outcomes (compact summary).
+    if hand.phase == "complete":
+        bidder = seat_labels.get(hand.bidder_seat, f"Seat {hand.bidder_seat}")
+        if hand.contract_type == "suit" and hand.trump is not None:
+            contract = hand.trump
+        elif hand.contract_type == "high":
+            contract = "High"
+        elif hand.contract_type == "low":
+            contract = "Low"
+        elif hand.winning_bid is None:
+            contract = "No contract"
+        else:
+            contract = str(hand.winning_bid)
+
+        bid_type = hand.bid_type
+        if bid_type == "moon":
+            contract_label = "Moon"
+        elif bid_type == "loner":
+            contract_label = "Loner"
+        elif hand.winning_bid is None:
+            contract_label = "No contract"
+        else:
+            contract_label = f"{hand.winning_bid} {contract}"
+
+        events.append(
+            {
+                "kind": "system",
+                "text": (
+                    f"Hand complete: {bidder} made {contract_label}; "
+                    f"scores {state.score_human} vs {state.score_ai}"
+                ),
+            }
+        )
+
+    return events[-12:]
+
+
 def _build_game_context(
     engine: MatchEngine,
     state,
@@ -224,6 +327,7 @@ def _build_game_context(
         ctx["current_high_bid"] = hand.current_high_bid
         ctx["points_team0"] = hand.points_team0
         ctx["points_team1"] = hand.points_team1
+        ctx["action_rail"] = _build_action_rail(visible, state)
 
         # Legal plays for the hand partial
         if hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
@@ -245,6 +349,7 @@ def _build_game_context(
         ctx["opp_left_count"] = 0
         ctx["partner_count"] = 0
         ctx["opp_right_count"] = 0
+        ctx["action_rail"] = []
 
     return ctx
 
@@ -468,10 +573,10 @@ async def game_page(request: Request, link_uuid: str):
                 },
             )
 
-        # Check for the latest match (active or complete)
+        # Show the latest match for this player, including completed matches.
         match_row = (
             session.query(Match)
-            .filter_by(player_id=player.id, status="active")
+            .filter_by(player_id=player.id)
             .order_by(Match.created_at.desc())
             .first()
         )

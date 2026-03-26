@@ -143,7 +143,9 @@
           action="/play/{{ link_uuid | default("") }}/next-hand"
           hx-post="/play/{{ link_uuid | default("") }}/next-hand"
           hx-target="#game-board"
+          hx-swap="innerHTML"
+          class="hand-result-controls"
           aria-label="Start next hand">
-        <button type="submit" class="btn btn--play-again">Next Hand</button>
+        <button type="submit" class="btn btn--next-hand">Next Hand</button>
     </form>
 </div>

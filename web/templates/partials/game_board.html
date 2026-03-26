@@ -23,6 +23,21 @@
     <div class="ai-hands-row">
         {# Left opponent (seat 1) #}
         <div class="ai-hand-block ai-hand-block--edge">
+            <div class="ai-seat-label">
+                {{ "AI Left" }}
+                {% if dealer_seat == 1 %}
+                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                {% endif %}
+                {% if bidder_seat == 1 %}
+                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                {% endif %}
+                {% if current_seat == 1 %}
+                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                {% endif %}
+                {% if sitting_out_seat == 1 %}
+                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                {% endif %}
+            </div>
             <div class="ai-hand">
                 {% for _ in range(opp_left_count | default(0)) %}
                 <div class="card-back"></div>
@@ -33,6 +48,21 @@
 
         {# Partner (seat 2) #}
         <div class="ai-hand-block ai-hand-block--middle">
+            <div class="ai-seat-label">
+                {{ "AI Partner" }}
+                {% if dealer_seat == 2 %}
+                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                {% endif %}
+                {% if bidder_seat == 2 %}
+                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                {% endif %}
+                {% if current_seat == 2 %}
+                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                {% endif %}
+                {% if sitting_out_seat == 2 %}
+                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                {% endif %}
+            </div>
             <div class="ai-hand">
                 {% for _ in range(partner_count | default(0)) %}
                 <div class="card-back"></div>
@@ -43,6 +73,21 @@
 
         {# Right opponent (seat 3) #}
         <div class="ai-hand-block ai-hand-block--edge">
+            <div class="ai-seat-label">
+                {{ "AI Right" }}
+                {% if dealer_seat == 3 %}
+                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                {% endif %}
+                {% if bidder_seat == 3 %}
+                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                {% endif %}
+                {% if current_seat == 3 %}
+                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                {% endif %}
+                {% if sitting_out_seat == 3 %}
+                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                {% endif %}
+            </div>
             <div class="ai-hand">
                 {% for _ in range(opp_right_count | default(0)) %}
                 <div class="card-back"></div>
@@ -65,5 +110,7 @@
 
     {# Score bar — always shown during active play #}
     {% include "partials/score.html" %}
+
+    {% include "partials/action_rail.html" %}
 
 {% endif %}

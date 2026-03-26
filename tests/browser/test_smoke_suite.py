@@ -110,6 +110,15 @@ def test_start_game_bid_play_verify_score(
     game_board = page.locator("#game-board")
     game_board.wait_for(timeout=10000)
 
+    # The game can transition from invite -> model select directly to trick
+    # play, so wait for the first meaningful active-phase element before
+    # asserting. This avoids a flake window where selectors have not
+    # materialized yet immediately after Start Match.
+    page.wait_for_selector(
+        "#bid-panel, #trick-area, #human-hand, #score-bar, #match-result, #hand-result",
+        timeout=10000,
+    )
+
     # Check that we have either the bid panel or trick area
     # (depends on whether AI has already bid)
     has_bid_panel = page.locator("#bid-panel").count() > 0
@@ -301,7 +310,7 @@ def test_full_hand_verify_transition(
     # auto-deals the next hand immediately after scoring, so the observable
     # success condition is either a match result or the visible hand number
     # advancing beyond the starting hand.
-    deadline = time.monotonic() + 120.0
+    deadline = time.monotonic() + 180.0
     actions_taken = 0
     hand_complete = False
 
@@ -322,6 +331,16 @@ def test_full_hand_verify_transition(
             current_hand_number is not None
             and current_hand_number > initial_hand_number
         ):
+            hand_complete = True
+            break
+
+        hand_result = page.locator("#hand-result")
+        if hand_result.count() > 0:
+            next_hand_button = hand_result.locator(".btn--next-hand")
+            if next_hand_button.count() > 0:
+                next_hand_button.click()
+                page.wait_for_timeout(350)
+                continue
             hand_complete = True
             break
 

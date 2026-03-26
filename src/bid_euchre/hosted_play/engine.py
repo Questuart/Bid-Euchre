@@ -631,6 +631,9 @@ class MatchEngine:
             state.winner = "human"
             return state
 
+        # Keep the hand complete so the game UI can render the hand_result.
+        # The next hand is only started when the caller explicitly advances via
+        # /next-hand.
         return state
 
     def advance_to_next_hand(self, state: MatchState) -> MatchState:

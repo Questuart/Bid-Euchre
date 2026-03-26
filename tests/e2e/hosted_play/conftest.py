@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def base_url() -> str:
     """Base URL for the local test server.
 
