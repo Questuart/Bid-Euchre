@@ -1736,6 +1736,35 @@ class TestMonitorReconcileWiring:
         # No fleet status file should exist.
         assert load_fleet_status(tmp_path) is None
 
+    def test_cli_monitor_rejects_naive_now_override(self, tmp_path: Path):
+        """CLI monitor requires a timezone-aware --now override."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/internal/ops.py",
+                "--runtime-dir",
+                str(tmp_path),
+                "monitor",
+                "--skip-pr-check",
+                "--no-notify",
+                "--no-recovery",
+                "--no-auto-dispatch",
+                "--now",
+                "2026-03-25T12:00:00",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        assert result.returncode == 2
+        assert "--now must include a timezone offset" in result.stderr
+        assert load_fleet_status(tmp_path) is None
+
     def test_cli_monitor_reads_task_packets_from_task_queue_subdir(
         self, tmp_path: Path
     ):
