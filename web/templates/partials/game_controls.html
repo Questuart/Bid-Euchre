@@ -8,6 +8,11 @@
                 copies of each card. Every hand deals all 40 cards, so each
                 player gets 10 cards and the hand lasts 10 tricks.
             </p>
+            <p>
+                <strong>Browser AI strategy:</strong> you choose the bidding
+                model, and every browser AI uses <strong>Glutton</strong> for
+                card play.
+            </p>
             <ul>
                 <li><strong>Auction:</strong> Bidding starts left of the dealer and goes once around the table. Pass is always legal. If all four players pass, the hand is redealt and the dealer rotates.</li>
                 <li><strong>Contracts:</strong> Regular bids name a trick target and either a trump suit or no-trump High/Low. Moon and loner are special level-10 bids.</li>
@@ -16,6 +21,17 @@
                 <li><strong>Duplicates:</strong> Because it is a double deck, identical cards can appear in the same trick. If identical winning cards tie, the first one played wins the trick.</li>
                 <li><strong>Moon and loner:</strong> Moon triggers a partner exchange before play. Loner makes the declarer's partner sit out the tricks.</li>
                 <li><strong>Scoring:</strong> Teams play a running match to +52 or -52. Bid makers score their bid result, defenders score the tricks they take.</li>
+            </ul>
+            <ul>
+                <li><strong>OLSa:</strong> A linear action-value bidder that scores each legal bid from hand and auction features.
+                    Strengths: steady, fast, and easier to reason about.
+                    Weaknesses: less flexible when the right bid depends on nonlinear combinations.</li>
+                <li><strong>Bud Bot:</strong> A gradient-boosted bidder that uses tree splits to spot stronger nonlinear bid patterns.
+                    Strengths: better at irregular auction spots and feature interactions.
+                    Weaknesses: harder to interpret and can feel less predictable.</li>
+                <li><strong>Glutton:</strong> The shared card-play policy. It plays for the strongest immediate legal move instead of planning the full hand.
+                    Strengths: decisive and good at cashing clear winners.
+                    Weaknesses: can spend trump or control too early and miss longer setups.</li>
             </ul>
         </div>
     </details>

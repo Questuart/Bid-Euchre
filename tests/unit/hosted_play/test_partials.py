@@ -83,6 +83,8 @@ class TestModelSelect:
         assert "Bud Bot" in html
         assert "Alice" in html
         assert 'action="/play/abc-123/select-ai"' in html
+        assert "Card play is always" in html
+        assert "Glutton" in html
 
     def test_renders_single_model(self, env):
         models = [ModelStub("olsa", "OLSa", "Action-value bidder")]
@@ -90,6 +92,7 @@ class TestModelSelect:
         html = tmpl.render(link_uuid="x", nickname="Bob", models=models)
         assert 'value="olsa"' in html
         assert "Start Match" in html
+        assert "Glutton" in html
 
 
 # ---------------------------------------------------------------------------
@@ -537,6 +540,47 @@ class TestGameControls:
         assert "Moon and loner" in html
         assert "High/Low" in html
         assert "+52 or -52" in html
+        assert "Browser AI strategy" in html
+        assert "OLSa" in html
+        assert "Bud Bot" in html
+        assert "Glutton" in html
+        assert "Strengths:" in html
+        assert "Weaknesses:" in html
+
+
+class TestMoonExchange:
+    def test_moon_exchange_selection_renders_form(self, env):
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            phase="moon_exchange",
+            link_uuid="abc-123",
+            turn_number=7,
+            bidder_seat=0,
+            human_hand=[["S", "A"], ["H", "K"], ["D", "Q"]],
+            exchange_step="mooner_to_partner",
+            exchange_received=[["S", "J"], ["C", "A"]],
+            exchange_given=None,
+        )
+        assert 'action="/play/abc-123/moon-exchange"' in html
+        assert 'name="card_indices"' in html
+        assert 'value="0"' in html
+        assert "Confirm Exchange" in html
+
+    def test_moon_exchange_review_renders_next(self, env):
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            phase="moon_exchange_review",
+            link_uuid="abc-123",
+            turn_number=8,
+            bidder_seat=0,
+            human_hand=[],
+            exchange_step=None,
+            exchange_received=[["S", "J"], ["C", "A"]],
+            exchange_given=[["D", "T"], ["H", "Q"]],
+        )
+        assert "Moon Exchange Complete" in html
+        assert 'action="/play/abc-123/next"' in html
+        assert "Next" in html
 
 
 class TestMoonExchange:
@@ -718,6 +762,26 @@ class TestScore:
         assert "contract-bid-type--moon" not in html
         assert "contract-bid-type--loner" not in html
         assert "6" in html
+
+    def test_strategy_line_shows_bidding_and_card_play(self, env):
+        tmpl = env.get_template("partials/score.html")
+        html = tmpl.render(
+            score_human=10,
+            score_ai=5,
+            hands_played=2,
+            contract_type=None,
+            trump=None,
+            winning_bid=None,
+            bidder_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            dealer_seat=2,
+            phase="auction",
+            ai_model_name="Bud Bot",
+            play_policy_name="Glutton",
+        )
+        assert "Strategy: Bud Bot bidding" in html
+        assert "Card play: Glutton" in html
 
 
 # ---------------------------------------------------------------------------

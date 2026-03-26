@@ -125,7 +125,7 @@ class AIManager:
                 self.available_models["olsa"] = ModelInfo(
                     id="olsa",
                     name="OLSa",
-                    description=("Action-value bidder with Glutton card play."),
+                    description=("Linear action-value bidding with a steady baseline."),
                     bidding_policy=ActionValueBidder(
                         artifact_path=path,
                         name="olsa",
@@ -158,7 +158,9 @@ class AIManager:
                 self.available_models["bud_bot"] = ModelInfo(
                     id="bud_bot",
                     name="Bud Bot",
-                    description=("Gradient-boosted bidder with Glutton card play."),
+                    description=(
+                        "Gradient-boosted bidding that captures nonlinear spots."
+                    ),
                     bidding_policy=GBTActionValueBidder(
                         artifact_path=path,
                         name="bud_bot",

@@ -466,6 +466,12 @@ main {
     color: var(--color-text);
 }
 
+.strategy-info {
+    color: var(--color-text-muted);
+    flex: 1 1 100%;
+    font-size: 0.82rem;
+}
+
 .match-target {
     font-size: 0.8rem;
     color: var(--color-text-muted);
@@ -970,6 +976,11 @@ main {
     margin: 0 0 1rem;
 }
 
+#model-select .model-select__hint {
+    margin: 1rem 0 0;
+    font-size: 0.88rem;
+}
+
 #nickname-form form,
 #model-select form {
     display: flex;
@@ -1348,6 +1359,10 @@ main {
 
     .score-bar .match-target {
         display: none;
+    }
+
+    .score-bar .strategy-info {
+        font-size: 0.62rem;
     }
 
     main {

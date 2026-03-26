@@ -61,11 +61,13 @@ class TestBrowserRoster:
 
         olsa = mgr.get_model_info("olsa")
         assert olsa.name == "OLSa"
+        assert "Linear action-value bidding" in olsa.description
         assert isinstance(olsa.bidding_policy, ActionValueBidder)
         assert isinstance(olsa.play_strategy, GluttonStrategy)
 
         bud_bot = mgr.get_model_info("bud_bot")
         assert bud_bot.name == "Bud Bot"
+        assert "Gradient-boosted bidding" in bud_bot.description
         assert isinstance(bud_bot.bidding_policy, GBTActionValueBidder)
         assert isinstance(bud_bot.play_strategy, GluttonStrategy)
 
