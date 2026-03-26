@@ -24,7 +24,8 @@ intake-to-dispatch flow into a reusable workflow.
    - **description:** Full task description with acceptance criteria
    - **owner:** Target worker lane. Platform pool: `author-a` through
      `author-d`. Browser-game pool: `brws-author-a` through `brws-author-d`.
-     Flex pool: `author-scratch`, `flex-a`, `flex-b`, `flex-c`.
+     Analyst pool: `analyst-a` through `analyst-d`.
+     Flex pool: `flex-a`, `flex-b`, `flex-c`.
    - **scope_declared:** File patterns that will be touched
    - **validation:** Commands the author must run (e.g., specific test files)
    - **priority:** low / normal / high
@@ -38,7 +39,8 @@ intake-to-dispatch flow into a reusable workflow.
    | Single-file bugfix | No | Any idle author in matching pool | Infer |
    | Multi-file feature | Yes | author-a or author-b | platform |
    | Architectural change | Yes + plan review | author-a | platform |
-   | Exploratory analysis | No | author-scratch or flex-* | (flex) |
+   | Investigation / shaping | No | analyst-a through analyst-d | (flex) |
+   | Plan review / triage | No | analyst-a through analyst-d | (flex) |
    | Overflow / parallel work | Yes | author-c, author-d, or flex-* | Match source |
    | Browser-game work | Yes | brws-author-a through brws-author-d | browser-game |
 
