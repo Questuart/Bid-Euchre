@@ -87,6 +87,7 @@ class HandState:
     dealer_seat: int
     deal_id: int
     auction: list[dict[str, Any]] = field(default_factory=list)
+    revealed_auction_count: int = 0
     current_high_bid: int = 0
     bidder_seat: int | None = None
     winning_bid: int | None = None
@@ -94,6 +95,7 @@ class HandState:
     trump: str | None = None
     current_trick: TrickState | None = None
     completed_tricks: list[TrickResult] = field(default_factory=list)
+    paused_after_trick: bool = False
     bid_type: str = "regular"  # "regular" | "moon" | "loner"
     sitting_out_seat: int | None = None  # loner: partner sits out
     exchange_given: list[list[str]] | None = None  # moon: cards given to partner
@@ -114,6 +116,7 @@ class HandState:
             "dealer_seat": self.dealer_seat,
             "deal_id": self.deal_id,
             "auction": self.auction,
+            "revealed_auction_count": self.revealed_auction_count,
             "current_high_bid": self.current_high_bid,
             "bidder_seat": self.bidder_seat,
             "winning_bid": self.winning_bid,
@@ -127,6 +130,7 @@ class HandState:
                 None if self.current_trick is None else self.current_trick.to_dict()
             ),
             "completed_tricks": [trick.to_dict() for trick in self.completed_tricks],
+            "paused_after_trick": self.paused_after_trick,
             "tricks_team0": self.tricks_team0,
             "tricks_team1": self.tricks_team1,
             "points_team0": self.points_team0,
@@ -146,6 +150,7 @@ class HandState:
             dealer_seat=int(data["dealer_seat"]),
             deal_id=int(data["deal_id"]),
             auction=list(data.get("auction", [])),
+            revealed_auction_count=int(data.get("revealed_auction_count", 0)),
             current_high_bid=int(data.get("current_high_bid", 0)),
             bidder_seat=(
                 None if data.get("bidder_seat") is None else int(data["bidder_seat"])
@@ -172,6 +177,7 @@ class HandState:
                 TrickResult.from_dict(trick)
                 for trick in data.get("completed_tricks", [])
             ],
+            paused_after_trick=bool(data.get("paused_after_trick", False)),
             tricks_team0=int(data.get("tricks_team0", 0)),
             tricks_team1=int(data.get("tricks_team1", 0)),
             points_team0=int(data.get("points_team0", 0)),

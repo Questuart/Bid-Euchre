@@ -183,6 +183,7 @@ class TestHandState:
                 {"seat": 0, "n": 3, "contract": "H"},
                 {"seat": 1, "n": 0, "contract": None},
             ],
+            revealed_auction_count=2,
             current_high_bid=3,
             bidder_seat=0,
             winning_bid=3,
@@ -201,6 +202,7 @@ class TestHandState:
                     winner=0,
                 ),
             ],
+            paused_after_trick=True,
             tricks_team0=1,
             tricks_team1=0,
             points_team0=0,
@@ -267,6 +269,7 @@ class TestHandState:
         state = HandState.from_dict(minimal)
         assert state.hands == []
         assert state.auction == []
+        assert state.revealed_auction_count == 0
         assert state.current_high_bid == 0
         assert state.bidder_seat is None
         assert state.winning_bid is None
@@ -274,6 +277,7 @@ class TestHandState:
         assert state.trump is None
         assert state.current_trick is None
         assert state.completed_tricks == []
+        assert state.paused_after_trick is False
 
     def test_json_serializable(self) -> None:
         state = HandState(
@@ -282,8 +286,10 @@ class TestHandState:
             dealer_seat=0,
             deal_id=1,
             auction=[{"seat": 0, "n": 5, "contract": "H"}],
+            revealed_auction_count=1,
             current_high_bid=5,
             bidder_seat=0,
+            paused_after_trick=True,
         )
         raw = json.dumps(state.to_dict())
         assert HandState.from_dict(json.loads(raw)) == state
@@ -321,6 +327,7 @@ class TestMatchState:
                     {"seat": 3, "n": 0, "contract": None},
                     {"seat": 0, "n": 5, "contract": "S"},
                 ],
+                revealed_auction_count=2,
                 current_high_bid=5,
                 bidder_seat=0,
                 winning_bid=5,
@@ -342,6 +349,7 @@ class TestMatchState:
                         winner=3,
                     )
                 ],
+                paused_after_trick=True,
                 tricks_team0=1,
                 tricks_team1=0,
                 points_team0=0,

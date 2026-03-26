@@ -1,0 +1,15 @@
+{# Unified reveal-step control shown when auction/trick progression is paused. #}
+<div class="next-controls" role="region" aria-label="Continue game progression">
+    {% if next_reason %}
+    <p class="next-controls__reason" aria-live="polite">{{ next_reason }}</p>
+    {% endif %}
+    <form method="post"
+          action="/play/{{ link_uuid }}/next"
+          hx-post="/play/{{ link_uuid }}/next"
+          hx-target="#game-board"
+          hx-swap="innerHTML">
+        <button type="submit" class="btn btn--next-step" aria-label="Advance to the next step">
+            Next
+        </button>
+    </form>
+</div>

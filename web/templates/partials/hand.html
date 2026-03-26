@@ -43,7 +43,7 @@
         {% endfor %}
     </div>
 
-    {% if phase == "trick_play" %}
+    {% if phase == "trick_play" and legal_plays is not none %}
         <form id="card-play-form"
               class="card-play-form"
               method="post"

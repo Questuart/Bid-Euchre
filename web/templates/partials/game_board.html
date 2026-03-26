@@ -11,6 +11,8 @@
 {% set bidder_seat = bidder_seat | default(-1, true) %}
 {% set current_seat = current_seat | default(-1, true) %}
 {% set sitting_out_seat = sitting_out_seat | default(None, true) %}
+{% set show_next = show_next | default(false, true) %}
+{% set show_bid_panel = show_bid_panel | default(false, true) %}
 
 {# ---- Match result (win/loss screen) ---- #}
 {% if phase == "match_result" %}
@@ -104,8 +106,12 @@
     {# Trick area — always shown during active play #}
     {% include "partials/trick.html" %}
 
+    {% if show_next %}
+        {% include "partials/next_controls.html" %}
+    {% endif %}
+
     {# Bid panel — auction phase only, when it's the human's turn #}
-    {% if phase == "auction" %}
+    {% if show_bid_panel %}
         {% include "partials/bid_panel.html" %}
     {% endif %}
 

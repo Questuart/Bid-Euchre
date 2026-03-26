@@ -394,6 +394,18 @@ class TestHand:
         )
         assert 'name="turn_number" value="42"' in html
 
+    def test_play_form_hidden_when_waiting_for_next(self, env):
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            turn_number=8,
+            human_hand=[["S", "A"], ["H", "K"]],
+            legal_plays=None,
+            phase="trick_play",
+        )
+        assert 'id="card-play-form"' not in html
+        assert "Play card" not in html
+
 
 # ---------------------------------------------------------------------------
 # trick.html
@@ -479,10 +491,10 @@ class TestTrick:
         )
         assert "trick-area" in html
 
-    def test_last_trick_renders_when_available(self, env):
+    def test_completed_trick_replaces_current_trick_when_paused(self, env):
         tmpl = env.get_template("partials/trick.html")
         html = tmpl.render(
-            current_trick={"leader": 0, "plays": []},
+            current_trick=None,
             completed_tricks=[
                 {
                     "plays": [[1, ["D", "A"]], [2, ["S", "K"]], [3, ["H", "Q"]]],
@@ -496,7 +508,7 @@ class TestTrick:
             tricks_team0=4,
             tricks_team1=1,
         )
-        assert "Last Trick" in html
+        assert "Trick 1 of 10 complete" in html
         assert "AI Left" in html
         assert "AI Partner" in html
         assert "AI Right" in html
@@ -504,6 +516,7 @@ class TestTrick:
         assert "\u2660" in html  # ♠
         assert "AI Partner" in html
         assert "won" in html
+        assert "Last Trick" not in html
 
     def test_markers_for_dealer_turn_declarer_and_sitout(self, env):
         """Markers render for dealer/turn/declarer/sitting out states."""
@@ -1234,6 +1247,19 @@ class TestActionRail:
         assert "action-rail__item--auction" in html
         assert "action-rail__item--trick" in html
         assert "action-rail__item--system" in html
+
+
+class TestNextControls:
+    def test_next_controls_post_to_next_route(self, env):
+        tmpl = env.get_template("partials/next_controls.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            next_reason="Reveal the next auction action.",
+        )
+        assert 'action="/play/abc-123/next"' in html
+        assert 'hx-post="/play/abc-123/next"' in html
+        assert "Reveal the next auction action." in html
+        assert "Next" in html
 
 
 class TestAccessibilityScore:

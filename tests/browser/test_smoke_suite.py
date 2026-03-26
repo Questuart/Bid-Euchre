@@ -75,6 +75,18 @@ def _wait_for_hand_number(page: Page, timeout_ms: int = 10000) -> int:
     return hand_number
 
 
+def _advance_next_steps(page: Page, max_steps: int = 8) -> None:
+    """Click the unified Next button until the board is actionable again."""
+    for _ in range(max_steps):
+        next_button = page.locator("button.btn--next-step")
+        if next_button.count() == 0:
+            return
+        if not next_button.first.is_visible():
+            return
+        next_button.first.click()
+        page.wait_for_timeout(250)
+
+
 # ---------------------------------------------------------------------------
 # Test 1: Start game → bid → play trick → verify score
 # ---------------------------------------------------------------------------
@@ -114,6 +126,7 @@ def test_start_game_bid_play_verify_score(
     # play, so wait for the first meaningful active-phase element before
     # asserting. This avoids a flake window where selectors have not
     # materialized yet immediately after Start Match.
+    _advance_next_steps(page)
     page.wait_for_selector(
         "#bid-panel, #trick-area, #human-hand, #score-bar, #match-result, #hand-result",
         timeout=10000,
@@ -135,6 +148,7 @@ def test_start_game_bid_play_verify_score(
         page.click("button.pass-btn")
         # Wait for the board to update after bid submission
         page.wait_for_timeout(2000)
+        _advance_next_steps(page)
 
     # After passing (or if AI already completed auction), we should see
     # either trick play or the hand result if AI wrapped up everything
@@ -154,6 +168,7 @@ def test_start_game_bid_play_verify_score(
         legal_cards.first.click()
         # Wait for the board to update
         page.wait_for_timeout(2000)
+        _advance_next_steps(page)
 
     # Verify the game is still running (board has content)
     assert (
@@ -183,6 +198,7 @@ def test_moon_bid_ui_available(
     # Start a match
     page.select_option("select[name='model_id']", "olsa")
     page.click("button:has-text('Start Match')")
+    _advance_next_steps(page)
     page.wait_for_function(
         """
         () => {
