@@ -1,13 +1,15 @@
-"""Browser smoke suite — 5 critical paths for the hosted Bid Euchre game.
+"""Browser smoke suite — critical hosted-play browser paths.
 
 Tests exercise the full browser flow through Playwright against a live
 FastAPI server.  They validate:
 
 1. Start game → bid → play trick → verify score
 2. Moon bid submission → verify moon-specific UI
-3. Invite code → join game → verify nickname
-4. Full hand → verify hand-result transition
-5. Landing page → invalid code → error display
+3. Human partner moon exchange → verify browser flow
+4. Cards played toggle during an active hand
+5. Invite code → join game → verify nickname
+6. Full hand → verify hand-result transition
+7. Landing page → invalid code → error display
 
 These tests are NOT included in ``make check``.  Run via::
 
@@ -18,11 +20,18 @@ See ``plans/browser_game_expansion/governing_plan.md`` Phase 4 for context.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy.orm import Session
+
+from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
+from bid_euchre.strategy.base import Strategy
+from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
+from web.db import Hand, Match, Player
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -73,6 +82,155 @@ def _wait_for_hand_number(page: Page, timeout_ms: int = 10000) -> int:
     hand_number = _current_hand_number(page)
     assert hand_number is not None, "Expected score bar hand number to render"
     return hand_number
+
+
+class _MoonBidder(BiddingPolicy):
+    """Force a moon opening so browser tests can exercise exchange UI."""
+
+    def __init__(self) -> None:
+        super().__init__(name="browser_moon")
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        if obs.current_high_bid == 0:
+            return BidAction.moon("S")
+        return BidAction.pass_bid()
+
+
+class _FixedRegularBidder(BiddingPolicy):
+    """Force a regular suit contract for deterministic active-hand tests."""
+
+    def __init__(self) -> None:
+        super().__init__(name="browser_regular")
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        if obs.current_high_bid < 5:
+            return BidAction.bid(5, "S")
+        return BidAction.pass_bid()
+
+
+class _FirstLegalPlay(Strategy):
+    def choose_card(self, *args, **kwargs) -> int:
+        return 0
+
+
+def _extract_link_uuid(page: Page) -> str:
+    match = re.search(r"/play/([0-9a-f-]{36})", page.url)
+    assert match is not None, f"Could not extract link UUID from {page.url}"
+    return match.group(1)
+
+
+def _latest_match_for_link(session: Session, link_uuid: str) -> Match:
+    player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+    assert player is not None, "Expected browser test player to exist"
+    match_row = (
+        session.query(Match)
+        .filter_by(player_id=player.id)
+        .order_by(Match.created_at.desc())
+        .first()
+    )
+    assert match_row is not None, "Expected active browser test match to exist"
+    return match_row
+
+
+def _persist_browser_state(
+    db_session_factory,
+    link_uuid: str,
+    model_id: str,
+    state,
+) -> None:
+    session = db_session_factory()
+    try:
+        match_row = _latest_match_for_link(session, link_uuid)
+        match_row.ai_model = model_id
+        match_row.seed = state.seed
+        match_row.match_state_json = json.dumps(state.to_dict())
+        match_row.score_human = state.score_human
+        match_row.score_ai = state.score_ai
+        match_row.hands_played = state.hands_played
+
+        hand = state.current_hand
+        if hand is not None:
+            hand_row = (
+                session.query(Hand)
+                .filter_by(match_id=match_row.id, hand_number=state.hands_played)
+                .first()
+            )
+            if hand_row is None:
+                hand_row = Hand(
+                    match_id=match_row.id,
+                    hand_number=state.hands_played,
+                    deal_id=hand.deal_id,
+                    dealer_seat=hand.dealer_seat,
+                    status="in_progress",
+                    hand_state_json=json.dumps(hand.to_dict()),
+                )
+                session.add(hand_row)
+            else:
+                hand_row.deal_id = hand.deal_id
+                hand_row.dealer_seat = hand.dealer_seat
+                hand_row.status = "in_progress"
+                hand_row.hand_state_json = json.dumps(hand.to_dict())
+
+        session.commit()
+    finally:
+        session.close()
+
+
+def _build_partner_moon_exchange_state():
+    engine = MatchEngine(
+        bidding_policy=_MoonBidder(),
+        play_strategy=_FirstLegalPlay(),
+    )
+    for seed in range(1, 40):
+        state = engine.start_match(seed, "olsa")
+        hand = state.current_hand
+        if (
+            hand is not None
+            and hand.phase == "auction"
+            and hand.current_seat == HUMAN_SEAT
+            and hand.bid_type == "moon"
+            and hand.bidder_seat == 2
+        ):
+            state = engine.submit_human_bid(state, BidAction.pass_bid())
+            hand = state.current_hand
+            assert hand is not None
+            assert hand.phase == "moon_exchange"
+            hand.revealed_auction_count = len(hand.auction)
+            return state
+    pytest.fail("Could not construct a partner-moon exchange state for browser tests")
+
+
+def _build_active_cards_played_state():
+    engine = MatchEngine(
+        bidding_policy=_FixedRegularBidder(),
+        play_strategy=_FirstLegalPlay(),
+    )
+    for seed in range(1, 80):
+        state = engine.start_match(seed, "olsa")
+        for _ in range(40):
+            hand = state.current_hand
+            if hand is None or hand.phase in {"complete", "redeal", "moon_exchange"}:
+                break
+            if hand.phase == "auction":
+                if hand.current_seat != HUMAN_SEAT:
+                    state = engine._advance_ai(state)
+                    continue
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+                continue
+            if hand.phase == "trick_play":
+                if len(hand.completed_tricks) >= 1:
+                    hand.revealed_auction_count = len(hand.auction)
+                    hand.revealed_trick_count = len(hand.completed_tricks)
+                    return state
+                if hand.current_seat != HUMAN_SEAT:
+                    state = engine._advance_ai(state)
+                    continue
+                legal = engine.get_legal_plays(state)
+                assert legal, "Expected at least one legal play"
+                state = engine.submit_human_card(state, legal[0])
+        else:
+            continue
+    pytest.fail("Could not construct an active hand with completed trick history")
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +305,7 @@ def test_start_game_bid_play_verify_score(
         score_text = score_bar.inner_text()
         assert "You:" in score_text, f"Expected 'You:' in score bar, got: {score_text}"
         assert "AI:" in score_text, f"Expected 'AI:' in score bar, got: {score_text}"
+        assert "Card play: Glutton" in score_text
 
     # If in trick play, play a card
     legal_cards = page.locator(".card--legal")
@@ -227,7 +386,80 @@ def test_moon_bid_ui_available(
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Invite code → join game → verify nickname
+# Test 3: Human-as-partner moon exchange
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.browser
+def test_partner_moon_exchange_flow(
+    page: Page,
+    live_server: str,
+    invite_code: str,
+    db_session_factory,
+) -> None:
+    """Inject a partner-moon state and verify the human exchange flow."""
+    enter_game(page, live_server, invite_code, "PartnerMoonTester")
+    page.select_option("select[name='model_id']", "olsa")
+    page.click("button:has-text('Start Match')")
+    page.wait_for_selector("#game-board", timeout=10000)
+
+    link_uuid = _extract_link_uuid(page)
+    state = _build_partner_moon_exchange_state()
+    _persist_browser_state(db_session_factory, link_uuid, "olsa", state)
+
+    page.goto(f"{live_server}/play/{link_uuid}")
+    moon_exchange = page.locator("#moon-exchange")
+    _get_expect()(moon_exchange).to_be_visible(timeout=10000)
+    _get_expect()(page.locator("text=Your partner declared moon.")).to_be_visible()
+
+    checkboxes = moon_exchange.locator("input[name='card_indices']")
+    assert checkboxes.count() >= 2
+    checkboxes.nth(0).check()
+    checkboxes.nth(1).check()
+    moon_exchange.locator("button:has-text('Confirm Exchange')").click()
+
+    review = page.locator("#moon-exchange-review")
+    _get_expect()(review).to_be_visible(timeout=10000)
+    _get_expect()(review.locator("text=Moon Exchange Complete")).to_be_visible()
+    _get_expect()(review.locator("text=Given:")).to_be_visible()
+    _get_expect()(review.locator("text=Received:")).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Cards played toggle during an active hand
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.browser
+def test_cards_played_toggle_visible_during_active_hand(
+    page: Page,
+    live_server: str,
+    invite_code: str,
+    db_session_factory,
+) -> None:
+    """Inject an active trick-play state and verify the cards-played toggle."""
+    enter_game(page, live_server, invite_code, "CardsPlayedTester")
+    page.select_option("select[name='model_id']", "olsa")
+    page.click("button:has-text('Start Match')")
+    page.wait_for_selector("#game-board", timeout=10000)
+
+    link_uuid = _extract_link_uuid(page)
+    state = _build_active_cards_played_state()
+    _persist_browser_state(db_session_factory, link_uuid, "olsa", state)
+
+    page.goto(f"{live_server}/play/{link_uuid}")
+    _get_expect()(page.locator("#trick-area")).to_be_visible(timeout=10000)
+    _get_expect()(page.locator("#human-hand")).to_be_visible(timeout=10000)
+
+    cards_played = page.locator("#cards-played")
+    _get_expect()(cards_played).to_be_visible()
+    cards_played.locator("summary").click()
+    _get_expect()(cards_played.locator("text=Trick 1")).to_be_visible()
+    _get_expect()(cards_played.locator("text=Won by")).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Invite code → join game → verify nickname
 # ---------------------------------------------------------------------------
 
 
@@ -280,7 +512,7 @@ def test_invite_code_join_verify_nickname(
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Full hand → verify hand-result transition
+# Test 6: Full hand → verify hand-result transition
 # ---------------------------------------------------------------------------
 
 
@@ -409,7 +641,7 @@ def test_full_hand_verify_transition(
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Invalid invite code shows error
+# Test 7: Invalid invite code shows error
 # ---------------------------------------------------------------------------
 
 

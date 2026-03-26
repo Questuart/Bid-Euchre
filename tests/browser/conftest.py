@@ -94,8 +94,8 @@ def _db_path() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="session")
-def live_server(_db_path: str) -> Generator[str, None, None]:
-    """Start a FastAPI server on a random port and yield the base URL.
+def live_app_bundle(_db_path: str) -> Generator[dict[str, Any], None, None]:
+    """Start a FastAPI server on a random port and yield app + base URL.
 
     The server runs in a daemon thread and shuts down when the test
     session ends.  It uses a file-based SQLite database so that both the
@@ -137,13 +137,25 @@ def live_server(_db_path: str) -> Generator[str, None, None]:
     base_url = f"http://127.0.0.1:{port}"
     _wait_for_server(base_url)
 
-    yield base_url
+    yield {"base_url": base_url, "app": app}
 
     server.should_exit = True
     thread.join(timeout=5)
 
     # Reset config override so other tests are unaffected
     override_config(None)
+
+
+@pytest.fixture(scope="session")
+def live_server(live_app_bundle: dict[str, Any]) -> str:
+    """Return the base URL for the live browser-test server."""
+    return str(live_app_bundle["base_url"])
+
+
+@pytest.fixture(scope="session")
+def live_app(live_app_bundle: dict[str, Any]):
+    """Return the live FastAPI app used by browser tests."""
+    return live_app_bundle["app"]
 
 
 @pytest.fixture(scope="session")
