@@ -4067,3 +4067,25 @@ class TestProcessInboundAck:
         states = {i.item_id: i.state for i in reloaded.items}
         assert states["aaa111000000"] == "open"
         assert states["bbb222000000"] == "acked"
+
+    def test_save_failure_reports_ack_failure(self, tmp_path: Path) -> None:
+        """If save_fleet_status raises, process_inbound_ack returns failure."""
+        from unittest.mock import patch
+
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [{"item_id": "abc123def456", "summary": "Stall on author-a"}],
+        )
+
+        with patch(
+            "bid_euchre.ops.control_plane.save_fleet_status",
+            side_effect=OSError("disk full"),
+        ):
+            result = process_inbound_ack("ack abc1", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is False
+        assert "failed to persist" in (result.reply_text or "").lower()
+        assert result.item_id == "abc123def456"
