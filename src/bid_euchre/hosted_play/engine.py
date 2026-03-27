@@ -45,8 +45,11 @@ _TRICKS_PER_HAND = 10
 # Display suit order: Spades, Hearts, Diamonds, Clubs
 _SUIT_DISPLAY_ORDER: dict[str, int] = {"S": 0, "H": 1, "D": 2, "C": 3}
 
-# Within-suit rank order: J highest, then A-K-Q-T
+# Within-suit rank order: J highest, then A-K-Q-T (auction / trump suit)
 _RANK_DISPLAY_ORDER: dict[str, int] = {"J": 0, "A": 1, "K": 2, "Q": 3, "T": 4}
+
+# High-contract / non-trump rank order: A highest, then K-Q-J-T
+_RANK_DISPLAY_ORDER_HIGH: dict[str, int] = {"A": 0, "K": 1, "Q": 2, "J": 3, "T": 4}
 
 # Low-contract rank order: T highest, then J-Q-K-A
 _RANK_DISPLAY_ORDER_LOW: dict[str, int] = {"T": 0, "J": 1, "Q": 2, "K": 3, "A": 4}
@@ -66,8 +69,10 @@ def sort_hand_for_display(
       follow standard order (S > H > D > C).
 
     Within-suit ordering:
-    - Suit contracts: right bower > left bower > A > K > Q > (non-bower J) > T
-    - High / auction (no trump): J > A > K > Q > T
+    - Suit contracts (trump suit): right bower > left bower > A > K > Q > (non-bower J) > T
+    - Suit contracts (non-trump suits): A > K > Q > J > T
+    - High contracts (no trump, A high): A > K > Q > J > T
+    - Auction (no contract set): J > A > K > Q > T
     - Low contracts: T > J > Q > K > A
     """
 
@@ -94,7 +99,14 @@ def sort_hand_for_display(
                 rank_key = _RANK_DISPLAY_ORDER.get(card.rank, 99)
         elif contract_type == "low":
             rank_key = _RANK_DISPLAY_ORDER_LOW.get(card.rank, 99)
+        elif contract_type == "high" or (
+            contract_type == "suit" and trump and eff != trump
+        ):
+            # A-high: HIGH contracts have no bowers; non-trump suits in
+            # suit contracts also rank A above J.
+            rank_key = _RANK_DISPLAY_ORDER_HIGH.get(card.rank, 99)
         else:
+            # Auction (contract_type is None) — J-high default
             rank_key = _RANK_DISPLAY_ORDER.get(card.rank, 99)
 
         return (suit_key, rank_key)

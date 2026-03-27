@@ -1965,21 +1965,36 @@ class TestSortHandForDisplay:
         ranks = [c.rank for c in hand]
         assert ranks == ["T", "J", "Q", "K", "A"]
 
-    def test_high_contract_no_bower_awareness(self) -> None:
-        """High contract: no bowers, standard J-A-K-Q-T order."""
+    def test_high_contract_ace_high_order(self) -> None:
+        """High contract: no bowers, A-high order (A > K > Q > J > T)."""
         hand = [
             Card("H", "J"),
             Card("D", "J"),
             Card("H", "A"),
         ]
         sort_hand_for_display(hand, contract_type="high")
-        # Both Js stay in their printed suits, no bower movement
+        # Both Js stay in their printed suits, no bower movement.
+        # Ace ranks above J in HIGH contracts.
         result = [(c.suit, c.rank) for c in hand]
         assert result == [
-            ("H", "J"),
             ("H", "A"),
+            ("H", "J"),
             ("D", "J"),
         ]
+
+    def test_non_trump_suit_ace_high_in_suit_contract(self) -> None:
+        """Non-trump suits in suit contracts use A-high order."""
+        hand = [
+            Card("S", "J"),
+            Card("S", "A"),
+            Card("S", "T"),
+            Card("S", "K"),
+            Card("S", "Q"),
+        ]
+        sort_hand_for_display(hand, contract_type="suit", trump="H")
+        # Non-trump Spades: A > K > Q > J > T
+        ranks = [c.rank for c in hand]
+        assert ranks == ["A", "K", "Q", "J", "T"]
 
     def test_sort_is_stable_idempotent(self) -> None:
         """Sorting an already-sorted hand produces the same order."""
