@@ -776,6 +776,225 @@ class TestTelegramChannelConfig:
         ), "ORCH_CHANNEL_FLAGS assignment must be inside the STEWARD_TELEGRAM_ENABLED=1 guard"
 
 
+class TestTelegramSingleReceiver:
+    """Tests for single-receiver enforcement (#1824).
+
+    Bug 1: Idempotency guard must use jq merge, not file-exists check.
+    Bug 2: Non-orchestrator worktrees must get empty enabledPlugins.
+    Bug 3: STEWARD_TELEGRAM_RECEIVER env var must be set for orchestrator.
+    """
+
+    def test_no_file_exists_guard_for_settings_local(self) -> None:
+        """Bug 1: The old `if [ ! -f ]` guard must be replaced with jq merge."""
+        content = STEWARD_SCRIPT.read_text()
+        # The old pattern: `if [ ! -f "$_orch_settings_local" ]`
+        assert (
+            '! -f "$_orch_settings_local"' not in content
+        ), "Old file-exists guard must be replaced with jq merge (#1824 Bug 1)"
+
+    def test_merge_settings_local_function_exists(self) -> None:
+        """A merge_settings_local() helper must exist for idempotent jq merge."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            "merge_settings_local()" in content
+        ), "merge_settings_local() function must be defined"
+        # Must use jq for merging
+        assert "jq" in content, "merge_settings_local must use jq for JSON merging"
+
+    def test_orchestrator_settings_uses_merge(self) -> None:
+        """Orchestrator settings.local.json must be provisioned via merge_settings_local."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            'merge_settings_local "${MAIN_DIR}/.claude/settings.local.json"' in content
+        ), "Orchestrator settings must use merge_settings_local, not cat"
+
+    def test_non_orchestrator_worktrees_get_empty_plugins(self) -> None:
+        """Bug 2: Every non-orchestrator worktree must get empty enabledPlugins."""
+        content = STEWARD_SCRIPT.read_text()
+        # Must iterate over all worktree variables
+        for var in [
+            "$AUTHOR_A",
+            "$AUTHOR_B",
+            "$AUTHOR_C",
+            "$AUTHOR_D",
+            "$BRWS_A",
+            "$BRWS_B",
+            "$BRWS_C",
+            "$BRWS_D",
+            "$ANALYST_A",
+            "$ANALYST_B",
+            "$ANALYST_C",
+            "$ANALYST_D",
+            "$FLEX_A",
+            "$FLEX_B",
+            "$FLEX_C",
+            "$FLEX_D",
+            "$REVIEW",
+            "$OPS",
+        ]:
+            assert (
+                f'"{var}"' in content
+            ), f"Non-orchestrator worktree {var} must be covered by plugin disablement"
+        # Must write empty enabledPlugins
+        assert (
+            '"enabledPlugins":{}' in content
+            or "'enabledPlugins':{}'" in content
+            or '"enabledPlugins": {}' in content
+        ), "Non-orchestrator worktrees must receive empty enabledPlugins"
+
+    def test_negative_enforcement_inside_enabled_guard(self) -> None:
+        """Bug 2: Plugin disablement loop must be inside STEWARD_TELEGRAM_ENABLED=1 guard."""
+        content = STEWARD_SCRIPT.read_text()
+        lines = content.split("\n")
+        in_guard = False
+        guard_body: list[str] = []
+        for line in lines:
+            if "STEWARD_TELEGRAM_ENABLED" in line and '"1"' in line and "if" in line:
+                in_guard = True
+            if in_guard:
+                guard_body.append(line)
+                if line.strip() == "fi":
+                    break
+        guard_text = "\n".join(guard_body)
+        assert (
+            '"enabledPlugins":{}' in guard_text or '"enabledPlugins": {}' in guard_text
+        ), "Non-orchestrator plugin disablement must be inside the TELEGRAM_ENABLED=1 guard"
+
+    def test_telegram_receiver_env_set(self) -> None:
+        """Bug 3: STEWARD_TELEGRAM_RECEIVER must be propagated via tmux set-environment."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            "STEWARD_TELEGRAM_RECEIVER" in content
+        ), "STEWARD_TELEGRAM_RECEIVER must be set in the tmux script"
+        assert (
+            "tmux set-environment" in content and "STEWARD_TELEGRAM_RECEIVER" in content
+        ), "STEWARD_TELEGRAM_RECEIVER must be propagated via tmux set-environment"
+
+    def test_telegram_receiver_only_when_enabled(self) -> None:
+        """Bug 3: STEWARD_TELEGRAM_RECEIVER must only be set when Telegram is enabled."""
+        content = STEWARD_SCRIPT.read_text()
+        # Find the STEWARD_TELEGRAM_RECEIVER set-environment line
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
+            if "STEWARD_TELEGRAM_RECEIVER" in line and "set-environment" in line:
+                # Look backwards for the guarding if statement
+                context = "\n".join(lines[max(0, i - 5) : i + 1])
+                assert (
+                    "STEWARD_TELEGRAM_ENABLED" in context
+                ), "STEWARD_TELEGRAM_RECEIVER must be guarded by STEWARD_TELEGRAM_ENABLED check"
+                break
+        else:
+            pytest.fail("Could not find tmux set-environment STEWARD_TELEGRAM_RECEIVER")
+
+    def test_merge_settings_local_functional(self, tmp_path: Path) -> None:
+        """Functional test: merge_settings_local creates and merges correctly."""
+        # Test 1: Create from scratch
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"""
+merge_settings_local() {{
+    local file_path="$1"
+    local fragment="$2"
+    local dir
+    dir="$(dirname "$file_path")"
+    mkdir -p "$dir"
+    if [ -f "$file_path" ]; then
+        local merged
+        merged="$(jq --argjson frag "$fragment" '. + $frag' "$file_path")"
+        printf '%s\\n' "$merged" > "$file_path"
+    else
+        printf '%s\\n' "$fragment" | jq '.' > "$file_path"
+    fi
+}}
+merge_settings_local "{target}" '{{"enabledPlugins":{{"telegram@claude-plugins-official":true}}}}'
+cat "{target}"
+""",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        data = json.loads(target.read_text())
+        assert data["enabledPlugins"]["telegram@claude-plugins-official"] is True
+
+        # Test 2: Merge into existing (should preserve existing keys)
+        target.write_text(json.dumps({"someOtherKey": 42}) + "\n")
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"""
+merge_settings_local() {{
+    local file_path="$1"
+    local fragment="$2"
+    local dir
+    dir="$(dirname "$file_path")"
+    mkdir -p "$dir"
+    if [ -f "$file_path" ]; then
+        local merged
+        merged="$(jq --argjson frag "$fragment" '. + $frag' "$file_path")"
+        printf '%s\\n' "$merged" > "$file_path"
+    else
+        printf '%s\\n' "$fragment" | jq '.' > "$file_path"
+    fi
+}}
+merge_settings_local "{target}" '{{"enabledPlugins":{{"telegram@claude-plugins-official":true}}}}'
+cat "{target}"
+""",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        data = json.loads(target.read_text())
+        assert data["enabledPlugins"]["telegram@claude-plugins-official"] is True
+        assert data["someOtherKey"] == 42, "Existing keys must be preserved"
+
+    def test_merge_settings_local_empty_plugins(self, tmp_path: Path) -> None:
+        """Functional test: merging empty enabledPlugins overrides existing plugins."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        # Pre-populate with a plugin enabled
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({"enabledPlugins": {"telegram@claude-plugins-official": True}})
+            + "\n"
+        )
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"""
+merge_settings_local() {{
+    local file_path="$1"
+    local fragment="$2"
+    local dir
+    dir="$(dirname "$file_path")"
+    mkdir -p "$dir"
+    if [ -f "$file_path" ]; then
+        local merged
+        merged="$(jq --argjson frag "$fragment" '. + $frag' "$file_path")"
+        printf '%s\\n' "$merged" > "$file_path"
+    else
+        printf '%s\\n' "$fragment" | jq '.' > "$file_path"
+    fi
+}}
+merge_settings_local "{target}" '{{"enabledPlugins":{{}}}}'
+cat "{target}"
+""",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        data = json.loads(target.read_text())
+        assert (
+            data["enabledPlugins"] == {}
+        ), "Empty enabledPlugins must override existing plugins"
+
+
 class TestBoundaryValidation:
     """Tests for validate_worktree_path() in steward-session.sh."""
 

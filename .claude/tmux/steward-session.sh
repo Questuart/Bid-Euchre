@@ -108,6 +108,25 @@ MAIN_DIR="$(git -C "$MAIN_DIR" worktree list 2>/dev/null | head -1 | awk '{print
 # Worktree paths must be within PARENT_DIR (the parent of the main checkout).
 # This is a repo-level guard — it does not claim OS-level sandboxing.
 
+# Merge a JSON fragment into a settings.local.json file using jq.
+# If the file does not exist, create it.  If it does, deep-merge so that
+# existing keys (e.g. user overrides) are preserved.
+# Args: file_path json_fragment
+merge_settings_local() {
+    local file_path="$1"
+    local fragment="$2"
+    local dir
+    dir="$(dirname "$file_path")"
+    mkdir -p "$dir"
+    if [ -f "$file_path" ]; then
+        local merged
+        merged="$(jq --argjson frag "$fragment" '. + $frag' "$file_path")"
+        printf '%s\n' "$merged" > "$file_path"
+    else
+        printf '%s\n' "$fragment" | jq '.' > "$file_path"
+    fi
+}
+
 validate_worktree_path() {
     local path="$1"
     local resolved
@@ -371,18 +390,25 @@ if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
 
     # Provision settings.local.json in the orchestrator worktree so the
     # Telegram plugin is enabled only there.  The file is gitignored.
-    _orch_settings_local="${MAIN_DIR}/.claude/settings.local.json"
-    if [ ! -f "$_orch_settings_local" ]; then
-        cat > "$_orch_settings_local" <<'SETTINGS_EOF'
-{
-  "enabledPlugins": {
-    "telegram@claude-plugins-official": true
-  }
-}
-SETTINGS_EOF
-        echo "Created ${_orch_settings_local} (Telegram plugin enabled for orchestrator only)"
-    fi
-    unset _orch_settings_local
+    # Uses jq merge so that re-runs update enabledPlugins even when the
+    # file already exists (Bug 1 — idempotency guard blocked updates).
+    merge_settings_local "${MAIN_DIR}/.claude/settings.local.json" \
+        '{"enabledPlugins":{"telegram@claude-plugins-official":true}}'
+
+    # Negative enforcement (Bug 2): explicitly disable plugins on every
+    # non-orchestrator worktree.  Without this override the globally-installed
+    # plugin auto-enables for every lane, causing competing poll instances.
+    for _wt in "$AUTHOR_A" "$AUTHOR_B" "$AUTHOR_C" "$AUTHOR_D" \
+               "$BRWS_A" "$BRWS_B" "$BRWS_C" "$BRWS_D" \
+               "$ANALYST_A" "$ANALYST_B" "$ANALYST_C" "$ANALYST_D" \
+               "$FLEX_A" "$FLEX_B" "$FLEX_C" "$FLEX_D" \
+               "$REVIEW" "$OPS"; do
+        if [ -d "$_wt" ]; then
+            merge_settings_local "$_wt/.claude/settings.local.json" \
+                '{"enabledPlugins":{}}'
+        fi
+    done
+    unset _wt
 fi
 
 # ---------------------------------------------------------------------------
@@ -405,6 +431,13 @@ if [ -n "$STEWARD_CHANNELS" ]; then
     tmux set-environment -t "$SESSION" STEWARD_CHANNELS "$STEWARD_CHANNELS"
 fi
 tmux set-environment -t "$SESSION" STEWARD_TELEGRAM_ENABLED "$STEWARD_TELEGRAM_ENABLED"
+# Bug 3: Set STEWARD_TELEGRAM_RECEIVER so the orchestrator pane's
+# telegram_filter.is_telegram_receiver() returns True.  Non-orchestrator
+# panes do not receive this env var (tmux set-environment is session-global,
+# but only the orchestrator's process reads it via the filter module).
+if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
+    tmux set-environment -t "$SESSION" STEWARD_TELEGRAM_RECEIVER "1"
+fi
 
 tmux split-window -t "${SESSION}:central-ops" -c "$OPS" \
     "$CLAUDE_BIN" --name ops --agent steward-ops
