@@ -9,6 +9,8 @@ from bid_euchre.sim.exchange import (
     _select_mooner_discards,
     _select_partner_gifts,
     perform_exchange,
+    select_mooner_discards,
+    select_partner_gifts,
 )
 
 # ============================================================
@@ -441,3 +443,112 @@ class TestExchangeEndToEnd:
         # Mooner should have received 2 tens from partner
         tens_in_mooner = [c for c in new_m if c.rank == "T"]
         assert len(tens_in_mooner) >= 2
+
+
+# ============================================================
+# Tests: Public wrapper functions
+# ============================================================
+
+
+class TestPublicWrappers:
+    """Public wrappers delegate to private functions and expose the same contract."""
+
+    # --- select_mooner_discards ---
+
+    def test_mooner_wrapper_matches_private_suit(self):
+        """select_mooner_discards returns same indices as _select_mooner_discards for suit."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        assert select_mooner_discards(hand, "suit", "H") == _select_mooner_discards(
+            hand, "suit", "H"
+        )
+
+    def test_mooner_wrapper_matches_private_high(self):
+        """select_mooner_discards returns same indices as _select_mooner_discards for high."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        assert select_mooner_discards(hand, "high", None) == _select_mooner_discards(
+            hand, "high", None
+        )
+
+    def test_mooner_wrapper_matches_private_low(self):
+        """select_mooner_discards returns same indices as _select_mooner_discards for low."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        assert select_mooner_discards(hand, "low", None) == _select_mooner_discards(
+            hand, "low", None
+        )
+
+    def test_mooner_wrapper_custom_n_cards(self):
+        """select_mooner_discards forwards n_cards parameter."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        result = select_mooner_discards(hand, "suit", "H", n_cards=3)
+        assert len(result) == 3
+        assert result == _select_mooner_discards(hand, "suit", "H", n_cards=3)
+
+    def test_mooner_wrapper_returns_descending_indices(self):
+        """select_mooner_discards returns indices sorted descending."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        indices = select_mooner_discards(hand, "suit", "H")
+        assert indices == sorted(indices, reverse=True)
+
+    def test_mooner_wrapper_never_discards_bowers(self):
+        """select_mooner_discards never selects bowers for discard."""
+        hand = _cards(["JH", "JD", "AH", "KH", "QH", "TH", "TC", "QC", "KC", "AC"])
+        indices = select_mooner_discards(hand, "suit", "H")
+        discards = [hand[i] for i in indices]
+        assert Card("H", "J") not in discards  # Right bower
+        assert Card("D", "J") not in discards  # Left bower
+
+    def test_mooner_wrapper_invalid_contract_type(self):
+        """select_mooner_discards raises ValueError for unknown contract type."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        with pytest.raises(ValueError, match="Unknown contract_type"):
+            select_mooner_discards(hand, "unknown", None)
+
+    # --- select_partner_gifts ---
+
+    def test_partner_wrapper_matches_private_suit(self):
+        """select_partner_gifts returns same indices as _select_partner_gifts for suit."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        assert select_partner_gifts(hand, "suit", "H") == _select_partner_gifts(
+            hand, "suit", "H"
+        )
+
+    def test_partner_wrapper_matches_private_high(self):
+        """select_partner_gifts returns same indices as _select_partner_gifts for high."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        assert select_partner_gifts(hand, "high", None) == _select_partner_gifts(
+            hand, "high", None
+        )
+
+    def test_partner_wrapper_matches_private_low(self):
+        """select_partner_gifts returns same indices as _select_partner_gifts for low."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        assert select_partner_gifts(hand, "low", None) == _select_partner_gifts(
+            hand, "low", None
+        )
+
+    def test_partner_wrapper_custom_n_cards(self):
+        """select_partner_gifts forwards n_cards parameter."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        result = select_partner_gifts(hand, "suit", "H", n_cards=3)
+        assert len(result) == 3
+        assert result == _select_partner_gifts(hand, "suit", "H", n_cards=3)
+
+    def test_partner_wrapper_returns_descending_indices(self):
+        """select_partner_gifts returns indices sorted descending."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        indices = select_partner_gifts(hand, "high", None)
+        assert indices == sorted(indices, reverse=True)
+
+    def test_partner_wrapper_gives_bowers_first(self):
+        """select_partner_gifts selects bowers as gifts for suit contract."""
+        hand = _cards(["JH", "AH", "KH", "QH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        indices = select_partner_gifts(hand, "suit", "H")
+        gifts = [hand[i] for i in indices]
+        # Right bower (JH) should be given
+        assert Card("H", "J") in gifts
+
+    def test_partner_wrapper_invalid_contract_type(self):
+        """select_partner_gifts raises ValueError for unknown contract type."""
+        hand = _cards(["AH", "KH", "QH", "JH", "TH", "AD", "KD", "QD", "JD", "TD"])
+        with pytest.raises(ValueError, match="Unknown contract_type"):
+            select_partner_gifts(hand, "invalid", None)
