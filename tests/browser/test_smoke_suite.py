@@ -146,16 +146,14 @@ def test_start_game_bid_play_verify_score(
     # If in auction, submit a pass bid
     if has_bid_panel:
         page.click("button.pass-btn")
-        # Wait for the board to update after bid submission (HTMX swap)
+        # Wait for post-auction state — exclude #bid-panel since it is
+        # already visible and would make the wait resolve immediately
+        # before the HTMX swap completes.
         page.wait_for_selector(
-            "#trick-area, #hand-result, #match-result, #bid-panel",
+            "#trick-area, #hand-result, #match-result",
             timeout=10000,
         )
         _advance_next_steps(page)
-
-    # After passing (or if AI already completed auction), we should see
-    # either trick play or the hand result if AI wrapped up everything
-    page.wait_for_selector("#score-bar, #hand-result, #trick-area", timeout=15000)
 
     # Verify score bar is present during play
     score_bar = page.locator("#score-bar")
