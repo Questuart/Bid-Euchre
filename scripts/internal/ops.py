@@ -2300,6 +2300,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
     from bid_euchre.ops.control_plane import reconcile as _reconcile
     from bid_euchre.ops.monitor import (
+        evaluate_alert_push,
         format_findings_json,
         format_findings_text,
         run_monitoring_cycle,
@@ -2386,26 +2387,18 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     # be pushed to the operator's phone via Telegram.
     no_push = getattr(args, "no_push", False)
     if not no_reconcile and not no_push:
-        try:
-            from bid_euchre.ops.telegram_push import run_push_cycle
-
-            audit_dir = args.runtime_dir / "audit_trail" if args.runtime_dir else None
-            push_result = run_push_cycle(
-                runtime_dir=args.runtime_dir,
-                audit_dir=audit_dir,
-                now=parsed_now,
+        cycle_result = evaluate_alert_push(
+            findings,
+            runtime_dir=args.runtime_dir,
+            now=parsed_now,
+        )
+        if cycle_result.push_result is not None:
+            pr = cycle_result.push_result
+            print(
+                f"\n📢 Alert push prepared ({len(pr.items_pushed)} items)"
+                f" → chat {pr.chat_id}"
             )
-            if push_result is not None:
-                print(
-                    f"\n📢 Alert push prepared ({len(push_result.items_pushed)} items)"
-                    f" → chat {push_result.chat_id}"
-                )
-                print(push_result.message)
-        except Exception:
-            # Push is best-effort — never block the monitor cycle.
-            import traceback
-
-            traceback.print_exc()
+            print(pr.message)
 
     # Exit 1 if any high-severity findings
     has_high = any(f.severity == "high" for f in findings)

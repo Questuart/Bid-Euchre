@@ -119,8 +119,5 @@
       "Edit(plans/**)",
       "Write(plans/**)"
     ]
-  },
-  "enabledPlugins": {
-    "telegram@claude-plugins-official": true
   }
 }
