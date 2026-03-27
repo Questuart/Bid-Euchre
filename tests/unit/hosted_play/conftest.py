@@ -18,6 +18,7 @@ import pytest
 from sklearn.dummy import DummyRegressor
 from sqlalchemy.orm import Session
 
+from bid_euchre.hosted_play.engine import MatchEngine
 from bid_euchre.strategy.bidding import ACTION_FEATURE_NAMES, STATE_FEATURE_NAMES
 from web.config import HostedPlayConfig
 from web.db import (
@@ -374,3 +375,81 @@ def create_test_invite_code(
     session.add(invite)
     session.flush()
     return invite
+
+
+# ---------------------------------------------------------------------------
+# Route-test helpers (shared across unit and integration suites)
+# ---------------------------------------------------------------------------
+
+
+def get_match_state(app, link_uuid: str):
+    """Load the current match state from the DB for assertions.
+
+    Returns ``(state, match_row, session)`` or *None* if no match is found.
+    Caller **must** close the returned session.
+    """
+    session_factory = app.state.session_factory
+    session = session_factory()
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            session.close()
+            return None
+
+        match_row = (
+            session.query(Match)
+            .filter_by(player_id=player.id, status="active")
+            .order_by(Match.created_at.desc())
+            .first()
+        )
+        if match_row is None:
+            # Fall back to any match (e.g. completed)
+            match_row = (
+                session.query(Match)
+                .filter_by(player_id=player.id)
+                .order_by(Match.created_at.desc())
+                .first()
+            )
+        if match_row is None:
+            session.close()
+            return None
+
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        state = engine.deserialize(json.loads(match_row.match_state_json))
+        return state, match_row, session
+    except Exception:
+        session.close()
+        raise
+
+
+def advance_pending_reveals(
+    client,
+    app,
+    link_uuid: str,
+    *,
+    max_steps: int = 12,
+):
+    """Advance hidden auction/trick reveals until the state is actionable."""
+    for _ in range(max_steps):
+        result = get_match_state(app, link_uuid)
+        assert result is not None, "Match disappeared unexpectedly"
+        state, _, session = result
+        session.close()
+
+        hand = state.current_hand
+        if hand is None:
+            return state
+
+        has_hidden_auction = hand.revealed_auction_count < len(hand.auction)
+        if not has_hidden_auction and not hand.paused_after_trick:
+            return state
+
+        resp = client.post(f"/play/{link_uuid}/next")
+        assert resp.status_code == 200
+
+    pytest.fail("Reveal state did not settle within safety limit")
