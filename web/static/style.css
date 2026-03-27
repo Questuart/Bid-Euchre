@@ -243,12 +243,15 @@ main {
 .ai-hands-row {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 0.5rem;
 }
 
 .ai-hand-block {
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
 }
 
 .ai-seat-label {
@@ -260,6 +263,7 @@ main {
     align-items: center;
     font-size: 0.72rem;
     color: var(--color-text-muted);
+    min-height: 1.4em;
 }
 
 .ai-hand-block--middle {
@@ -268,6 +272,7 @@ main {
 
 .ai-hand-block--edge {
     flex: 0 0 auto;
+    min-width: 80px;
 }
 
 /* --------------------------------------------------------------------------
@@ -362,6 +367,7 @@ main {
 .trick-slot--left,
 .trick-slot--right {
     flex: 0 0 auto;
+    min-width: 70px;
 }
 
 .trick-center {
@@ -1105,6 +1111,11 @@ main {
         min-height: 70px;
     }
 
+    .trick-slot--left,
+    .trick-slot--right {
+        min-width: 50px;
+    }
+
     .trick-count {
         font-size: 1.25rem;
     }
@@ -1212,7 +1223,7 @@ main {
     }
 
     .ai-hands-row {
-        align-items: center;
+        align-items: stretch;
         gap: 0.35rem;
     }
 
