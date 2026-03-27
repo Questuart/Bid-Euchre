@@ -201,6 +201,7 @@ config.local.*
 secrets.*
 .env.local
 CLAUDE.local.md
+.claude/settings.local.json
 
 # Autonomous review loop and agent ops runtime state
 # Ignore all runtime contents, but track README.md schema docs in metadata dirs.

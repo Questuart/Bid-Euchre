@@ -356,11 +356,33 @@ write_lane_metadata "flex-d"         "flex"          "$FLEX_D"          "codex/s
 # All other panes launch without --channels (tmux-only).
 # STEWARD_CHANNELS is propagated via tmux set-environment (not shell export)
 # so that panes spawned by the tmux server can read it.
+#
+# Single-receiver enforcement (#1824):
+# The Telegram plugin is NOT enabled in the committed .claude/settings.json
+# (that would cause every lane to spawn its own polling instance).  Instead,
+# this script writes a per-worktree .claude/settings.local.json that enables
+# the plugin ONLY in the orchestrator's worktree.  Other lanes never get the
+# plugin, so the orchestrator is the sole inbound message receiver.
 ORCH_CHANNEL_FLAGS=""
 STEWARD_CHANNELS=""
 if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
     ORCH_CHANNEL_FLAGS="--channels plugin:telegram@claude-plugins-official"
     STEWARD_CHANNELS="telegram"
+
+    # Provision settings.local.json in the orchestrator worktree so the
+    # Telegram plugin is enabled only there.  The file is gitignored.
+    _orch_settings_local="${MAIN_DIR}/.claude/settings.local.json"
+    if [ ! -f "$_orch_settings_local" ]; then
+        cat > "$_orch_settings_local" <<'SETTINGS_EOF'
+{
+  "enabledPlugins": {
+    "telegram@claude-plugins-official": true
+  }
+}
+SETTINGS_EOF
+        echo "Created ${_orch_settings_local} (Telegram plugin enabled for orchestrator only)"
+    fi
+    unset _orch_settings_local
 fi
 
 # ---------------------------------------------------------------------------
