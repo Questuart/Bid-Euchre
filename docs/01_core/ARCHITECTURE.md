@@ -240,6 +240,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/run_notebooks.py` | Notebook execution via papermill (CI) |
 | `scripts/run_tests.py` | Test runner utility |
 | `scripts/validate_configs.py` | Config validation |
+| `scripts/analyze_capture_pipeline.py` | Data capture pipeline analysis (charts + quality report) |
 | `scripts/validate_teacher_roster.py` | Teacher roster validation |
 
 ### Internal tooling (`scripts/internal/`)
