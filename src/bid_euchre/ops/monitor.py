@@ -2082,8 +2082,8 @@ def process_inbound_ack(
                 is_ack_command=True,
                 success=False,
                 reply_text=(
-                    "\u274c Ack processed but failed to persist — "
-                    "the change will be lost on next reload."
+                    f"\u274c Ack {cmd.action.value} processed but failed to persist"
+                    " — the change will be lost on next reload."
                 ),
                 item_id=ack_result.item_id,
                 action=cmd.action.value,
