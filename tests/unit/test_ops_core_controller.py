@@ -192,3 +192,138 @@ class TestAckClearSuppress:
         assert status is not None
         item = next(i for i in status.items if i.item_id == "item-001")
         assert item.state == "suppressed"
+
+    def test_double_ack_returns_false(
+        self, ctrl_with_items: ControlPlaneController
+    ) -> None:
+        """Acking an already-acked item returns False (not in open state)."""
+        assert ctrl_with_items.ack_item("item-001") is True
+        assert ctrl_with_items.ack_item("item-001") is False
+
+    def test_clear_already_cleared_returns_false(
+        self, ctrl_with_items: ControlPlaneController
+    ) -> None:
+        """Clearing an already-cleared item returns False."""
+        assert ctrl_with_items.clear_item("item-001") is True
+        assert ctrl_with_items.clear_item("item-001") is False
+
+    def test_suppress_already_suppressed_returns_false(
+        self, ctrl_with_items: ControlPlaneController
+    ) -> None:
+        """Suppressing an already-suppressed item returns False."""
+        assert ctrl_with_items.suppress_item("item-001") is True
+        assert ctrl_with_items.suppress_item("item-001") is False
+
+    def test_clear_after_suppress_returns_false(
+        self, ctrl_with_items: ControlPlaneController
+    ) -> None:
+        """Cannot clear a suppressed item (only open/acked can be cleared)."""
+        ctrl_with_items.suppress_item("item-001")
+        assert ctrl_with_items.clear_item("item-001") is False
+
+    def test_suppress_after_clear_returns_false(
+        self, ctrl_with_items: ControlPlaneController
+    ) -> None:
+        """Cannot suppress a cleared item (only open/acked can be suppressed)."""
+        ctrl_with_items.clear_item("item-001")
+        assert ctrl_with_items.suppress_item("item-001") is False
+
+    def test_operations_on_different_items(
+        self, ctrl_with_items: ControlPlaneController
+    ) -> None:
+        """Operations on one item don't affect another."""
+        ctrl_with_items.ack_item("item-001")
+        ctrl_with_items.suppress_item("item-002")
+
+        status = ctrl_with_items.load_status()
+        assert status is not None
+
+        item1 = next(i for i in status.items if i.item_id == "item-001")
+        item2 = next(i for i in status.items if i.item_id == "item-002")
+        assert item1.state == "acked"
+        assert item2.state == "suppressed"
+
+
+class TestReconcileMultipleInputs:
+    """Verify reconcile() with multiple input source combinations."""
+
+    def test_reconcile_all_none(self, tmp_path: Path) -> None:
+        """Reconcile with all inputs explicitly None produces empty status."""
+        ctrl = ControlPlaneController(runtime_dir=tmp_path)
+        status = ctrl.reconcile(
+            monitor_findings=None,
+            task_packets=None,
+            unacked_messages=None,
+            audit_records=None,
+        )
+        assert isinstance(status, FleetStatus)
+        assert status.items == []
+
+    def test_reconcile_with_task_packets(self, tmp_path: Path) -> None:
+        """Reconcile processes task packet input."""
+        ctrl = ControlPlaneController(runtime_dir=tmp_path)
+        packets = [
+            {
+                "packet_id": "pkt-001",
+                "status": "dispatched",
+                "owner": "author-a",
+                "title": "Test task",
+            }
+        ]
+        status = ctrl.reconcile(task_packets=packets)
+        assert isinstance(status, FleetStatus)
+
+    def test_reconcile_with_unacked_messages(self, tmp_path: Path) -> None:
+        """Reconcile processes unacked message input."""
+        ctrl = ControlPlaneController(runtime_dir=tmp_path)
+        messages = [
+            {
+                "message_id": "msg-001",
+                "from_lane": "author-a",
+                "type": "blocker",
+                "summary": "Help needed",
+            }
+        ]
+        status = ctrl.reconcile(unacked_messages=messages)
+        assert isinstance(status, FleetStatus)
+
+    def test_reconcile_with_audit_records(self, tmp_path: Path) -> None:
+        """Reconcile processes audit record input."""
+        ctrl = ControlPlaneController(runtime_dir=tmp_path)
+        audits = [
+            {
+                "type": "outbound_exchange",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "details": {"tool": "Bash"},
+            }
+        ]
+        status = ctrl.reconcile(audit_records=audits)
+        assert isinstance(status, FleetStatus)
+
+    def test_reconcile_combined_inputs(self, tmp_path: Path) -> None:
+        """Reconcile handles all input sources simultaneously."""
+        ctrl = ControlPlaneController(runtime_dir=tmp_path)
+        findings = [
+            {
+                "category": "stale_dispatch",
+                "severity": "high",
+                "summary": "Stale",
+                "details": {},
+            }
+        ]
+        packets = [
+            {
+                "packet_id": "pkt-002",
+                "status": "dispatched",
+                "owner": "author-b",
+                "title": "Another task",
+            }
+        ]
+        status = ctrl.reconcile(
+            monitor_findings=findings,
+            task_packets=packets,
+            unacked_messages=[],
+            audit_records=[],
+        )
+        assert isinstance(status, FleetStatus)
+        assert status.cycle_count >= 1

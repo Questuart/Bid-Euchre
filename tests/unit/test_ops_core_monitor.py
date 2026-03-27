@@ -191,6 +191,117 @@ class TestFindingsToDicts:
         assert MonitorService._findings_to_dicts([]) == []
 
 
+class TestRunCycleMultipleFindings:
+    """Verify run_cycle() correctly converts multiple findings."""
+
+    @patch("bid_euchre.ops.monitor.run_monitoring_cycle")
+    def test_multiple_categories(self, mock_cycle: MagicMock) -> None:
+        """Multiple findings from different categories all convert correctly."""
+        mock_cycle.return_value = [
+            MonitorFinding(
+                category="lane_health",
+                severity="high",
+                summary="Lane degraded",
+                details={"lane_id": "author-a"},
+            ),
+            MonitorFinding(
+                category="stale_dispatch",
+                severity="warn",
+                summary="Stale 30m",
+                details={"packet_id": "pkt-1", "elapsed": 30},
+            ),
+            MonitorFinding(
+                category="idle_lane",
+                severity="info",
+                summary="Lane idle",
+                details={"lane_id": "author-c"},
+            ),
+        ]
+        mon = MonitorService()
+        result = mon.run_cycle()
+
+        assert len(result) == 3
+        categories = [d["category"] for d in result]
+        assert categories == ["lane_health", "stale_dispatch", "idle_lane"]
+
+    @patch("bid_euchre.ops.monitor.run_monitoring_cycle")
+    def test_findings_are_independent_dicts(self, mock_cycle: MagicMock) -> None:
+        """Each finding converts to an independent dict (no shared references)."""
+        mock_cycle.return_value = [
+            MonitorFinding(
+                category="test",
+                severity="info",
+                summary="A",
+                details={"key": "val1"},
+            ),
+            MonitorFinding(
+                category="test",
+                severity="info",
+                summary="B",
+                details={"key": "val2"},
+            ),
+        ]
+        mon = MonitorService()
+        result = mon.run_cycle()
+
+        # Mutating one dict shouldn't affect the other
+        result[0]["details"]["key"] = "mutated"
+        assert result[1]["details"]["key"] == "val2"
+
+
+class TestFindingsFieldPreservation:
+    """Verify that all MonitorFinding fields survive dict conversion."""
+
+    def test_all_fields_present_in_dict(self) -> None:
+        """Every MonitorFinding field appears in the converted dict."""
+        finding = MonitorFinding(
+            category="stale_dispatch",
+            severity="high",
+            summary="Stale packet pkt-abc",
+            details={"packet_id": "pkt-abc", "owner": "author-d"},
+        )
+        result = MonitorService._findings_to_dicts([finding])
+        d = result[0]
+
+        assert d["category"] == "stale_dispatch"
+        assert d["severity"] == "high"
+        assert d["summary"] == "Stale packet pkt-abc"
+        assert d["details"]["packet_id"] == "pkt-abc"
+        assert d["details"]["owner"] == "author-d"
+
+    def test_empty_details_produces_empty_dict(self) -> None:
+        """A finding with default (empty) details converts to empty dict."""
+        finding = MonitorFinding(
+            category="test",
+            severity="info",
+            summary="No details",
+        )
+        result = MonitorService._findings_to_dicts([finding])
+        assert result[0]["details"] == {}
+
+    def test_nested_details_preserved(self) -> None:
+        """Nested structures in details survive conversion."""
+        nested = {
+            "lane_id": "author-a",
+            "checks": [
+                {"name": "health", "passed": True},
+                {"name": "stale", "passed": False},
+            ],
+            "metadata": {"inner": {"deep": 42}},
+        }
+        finding = MonitorFinding(
+            category="complex",
+            severity="warn",
+            summary="Nested details",
+            details=nested,
+        )
+        result = MonitorService._findings_to_dicts([finding])
+        d = result[0]["details"]
+
+        assert d["checks"][1]["passed"] is False
+        assert d["metadata"]["inner"]["deep"] == 42
+
+
 class TestModuleExports:
     """Verify core __init__.py exports include the new classes."""
 
