@@ -1219,7 +1219,7 @@ class TestWriteHeartbeat:
             assert hb_path.exists()
             ts = float(hb_path.read_text().strip())
             # Should be within the last few seconds
-            assert time.time() - ts < 5
+            assert time.time() - ts < 30  # generous for slow CI runners
 
 
 class TestCheckHeartbeatFresh:

@@ -8,7 +8,6 @@ import json
 import os
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
@@ -73,30 +72,28 @@ def run_compare(
 def test_compare_runs_identical_runs():
     """Comparing two identical runs should show no significant differences."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Run same config twice with same seed
+        # Use separate run dirs so runs never collide on timestamp-based
+        # run_id — eliminates the need for a 1-second sleep between runs.
+        run_dir_1 = os.path.join(tmpdir, "run1")
+        run_dir_2 = os.path.join(tmpdir, "run2")
+
         result1 = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "100"],
-            run_dir=tmpdir,
+            run_dir=run_dir_1,
         )
         assert result1.returncode == 0, f"Run 1 failed: {result1.stderr}"
-
-        # Wait 1 second to ensure different timestamp in run_id
-        time.sleep(1)
 
         result2 = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "42", "--n_per", "100"],
-            run_dir=tmpdir,
+            run_dir=run_dir_2,
         )
         assert result2.returncode == 0, f"Run 2 failed: {result2.stderr}"
 
-        # Find run directories
-        run_dirs = sorted(Path(tmpdir).glob("*"))
-        assert len(run_dirs) == 2, f"Expected 2 run directories, found {len(run_dirs)}"
-
-        baseline_dir = run_dirs[0]
-        candidate_dir = run_dirs[1]
+        # Each run dir has exactly one sub-directory
+        baseline_dir = next(Path(run_dir_1).iterdir())
+        candidate_dir = next(Path(run_dir_2).iterdir())
 
         # Compare runs
         result = run_compare(baseline_dir, candidate_dir, format="json")
@@ -132,31 +129,29 @@ def test_compare_runs_identical_runs():
 def test_compare_runs_different_strategies():
     """Comparing different strategies should detect significant differences."""
     with tempfile.TemporaryDirectory() as tmpdir:
+        # Use separate run dirs to avoid timestamp-based run_id collision.
+        run_dir_1 = os.path.join(tmpdir, "run1")
+        run_dir_2 = os.path.join(tmpdir, "run2")
+
         # Run same config (quick_test) with different seeds to get different results
         # Both runs have same scenarios (greedy/high and greedy/suit_H), so comparison works
         result1 = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "100", "--n_per", "200"],
-            run_dir=tmpdir,
+            run_dir=run_dir_1,
         )
         assert result1.returncode == 0, f"Run 1 failed: {result1.stderr}"
-
-        # Wait 1 second to ensure different timestamp
-        time.sleep(1)
 
         result2 = run_experiment(
             "experiments/configs/quick_test.yaml",
             ["--seed", "999", "--n_per", "200"],
-            run_dir=tmpdir,
+            run_dir=run_dir_2,
         )
         assert result2.returncode == 0, f"Run 2 failed: {result2.stderr}"
 
-        # Find run directories
-        run_dirs = sorted(Path(tmpdir).glob("*"))
-        assert len(run_dirs) == 2, f"Expected 2 run directories, found {len(run_dirs)}"
-
-        baseline_dir = run_dirs[0]
-        candidate_dir = run_dirs[1]
+        # Each run dir has exactly one sub-directory
+        baseline_dir = next(Path(run_dir_1).iterdir())
+        candidate_dir = next(Path(run_dir_2).iterdir())
 
         # Compare runs
         result = run_compare(baseline_dir, candidate_dir, format="json")

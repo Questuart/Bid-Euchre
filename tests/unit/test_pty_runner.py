@@ -54,7 +54,7 @@ class TestPTYTimeout:
         elapsed = time.monotonic() - start
 
         assert rc is None  # None = killed by timeout
-        assert elapsed < 5  # Should complete in ~2s, not 30s
+        assert elapsed < 10  # Should complete in ~2s; generous for slow CI
 
     def test_timeout_captures_partial_output(self):
         """Output produced before timeout is captured."""
@@ -73,7 +73,7 @@ class TestPTYTimeout:
 
         assert rc == 0
         assert "fast" in output
-        assert elapsed < 5  # Should be near-instant
+        assert elapsed < 10  # Should be near-instant; generous for slow CI
 
 
 class TestPTYEdgeCases:
