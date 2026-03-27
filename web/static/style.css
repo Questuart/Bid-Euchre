@@ -350,6 +350,29 @@ main {
     color: #fff;
 }
 
+.seat-marker--leader {
+    background: #1565c0;
+    color: #fff;
+}
+
+/* Lead suit indicator shown next to trick heading */
+.lead-suit {
+    display: inline-block;
+    margin-left: 0.35rem;
+    font-size: 1.1em;
+    vertical-align: middle;
+}
+
+.lead-suit--hearts,
+.lead-suit--diamonds {
+    color: #c62828;
+}
+
+.lead-suit--spades,
+.lead-suit--clubs {
+    color: #222;
+}
+
 /* Top (partner) */
 .trick-slot--top {
     margin-bottom: 0.25rem;

@@ -7,9 +7,9 @@
        - link_uuid: str — player's game link UUID
        - opp_left_count, partner_count, opp_right_count: int — AI hand card counts
 #}
-{% set dealer_seat = dealer_seat | default(-1, true) %}
-{% set bidder_seat = bidder_seat | default(-1, true) %}
-{% set current_seat = current_seat | default(-1, true) %}
+{% set dealer_seat = dealer_seat if (dealer_seat is defined and dealer_seat is not none) else -1 %}
+{% set bidder_seat = bidder_seat if (bidder_seat is defined and bidder_seat is not none) else -1 %}
+{% set current_seat = current_seat if (current_seat is defined and current_seat is not none) else -1 %}
 {% set sitting_out_seat = sitting_out_seat | default(None, true) %}
 {% set show_next = show_next | default(false, true) %}
 {% set show_bid_panel = show_bid_panel | default(false, true) %}

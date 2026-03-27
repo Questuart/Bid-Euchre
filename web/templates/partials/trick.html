@@ -15,21 +15,27 @@
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
 {% set display_plays = [] %}
 {% set display_winner = None %}
+{% set display_leader = None %}
 {% set display_trick_number = (completed_tricks | length) + 1 %}
 {% set display_heading = "Trick " ~ display_trick_number ~ " of 10" %}
 
 {% if current_trick %}
     {% set display_plays = current_trick.plays %}
+    {% set display_leader = current_trick.get("leader") if current_trick is mapping else current_trick.leader %}
 {% elif completed_tricks %}
     {% set last = completed_tricks[-1] %}
     {% set display_plays = last.plays %}
     {% set display_winner = last.winner %}
+    {% set display_leader = last.get("leader") if last is mapping else last.leader %}
     {% set display_trick_number = completed_tricks | length %}
     {% set display_heading = "Trick " ~ display_trick_number ~ " of 10 complete" %}
 {% endif %}
 
-{% macro seat_markers(seat) %}
+{% macro seat_markers(seat, leader_seat=None) %}
     <div class="seat-markers">
+        {% if leader_seat is not none and leader_seat == seat %}
+            <span class="seat-marker seat-marker--leader" title="Lead">L</span>
+        {% endif %}
         {% if dealer_seat == seat %}
             <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
         {% endif %}
@@ -70,16 +76,26 @@
 {% endfor %}
 
 <div id="trick-area" class="trick-area" role="region" aria-label="Current trick" aria-live="polite">
-    <h3>{{ display_heading }}</h3>
+    <h3>
+        {{ display_heading }}
+        {% if display_plays %}
+            {% set lead_card = display_plays[0] %}
+            {% set lead_suit = lead_card[1][0] %}
+            <span class="lead-suit lead-suit--{{ suit_classes.get(lead_suit, 'spades') }}"
+                  aria-label="Lead suit: {{ suit_names.get(lead_suit, lead_suit) }}">
+                {{ suit_symbols.get(lead_suit, lead_suit) }}
+            </span>
+        {% endif %}
+    </h3>
     <div class="trick-table" role="group" aria-label="Cards played this trick, score {{ tricks_team0 }} to {{ tricks_team1 }}">
         <div class="trick-slot trick-slot--top">
-            {{ seat_markers(2) }}
+            {{ seat_markers(2, display_leader) }}
             {{ card_slot(2) }}
         </div>
 
         <div class="trick-row-middle">
             <div class="trick-slot trick-slot--left">
-                {{ seat_markers(1) }}
+                {{ seat_markers(1, display_leader) }}
                 {{ card_slot(1) }}
             </div>
 
@@ -88,13 +104,13 @@
             </div>
 
             <div class="trick-slot trick-slot--right">
-                {{ seat_markers(3) }}
+                {{ seat_markers(3, display_leader) }}
                 {{ card_slot(3) }}
             </div>
         </div>
 
         <div class="trick-slot trick-slot--bottom">
-            {{ seat_markers(0) }}
+            {{ seat_markers(0, display_leader) }}
             {{ card_slot(0) }}
         </div>
     </div>

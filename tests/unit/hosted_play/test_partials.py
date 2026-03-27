@@ -540,6 +540,71 @@ class TestTrick:
         assert 'title="Declarer"' in html
         assert 'title="Sitting out"' in html
 
+    def test_leader_marker_shown_for_trick_leader(self, env):
+        """Leader seat gets an 'L' marker during the current trick."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 1, "plays": [[1, ["H", "A"]]]},
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=2,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert "seat-marker--leader" in html
+        assert 'title="Lead"' in html
+
+    def test_leader_marker_shown_for_completed_trick(self, env):
+        """Leader marker renders when showing a completed trick (no current)."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick=None,
+            completed_tricks=[
+                {"leader": 2, "plays": [[2, ["S", "K"]]], "winner": 2},
+            ],
+            dealer_seat=0,
+            bidder_seat=1,
+            current_seat=3,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=1,
+        )
+        assert "seat-marker--leader" in html
+        assert 'title="Lead"' in html
+
+    def test_lead_suit_displayed(self, env):
+        """Lead suit symbol shown next to the trick heading."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": [[0, ["H", "A"]]]},
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=1,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert "lead-suit" in html
+        assert "\u2665" in html  # ♥
+
+    def test_lead_suit_not_shown_when_no_plays(self, env):
+        """Lead suit indicator not present when trick has no plays yet."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": []},
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=0,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert "lead-suit" not in html
+
 
 # ---------------------------------------------------------------------------
 # game_controls.html
@@ -1197,6 +1262,109 @@ class TestTrickWinnerCard:
         assert "with" in html
         assert "\u2660" in html  # spade symbol
         assert "A" in html
+
+
+# ---------------------------------------------------------------------------
+# game_board.html — seat-0 declarer regression (issue #1913)
+# ---------------------------------------------------------------------------
+
+
+class TestGameBoardSeatZeroRegression:
+    """Regression: bidder_seat=0 must not be coerced to -1 by default filter.
+
+    The old ``| default(-1, true)`` treated 0 as falsy, causing
+    ``hand_result.html`` to assign the wrong declarer team when the human
+    (seat 0) bid and was set.  See issue #1913.
+    """
+
+    def test_hand_result_via_game_board_seat0_set(self, env):
+        """Human (seat 0) bid and got set — banner must say 'Set!'."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="hand_result",
+            link_uuid="test-uuid",
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            bid_type="regular",
+            dealer_seat=3,
+            current_seat=0,
+            sitting_out_seat=None,
+            tricks_team0=4,
+            tricks_team1=6,
+            points_team0=-6,
+            points_team1=6,
+            score_human=-6,
+            score_ai=6,
+            hands_played=1,
+        )
+        assert "Set!" in html
+        # Verify human is identified as the bidder
+        assert "You" in html
+        # Should NOT say "Made it!"
+        assert "Made it!" not in html
+
+    def test_hand_result_via_game_board_seat0_made(self, env):
+        """Human (seat 0) bid and made — banner must say 'Made it!'."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="hand_result",
+            link_uuid="test-uuid",
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="H",
+            bid_type="regular",
+            dealer_seat=3,
+            current_seat=0,
+            sitting_out_seat=None,
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert "Made it!" in html
+        assert "You" in html
+
+    def test_dealer_seat_zero_preserved(self, env):
+        """dealer_seat=0 must not be coerced to -1."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="trick_play",
+            link_uuid="test-uuid",
+            dealer_seat=0,
+            bidder_seat=1,
+            current_seat=2,
+            sitting_out_seat=None,
+            current_trick={"leader": 1, "plays": [[1, ["H", "K"]]]},
+            completed_tricks=[],
+            human_hand=[["S", "A"], ["H", "Q"]],
+            auction=[],
+            contract_type="suit",
+            trump="H",
+            bid_type="regular",
+            winning_bid=5,
+            current_high_bid=5,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=False,
+            action_rail=[],
+        )
+        # The human (seat 0) should show the dealer marker
+        assert "seat-marker--dealer" in html
 
 
 # ---------------------------------------------------------------------------
