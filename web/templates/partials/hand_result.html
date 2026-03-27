@@ -15,6 +15,7 @@
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set bidder_seat = bidder_seat | int %}
 {% set hand_bid_type = bid_type | default("regular") %}
 {% set exchange_given_cards = exchange_given | default([], true) %}
 {% set exchange_received_cards = exchange_received | default([], true) %}
