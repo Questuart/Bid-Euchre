@@ -418,6 +418,7 @@ class TestAdapterPackageExports:
             "MonitorService",
             "TaskQueueService",
             "WorkerPoolService",
+            "create_provider",
         }
         assert expected == set(adapters.__all__)
 
