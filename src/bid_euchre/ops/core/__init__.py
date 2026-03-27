@@ -12,10 +12,15 @@ The four pillars:
 - **AbstractTaskQueue** — manages durable task packet lifecycle
 - **AbstractWorkerPool** — manages worker lane lifecycle and dispatch
 
-Concrete implementations (Platform-10 PR2):
+Concrete implementations:
 
 - **ControlPlaneController** — wraps ``bid_euchre.ops.control_plane``
 - **MonitorService** — wraps ``bid_euchre.ops.monitor``
+
+Service provider:
+
+- **ServiceProvider** — constructs and holds all four adapters as a cohesive
+  unit, providing a single entry point for the orchestration loop.
 
 Usage::
 
@@ -26,7 +31,12 @@ Usage::
         AbstractWorkerPool,
         ControlPlaneController,
         MonitorService,
+        ServiceProvider,
     )
+
+    # Construct the default Bid-Euchre adapter set
+    provider = ServiceProvider.default()
+    status = provider.controller.reconcile(monitor_findings=findings)
 """
 
 from bid_euchre.ops.core.controller import ControlPlaneController
@@ -37,6 +47,7 @@ from bid_euchre.ops.core.interfaces import (
     AbstractWorkerPool,
 )
 from bid_euchre.ops.core.monitor import MonitorService
+from bid_euchre.ops.core.provider import ServiceProvider
 
 __all__ = [
     "AbstractController",
@@ -45,4 +56,5 @@ __all__ = [
     "AbstractWorkerPool",
     "ControlPlaneController",
     "MonitorService",
+    "ServiceProvider",
 ]
