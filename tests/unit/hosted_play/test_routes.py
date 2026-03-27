@@ -16,7 +16,11 @@ from bid_euchre.core.cards import Card
 from bid_euchre.hosted_play import TrickResult, TrickState
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
 from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
-from tests.unit.hosted_play.conftest import make_hosted_play_test_config
+from tests.unit.hosted_play.conftest import (
+    advance_pending_reveals,
+    get_match_state,
+    make_hosted_play_test_config,
+)
 from web.ai_manager import AIManager, ModelInfo
 from web.app import create_app
 from web.db import Decision, Hand, InviteCode, Match, Player
@@ -75,75 +79,12 @@ def _select_ai(client: TestClient, link_uuid: str, model_id: str = "olsa"):
     )
 
 
-def _get_match_state(app, link_uuid: str):
-    """Load the current match state from the DB for assertions."""
-    session_factory = app.state.session_factory
-    session = session_factory()
-    try:
-        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
-        match_row = (
-            session.query(Match)
-            .filter_by(player_id=player.id, status="active")
-            .order_by(Match.created_at.desc())
-            .first()
-        )
-        if match_row is None:
-            # Check for completed matches
-            match_row = (
-                session.query(Match)
-                .filter_by(player_id=player.id)
-                .order_by(Match.created_at.desc())
-                .first()
-            )
-        if match_row is None:
-            return None
-        ai_manager = app.state.ai_manager
-        info = ai_manager.get_model_info(match_row.ai_model)
-        engine = MatchEngine(
-            bidding_policy=info.bidding_policy,
-            play_strategy=info.play_strategy,
-        )
-        state = engine.deserialize(json.loads(match_row.match_state_json))
-        return state, match_row, session
-    except Exception:
-        session.close()
-        raise
-
-
 def _setup_game(client: TestClient) -> str:
     """Create game, set nickname, select AI, return link_uuid."""
     link_uuid = _create_game(client)
     _set_nickname(client, link_uuid)
     _select_ai(client, link_uuid)
     return link_uuid
-
-
-def _advance_pending_reveals(
-    client: TestClient,
-    app,
-    link_uuid: str,
-    *,
-    max_steps: int = 12,
-):
-    """Advance hidden auction/trick reveals until the state is actionable."""
-    for _ in range(max_steps):
-        result = _get_match_state(app, link_uuid)
-        assert result is not None
-        state, _, session = result
-        session.close()
-
-        hand = state.current_hand
-        if hand is None:
-            return state
-
-        has_hidden_auction = hand.revealed_auction_count < len(hand.auction)
-        if not has_hidden_auction and not hand.paused_after_trick:
-            return state
-
-        resp = client.post(f"/play/{link_uuid}/next")
-        assert resp.status_code == 200
-
-    pytest.fail("Reveal state did not settle within safety limit")
 
 
 # ---------------------------------------------------------------------------
@@ -231,10 +172,10 @@ class TestSubmitBid:
 
     def test_submit_bid_advances_state(self, client, app):
         link_uuid = _setup_game(client)
-        _advance_pending_reveals(client, app, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
 
         # Get the current state to find the turn number
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, match_row, session = result
         session.close()
@@ -256,7 +197,7 @@ class TestSubmitBid:
             assert resp.status_code == 200
 
             # State should have advanced
-            result2 = _get_match_state(app, link_uuid)
+            result2 = get_match_state(app, link_uuid)
             assert result2 is not None
             state2, _, session2 = result2
             # Either the hand advanced past this turn or a new hand started
@@ -278,7 +219,7 @@ class TestNextRevealFlow:
         """GET/POST next exposes hidden auction actions one step at a time."""
         link_uuid = _setup_game(client)
 
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, match_row, session = result
 
@@ -313,7 +254,7 @@ class TestNextRevealFlow:
         assert resp.status_code == 200
         assert "Submit Bid" in resp.text
 
-        result_after = _get_match_state(app, link_uuid)
+        result_after = get_match_state(app, link_uuid)
         assert result_after is not None
         state_after, _, session_after = result_after
         assert state_after.current_hand is not None
@@ -324,7 +265,7 @@ class TestNextRevealFlow:
         """Paused trick state hides play controls until the user presses Next."""
         link_uuid = _setup_game(client)
 
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, match_row, session = result
 
@@ -373,7 +314,7 @@ class TestNextRevealFlow:
         assert resp.status_code == 200
         assert "Play card" in resp.text
 
-        result_after = _get_match_state(app, link_uuid)
+        result_after = get_match_state(app, link_uuid)
         assert result_after is not None
         state_after, _, session_after = result_after
         assert state_after.current_hand is not None
@@ -395,8 +336,8 @@ class TestSubmitCard:
         # We need to get to trick_play phase with the human's turn.
         # Keep bidding pass until the auction resolves.
         for _ in range(20):  # safety limit for redeals
-            _advance_pending_reveals(client, app, link_uuid)
-            result = _get_match_state(app, link_uuid)
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, _, session = result
             session.close()
@@ -437,7 +378,7 @@ class TestSubmitCard:
                 assert resp.status_code == 200
 
                 # State should have advanced
-                result2 = _get_match_state(app, link_uuid)
+                result2 = get_match_state(app, link_uuid)
                 assert result2 is not None
                 state2, _, session2 = result2
                 if state2.current_hand is not None:
@@ -461,9 +402,9 @@ class TestIdempotentResubmission:
 
     def test_idempotent_bid(self, client, app):
         link_uuid = _setup_game(client)
-        _advance_pending_reveals(client, app, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
 
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, _, session = result
         session.close()
@@ -502,8 +443,8 @@ class TestInvalidMove:
 
         # Navigate to trick play phase
         for _ in range(20):
-            _advance_pending_reveals(client, app, link_uuid)
-            result = _get_match_state(app, link_uuid)
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, _, session = result
             session.close()
@@ -547,7 +488,7 @@ class TestMatchResume:
     def test_resume_after_bid(self, client, app):
         link_uuid = _setup_game(client)
 
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, _, session = result
         session.close()
@@ -593,8 +534,8 @@ class TestMatchCompletion:
         max_turns = 2000  # safety limit
 
         while turns_played < max_turns:
-            _advance_pending_reveals(client, app, link_uuid)
-            result = _get_match_state(app, link_uuid)
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, match_row, session = result
 
@@ -664,7 +605,7 @@ class TestMatchCompletion:
             turns_played += 1
 
         # If we get here, verify match eventually completed or we ran out of turns
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         if result is not None:
             state, match_row, session = result
             session.close()
@@ -688,8 +629,8 @@ class TestDecisionLogging:
 
         # Play a few turns to generate decisions
         for _ in range(20):
-            _advance_pending_reveals(client, app, link_uuid)
-            result = _get_match_state(app, link_uuid)
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, _, session = result
             session.close()
@@ -844,10 +785,10 @@ class TestRedealPersistence:
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
         _select_ai(client, link_uuid)
-        _advance_pending_reveals(client, app, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
 
         # Load the current match state to get the turn number
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, match_row, session = result
 
@@ -904,7 +845,7 @@ class TestRedealPersistence:
         _set_nickname(client, link_uuid)
         _select_ai(client, link_uuid)
 
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, _, session = result
         hand = state.current_hand
@@ -922,7 +863,7 @@ class TestRedealPersistence:
         )
 
         # Load the match state after redeal
-        result2 = _get_match_state(app, link_uuid)
+        result2 = get_match_state(app, link_uuid)
         assert result2 is not None
         state2, _, session2 = result2
 
@@ -1072,8 +1013,8 @@ class TestAIDecisionContent:
 
         # Play a few auction turns to generate AI bid decisions
         for _ in range(10):
-            _advance_pending_reveals(client, app, link_uuid)
-            result = _get_match_state(app, link_uuid)
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, _, session = result
             session.close()
@@ -1136,7 +1077,7 @@ class TestAIDecisionContent:
 
         # Navigate to trick play and play one card
         for _ in range(20):
-            result = _get_match_state(app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, _, session = result
             session.close()
@@ -1218,8 +1159,8 @@ def _advance_to_trick_play(client: TestClient, app, link_uuid: str):
     or calls ``pytest.fail`` if not reachable within safety limit.
     """
     for _ in range(20):
-        _advance_pending_reveals(client, app, link_uuid)
-        result = _get_match_state(app, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, _, session = result
         session.close()
@@ -1248,8 +1189,8 @@ def _advance_to_trick_play(client: TestClient, app, link_uuid: str):
 def _complete_one_hand(client: TestClient, app, link_uuid: str):
     """Drive to a completed hand and return that state."""
     for _ in range(220):
-        _advance_pending_reveals(client, app, link_uuid)
-        result = _get_match_state(app, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, _, session = result
         session.close()
@@ -1322,9 +1263,9 @@ class TestRefreshResumeSafety:
     def test_refresh_mid_auction_shows_correct_bid_state(self, client, app):
         """GET /play/{uuid} mid-auction renders correct turn_number and auction data."""
         link_uuid = _setup_game(client)
-        _advance_pending_reveals(client, app, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
 
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, _, session = result
         session.close()
@@ -1345,7 +1286,7 @@ class TestRefreshResumeSafety:
         assert resp.status_code == 200
 
         # Verify the response reflects the DB-persisted state, not stale data
-        result2 = _get_match_state(app, link_uuid)
+        result2 = get_match_state(app, link_uuid)
         assert result2 is not None
         state2, match_row2, session2 = result2
 
@@ -1393,7 +1334,7 @@ class TestRefreshResumeSafety:
         assert resp.status_code == 200
 
         # Verify persisted state is consistent with the GET response
-        result2 = _get_match_state(app, link_uuid)
+        result2 = get_match_state(app, link_uuid)
         assert result2 is not None
         state2, match_row2, session2 = result2
 
@@ -1426,7 +1367,7 @@ class TestRefreshResumeSafety:
         """GET /play/{uuid} after a hand completes shows next hand or result."""
         link_uuid = _setup_game(client)
 
-        initial_result = _get_match_state(app, link_uuid)
+        initial_result = get_match_state(app, link_uuid)
         assert initial_result is not None
         _, _, session = initial_result
         session.close()
@@ -1434,8 +1375,8 @@ class TestRefreshResumeSafety:
         # Play through an entire hand
         hands_before = 0
         for _ in range(200):  # safety limit for one hand
-            _advance_pending_reveals(client, app, link_uuid)
-            result = _get_match_state(app, link_uuid)
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, _, session = result
             session.close()
@@ -1493,7 +1434,7 @@ class TestRefreshResumeSafety:
         assert resp.status_code == 200
 
         # Verify the refresh shows valid game state
-        result_after = _get_match_state(app, link_uuid)
+        result_after = get_match_state(app, link_uuid)
         assert result_after is not None
         state_after, match_row_after, session_after = result_after
 
@@ -1540,7 +1481,7 @@ class TestRefreshResumeSafety:
         assert resp.status_code == 200
         assert "game-board" in resp.text
 
-        result_after = _get_match_state(app, link_uuid)
+        result_after = get_match_state(app, link_uuid)
         assert result_after is not None
         state_after, _, session_after = result_after
 
@@ -1556,7 +1497,7 @@ class TestRefreshResumeSafety:
         """POST /next-hand is idempotent unless hand.phase == complete."""
         link_uuid = _setup_game(client)
 
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state_before, match_row_before, session_before = result
 
@@ -1569,7 +1510,7 @@ class TestRefreshResumeSafety:
         resp = client.post(f"/play/{link_uuid}/next-hand")
         assert resp.status_code == 200
 
-        result_after = _get_match_state(app, link_uuid)
+        result_after = get_match_state(app, link_uuid)
         assert result_after is not None
         state_after, match_row_after, session_after = result_after
 
@@ -1587,9 +1528,9 @@ class TestRefreshResumeSafety:
     def test_double_click_bid_no_state_corruption(self, client, app):
         """Submitting the same bid turn_number twice causes no state corruption."""
         link_uuid = _setup_game(client)
-        _advance_pending_reveals(client, app, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
 
-        result = _get_match_state(app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None
         state, _, session = result
         session.close()
@@ -1606,7 +1547,7 @@ class TestRefreshResumeSafety:
         assert resp1.status_code == 200
 
         # Capture state after first submission
-        result1 = _get_match_state(app, link_uuid)
+        result1 = get_match_state(app, link_uuid)
         assert result1 is not None
         state1, match_row1, session1 = result1
         state_json_1 = match_row1.match_state_json
@@ -1617,7 +1558,7 @@ class TestRefreshResumeSafety:
         assert resp2.status_code == 200
 
         # State must not have changed from the second submission
-        result2 = _get_match_state(app, link_uuid)
+        result2 = get_match_state(app, link_uuid)
         assert result2 is not None
         state2, match_row2, session2 = result2
 
@@ -1666,7 +1607,7 @@ class TestRefreshResumeSafety:
         assert resp1.status_code == 200
 
         # Capture state after first submission
-        result1 = _get_match_state(app, link_uuid)
+        result1 = get_match_state(app, link_uuid)
         assert result1 is not None
         state1, match_row1, session1 = result1
         state_json_1 = match_row1.match_state_json
@@ -1677,7 +1618,7 @@ class TestRefreshResumeSafety:
         assert resp2.status_code == 200
 
         # State must not have changed from the second submission
-        result2 = _get_match_state(app, link_uuid)
+        result2 = get_match_state(app, link_uuid)
         assert result2 is not None
         state2, match_row2, session2 = result2
 
@@ -1696,7 +1637,7 @@ class TestRefreshResumeSafety:
         # Play several turns to build up state
         actions_taken = 0
         for _ in range(15):
-            result = _get_match_state(app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, _, session = result
             session.close()
@@ -1737,7 +1678,7 @@ class TestRefreshResumeSafety:
         assert actions_taken > 0, "Expected at least one action before navigate-away"
 
         # Snapshot the DB state before "navigating away"
-        result_before = _get_match_state(app, link_uuid)
+        result_before = get_match_state(app, link_uuid)
         assert result_before is not None
         state_before, match_row_before, session_before = result_before
         snapshot_json = match_row_before.match_state_json
@@ -1755,7 +1696,7 @@ class TestRefreshResumeSafety:
         assert resp_return.status_code == 200
 
         # Verify the full state is restored from the DB
-        result_after = _get_match_state(app, link_uuid)
+        result_after = get_match_state(app, link_uuid)
         assert result_after is not None
         state_after, match_row_after, session_after = result_after
 
@@ -1782,7 +1723,7 @@ class TestRefreshResumeSafety:
 
         # Play to completion
         for _ in range(4000):
-            result = _get_match_state(app, link_uuid)
+            result = get_match_state(app, link_uuid)
             assert result is not None
             state, match_row, session = result
 

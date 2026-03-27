@@ -22,7 +22,11 @@ pytestmark = pytest.mark.integration
 from starlette.testclient import TestClient
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
-from tests.unit.hosted_play.conftest import make_hosted_play_test_config
+from tests.unit.hosted_play.conftest import (
+    advance_pending_reveals,
+    get_match_state,
+    make_hosted_play_test_config,
+)
 from web.app import create_app
 from web.db import Decision, Hand, Match, Player
 from web.export import REQUIRED_FIELDS, export_decisions
@@ -82,77 +86,12 @@ def _select_ai(client: TestClient, link_uuid: str, model_id: str = "olsa"):
     )
 
 
-def _get_match_state(app, link_uuid: str):
-    """Load the current match state from the DB for assertions.
-
-    Returns (state, match_row, session) or None if no match found.
-    Caller must close the session.
-    """
-    session_factory = app.state.session_factory
-    session = session_factory()
-    try:
-        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
-        if player is None:
-            session.close()
-            return None
-
-        match_row = (
-            session.query(Match)
-            .filter_by(player_id=player.id)
-            .order_by(Match.created_at.desc())
-            .first()
-        )
-        if match_row is None:
-            session.close()
-            return None
-
-        ai_manager = app.state.ai_manager
-        info = ai_manager.get_model_info(match_row.ai_model)
-        engine = MatchEngine(
-            bidding_policy=info.bidding_policy,
-            play_strategy=info.play_strategy,
-        )
-        state = engine.deserialize(json.loads(match_row.match_state_json))
-        return state, match_row, session
-    except Exception:
-        session.close()
-        raise
-
-
 def _setup_game(client: TestClient) -> str:
     """Create game, set nickname, select AI, return link_uuid."""
     link_uuid = _create_game(client)
     _set_nickname(client, link_uuid)
     _select_ai(client, link_uuid)
     return link_uuid
-
-
-def _advance_pending_reveals(
-    client: TestClient,
-    app,
-    link_uuid: str,
-    *,
-    max_steps: int = 12,
-):
-    """Advance hidden auction/trick reveals until the state is actionable."""
-    for _ in range(max_steps):
-        result = _get_match_state(app, link_uuid)
-        assert result is not None, "Match disappeared unexpectedly"
-        state, _, session = result
-        session.close()
-
-        hand = state.current_hand
-        if hand is None:
-            return state
-
-        has_hidden_auction = hand.revealed_auction_count < len(hand.auction)
-        if not has_hidden_auction and not hand.paused_after_trick:
-            return state
-
-        resp = client.post(f"/play/{link_uuid}/next")
-        assert resp.status_code == 200
-
-    pytest.fail("Reveal state did not settle within safety limit")
 
 
 def _play_human_turns(client: TestClient, app, link_uuid: str) -> int:
@@ -169,8 +108,8 @@ def _play_human_turns(client: TestClient, app, link_uuid: str) -> int:
     max_iterations = 40
 
     for _ in range(max_iterations):
-        _advance_pending_reveals(client, app, link_uuid)
-        result = _get_match_state(app, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
+        result = get_match_state(app, link_uuid)
         assert result is not None, "Match disappeared unexpectedly"
         state, _, session = result
         session.close()
