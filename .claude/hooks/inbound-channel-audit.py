@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
-"""UserPromptSubmit hook: audit inbound <channel> tags to the audit trail.
+"""UserPromptSubmit hook: audit inbound <channel> tags and route ack commands.
 
 When a Telegram message arrives via the plugin, it appears in the conversation
 as a ``<channel source="telegram" chat_id="..." ...>body</channel>`` tag.
-This hook intercepts those tags at the UserPromptSubmit seam and calls
-``audit_channel_tag()`` to durably record each inbound exchange.
+This hook intercepts those tags at the UserPromptSubmit seam and:
+
+1. Calls ``audit_channel_tag()`` to durably record each inbound exchange.
+2. Calls ``process_inbound_ack()`` to check if the message is an ack command
+   (e.g. ``ack abc1``, ``dismiss xyz``, ``mute foo``, ``clear``).
+3. If an ack command was detected, injects the reply text via
+   ``additionalContext`` so the orchestrator sends confirmation back to
+   Telegram.
 
 Design constraints:
-- Best-effort: audit failures never block prompt submission.
+- Best-effort: audit/ack failures never block prompt submission.
 - Fast guard in the bash wrapper skips Python entirely when no ``<channel``
   tag is present in the prompt (common case ~0ms).
-- Uses ``uv run`` to access project imports (bid_euchre.ops.audit_trail).
+- Uses ``uv run`` to access project imports (bid_euchre.ops).
+- Lazy imports for project modules to keep the fast-exit path stdlib-only.
 
-Closes #1752.
+Closes #1752.  Part of #1826.
 """
 
 from __future__ import annotations
@@ -38,6 +45,9 @@ _CHANNEL_RE = re.compile(
     r"(<channel\s[^>]*>)(.*?)</channel>",
     re.DOTALL,
 )
+
+# Attribute extraction for chat_id/message_id from tag text.
+_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 
 def _neutralise_inline_code(m: re.Match[str]) -> str:
@@ -79,8 +89,39 @@ def extract_channel_blocks(text: str) -> list[tuple[str, str]]:
     return [(m.group(1), m.group(2).strip()) for m in _CHANNEL_RE.finditer(cleaned)]
 
 
+def _parse_tag_attrs(tag_text: str) -> dict[str, str]:
+    """Extract ``key="value"`` attributes from a ``<channel ...>`` tag."""
+    return dict(_ATTR_RE.findall(tag_text))
+
+
+def _route_ack(body: str, tag_text: str) -> str | None:
+    """Try to route *body* through :func:`process_inbound_ack`.
+
+    Returns a formatted reply instruction string if the body was an ack command
+    and produced a reply, or ``None`` otherwise.
+
+    This function performs lazy imports to avoid loading project modules on the
+    fast path.
+    """
+    from bid_euchre.ops.monitor import process_inbound_ack  # noqa: E402
+
+    result = process_inbound_ack(body)
+    if not result.is_ack_command or not result.reply_text:
+        return None
+
+    # Extract chat_id so the orchestrator knows which Telegram chat to reply to.
+    attrs = _parse_tag_attrs(tag_text)
+    chat_id = attrs.get("chat_id", "")
+
+    parts = [f"TELEGRAM ACK REPLY (chat_id={chat_id}):"]
+    parts.append(result.reply_text)
+    if chat_id:
+        parts.append(f"→ Reply to Telegram chat {chat_id} with the above confirmation.")
+    return "\n".join(parts)
+
+
 def main() -> int:
-    """Entry point.  Reads UserPromptSubmit JSON from stdin, audits channel tags."""
+    """Entry point.  Reads UserPromptSubmit JSON from stdin, audits and routes."""
     raw = sys.stdin.read()
     if not raw:
         return 0
@@ -102,7 +143,10 @@ def main() -> int:
     # free of project imports.
     from bid_euchre.ops.audit_trail import audit_channel_tag  # noqa: E402
 
+    ack_replies: list[str] = []
+
     for tag_text, body in blocks:
+        # --- Audit ---
         try:
             rec = audit_channel_tag(tag_text, body)
             if rec:
@@ -112,6 +156,20 @@ def main() -> int:
                 )
         except Exception:  # noqa: BLE001 — best-effort
             pass
+
+        # --- Ack routing ---
+        try:
+            reply = _route_ack(body, tag_text)
+            if reply:
+                ack_replies.append(reply)
+        except Exception:  # noqa: BLE001 — best-effort, never block prompt
+            pass
+
+    # If any ack commands were detected, inject reply instructions as
+    # additionalContext so the orchestrator can relay confirmations.
+    if ack_replies:
+        context = "\n\n".join(ack_replies)
+        print(json.dumps({"additionalContext": context}))
 
     return 0
 

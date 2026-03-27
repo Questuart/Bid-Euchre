@@ -1,16 +1,22 @@
-"""Unit tests for the inbound-channel-audit hook (issue #1763).
+"""Unit tests for the inbound-channel-audit hook (issue #1763, #1826).
 
 Tests cover:
 - extract_channel_blocks: closed vs unclosed tags, code-fence filtering
 - _strip_code_blocks: markdown fences and inline code removal
+- _parse_tag_attrs: attribute extraction from channel tags
+- _route_ack: ack command routing through process_inbound_ack
+- main: end-to-end hook with ack additionalContext injection
 """
 
 from __future__ import annotations
 
 import importlib
+import io
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -236,3 +242,258 @@ class TestRegressionUnclosedSwallow:
             assert (
                 len(body) < 200
             ), f"Unclosed tag swallowed too much content ({len(body)} chars)"
+
+
+# ---------------------------------------------------------------------------
+# _parse_tag_attrs
+# ---------------------------------------------------------------------------
+
+
+class TestParseTagAttrs:
+    def test_extracts_all_attrs(self, hook: ModuleType) -> None:
+        tag = '<channel source="telegram" chat_id="123" message_id="42" user="alice" ts="2026-03-24T06:00:00Z">'
+        attrs = hook._parse_tag_attrs(tag)
+        assert attrs["source"] == "telegram"
+        assert attrs["chat_id"] == "123"
+        assert attrs["message_id"] == "42"
+        assert attrs["user"] == "alice"
+
+    def test_empty_tag(self, hook: ModuleType) -> None:
+        attrs = hook._parse_tag_attrs("<channel>")
+        assert attrs == {}
+
+    def test_partial_attrs(self, hook: ModuleType) -> None:
+        tag = '<channel source="telegram" chat_id="999">'
+        attrs = hook._parse_tag_attrs(tag)
+        assert attrs["chat_id"] == "999"
+        assert "message_id" not in attrs
+
+
+# ---------------------------------------------------------------------------
+# _route_ack — ack command routing
+# ---------------------------------------------------------------------------
+
+
+class TestRouteAck:
+    """Test ack routing through process_inbound_ack."""
+
+    def test_ack_command_returns_reply(self, hook: ModuleType) -> None:
+        """An ack command body should produce a reply instruction string."""
+        mock_result = MagicMock()
+        mock_result.is_ack_command = True
+        mock_result.reply_text = "✅ Acked alert abc123"
+
+        with patch(
+            "bid_euchre.ops.monitor.process_inbound_ack",
+            return_value=mock_result,
+        ):
+            tag = '<channel source="telegram" chat_id="555" message_id="10" user="op" ts="t">'
+            reply = hook._route_ack("ack abc1", tag)
+
+        assert reply is not None
+        assert "TELEGRAM ACK REPLY" in reply
+        assert "chat_id=555" in reply
+        assert "✅ Acked alert abc123" in reply
+        assert "Reply to Telegram chat 555" in reply
+
+    def test_non_ack_message_returns_none(self, hook: ModuleType) -> None:
+        """Non-ack messages should return None (passthrough)."""
+        mock_result = MagicMock()
+        mock_result.is_ack_command = False
+        mock_result.reply_text = None
+
+        with patch(
+            "bid_euchre.ops.monitor.process_inbound_ack",
+            return_value=mock_result,
+        ):
+            tag = '<channel source="telegram" chat_id="555">'
+            reply = hook._route_ack("Hello, how are things?", tag)
+
+        assert reply is None
+
+    def test_ack_command_no_reply_text_returns_none(self, hook: ModuleType) -> None:
+        """Ack command that produces no reply text should return None."""
+        mock_result = MagicMock()
+        mock_result.is_ack_command = True
+        mock_result.reply_text = None
+
+        with patch(
+            "bid_euchre.ops.monitor.process_inbound_ack",
+            return_value=mock_result,
+        ):
+            tag = '<channel source="telegram" chat_id="555">'
+            reply = hook._route_ack("ack xyz", tag)
+
+        assert reply is None
+
+    def test_missing_chat_id_still_works(self, hook: ModuleType) -> None:
+        """Reply should still be generated even without a chat_id."""
+        mock_result = MagicMock()
+        mock_result.is_ack_command = True
+        mock_result.reply_text = "✅ Acked"
+
+        with patch(
+            "bid_euchre.ops.monitor.process_inbound_ack",
+            return_value=mock_result,
+        ):
+            tag = '<channel source="telegram">'
+            reply = hook._route_ack("ack abc1", tag)
+
+        assert reply is not None
+        assert "TELEGRAM ACK REPLY (chat_id=)" in reply
+        assert "✅ Acked" in reply
+        # No "Reply to Telegram chat" line when chat_id is empty
+        assert "Reply to Telegram chat" not in reply
+
+
+# ---------------------------------------------------------------------------
+# main — end-to-end hook with ack additionalContext injection
+# ---------------------------------------------------------------------------
+
+
+class TestMainAckRouting:
+    """Test the main() function produces additionalContext for ack commands."""
+
+    def _run_main(self, hook: ModuleType, prompt: str) -> tuple[int, str]:
+        """Run hook.main() with a given prompt, capturing stdout."""
+        data = json.dumps({"user_prompt": prompt})
+        captured = io.StringIO()
+        with (
+            patch("sys.stdin", io.StringIO(data)),
+            patch("sys.stdout", captured),
+        ):
+            rc = hook.main()
+        return rc, captured.getvalue()
+
+    def test_ack_command_injects_additional_context(self, hook: ModuleType) -> None:
+        """An ack command in a Telegram tag should produce additionalContext JSON."""
+        mock_ack_result = MagicMock()
+        mock_ack_result.is_ack_command = True
+        mock_ack_result.reply_text = "✅ Acked alert item_abc"
+
+        mock_audit_rec = MagicMock()
+        mock_audit_rec.exchange_id = "ex_001"
+
+        prompt = '<channel source="telegram" chat_id="42" message_id="7" user="op" ts="t">ack abc</channel>'
+
+        with (
+            patch(
+                "bid_euchre.ops.audit_trail.audit_channel_tag",
+                return_value=mock_audit_rec,
+            ),
+            patch(
+                "bid_euchre.ops.monitor.process_inbound_ack",
+                return_value=mock_ack_result,
+            ),
+        ):
+            rc, stdout = self._run_main(hook, prompt)
+
+        assert rc == 0
+        assert stdout.strip()  # Should have output
+        output = json.loads(stdout.strip())
+        assert "additionalContext" in output
+        ctx = output["additionalContext"]
+        assert "TELEGRAM ACK REPLY" in ctx
+        assert "chat_id=42" in ctx
+        assert "✅ Acked alert item_abc" in ctx
+
+    def test_non_ack_message_no_additional_context(self, hook: ModuleType) -> None:
+        """A regular (non-ack) Telegram message should not inject additionalContext."""
+        mock_ack_result = MagicMock()
+        mock_ack_result.is_ack_command = False
+        mock_ack_result.reply_text = None
+
+        mock_audit_rec = MagicMock()
+        mock_audit_rec.exchange_id = "ex_002"
+
+        prompt = '<channel source="telegram" chat_id="42" message_id="7" user="op" ts="t">Hello, checking in</channel>'
+
+        with (
+            patch(
+                "bid_euchre.ops.audit_trail.audit_channel_tag",
+                return_value=mock_audit_rec,
+            ),
+            patch(
+                "bid_euchre.ops.monitor.process_inbound_ack",
+                return_value=mock_ack_result,
+            ),
+        ):
+            rc, stdout = self._run_main(hook, prompt)
+
+        assert rc == 0
+        # No additionalContext output for non-ack messages
+        clean = stdout.strip()
+        if clean:
+            parsed = json.loads(clean)
+            assert "additionalContext" not in parsed
+
+    def test_no_channel_tags_fast_exit(self, hook: ModuleType) -> None:
+        """Prompts without channel tags should exit immediately with no output."""
+        rc, stdout = self._run_main(hook, "Just a normal prompt with no tags")
+        assert rc == 0
+        assert stdout.strip() == ""
+
+    def test_ack_routing_failure_does_not_block(self, hook: ModuleType) -> None:
+        """If process_inbound_ack raises, the hook should still return 0."""
+        mock_audit_rec = MagicMock()
+        mock_audit_rec.exchange_id = "ex_003"
+
+        prompt = '<channel source="telegram" chat_id="42" message_id="7" user="op" ts="t">ack abc</channel>'
+
+        with (
+            patch(
+                "bid_euchre.ops.audit_trail.audit_channel_tag",
+                return_value=mock_audit_rec,
+            ),
+            patch(
+                "bid_euchre.ops.monitor.process_inbound_ack",
+                side_effect=RuntimeError("Simulated failure"),
+            ),
+        ):
+            rc, stdout = self._run_main(hook, prompt)
+
+        assert rc == 0  # Best-effort — never block
+
+    def test_multiple_tags_one_ack(self, hook: ModuleType) -> None:
+        """Multiple channel tags where only one is an ack command."""
+        ack_result = MagicMock()
+        ack_result.is_ack_command = True
+        ack_result.reply_text = "✅ Dismissed alert xyz"
+
+        non_ack_result = MagicMock()
+        non_ack_result.is_ack_command = False
+        non_ack_result.reply_text = None
+
+        mock_audit_rec = MagicMock()
+        mock_audit_rec.exchange_id = "ex_004"
+
+        prompt = (
+            '<channel source="telegram" chat_id="10" message_id="1" user="a" ts="t">Hello</channel>\n'
+            '<channel source="telegram" chat_id="10" message_id="2" user="a" ts="t">dismiss xyz</channel>'
+        )
+
+        call_count = [0]
+
+        def mock_process(text, **kwargs):
+            call_count[0] += 1
+            if "dismiss" in text:
+                return ack_result
+            return non_ack_result
+
+        with (
+            patch(
+                "bid_euchre.ops.audit_trail.audit_channel_tag",
+                return_value=mock_audit_rec,
+            ),
+            patch(
+                "bid_euchre.ops.monitor.process_inbound_ack",
+                side_effect=mock_process,
+            ),
+        ):
+            rc, stdout = self._run_main(hook, prompt)
+
+        assert rc == 0
+        assert call_count[0] == 2  # Both bodies processed
+        output = json.loads(stdout.strip())
+        ctx = output["additionalContext"]
+        assert "✅ Dismissed alert xyz" in ctx
