@@ -27,10 +27,11 @@
 #     .3  brws-author-c   -- overflow browser-game author lane
 #     .4  brws-author-d   -- overflow browser-game author lane
 #
-#   Window 5 — flex (3 panes, tiled)
+#   Window 5 — flex (4 panes, tiled)
 #     .1  flex-a          -- domain-agnostic overflow lane
 #     .2  flex-b          -- domain-agnostic overflow lane
 #     .3  flex-c          -- domain-agnostic overflow lane
+#     .4  flex-d          -- domain-agnostic overflow lane
 #
 # Writes v2 worktree registry metadata for each launched lane.
 # See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full model.
@@ -94,6 +95,7 @@ ANALYST_D="${PARENT_DIR}/${REPO_NAME}-steward-analyst-d"
 FLEX_A="${PARENT_DIR}/${REPO_NAME}-steward-flex-a"
 FLEX_B="${PARENT_DIR}/${REPO_NAME}-steward-flex-b"
 FLEX_C="${PARENT_DIR}/${REPO_NAME}-steward-flex-c"
+FLEX_D="${PARENT_DIR}/${REPO_NAME}-steward-flex-d"
 
 # Control plane
 REVIEW="${PARENT_DIR}/${REPO_NAME}-steward-review"
@@ -305,6 +307,7 @@ ensure_detached_worktree "$ANALYST_D"
 ensure_worktree "$FLEX_A" "codex/steward-flex-a"
 ensure_worktree "$FLEX_B" "codex/steward-flex-b"
 ensure_worktree "$FLEX_C" "codex/steward-flex-c"
+ensure_worktree "$FLEX_D" "codex/steward-flex-d"
 
 # Control plane
 ensure_detached_worktree "$REVIEW"
@@ -343,6 +346,7 @@ write_lane_metadata "brws-author-d"  "author"       "$BRWS_D"         "codex/ste
 write_lane_metadata "flex-a"         "flex"          "$FLEX_A"          "codex/steward-flex-a"           "flex" "1" "background" "Flex A"
 write_lane_metadata "flex-b"         "flex"          "$FLEX_B"          "codex/steward-flex-b"           "flex" "2" "background" "Flex B"
 write_lane_metadata "flex-c"         "flex"          "$FLEX_C"          "codex/steward-flex-c"           "flex" "3" "background" "Flex C"
+write_lane_metadata "flex-d"         "flex"          "$FLEX_D"          "codex/steward-flex-d"           "flex" "4" "background" "Flex D"
 
 # ---------------------------------------------------------------------------
 # Orchestrator channel flags (Platform-8a)
@@ -365,7 +369,7 @@ fi
 #   analyst: 4 panes tiled
 #   platform: 4 panes tiled
 #   browser: 4 panes tiled
-#   flex: 3 panes tiled
+#   flex: 4 panes tiled
 # ---------------------------------------------------------------------------
 
 # --- Window 1: central-ops (3 panes, main-vertical) ---
@@ -419,13 +423,15 @@ tmux split-window -t "${SESSION}:browser" -c "$BRWS_D" \
     "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d
 tmux select-layout -t "${SESSION}:browser" tiled
 
-# --- Window 5: flex (3 panes, tiled) ---
+# --- Window 5: flex (4 panes, tiled) ---
 tmux new-window -t "$SESSION" -n flex -c "$FLEX_A" \
     "$CLAUDE_BIN" --name flex-a --agent steward-flex-a
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_B" \
     "$CLAUDE_BIN" --name flex-b --agent steward-flex-b
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_C" \
     "$CLAUDE_BIN" --name flex-c --agent steward-flex-c
+tmux split-window -t "${SESSION}:flex" -c "$FLEX_D" \
+    "$CLAUDE_BIN" --name flex-d --agent steward-flex-d
 tmux select-layout -t "${SESSION}:flex" tiled
 
 # Auto-launch ops monitoring loop (SP-3-08).
