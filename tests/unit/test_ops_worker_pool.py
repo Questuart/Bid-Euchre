@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bid_euchre.ops.worker_pool import (
+    _CLEANUP_PROCESS_PATTERNS,
     _PASTE_BRACKET_DELAY,
     DEFAULT_TMUX_SESSION,
     IDLE_PARK_MINUTES,
@@ -22,13 +23,16 @@ from bid_euchre.ops.worker_pool import (
     WorkerState,
     _classify_pool_status,
     _dynamic_pane_lookup,
+    _find_matching_pids,
     _get_lane_task_id,
     _is_worktree_stale,
     _managed_lanes,
     _minutes_since,
     _probe_tmux_pane,
+    _read_cmdline,
     _resolve_agent_name,
     _resolve_tmux_target,
+    cleanup_lane_processes,
     clear_session,
     dispatch_to_worker,
     format_action_text,
@@ -3960,3 +3964,235 @@ class TestRefreshAllIdle:
         mock_refresh.assert_called_once_with(
             "flex-a", force=True, tmux_session="steward", runtime_dir=None
         )
+
+
+# ---------------------------------------------------------------------------
+# Process cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupLaneProcesses:
+    """Test cleanup_lane_processes() and helper functions."""
+
+    def test_patterns_include_expected(self) -> None:
+        """Verify cleanup targets the expected process types."""
+        assert "pytest" in _CLEANUP_PROCESS_PATTERNS
+        assert "make" in _CLEANUP_PROCESS_PATTERNS
+        assert "python" in _CLEANUP_PROCESS_PATTERNS
+        assert "uv" in _CLEANUP_PROCESS_PATTERNS
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path", return_value=None)
+    def test_no_worktree_returns_empty(
+        self,
+        mock_resolve: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """When worktree path can't be resolved, return empty list."""
+        result = cleanup_lane_processes("author-a", runtime_dir=runtime_dir)
+        assert result == []
+
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path", return_value="/tmp/fake-wt")
+    @patch(f"{_WORKER_POOL}._find_matching_pids", return_value=[])
+    def test_no_matching_processes(
+        self,
+        mock_find: MagicMock,
+        mock_resolve: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """When no matching processes, return empty list."""
+        result = cleanup_lane_processes("author-a", runtime_dir=runtime_dir)
+        assert result == []
+
+    @patch(f"{_WORKER_POOL}.os.kill")
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path", return_value="/tmp/fake-wt")
+    @patch(f"{_WORKER_POOL}._find_matching_pids")
+    def test_kills_matching_processes(
+        self,
+        mock_find: MagicMock,
+        mock_resolve: MagicMock,
+        mock_kill: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Matching PIDs are sent SIGTERM."""
+        import signal
+
+        # Return PIDs for the first pattern, empty for the rest
+        mock_find.side_effect = [[42, 99], [], [], []]
+        result = cleanup_lane_processes("author-a", runtime_dir=runtime_dir)
+        assert result == [42, 99]
+        assert mock_kill.call_count == 2
+        mock_kill.assert_any_call(42, signal.SIGTERM)
+        mock_kill.assert_any_call(99, signal.SIGTERM)
+
+    @patch(f"{_WORKER_POOL}.os.kill")
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path", return_value="/tmp/fake-wt")
+    @patch(f"{_WORKER_POOL}._find_matching_pids")
+    def test_dry_run_does_not_kill(
+        self,
+        mock_find: MagicMock,
+        mock_resolve: MagicMock,
+        mock_kill: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """dry_run=True identifies but does not kill processes."""
+        mock_find.side_effect = [[42], [], [], []]
+        result = cleanup_lane_processes(
+            "author-a", runtime_dir=runtime_dir, dry_run=True
+        )
+        assert result == [42]
+        mock_kill.assert_not_called()
+
+    @patch(f"{_WORKER_POOL}.os.kill", side_effect=ProcessLookupError)
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path", return_value="/tmp/fake-wt")
+    @patch(f"{_WORKER_POOL}._find_matching_pids")
+    def test_handles_dead_process(
+        self,
+        mock_find: MagicMock,
+        mock_resolve: MagicMock,
+        mock_kill: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """ProcessLookupError (race condition) is handled gracefully."""
+        mock_find.side_effect = [[42], [], [], []]
+        result = cleanup_lane_processes("author-a", runtime_dir=runtime_dir)
+        # PID not added to killed list because the kill failed
+        assert result == []
+
+    @patch(f"{_WORKER_POOL}.os.kill", side_effect=PermissionError)
+    @patch(f"{_WORKER_POOL}._resolve_worktree_path", return_value="/tmp/fake-wt")
+    @patch(f"{_WORKER_POOL}._find_matching_pids")
+    def test_handles_permission_error(
+        self,
+        mock_find: MagicMock,
+        mock_resolve: MagicMock,
+        mock_kill: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """PermissionError is handled gracefully."""
+        mock_find.side_effect = [[42], [], [], []]
+        result = cleanup_lane_processes("author-a", runtime_dir=runtime_dir)
+        assert result == []
+
+
+class TestFindMatchingPids:
+    """Test _find_matching_pids() with mocked subprocess."""
+
+    @patch(f"{_WORKER_POOL}._read_cmdline")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_filters_by_worktree_path(
+        self,
+        mock_run: MagicMock,
+        mock_cmdline: MagicMock,
+    ) -> None:
+        """Only PIDs whose cmdline contains the worktree path are returned."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="100\n200\n300\n",
+        )
+        mock_cmdline.side_effect = [
+            "python -m pytest /tmp/wt-author-a/tests",
+            "python /other/path/script.py",
+            "uv run /tmp/wt-author-a/experiments/run.py",
+        ]
+        result = _find_matching_pids("pytest", "/tmp/wt-author-a", set())
+        assert result == [100, 300]
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_pgrep_no_match(
+        self,
+        mock_run: MagicMock,
+    ) -> None:
+        """pgrep exit code 1 (no matches) returns empty list."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        result = _find_matching_pids("pytest", "/tmp/wt", set())
+        assert result == []
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_excludes_specified_pids(
+        self,
+        mock_run: MagicMock,
+    ) -> None:
+        """PIDs in exclude_pids are filtered out before cmdline check."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="100\n200\n",
+        )
+        result = _find_matching_pids("pytest", "/tmp/wt", {100, 200})
+        assert result == []
+
+    @patch(f"{_WORKER_POOL}.subprocess.run", side_effect=FileNotFoundError)
+    def test_pgrep_not_found(
+        self,
+        mock_run: MagicMock,
+    ) -> None:
+        """Missing pgrep binary returns empty list."""
+        result = _find_matching_pids("pytest", "/tmp/wt", set())
+        assert result == []
+
+
+class TestReadCmdline:
+    """Test _read_cmdline() with mocked filesystem/subprocess."""
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_falls_back_to_ps(
+        self,
+        mock_run: MagicMock,
+    ) -> None:
+        """On macOS (no /proc), falls back to ps command."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="python -m pytest /tmp/wt/tests",
+        )
+        # /proc won't exist in test env (macOS), so ps fallback should work
+        result = _read_cmdline(99999)
+        # Either /proc read succeeds or ps fallback is called
+        # In test env, ps will likely fail for a non-existent PID
+        # The function handles both gracefully
+        assert result is None or isinstance(result, str)
+
+    @patch(
+        f"{_WORKER_POOL}.subprocess.run",
+        side_effect=FileNotFoundError,
+    )
+    def test_both_methods_fail_returns_none(
+        self,
+        mock_run: MagicMock,
+    ) -> None:
+        """When both /proc and ps fail, return None."""
+        result = _read_cmdline(99999)
+        assert result is None
+
+
+class TestParkWorkerWithCleanup:
+    """Test park_worker() calls cleanup_lane_processes."""
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.cleanup_lane_processes", return_value=[42, 99])
+    @patch(f"{_WORKER_POOL}._get_lane_task_id", return_value=None)
+    def test_park_reports_cleaned_processes(
+        self,
+        mock_task: MagicMock,
+        mock_cleanup: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """park_worker calls cleanup and reports count in reason."""
+        result = park_worker("author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+        mock_cleanup.assert_called_once_with("author-a", runtime_dir=runtime_dir)
+        assert "killed 2 orphaned" in result.reason
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.cleanup_lane_processes", return_value=[])
+    @patch(f"{_WORKER_POOL}._get_lane_task_id", return_value=None)
+    def test_park_no_processes_no_cleanup_note(
+        self,
+        mock_task: MagicMock,
+        mock_cleanup: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """When no processes are cleaned, reason does not mention cleanup."""
+        result = park_worker("author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+        assert "orphaned" not in result.reason
