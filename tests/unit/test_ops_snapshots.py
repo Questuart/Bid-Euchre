@@ -458,7 +458,9 @@ class TestPruneSnapshots:
                 timestamp=f"2026-03-20T{10 + i}:00:00+00:00",
             )
 
-        pruned = prune_snapshots(snapshots_dir, max_per_worktree=3)
+        pruned = prune_snapshots(
+            snapshots_dir, max_per_worktree=3, max_age_hours=999999
+        )
         assert len(pruned) == 2
         # Oldest two should be pruned
         assert "snap-000" in pruned
