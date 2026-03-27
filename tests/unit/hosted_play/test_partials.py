@@ -1799,3 +1799,135 @@ class TestGameTemplateAccessibility:
         assert "AI Left (10)" in html
         assert "Partner (10)" in html
         assert "AI Right (10)" in html
+
+
+# ---------------------------------------------------------------------------
+# trick_history.html
+# ---------------------------------------------------------------------------
+
+
+class TestTrickHistory:
+    """Tests for the collapsible trick history partial."""
+
+    @pytest.fixture()
+    def completed_tricks(self):
+        """Two completed tricks for testing."""
+        return [
+            {
+                "leader": 0,
+                "plays": [
+                    [0, ["S", "A"]],
+                    [1, ["S", "K"]],
+                    [2, ["S", "Q"]],
+                    [3, ["S", "T"]],
+                ],
+                "winner": 0,
+            },
+            {
+                "leader": 0,
+                "plays": [
+                    [0, ["H", "J"]],
+                    [1, ["H", "A"]],
+                    [2, ["H", "K"]],
+                    [3, ["H", "Q"]],
+                ],
+                "winner": 1,
+            },
+        ]
+
+    def test_renders_empty_when_no_tricks(self, env):
+        """No output when completed_tricks is empty."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(completed_tricks=[], tricks_team0=0, tricks_team1=0)
+        assert "trick-history" not in html
+
+    def test_renders_details_element(self, env, completed_tricks):
+        """Renders a <details> element with correct id."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
+        )
+        assert 'id="trick-history"' in html
+        assert "Cards Played (2/10)" in html
+
+    def test_shows_card_values(self, env, completed_tricks):
+        """Card values appear in the history table."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
+        )
+        # Suit symbols and ranks should appear
+        assert "\u2660" in html  # ♠
+        assert "\u2665" in html  # ♥
+        assert "A" in html
+        assert "K" in html
+
+    def test_shows_trick_numbers(self, env, completed_tricks):
+        """Each trick row has its number."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
+        )
+        # Trick numbers appear in cells
+        assert "trick-history__cell--num" in html
+
+    def test_winner_cell_highlighted(self, env, completed_tricks):
+        """Winner's card cell gets the winner class."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
+        )
+        assert "trick-history__cell--winner" in html
+
+    def test_leader_cell_marked(self, env, completed_tricks):
+        """Leader's card cell gets the leader class."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
+        )
+        assert "trick-history__cell--leader" in html
+
+    def test_won_column_shows_seat_label(self, env, completed_tricks):
+        """Won column shows human-readable seat labels."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
+        )
+        assert "You" in html  # Trick 1 won by seat 0
+        assert "Left" in html  # Trick 2 won by seat 1
+
+    def test_has_table_headers(self, env, completed_tricks):
+        """Table has column headers for seat labels."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
+        )
+        assert "Partner" in html
+        assert "Right" in html
+        assert "Won" in html
+
+    def test_sitting_out_seat_shows_dash(self, env):
+        """When a seat is sitting out (loner), its cell shows a dash."""
+        tricks = [
+            {
+                "leader": 0,
+                "plays": [
+                    [0, ["H", "A"]],
+                    [1, ["H", "K"]],
+                    [3, ["H", "Q"]],
+                ],
+                "winner": 0,
+            },
+        ]
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(completed_tricks=tricks, tricks_team0=1, tricks_team1=0)
+        assert "trick-history__absent" in html
+
+    def test_has_aria_attributes(self, env, completed_tricks):
+        """Trick history has accessibility attributes."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
+        )
+        assert 'role="region"' in html
+        assert 'aria-label="Cards played history"' in html
