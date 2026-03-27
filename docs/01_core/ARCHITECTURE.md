@@ -300,6 +300,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/update_arc_registry.py` | Arc D registry updater (MODEL_ARC_RUNS.md) |
 | `scripts/internal/validate_action_value_artifact.py` | Behavioral validation gate for action-value artifacts |
 | `scripts/internal/validate_arc_d_rung_contract.py` | Arc D rung bundle validator |
+| `scripts/internal/verify_squash_merge.py` | Verify no files are dropped during stacked-PR squash merges |
 | `scripts/internal/build_audit_index.py` | Build or rebuild the local SQLite FTS5 audit index over runtime artifacts |
 | `scripts/internal/build_curated_memory.py` | Manage curated memory entries (add, remove, search, validate provenance) |
 | `scripts/internal/compact_session_context.py` | Compact and archive session context with non-lossy artifact index |
