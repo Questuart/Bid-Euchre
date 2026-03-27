@@ -45,6 +45,11 @@ def _get_ai_manager(request: Request) -> AIManager:
     return request.app.state.ai_manager
 
 
+def _get_config(request: Request):
+    """Retrieve the HostedPlayConfig stashed on ``app.state`` during startup."""
+    return request.app.state.config
+
+
 def _get_session(request: Request):
     """Create a new DB session from the factory on ``app.state``."""
     return request.app.state.session_factory()
@@ -734,7 +739,11 @@ async def select_ai(
             raise HTTPException(status_code=400, detail=f"Unknown model: {model_id}")
 
         engine = _build_engine(ai_manager, model_id)
-        seed = random.Random().randint(0, 2**31 - 1)
+        config = _get_config(request)
+        if config.test_seed is not None:
+            seed = config.test_seed
+        else:
+            seed = random.Random().randint(0, 2**31 - 1)
         state = engine.start_match(seed=seed, ai_model=model_id)
 
         match_uuid = str(uuid.uuid4())

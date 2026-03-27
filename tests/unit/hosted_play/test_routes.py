@@ -161,6 +161,28 @@ class TestSelectAI:
         resp = _select_ai(client, link_uuid, "nonexistent_model")
         assert resp.status_code == 400
 
+    def test_test_seed_produces_deterministic_match(self, tmp_path):
+        """When test_seed is set, select-ai uses it instead of random."""
+        config = make_hosted_play_test_config(tmp_path, test_seed=42)
+        app = create_app(config=config)
+
+        seeds = []
+        with TestClient(app) as c:
+            for _ in range(2):
+                link_uuid = _create_game(c)
+                _set_nickname(c, link_uuid)
+                resp = _select_ai(c, link_uuid, "olsa")
+                assert resp.status_code == 200
+
+                session = app.state.session_factory()
+                player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+                match_row = session.query(Match).filter_by(player_id=player.id).first()
+                seeds.append(match_row.seed)
+                session.close()
+
+        # Both matches should have the same seed
+        assert seeds[0] == seeds[1] == 42
+
 
 # ---------------------------------------------------------------------------
 # Test 4: Submit bid → state advances
