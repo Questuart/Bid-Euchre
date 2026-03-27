@@ -1981,3 +1981,111 @@ def evaluate_alert_push(
         logger.warning("Alert push evaluation failed", exc_info=True)
 
     return MonitorCycleResult(findings=findings, push_result=push_result)
+
+
+# ---------------------------------------------------------------------------
+# Inbound ack integration (Platform-9a)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class InboundAckResult:
+    """Result of processing an inbound message for ack commands.
+
+    Attributes:
+        is_ack_command: Whether the inbound text was a recognized ack command.
+        success: Whether the ack mutation succeeded (False for non-commands).
+        reply_text: Formatted confirmation/error text for replying to the
+            operator, or ``None`` if the message was not an ack command.
+        item_id: The full item_id that was matched (if any).
+        action: The action string (ack/dismiss/mute/clear) or ``None``.
+    """
+
+    is_ack_command: bool
+    success: bool = False
+    reply_text: str | None = None
+    item_id: str | None = None
+    action: str | None = None
+
+
+def process_inbound_ack(
+    text: str,
+    *,
+    runtime_dir: Path | None = None,
+) -> InboundAckResult:
+    """Process an inbound Telegram message for ack/dismiss/mute/clear commands.
+
+    This function bridges the inbound Telegram message path and the remote ack
+    parser from :mod:`~bid_euchre.ops.remote_ack`.  It is designed to be called
+    when the orchestrator receives an inbound message that may contain an ack
+    command (e.g., ``ack abc1``).
+
+    The full pipeline:
+
+    1. Parse the inbound text via :func:`~bid_euchre.ops.remote_ack.parse_ack_command`.
+    2. If not a command, return immediately (passthrough for free-form conversation).
+    3. Load the fleet status from disk.
+    4. Execute the ack mutation via :func:`~bid_euchre.ops.remote_ack.execute_remote_ack`.
+    5. If the mutation succeeded, save the updated fleet status to disk.
+    6. Format a confirmation message via :func:`~bid_euchre.ops.remote_ack.format_ack_confirmation`.
+
+    The **caller** is responsible for:
+    - Auditing the inbound message (via :func:`~bid_euchre.ops.audit_trail.audit_channel_tag`).
+    - Sending ``result.reply_text`` back to the operator via Telegram MCP ``reply``.
+    - Auditing the outbound confirmation (via :func:`~bid_euchre.ops.audit_trail.audit_reply`).
+
+    Args:
+        text: The inbound message text to parse.
+        runtime_dir: Override for the runtime directory root (for fleet status I/O).
+
+    Returns:
+        An :class:`InboundAckResult` indicating whether the message was an ack
+        command, whether the mutation succeeded, and the reply text.
+    """
+    from bid_euchre.ops.remote_ack import (
+        execute_remote_ack,
+        format_ack_confirmation,
+        parse_ack_command,
+    )
+
+    # Step 1: Parse the ack command.
+    cmd = parse_ack_command(text)
+    if cmd is None:
+        return InboundAckResult(is_ack_command=False)
+
+    # Step 2: Load the fleet status from disk.
+    from bid_euchre.ops.control_plane import load_fleet_status, save_fleet_status
+
+    fleet_status = load_fleet_status(runtime_dir)
+    if fleet_status is None:
+        logger.warning("process_inbound_ack: no fleet status available")
+        return InboundAckResult(
+            is_ack_command=True,
+            success=False,
+            reply_text="\u274c No fleet status available — cannot process ack command.",
+            action=cmd.action.value,
+        )
+
+    # Step 3: Execute the ack mutation.
+    ack_result = execute_remote_ack(cmd, fleet_status)
+
+    # Step 4: Save if mutation succeeded.
+    if ack_result.success:
+        try:
+            save_fleet_status(fleet_status, runtime_dir=runtime_dir)
+        except Exception:
+            logger.warning(
+                "process_inbound_ack: failed to save fleet status after mutation",
+                exc_info=True,
+            )
+
+    # Step 5: Format confirmation.
+    reply_text = format_ack_confirmation(ack_result)
+
+    return InboundAckResult(
+        is_ack_command=True,
+        success=ack_result.success,
+        reply_text=reply_text,
+        item_id=ack_result.item_id,
+        action=cmd.action.value,
+    )

@@ -3837,3 +3837,233 @@ class TestAlertPushAckE2E:
         r2 = execute_remote_ack(cmd, status2)
         assert not r2.success
         assert "cannot be" in r2.message.lower() or "already" in r2.message.lower()
+
+
+# ---------------------------------------------------------------------------
+# process_inbound_ack tests (Platform-9a — inbound ack wiring)
+# ---------------------------------------------------------------------------
+
+
+class TestProcessInboundAck:
+    """Tests for process_inbound_ack() — the monitor-level ack handler."""
+
+    @staticmethod
+    def _write_fleet_status(runtime_dir: Path, items: list[dict]) -> None:
+        """Write a minimal fleet_status.json to disk."""
+        from bid_euchre.ops.control_plane import (
+            ActionableItem,
+            FleetStatus,
+            save_fleet_status,
+        )
+
+        fleet_items = []
+        for raw in items:
+            fleet_items.append(
+                ActionableItem(
+                    item_id=raw["item_id"],
+                    severity=raw.get("severity", "high"),
+                    category=raw.get("category", "lane_health"),
+                    source=raw.get("source", "monitor"),
+                    summary=raw.get("summary", "Test alert"),
+                    first_seen_at="2026-03-27T00:00:00Z",
+                    last_seen_at="2026-03-27T00:00:00Z",
+                    state=raw.get("state", "open"),
+                )
+            )
+        status = FleetStatus(
+            items=fleet_items,
+            generated_at="2026-03-27T00:00:00Z",
+            cycle_count=1,
+        )
+        save_fleet_status(status, runtime_dir=runtime_dir)
+
+    def test_non_command_passthrough(self, tmp_path: Path) -> None:
+        """Free-form text returns is_ack_command=False, no reply_text."""
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        result = process_inbound_ack("How's the fleet?", runtime_dir=tmp_path)
+        assert result.is_ack_command is False
+        assert result.success is False
+        assert result.reply_text is None
+
+    def test_ack_command_mutates_and_persists(self, tmp_path: Path) -> None:
+        """'ack <prefix>' mutates fleet status and saves to disk."""
+        from bid_euchre.ops.control_plane import load_fleet_status
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [{"item_id": "abc123def456", "summary": "Stall on author-b"}],
+        )
+
+        result = process_inbound_ack("ack abc1", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is True
+        assert result.item_id == "abc123def456"
+        assert result.action == "ack"
+        assert result.reply_text is not None
+        assert "\u2705" in result.reply_text  # checkmark
+        assert "Stall on author-b" in result.reply_text
+
+        # Verify persistence — reload from disk.
+        reloaded = load_fleet_status(tmp_path)
+        assert reloaded is not None
+        acked = [i for i in reloaded.items if i.state == "acked"]
+        assert len(acked) == 1
+        assert acked[0].item_id == "abc123def456"
+
+    def test_dismiss_command(self, tmp_path: Path) -> None:
+        """'dismiss <prefix>' suppresses the item."""
+        from bid_euchre.ops.control_plane import load_fleet_status
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [{"item_id": "abc123def456", "summary": "CI flaky"}],
+        )
+
+        result = process_inbound_ack("dismiss abc1", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is True
+        assert result.action == "dismiss"
+
+        reloaded = load_fleet_status(tmp_path)
+        assert reloaded is not None
+        suppressed = [i for i in reloaded.items if i.state == "suppressed"]
+        assert len(suppressed) == 1
+
+    def test_mute_command(self, tmp_path: Path) -> None:
+        """'mute <prefix>' suppresses the item (same as dismiss)."""
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [{"item_id": "abc123def456"}],
+        )
+
+        result = process_inbound_ack("mute abc1", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is True
+        assert result.action == "mute"
+
+    def test_clear_command(self, tmp_path: Path) -> None:
+        """'clear <prefix>' clears the item."""
+        from bid_euchre.ops.control_plane import load_fleet_status
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [{"item_id": "abc123def456"}],
+        )
+
+        result = process_inbound_ack("clear abc1", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is True
+        assert result.action == "clear"
+
+        reloaded = load_fleet_status(tmp_path)
+        assert reloaded is not None
+        cleared = [i for i in reloaded.items if i.state == "cleared"]
+        assert len(cleared) == 1
+
+    def test_no_fleet_status_returns_error(self, tmp_path: Path) -> None:
+        """Ack command with no fleet status on disk returns error reply."""
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        result = process_inbound_ack("ack abc1", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is False
+        assert result.reply_text is not None
+        assert "No fleet status" in result.reply_text
+
+    def test_no_matching_item(self, tmp_path: Path) -> None:
+        """Ack with non-matching prefix returns error with cross-mark."""
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [{"item_id": "abc123def456"}],
+        )
+
+        result = process_inbound_ack("ack fff000", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is False
+        assert result.reply_text is not None
+        assert "\u274c" in result.reply_text
+
+    def test_ambiguous_prefix(self, tmp_path: Path) -> None:
+        """Ambiguous prefix returns error with candidates."""
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [
+                {"item_id": "abc123000000", "summary": "Item 1"},
+                {"item_id": "abc123ffffff", "summary": "Item 2"},
+            ],
+        )
+
+        result = process_inbound_ack("ack abc123", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is False
+        assert "Ambiguous" in (result.reply_text or "")
+
+    def test_already_acked_item(self, tmp_path: Path) -> None:
+        """Acking an already-acked item returns error."""
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [{"item_id": "abc123def456", "state": "acked"}],
+        )
+
+        result = process_inbound_ack("ack abc1", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is False
+        assert "cannot be" in (result.reply_text or "")
+
+    def test_case_insensitive(self, tmp_path: Path) -> None:
+        """Commands are case-insensitive."""
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [{"item_id": "abc123def456"}],
+        )
+
+        result = process_inbound_ack("ACK ABC1", runtime_dir=tmp_path)
+
+        assert result.is_ack_command is True
+        assert result.success is True
+
+    def test_selective_ack_preserves_other_items(self, tmp_path: Path) -> None:
+        """Acking one item leaves others unchanged."""
+        from bid_euchre.ops.control_plane import load_fleet_status
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        self._write_fleet_status(
+            tmp_path,
+            [
+                {"item_id": "aaa111000000", "summary": "Item A"},
+                {"item_id": "bbb222000000", "summary": "Item B"},
+            ],
+        )
+
+        result = process_inbound_ack("ack bbb2", runtime_dir=tmp_path)
+
+        assert result.success is True
+        assert result.item_id == "bbb222000000"
+
+        reloaded = load_fleet_status(tmp_path)
+        assert reloaded is not None
+        states = {i.item_id: i.state for i in reloaded.items}
+        assert states["aaa111000000"] == "open"
+        assert states["bbb222000000"] == "acked"
