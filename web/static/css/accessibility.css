@@ -123,7 +123,8 @@ select:focus-visible {
 
     /* Text inputs */
     #nickname-form input[type="text"],
-    #invite-code-input {
+    #invite-code-input,
+    .invite-code-form__input {
         min-height: 44px;
     }
 

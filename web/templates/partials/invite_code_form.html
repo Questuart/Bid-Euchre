@@ -2,16 +2,15 @@
    Context variables:
      - error (optional): str — error message to display
 #}
-<div id="invite-code-form" style="text-align:center; padding:2rem 1rem;"
+<div id="invite-code-form" class="invite-code-form"
      role="region" aria-label="Invite code entry">
-    <h2 style="font-size:1.5rem; margin-bottom:0.5rem;">Enter Invite Code</h2>
-    <p style="color:var(--color-text-muted, #bdbdbd); margin-bottom:1.5rem; font-size:0.95rem;">
+    <h2 class="invite-code-form__heading">Enter Invite Code</h2>
+    <p class="invite-code-form__hint">
         Enter your invite code to access the game.
     </p>
 
     {% if error %}
-    <div class="invite-error" role="alert"
-         style="color:#e53935; margin-bottom:1rem; font-size:0.9rem;">
+    <div class="invite-error" role="alert">
         {{ error }}
     </div>
     {% endif %}
@@ -22,7 +21,7 @@
           hx-target="#invite-code-form"
           hx-swap="outerHTML"
           aria-label="Enter invite code">
-        <div style="display:flex; flex-direction:column; align-items:center; gap:0.75rem;">
+        <div class="invite-code-form__fields">
             <label for="invite-code-input" class="sr-only">Invite code</label>
             <input id="invite-code-input"
                    name="code"
@@ -36,9 +35,7 @@
                    placeholder="e.g. A3X7KP9Q"
                    aria-label="Invite code"
                    aria-describedby="invite-code-hint"
-                   style="text-transform:uppercase; text-align:center; font-size:1.3rem;
-                          letter-spacing:0.15em; padding:0.6rem 1rem; width:14rem;
-                          font-family:monospace;">
+                   class="invite-code-form__input">
             <span id="invite-code-hint" class="sr-only">Enter the 8-character invite code you received</span>
             <button type="submit" class="btn btn--play-again" aria-label="Submit invite code">Enter Game</button>
         </div>
