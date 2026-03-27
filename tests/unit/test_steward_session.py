@@ -717,6 +717,45 @@ class TestTelegramChannelConfig:
             'ORCH_CHANNEL_FLAGS=""' in content
         ), "ORCH_CHANNEL_FLAGS must default to empty string"
 
+    def test_settings_json_does_not_enable_telegram_plugin(self) -> None:
+        """Committed settings.json must NOT contain enabledPlugins (#1824).
+
+        If enabledPlugins were in the committed settings.json, every lane
+        would spawn its own Telegram plugin instance, competing for inbound
+        messages.  Only the orchestrator should have the plugin enabled, via
+        a per-worktree settings.local.json provisioned by the tmux script.
+        """
+        settings_path = REPO_ROOT / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text())
+        assert "enabledPlugins" not in settings, (
+            "Committed .claude/settings.json must not contain enabledPlugins — "
+            "the Telegram plugin must be enabled per-worktree via settings.local.json"
+        )
+
+    def test_settings_local_json_is_gitignored(self) -> None:
+        """settings.local.json must be in .gitignore (#1824)."""
+        gitignore = (REPO_ROOT / ".gitignore").read_text()
+        assert ".claude/settings.local.json" in gitignore, (
+            ".claude/settings.local.json must be gitignored so that "
+            "per-worktree plugin overrides are not committed"
+        )
+
+    def test_tmux_script_provisions_settings_local_for_orchestrator(self) -> None:
+        """Tmux script must create settings.local.json in orchestrator worktree only (#1824)."""
+        content = STEWARD_SCRIPT.read_text()
+        # Must reference settings.local.json
+        assert (
+            "settings.local.json" in content
+        ), "Tmux script must provision .claude/settings.local.json for orchestrator"
+        # Must only create in MAIN_DIR (orchestrator worktree)
+        assert (
+            "MAIN_DIR" in content and "settings.local.json" in content
+        ), "settings.local.json must be created in MAIN_DIR (orchestrator worktree)"
+        # Must include enabledPlugins with telegram
+        assert (
+            "telegram@claude-plugins-official" in content
+        ), "settings.local.json must enable the Telegram plugin"
+
     def test_channel_flags_conditional_on_enabled(self) -> None:
         """ORCH_CHANNEL_FLAGS must only be set inside the STEWARD_TELEGRAM_ENABLED=1 guard."""
         content = STEWARD_SCRIPT.read_text()
