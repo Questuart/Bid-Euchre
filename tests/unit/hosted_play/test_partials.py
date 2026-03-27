@@ -1213,6 +1213,80 @@ class TestMoonExchange:
 
 
 # ---------------------------------------------------------------------------
+# moon_exchange_select.html — interactive card selection
+# ---------------------------------------------------------------------------
+
+
+class TestMoonExchangeSelect:
+    """Tests for the interactive moon exchange card selection template."""
+
+    def test_renders_selectable_cards(self, env):
+        """Human hand rendered as selectable buttons."""
+        tmpl = env.get_template("partials/moon_exchange_select.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            human_hand=[["S", "A"], ["H", "K"], ["D", "Q"]],
+            exchange_prompt="Choose 2 cards to give to your partner",
+            is_mooner=True,
+        )
+        assert "Moon Exchange" in html
+        assert "Choose 2 cards" in html
+        assert 'data-exchange-index="0"' in html
+        assert 'data-exchange-index="1"' in html
+        assert 'data-exchange-index="2"' in html
+        assert "Confirm Exchange" in html
+        assert 'action="/play/abc-123/exchange"' in html
+
+    def test_partner_prompt(self, env):
+        """Partner sees correct prompt text."""
+        tmpl = env.get_template("partials/moon_exchange_select.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            bidder_seat=2,
+            contract_type="suit",
+            trump="H",
+            human_hand=[["H", "J"]],
+            exchange_prompt="Choose 2 cards to give to the mooner",
+            is_mooner=False,
+        )
+        assert "Choose 2 cards to give to the mooner" in html
+        assert "AI Partner" in html  # mooner label for seat 2
+
+    def test_submit_button_disabled_by_default(self, env):
+        """Submit button starts disabled."""
+        tmpl = env.get_template("partials/moon_exchange_select.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            human_hand=[["S", "A"]],
+            exchange_prompt="Choose 2 cards",
+            is_mooner=True,
+        )
+        assert "disabled" in html
+
+    def test_form_targets_exchange_endpoint(self, env):
+        """Form submits to /play/<uuid>/exchange."""
+        tmpl = env.get_template("partials/moon_exchange_select.html")
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            bidder_seat=0,
+            contract_type="high",
+            trump=None,
+            human_hand=[["S", "A"], ["H", "K"]],
+            exchange_prompt="Choose 2 cards",
+            is_mooner=True,
+        )
+        assert 'hx-post="/play/test-uuid/exchange"' in html
+        assert 'name="card_index_0"' in html
+        assert 'name="card_index_1"' in html
+
+
+# ---------------------------------------------------------------------------
 # trick.html — winning card display
 # ---------------------------------------------------------------------------
 

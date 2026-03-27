@@ -1826,7 +1826,113 @@ main {
 }
 
 /* --------------------------------------------------------------------------
-   19. Utilities
+   19. Moon Exchange
+   -------------------------------------------------------------------------- */
+
+.moon-exchange {
+    text-align: center;
+    padding: 1.5rem 1rem;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.moon-exchange__header {
+    margin-bottom: 1rem;
+}
+
+.moon-exchange__title {
+    font-size: 1.5rem;
+    color: var(--color-moon);
+    margin: 0 0 0.25rem;
+}
+
+.moon-exchange__subtitle {
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.moon-exchange__prompt {
+    font-size: 1.1rem;
+    color: var(--color-text);
+    margin: 0.5rem 0 1rem;
+    font-weight: 600;
+}
+
+.moon-exchange__cards {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.moon-exchange__group {
+    min-width: 120px;
+}
+
+.moon-exchange__group-title {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+}
+
+.moon-exchange__card-list {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.moon-exchange__hand {
+    margin: 1.5rem 0;
+}
+
+.moon-exchange__controls {
+    margin-top: 1.5rem;
+}
+
+/* Exchange card selection — selectable cards glow on hover */
+.card--exchange-selectable {
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    background: none;
+    font-family: inherit;
+    font-weight: 700;
+    border: 2px solid var(--color-felt);
+}
+
+.card--exchange-selectable:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 0 6px rgba(255, 160, 0, 0.3);
+}
+
+/* Selected state for exchange cards */
+.card--exchange-selectable.card--selected {
+    box-shadow: 0 0 0 3px var(--color-moon-glow), 0 0 14px rgba(255, 160, 0, 0.55);
+    transform: translateY(-6px);
+    z-index: 20;
+    border-color: var(--color-moon);
+}
+
+.card-fan--exchange {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.35rem;
+}
+
+/* Exchange summary cards */
+.card--exchange {
+    border: 2px solid var(--color-moon);
+}
+
+.card--exchange-received {
+    border-color: var(--color-legal-border, #4caf50);
+}
+
+/* --------------------------------------------------------------------------
+   20. Utilities
    -------------------------------------------------------------------------- */
 
 .sr-only {
