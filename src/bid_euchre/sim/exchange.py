@@ -177,6 +177,26 @@ def _select_partner_gifts(
     return sorted(indices, reverse=True)
 
 
+def select_mooner_discards(
+    hand: List[Card],
+    contract_type: str,
+    trump_suit: Optional[str],
+    n_cards: int = 2,
+) -> List[int]:
+    """Public wrapper for selecting the mooner's discard indices."""
+    return _select_mooner_discards(hand, contract_type, trump_suit, n_cards=n_cards)
+
+
+def select_partner_gifts(
+    hand: List[Card],
+    contract_type: str,
+    trump_suit: Optional[str],
+    n_cards: int = 2,
+) -> List[int]:
+    """Public wrapper for selecting the partner's gift indices."""
+    return _select_partner_gifts(hand, contract_type, trump_suit, n_cards=n_cards)
+
+
 def perform_exchange(
     mooner_hand: List[Card],
     partner_hand: List[Card],
