@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -273,25 +272,37 @@ class TestDrainEvents:
 
         Appends that start during drain must complete after drain releases
         the lock, ensuring the appended event survives.
+
+        Uses an Event signal from inside the drain's critical section (via
+        a patched Path.rename) so the append is guaranteed to start while
+        the drain holds the lock — no timing-dependent sleep.
         """
+        from unittest.mock import patch
+
         # Write initial events
         for i in range(3):
             append_event("task_completed", "test", "ops", {"i": i}, events_dir)
 
-        drain_started = threading.Event()
+        lock_held = threading.Event()
         drain_done = threading.Event()
         append_done = threading.Event()
 
+        _original_rename = Path.rename
+
+        def _signaling_rename(self_path: Path, target: str | Path) -> Path:
+            """Wrap Path.rename to signal that drain holds the lock."""
+            lock_held.set()
+            return _original_rename(self_path, target)
+
         def do_drain() -> None:
-            drain_started.set()
-            drain_events(events_dir)
+            with patch.object(Path, "rename", _signaling_rename):
+                drain_events(events_dir)
             drain_done.set()
 
         def do_append() -> None:
-            # Wait for drain to start, then try appending
-            drain_started.wait(timeout=5)
-            # Small delay to let drain acquire lock — generous for slow CI.
-            time.sleep(0.2)
+            # Wait until drain has acquired the lock (signaled from inside
+            # the critical section at the rename step).
+            lock_held.wait(timeout=5)
             append_event(
                 "ci_failure", "concurrent", "ops", {"concurrent": True}, events_dir
             )
