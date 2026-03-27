@@ -159,6 +159,49 @@ Examples:
     overlapping files (visible from their task packet `scope_declared`), flag
     this as a potential conflict even at low divergence counts.
 
+### Phase 2c — Alert Push Delivery (Platform-9a)
+
+> The monitoring infrastructure evaluates unresolved HIGH/URGENT items and
+> prepares Telegram push payloads when the operator may be away. The check-in
+> must deliver those payloads — the Python code produces them but cannot call
+> the Telegram MCP tool itself.
+
+13. **Run the monitoring cycle with push evaluation:**
+    ```bash
+    uv run python scripts/internal/ops.py monitor
+    ```
+    The monitor command:
+    - Collects lane, PR, and task findings
+    - Updates the controller projection (`fleet_status.json`)
+    - Evaluates whether an alert push is warranted
+    - Prints the push payload if one is ready (prefixed with
+      `📢 Alert push prepared`)
+
+14. **If the output contains a push payload, deliver it via Telegram.**
+    Look for output matching:
+    ```
+    📢 Alert push prepared (N items) → chat <chat_id>
+    <message text follows on subsequent lines>
+    ```
+    Then call the Telegram MCP reply tool to actually send it:
+    ```
+    mcp__plugin_telegram_telegram__reply(
+        chat_id="<chat_id from the monitor output>",
+        text="<the formatted message text>"
+    )
+    ```
+
+    **Skip conditions** (do NOT send):
+    - The monitor output does **not** contain a push payload — the push
+      evaluator already suppresses when fleet is active, Telegram is
+      disabled, or no items are eligible. No action needed.
+    - You have already sent this exact alert text earlier in the current
+      check-in cycle (avoid duplicate pushes on retry).
+
+    **Audit:** The `post-telegram-audit.sh` PostToolUse hook automatically
+    records every outbound Telegram MCP call in the audit trail JSONL. No
+    manual audit step is needed.
+
 ### Phase 3 — PR and CI Health
 
 9. **List open PRs:**
@@ -228,5 +271,9 @@ summarizer. During autonomous operation:
 - `.claude/agents/steward-orchestrator.md` — orchestrator role and message bus
 - `.claude/agents/steward-ops.md` — ops monitor and supervisor alerts
 - `src/bid_euchre/ops/message_bus.py` — inbox message types and lifecycle
+- `src/bid_euchre/ops/telegram_push.py` — `PushResult` and `run_push_cycle` (Platform-9a)
+- `src/bid_euchre/ops/monitor.py` — `evaluate_alert_push` returns `MonitorCycleResult`
+- `.claude/hooks/post-telegram-audit.sh` — automatic outbound audit recording
 - Issue #1569 — root cause: orchestrator missed 25+ HIGH alerts during
   overnight run because inbox was never polled
+- Issue #1826 — alert→push→ack loop (this wiring closes the outbound path)
