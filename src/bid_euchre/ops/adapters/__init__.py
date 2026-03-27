@@ -23,16 +23,59 @@ Usage::
         MonitorService,
         TaskQueueService,
         WorkerPoolService,
+        create_provider,
     )
+
+    # Convenience factory: constructs a fully-wired ServiceProvider
+    provider = create_provider()
 """
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from bid_euchre.ops.adapters.bid_euchre import TaskQueueService, WorkerPoolService
 from bid_euchre.ops.core.controller import ControlPlaneController
 from bid_euchre.ops.core.monitor import MonitorService
+
+if TYPE_CHECKING:
+    from bid_euchre.ops.core.provider import ServiceProvider
+
+
+def create_provider(
+    *,
+    runtime_dir: Path | None = None,
+    queue_root: Path | None = None,
+    tmux_session: str = "steward",
+) -> ServiceProvider:
+    """Convenience factory: construct a fully-wired ServiceProvider.
+
+    Equivalent to ``ServiceProvider.default()`` but importable from the
+    adapters package for callers that don't need the core ABCs.
+
+    Args:
+        runtime_dir: Path to the runtime directory.
+        queue_root: Path to the task queue directory.
+        tmux_session: tmux session name for the worker pool adapter.
+
+    Returns:
+        A :class:`~bid_euchre.ops.core.provider.ServiceProvider` wired
+        with Bid-Euchre adapters.
+    """
+    from bid_euchre.ops.core.provider import ServiceProvider
+
+    return ServiceProvider.default(
+        runtime_dir=runtime_dir,
+        queue_root=queue_root,
+        tmux_session=tmux_session,
+    )
+
 
 __all__ = [
     "ControlPlaneController",
     "MonitorService",
     "TaskQueueService",
     "WorkerPoolService",
+    "create_provider",
 ]
