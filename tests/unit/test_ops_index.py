@@ -903,7 +903,7 @@ class TestStalenessCache:
         self, index_dir: Path, runtime_dir: Path, plans_dir: Path
     ) -> None:
         """After modifying a source file, staleness should be detected."""
-        import time as _time
+        import os
 
         build_index(index_dir, runtime_dir=runtime_dir, plans_dir=plans_dir)
 
@@ -911,12 +911,16 @@ class TestStalenessCache:
         stats = get_stats(index_dir)
         assert stats.stale_sources == 0
 
-        # Modify a source file — ensure mtime advances
+        # Modify a source file — use explicit mtime advancement instead of
+        # sleeping, which is flaky on systems with coarse mtime resolution.
         events_file = runtime_dir / "events" / "events.jsonl"
-        _time.sleep(0.05)  # ensure mtime resolution
         events_file.write_text(
             events_file.read_text() + '{"event_type":"new","timestamp":"2026-12-31"}\n'
         )
+        # Bump mtime 1 second into the future to guarantee staleness detection
+        # regardless of filesystem timestamp granularity.
+        st = events_file.stat()
+        os.utime(events_file, (st.st_atime, st.st_mtime + 1.0))
 
         # Cache should be invalidated for this query (build just ran, but
         # we need to force expiry to see the modification)

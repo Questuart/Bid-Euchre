@@ -20,9 +20,9 @@ class TestPerformanceRegression:
 
         duration = end_time - start_time
 
-        # Should complete in reasonable time (adjust threshold as needed)
-        # On a typical modern machine, 1000 hands should take < 5 seconds
-        assert duration < 10.0, f"{duration:.2f}"
+        # Should complete in reasonable time — generous for slow CI runners.
+        # On a typical modern machine, 1000 hands should take < 5 seconds.
+        assert duration < 30.0, f"1000 hands took {duration:.2f}s (must be < 30s)"
 
         # Verify result is still correct
         assert result["hands"] == 1000

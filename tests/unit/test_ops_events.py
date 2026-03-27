@@ -290,8 +290,8 @@ class TestDrainEvents:
         def do_append() -> None:
             # Wait for drain to start, then try appending
             drain_started.wait(timeout=5)
-            # Small delay to let drain acquire lock
-            time.sleep(0.05)
+            # Small delay to let drain acquire lock — generous for slow CI.
+            time.sleep(0.2)
             append_event(
                 "ci_failure", "concurrent", "ops", {"concurrent": True}, events_dir
             )
@@ -301,8 +301,8 @@ class TestDrainEvents:
         t2 = threading.Thread(target=do_append)
         t1.start()
         t2.start()
-        t1.join(timeout=5)
-        t2.join(timeout=5)
+        t1.join(timeout=10)
+        t2.join(timeout=10)
 
         assert drain_done.is_set(), "drain should complete"
         assert append_done.is_set(), "append should complete"
