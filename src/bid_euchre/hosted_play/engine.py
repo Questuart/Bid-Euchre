@@ -15,7 +15,11 @@ from bid_euchre.core.cards import Card, effective_suit, is_left_bower, is_right_
 from bid_euchre.core.rules import get_legal_indices, trick_winner
 from bid_euchre.scoring import compute_points
 from bid_euchre.sim.deals import generate_deal
-from bid_euchre.sim.exchange import perform_exchange
+from bid_euchre.sim.exchange import (
+    perform_exchange,
+    select_mooner_discards,
+    select_partner_gifts,
+)
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import (
     BidAction,
@@ -237,6 +241,97 @@ class MatchEngine:
         state = self._advance_ai(state)
         return state
 
+    def submit_exchange_selection(
+        self, state: MatchState, card_indices: list[int]
+    ) -> MatchState:
+        """Process the human's moon-exchange card selection.
+
+        The human selects exactly 2 cards from their hand to give.  When the
+        human is the mooner they give their 2 worst cards; when the human is
+        the partner they give their 2 best cards.  The AI counterpart's
+        selection is computed automatically.
+
+        After the exchange the hand transitions through the exchange-reveal
+        interstitial and then into trick play.
+        """
+        self.last_ai_events = []
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "moon_exchange"
+        assert hand.exchange_phase == "selecting"
+
+        if len(card_indices) != 2:
+            raise ValueError("Must select exactly 2 cards for moon exchange")
+
+        human_hand = hand.hands[HUMAN_SEAT]
+        for idx in card_indices:
+            if idx < 0 or idx >= len(human_hand):
+                raise ValueError(f"Card index {idx} out of range")
+
+        if card_indices[0] == card_indices[1]:
+            raise ValueError("Must select 2 different cards")
+
+        mooner_seat = hand.bidder_seat
+        assert mooner_seat is not None
+        partner_seat = (mooner_seat + 2) % _NUM_PLAYERS
+        contract_type = hand.contract_type or "suit"
+        trump = hand.trump
+
+        # Extract human's chosen cards (pop in descending index order)
+        sorted_indices = sorted(card_indices, reverse=True)
+        human_cards = []
+        for idx in sorted_indices:
+            human_cards.append(human_hand.pop(idx))
+
+        if HUMAN_SEAT == mooner_seat:
+            # Human is mooner — gave 2 cards; AI partner gives 2 best
+            ai_hand = hand.hands[partner_seat]
+            ai_indices = select_partner_gifts(ai_hand, contract_type, trump)
+            ai_cards = []
+            for idx in ai_indices:
+                ai_cards.append(ai_hand.pop(idx))
+
+            # Swap: mooner gets partner's best, partner gets mooner's discards
+            human_hand.extend(ai_cards)
+            ai_hand.extend(human_cards)
+
+            cards_given = human_cards  # mooner gave these
+            cards_received = ai_cards  # mooner received these
+        else:
+            # Human is partner — gave 2 cards; AI mooner gives 2 worst
+            ai_hand = hand.hands[mooner_seat]
+            ai_indices = select_mooner_discards(ai_hand, contract_type, trump)
+            ai_cards = []
+            for idx in ai_indices:
+                ai_cards.append(ai_hand.pop(idx))
+
+            # Swap: mooner gets partner's cards, partner gets mooner's discards
+            ai_hand.extend(human_cards)
+            human_hand.extend(ai_cards)
+
+            cards_given = ai_cards  # mooner gave these (to partner/human)
+            cards_received = human_cards  # mooner received these (from partner/human)
+
+        # Validate post-conditions
+        assert len(hand.hands[mooner_seat]) == 10
+        assert len(hand.hands[partner_seat]) == 10
+
+        # Store exchange results (from mooner's perspective)
+        hand.exchange_given = [[c.suit, c.rank] for c in cards_given]
+        hand.exchange_received = [[c.suit, c.rank] for c in cards_received]
+        hand.exchange_phase = None
+
+        # Transition to trick play with exchange-reveal interstitial
+        hand.phase = "trick_play"
+        leader = hand.bidder_seat
+        hand.current_trick = TrickState(leader=leader)
+        hand.current_seat = leader
+
+        # Re-sort human hand with bower awareness
+        sort_hand_for_display(hand.hands[HUMAN_SEAT], hand.contract_type, hand.trump)
+
+        return state
+
     def get_legal_bids(self, state: MatchState) -> list[BidAction]:
         """Return legal bids for the current bidder.
 
@@ -313,6 +408,7 @@ class MatchEngine:
         result["sitting_out_seat"] = hand.sitting_out_seat
         result["exchange_given"] = hand.exchange_given
         result["exchange_received"] = hand.exchange_received
+        result["exchange_phase"] = hand.exchange_phase
         result["current_trick"] = (
             None
             if hand.current_trick is None
@@ -560,6 +656,19 @@ class MatchEngine:
         if hand.bid_type == "moon":
             mooner_seat = hand.bidder_seat
             partner_seat = (mooner_seat + 2) % _NUM_PLAYERS
+            human_involved = HUMAN_SEAT in (mooner_seat, partner_seat)
+
+            if human_involved:
+                # Interactive exchange: pause for human to select 2 cards
+                hand.phase = "moon_exchange"
+                hand.exchange_phase = "selecting"
+                # Re-sort human hand so they can see proper card values
+                sort_hand_for_display(
+                    hand.hands[HUMAN_SEAT], hand.contract_type, hand.trump
+                )
+                return state
+
+            # AI-only exchange: auto-resolve
             (
                 hand.hands[mooner_seat],
                 hand.hands[partner_seat],

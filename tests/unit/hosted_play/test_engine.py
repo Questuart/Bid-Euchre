@@ -162,6 +162,18 @@ def loner_engine() -> MatchEngine:
     )
 
 
+def _auto_exchange(engine: MatchEngine, state: MatchState) -> MatchState:
+    """If in moon_exchange phase (selecting), auto-pick first 2 cards."""
+    hand = state.current_hand
+    if (
+        hand is not None
+        and hand.phase == "moon_exchange"
+        and hand.exchange_phase == "selecting"
+    ):
+        state = engine.submit_exchange_selection(state, [0, 1])
+    return state
+
+
 def _play_full_hand(
     engine: MatchEngine,
     state: MatchState,
@@ -188,6 +200,9 @@ def _play_full_hand(
         hand = state.current_hand
         if hand is None:
             return state
+
+    # Handle interactive moon exchange
+    state = _auto_exchange(engine, state)
 
     # Handle trick play phase (skip if human is sitting out)
     while (
@@ -226,6 +241,8 @@ def _play_until_match_end(engine: MatchEngine, state: MatchState) -> MatchState:
                 state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
             else:
                 state = engine.submit_human_bid(state, BidAction.pass_bid())
+        elif hand.phase == "moon_exchange":
+            state = _auto_exchange(engine, state)
         elif hand.phase == "trick_play":
             if hand.current_seat == HUMAN_SEAT:
                 legal = engine.get_legal_plays(state)
@@ -1182,6 +1199,13 @@ class TestMoonExchange:
             hand = state.current_hand
             assert hand is not None
 
+            # Human is mooner — should enter interactive exchange phase
+            if hand.phase == "moon_exchange":
+                assert hand.exchange_phase == "selecting"
+                state = engine.submit_exchange_selection(state, [0, 1])
+                hand = state.current_hand
+                assert hand is not None
+
             if hand.phase == "trick_play":
                 # Exchange should have occurred
                 assert hand.exchange_given is not None
@@ -1212,12 +1236,254 @@ class TestMoonExchange:
             hand = state.current_hand
             assert hand is not None
 
+            # Handle interactive exchange
+            if hand.phase == "moon_exchange":
+                state = engine.submit_exchange_selection(state, [0, 1])
+                hand = state.current_hand
+                assert hand is not None
+
             if hand.phase == "trick_play" and hand.exchange_given is not None:
                 data = MatchEngine.serialize(state)
                 restored = MatchEngine.deserialize(data)
                 assert restored.current_hand is not None
                 assert restored.current_hand.exchange_given == hand.exchange_given
                 assert restored.current_hand.exchange_received == hand.exchange_received
+
+
+# ---------------------------------------------------------------------------
+# Test 14b: Interactive moon exchange
+# ---------------------------------------------------------------------------
+
+
+class TestInteractiveMoonExchange:
+    """Moon exchange pauses for human card selection when human is involved."""
+
+    def test_human_mooner_enters_exchange_phase(self) -> None:
+        """When human bids moon, engine enters moon_exchange selecting phase."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+            assert hand.phase == "moon_exchange"
+            assert hand.exchange_phase == "selecting"
+            # Exchange not yet done
+            assert hand.exchange_given is None
+            assert hand.exchange_received is None
+            # Hand still has 10 cards
+            assert len(hand.hands[HUMAN_SEAT]) == 10
+
+    def test_human_mooner_exchange_selection(self) -> None:
+        """Human mooner selects 2 cards, exchange completes properly."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+            assert hand.phase == "moon_exchange"
+
+            # Choose first two cards
+            chosen_0 = hand.hands[HUMAN_SEAT][0]
+            chosen_1 = hand.hands[HUMAN_SEAT][1]
+            state = engine.submit_exchange_selection(state, [0, 1])
+            hand = state.current_hand
+            assert hand is not None
+
+            # Should be in trick_play now
+            assert hand.phase == "trick_play"
+            assert hand.exchange_phase is None
+            assert hand.exchange_given is not None
+            assert hand.exchange_received is not None
+            assert len(hand.exchange_given) == 2
+            assert len(hand.exchange_received) == 2
+
+            # The cards human gave should be the ones at indices 0 and 1
+            given_cards = {tuple(c) for c in hand.exchange_given}
+            assert (chosen_0.suit, chosen_0.rank) in given_cards
+            assert (chosen_1.suit, chosen_1.rank) in given_cards
+
+            # Both hands still 10 cards
+            assert len(hand.hands[HUMAN_SEAT]) == 10
+            assert len(hand.hands[2]) == 10
+
+    def test_human_partner_exchange_phase(self) -> None:
+        """When AI partner bids moon, human (as partner) enters exchange."""
+        # MoonBidder bids moon if current_high_bid == 0.  Find a seed where
+        # AI Partner (seat 2) bids before the human and wins the auction.
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        for seed in range(500):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if hand is None:
+                continue
+
+            # start_match already auto-advanced AI; if human turn, pass
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                # Check if there's already a moon bid from seat 2
+                has_moon_from_2 = any(
+                    e.get("action") == "bid"
+                    and e.get("bid_type") == "moon"
+                    and e.get("seat") == 2
+                    for e in hand.auction
+                )
+                if not has_moon_from_2:
+                    continue
+                # Human passes to let the auction finish
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+                hand = state.current_hand
+                if hand is None:
+                    continue
+
+            if hand.phase == "moon_exchange" and hand.bidder_seat == 2:
+                # Human is partner — should be in selecting phase
+                assert hand.exchange_phase == "selecting"
+                assert len(hand.hands[HUMAN_SEAT]) == 10
+
+                # Complete the exchange
+                state = engine.submit_exchange_selection(state, [0, 1])
+                hand = state.current_hand
+                assert hand is not None
+                assert hand.phase == "trick_play"
+                assert hand.exchange_given is not None
+                assert hand.exchange_received is not None
+                return  # Test passed
+
+        pytest.skip("No seed found where AI Partner bids moon first")
+
+    def test_ai_only_exchange_auto_resolves(self) -> None:
+        """When neither human is mooner nor partner, exchange is automatic."""
+        # Find a seed where AI Left (seat 1) or AI Right (seat 3) bids moon.
+        # Their partner is seat 3 or 1 respectively — human not involved.
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        for seed in range(500):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if hand is None:
+                continue
+
+            # If it's human's turn during auction, pass
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+                hand = state.current_hand
+                if hand is None:
+                    continue
+
+            # Check if an AI from the opposing team (seat 1 or 3) won
+            if (
+                hand.phase == "trick_play"
+                and hand.bid_type == "moon"
+                and hand.bidder_seat in (1, 3)
+            ):
+                # Should have auto-resolved — no moon_exchange phase
+                assert hand.exchange_given is not None
+                assert hand.exchange_received is not None
+                assert hand.exchange_phase is None
+                return
+
+        pytest.skip("No seed found where opposing AI bids moon")
+
+    def test_exchange_selection_validates_card_count(self) -> None:
+        """Must select exactly 2 cards."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+
+            if hand.phase == "moon_exchange":
+                with pytest.raises(ValueError, match="exactly 2"):
+                    engine.submit_exchange_selection(state, [0])
+                with pytest.raises(ValueError, match="exactly 2"):
+                    engine.submit_exchange_selection(state, [0, 1, 2])
+
+    def test_exchange_selection_validates_same_card(self) -> None:
+        """Cannot select the same card twice."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+
+            if hand.phase == "moon_exchange":
+                with pytest.raises(ValueError, match="2 different"):
+                    engine.submit_exchange_selection(state, [3, 3])
+
+    def test_exchange_selection_validates_index_range(self) -> None:
+        """Card indices must be in range."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+
+            if hand.phase == "moon_exchange":
+                with pytest.raises(ValueError, match="out of range"):
+                    engine.submit_exchange_selection(state, [0, 99])
+
+    def test_exchange_phase_serialization(self) -> None:
+        """Exchange selecting phase round-trips through serialization."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+
+            if hand.phase == "moon_exchange":
+                data = MatchEngine.serialize(state)
+                restored = MatchEngine.deserialize(data)
+                r_hand = restored.current_hand
+                assert r_hand is not None
+                assert r_hand.phase == "moon_exchange"
+                assert r_hand.exchange_phase == "selecting"
+                assert r_hand.exchange_given is None  # Not yet exchanged
 
 
 # ---------------------------------------------------------------------------

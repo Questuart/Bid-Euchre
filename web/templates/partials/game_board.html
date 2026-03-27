@@ -22,7 +22,11 @@
 {% elif phase == "hand_result" %}
     {% include "partials/hand_result.html" %}
 
-{# ---- Moon exchange interstitial ---- #}
+{# ---- Moon exchange card selection (interactive) ---- #}
+{% elif phase == "moon_exchange_select" %}
+    {% include "partials/moon_exchange_select.html" %}
+
+{# ---- Moon exchange interstitial (summary) ---- #}
 {% elif phase == "moon_exchange" %}
     {% include "partials/moon_exchange.html" %}
 
