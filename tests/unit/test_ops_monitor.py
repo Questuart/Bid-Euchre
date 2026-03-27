@@ -3548,3 +3548,292 @@ class TestEvaluateAlertPush:
         evaluate_alert_push([], runtime_dir=tmp_path, now=ts)
         call_kwargs = mock_push.call_args.kwargs
         assert call_kwargs["now"] == ts
+
+
+# ---------------------------------------------------------------------------
+# E2E smoke test: full alert → push → ack loop (Platform-9a, #1826 part 3)
+# ---------------------------------------------------------------------------
+
+
+class TestAlertPushAckE2E:
+    """End-to-end smoke test for the complete alert→push→ack cycle.
+
+    Exercises the full loop with real functions (no mocks):
+    1. Seed a HIGH monitor finding.
+    2. Reconcile to produce fleet_status.json on disk.
+    3. Run prepare_alert_push (reads fleet status from disk) → PushResult.
+    4. Parse the push message for an ack command.
+    5. Execute the ack against the fleet status.
+    6. Verify the item transitions to acked state.
+
+    Uses ``prepare_alert_push`` with a constructed ``IdleStatus`` to avoid
+    wall-clock coupling in the idle detector (``run_push_cycle`` does not
+    forward ``now`` to ``is_fleet_idle``).
+    """
+
+    def test_full_alert_push_ack_loop(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Full alert→push→ack cycle through real functions, no mocks."""
+        from bid_euchre.ops.alert_push import PushState, load_push_state
+        from bid_euchre.ops.audit_trail import read_records
+        from bid_euchre.ops.control_plane import (
+            STATE_ACKED,
+            STATE_OPEN,
+            load_fleet_status,
+            reconcile,
+            save_fleet_status,
+        )
+        from bid_euchre.ops.idle_detector import IdleStatus
+        from bid_euchre.ops.remote_ack import (
+            execute_remote_ack,
+            format_ack_confirmation,
+            parse_ack_command,
+        )
+        from bid_euchre.ops.telegram_push import prepare_alert_push
+
+        runtime_dir = tmp_path / "runtime"
+        runtime_dir.mkdir()
+        audit_dir = runtime_dir / "audit_trail"
+
+        now = datetime(2026, 3, 27, 14, 0, 0, tzinfo=timezone.utc)
+
+        # --- Phase 1: Alert — create a HIGH finding and reconcile ---
+        finding = MonitorFinding(
+            category="approval_stall",
+            severity="high",
+            summary="author-b approval stall — no review after 45m",
+            details={"lane": "author-b"},
+        )
+
+        fleet_status = reconcile(
+            runtime_dir=runtime_dir,
+            monitor_finding_objects=[finding],
+            now_iso=now.isoformat(),
+        )
+
+        # Verify reconcile produced at least one open HIGH item.
+        high_open = [
+            i
+            for i in fleet_status.items
+            if i.severity == "high" and i.state == STATE_OPEN
+        ]
+        assert len(high_open) >= 1, "Reconcile should produce ≥1 HIGH open item"
+        target_item = high_open[0]
+
+        # --- Phase 2: Push — prepare_alert_push with fleet idle ---
+        idle_status = IdleStatus(
+            idle=True,
+            idle_minutes=120.0,
+            last_meaningful_event=None,
+            active_lanes=[],
+            reason="Test: fleet idle",
+        )
+        push_state = PushState()
+
+        push_result = prepare_alert_push(
+            fleet_status=fleet_status,
+            idle_status=idle_status,
+            push_state=push_state,
+            chat_id="test-chat-42",
+            now=now,
+            runtime_dir=runtime_dir,
+            audit_dir=audit_dir,
+        )
+
+        assert push_result is not None, "Push should fire for idle fleet + HIGH item"
+        assert push_result.chat_id == "test-chat-42"
+        assert len(push_result.items_pushed) >= 1
+
+        # The push message should contain the item_id prefix (first 8 hex chars).
+        item_prefix = target_item.item_id[:8]
+        assert (
+            item_prefix in push_result.message
+        ), f"Push message should contain item prefix {item_prefix}"
+        assert "approval stall" in push_result.message.lower()
+
+        # Verify audit trail recorded the outbound push.
+        audit_recs = read_records(audit_dir=audit_dir)
+        outbound = [r for r in audit_recs if r.direction == "outbound"]
+        assert len(outbound) >= 1, "Audit trail should record the outbound push"
+        assert outbound[0].metadata.get("purpose") == "alert_push"
+
+        # Verify push state was persisted.
+        reloaded_push_state = load_push_state(runtime_dir=runtime_dir)
+        assert target_item.item_id in reloaded_push_state.items
+
+        # --- Phase 3: Ack — parse the operator's reply and execute ---
+        # Simulate operator replying "ack <prefix>" to the Telegram alert.
+        ack_text = f"ack {item_prefix}"
+        cmd = parse_ack_command(ack_text)
+        assert cmd is not None, f"Should parse ack command from '{ack_text}'"
+        assert cmd.prefix == item_prefix
+
+        # Re-load fleet status from disk (as the real ack path would).
+        status_from_disk = load_fleet_status(runtime_dir)
+        assert status_from_disk is not None
+
+        ack_result = execute_remote_ack(cmd, status_from_disk)
+        assert ack_result.success, f"Ack should succeed: {ack_result.message}"
+        assert ack_result.item_id == target_item.item_id
+
+        # Verify the item is now acked.
+        acked_item = next(
+            i for i in status_from_disk.items if i.item_id == target_item.item_id
+        )
+        assert acked_item.state == STATE_ACKED
+
+        # Persist the acked status (as the real flow would).
+        save_fleet_status(status_from_disk, runtime_dir)
+
+        # Verify ack confirmation message is user-friendly.
+        confirmation = format_ack_confirmation(ack_result)
+        assert "✅" in confirmation
+        assert item_prefix in confirmation
+
+    def test_push_suppressed_for_active_fleet(self, tmp_path: Path) -> None:
+        """No push when the fleet has recent activity (idle gate blocks)."""
+        from bid_euchre.ops.alert_push import PushState
+        from bid_euchre.ops.control_plane import reconcile
+        from bid_euchre.ops.idle_detector import IdleStatus
+        from bid_euchre.ops.telegram_push import prepare_alert_push
+
+        runtime_dir = tmp_path / "runtime"
+        runtime_dir.mkdir()
+
+        now = datetime(2026, 3, 27, 14, 0, 0, tzinfo=timezone.utc)
+
+        finding = MonitorFinding(
+            category="approval_stall",
+            severity="high",
+            summary="author-b approval stall",
+            details={"lane": "author-b"},
+        )
+        fleet_status = reconcile(
+            runtime_dir=runtime_dir,
+            monitor_finding_objects=[finding],
+            now_iso=now.isoformat(),
+        )
+
+        # Fleet is actively running — push should be suppressed.
+        idle_status = IdleStatus(
+            idle=False,
+            idle_minutes=5.0,
+            last_meaningful_event=now,
+            active_lanes=["author-a"],
+            reason="Test: fleet active",
+        )
+        push_state = PushState()
+
+        result = prepare_alert_push(
+            fleet_status=fleet_status,
+            idle_status=idle_status,
+            push_state=push_state,
+            chat_id="test-chat-42",
+            now=now,
+            runtime_dir=runtime_dir,
+        )
+        assert result is None, "Push should be suppressed for active fleet"
+
+    def test_ack_nonexistent_prefix_fails(self) -> None:
+        """Ack with a prefix that doesn't match any item fails gracefully."""
+        from bid_euchre.ops.control_plane import (
+            STATE_OPEN,
+            ActionableItem,
+            FleetStatus,
+        )
+        from bid_euchre.ops.remote_ack import execute_remote_ack, parse_ack_command
+
+        now = datetime(2026, 3, 27, 14, 0, 0, tzinfo=timezone.utc)
+        item = ActionableItem(
+            item_id="aabbccdd11223344",
+            severity="high",
+            category="approval_stall",
+            source="monitor",
+            summary="Test item",
+            first_seen_at=now.isoformat(),
+            last_seen_at=now.isoformat(),
+            state=STATE_OPEN,
+        )
+        status = FleetStatus(
+            items=[item],
+            generated_at=now.isoformat(),
+            cycle_count=1,
+        )
+
+        # Try acking with a nonexistent prefix.
+        cmd = parse_ack_command("ack deadbeef")
+        assert cmd is not None
+        result = execute_remote_ack(cmd, status)
+        assert not result.success
+        assert "No item matching" in result.message
+
+    def test_double_ack_fails_gracefully(self, tmp_path: Path) -> None:
+        """Acking the same item twice — second ack fails (already acked)."""
+        from bid_euchre.ops.alert_push import PushState
+        from bid_euchre.ops.control_plane import (
+            load_fleet_status,
+            reconcile,
+            save_fleet_status,
+        )
+        from bid_euchre.ops.idle_detector import IdleStatus
+        from bid_euchre.ops.remote_ack import execute_remote_ack, parse_ack_command
+        from bid_euchre.ops.telegram_push import prepare_alert_push
+
+        runtime_dir = tmp_path / "runtime"
+        runtime_dir.mkdir()
+        audit_dir = runtime_dir / "audit_trail"
+
+        now = datetime(2026, 3, 27, 14, 0, 0, tzinfo=timezone.utc)
+
+        finding = MonitorFinding(
+            category="approval_stall",
+            severity="high",
+            summary="author-c stall",
+            details={"lane": "author-c"},
+        )
+        fleet_status = reconcile(
+            runtime_dir=runtime_dir,
+            monitor_finding_objects=[finding],
+            now_iso=now.isoformat(),
+        )
+
+        # Push fires (fleet idle).
+        idle_status = IdleStatus(
+            idle=True,
+            idle_minutes=120.0,
+            last_meaningful_event=None,
+            active_lanes=[],
+            reason="Test: fleet idle",
+        )
+        push_state = PushState()
+
+        push_result = prepare_alert_push(
+            fleet_status=fleet_status,
+            idle_status=idle_status,
+            push_state=push_state,
+            chat_id="test-chat-42",
+            now=now,
+            runtime_dir=runtime_dir,
+            audit_dir=audit_dir,
+        )
+        assert push_result is not None
+        pushed_item = push_result.items_pushed[0]
+        prefix = pushed_item.item_id[:8]
+
+        # First ack — succeeds.
+        status = load_fleet_status(runtime_dir)
+        assert status is not None
+        cmd = parse_ack_command(f"ack {prefix}")
+        assert cmd is not None
+        r1 = execute_remote_ack(cmd, status)
+        assert r1.success
+        save_fleet_status(status, runtime_dir)
+
+        # Second ack — fails gracefully (item already acked).
+        status2 = load_fleet_status(runtime_dir)
+        assert status2 is not None
+        r2 = execute_remote_ack(cmd, status2)
+        assert not r2.success
+        assert "cannot be" in r2.message.lower() or "already" in r2.message.lower()
