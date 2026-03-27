@@ -233,9 +233,11 @@ def _game_phase(state) -> str:
         return "hand_result"
     if _has_hidden_auction(hand):
         return "auction"
+    if hand.phase == "moon_exchange" and hand.exchange_phase == "selecting":
+        return "moon_exchange_select"
     if _has_pending_exchange(hand):
         return "moon_exchange"
-    # "auction", "trick_play", or "redeal" pass through directly
+    # "auction", "trick_play", "moon_exchange", or "redeal" pass through
     return hand.phase
 
 
@@ -401,6 +403,16 @@ def _build_game_context(
             ctx["legal_plays"] = engine.get_legal_plays(state)
         else:
             ctx["legal_plays"] = None
+
+        # Moon exchange selection context
+        if phase == "moon_exchange_select":
+            mooner_seat = hand.bidder_seat
+            ctx["is_mooner"] = HUMAN_SEAT == mooner_seat
+            ctx["exchange_prompt"] = (
+                "Choose 2 cards to give to your partner"
+                if HUMAN_SEAT == mooner_seat
+                else "Choose 2 cards to give to the mooner"
+            )
 
         # AI hand card counts (face-down display)
         ctx["opp_left_count"] = len(hand.hands[1]) if len(hand.hands) > 1 else 0
@@ -1055,6 +1067,52 @@ async def next_step(
             hand.paused_after_trick = False
         else:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+
+        hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
+        hand_row.hand_state_json = json.dumps(hand.to_dict())
+        _update_match_row(match_row, state)
+        session.commit()
+
+        return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+    finally:
+        session.close()
+
+
+@router.post("/play/{link_uuid}/exchange", response_class=HTMLResponse)
+async def submit_exchange(
+    request: Request,
+    link_uuid: str,
+    card_index_0: int = Form(...),
+    card_index_1: int = Form(...),
+):
+    """Submit the human's 2-card selection for moon exchange."""
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        match_row = (
+            session.query(Match)
+            .filter_by(player_id=player.id, status="active")
+            .order_by(Match.created_at.desc())
+            .first()
+        )
+        if match_row is None:
+            raise HTTPException(status_code=404, detail="No active match")
+
+        ai_manager = _get_ai_manager(request)
+        engine = _build_engine(ai_manager, match_row.ai_model)
+        state = _deserialize_state(engine, match_row.match_state_json)
+
+        hand = state.current_hand
+        if hand is None or hand.phase != "moon_exchange":
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+
+        if hand.exchange_phase != "selecting":
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+
+        state = engine.submit_exchange_selection(state, [card_index_0, card_index_1])
 
         hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
         hand_row.hand_state_json = json.dumps(hand.to_dict())
