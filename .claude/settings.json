@@ -108,8 +108,16 @@
   },
   "permissions": {
     "allow": [
-      "Edit(.claude/skills/**/SKILL.md)",
-      "Write(.claude/skills/**/SKILL.md)"
+      "Edit(.claude/skills/**)",
+      "Write(.claude/skills/**)",
+      "Edit(.claude/rules/**)",
+      "Write(.claude/rules/**)",
+      "Edit(.claude/settings.json)",
+      "Write(.claude/settings.json)",
+      "Edit(MEMORY.md)",
+      "Write(MEMORY.md)",
+      "Edit(plans/**)",
+      "Write(plans/**)"
     ]
   },
   "enabledPlugins": {

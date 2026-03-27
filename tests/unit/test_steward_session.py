@@ -309,6 +309,7 @@ class TestWindowLayout:
         "flex-a",
         "flex-b",
         "flex-c",
+        "flex-d",
     ]
 
     # Lanes per window, in pane creation order (pane 1 = first, 1-based)
@@ -322,7 +323,7 @@ class TestWindowLayout:
             "brws-author-c",
             "brws-author-d",
         ],
-        "flex": ["flex-a", "flex-b", "flex-c"],
+        "flex": ["flex-a", "flex-b", "flex-c", "flex-d"],
     }
 
     def test_no_dashboard_window(self) -> None:
@@ -451,13 +452,13 @@ class TestWindowLayout:
                 f'select-layout -t "${{SESSION}}:{window_name}" tiled' in content
             ), f"Window '{window_name}' must have select-layout tiled"
 
-    def test_flex_window_has_3_panes(self) -> None:
-        """flex window must have 2 split-window commands (for 3 panes total)."""
+    def test_flex_window_has_4_panes(self) -> None:
+        """flex window must have 3 split-window commands (for 4 panes total)."""
         content = STEWARD_SCRIPT.read_text()
         split_count = content.count('split-window -t "${SESSION}:flex"')
         assert (
-            split_count == 2
-        ), f"flex window must have 2 split-window commands, found {split_count}"
+            split_count == 3
+        ), f"flex window must have 3 split-window commands, found {split_count}"
 
     def test_flex_window_tiled(self) -> None:
         """flex window must use tiled layout."""
@@ -467,7 +468,7 @@ class TestWindowLayout:
         ), "flex window must use tiled layout"
 
     def test_all_lanes_launched(self) -> None:
-        """All 19 lanes must appear in new-session, new-window, or split-window."""
+        """All 20 lanes must appear in new-session, new-window, or split-window."""
         content = STEWARD_SCRIPT.read_text()
         for lane in self.EXPECTED_LANES:
             assert (
