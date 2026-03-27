@@ -17,6 +17,19 @@ set -euo pipefail
 # Read PostToolUse JSON payload from stdin
 INPUT=$(cat)
 
+# Lane guard: only the orchestrator should audit Telegram tool calls.
+# Other lanes should not call Telegram tools, but if they do (due to
+# competing plugin instances — #1824), skip auditing.
+if [ "${STEWARD_TELEGRAM_RECEIVER:-}" = "0" ]; then
+    exit 0
+fi
+if [ "${STEWARD_TELEGRAM_RECEIVER:-}" != "1" ]; then
+    _BASENAME=$(basename "${CLAUDE_PROJECT_DIR:-}")
+    if [ "$_BASENAME" != "Bid-Euchre" ]; then
+        exit 0
+    fi
+fi
+
 # Extract tool name
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null || echo "")
 
