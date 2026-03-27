@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-25 by analyst (add SP-4-09/SP-4-10 for overnight groundwork — #1836)
+**Last updated:** 2026-03-27 by author-c (SP-4-08 progress: monitor wiring PR #1944 merged)
 
 ---
 
@@ -31,7 +31,7 @@
 | SP-4-05 | Reactive control-loop hardening | Phase 4, Pre-Platform-8 lifecycle reactivity and control-plane hardening | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | 2026-03-24 | 2026-03-24 (PRs #1500, #1491, #1474, #1490, #1507, #1486; lifecycle proven through fleet operation) |
 | SP-4-06 | Platform-8b repo-owned remote audit trail | Phase 4, Platform-8b audit trail for remote exchanges | completed | author-a | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | 2026-03-24 | 2026-03-24 (PRs #1532, #1536, #1541, #1549) |
 | SP-4-07 | Controller-first control plane and transport evaluation | Phase 4, Pre-Platform-9 controller projection, hook enforcement, and transport proving | completed | orchestrator | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | 2026-03-24 | 2026-03-25 (PR #1768; all 6 exit criteria met, all 5 proving runs passed) |
-| SP-4-08 | Platform-9a idle-attention alerts and remote acknowledgement loop | Phase 4, Step 4 (Platform-9a) | in_progress | overnight fleet | `plans/agent_ops/4_remote_channel/sub/2026-03-25_platform-9a-idle-attention-alerts.md` | 2026-03-25 | — (groundwork shipped: evaluator, adapter, ack parser, controller mutation, tests; E2E wiring pending — see #1826) |
+| SP-4-08 | Platform-9a idle-attention alerts and remote acknowledgement loop | Phase 4, Step 4 (Platform-9a) | in_progress | overnight fleet + author-c | `plans/agent_ops/4_remote_channel/sub/2026-03-25_platform-9a-idle-attention-alerts.md` | 2026-03-25 | — (groundwork shipped: evaluator, adapter, ack parser, controller mutation, tests. Monitor wiring shipped: PR #1944 adds `evaluate_alert_push()` to monitor module. Remaining: MCP delivery, inbound ack consumer, real round-trip — see #1826) |
 | SP-4-09 | Platform-9b away-from-desk queue priority and away-mode | Phase 4, Step 5 (Platform-9b) | in_progress | overnight fleet | _(no sub-plan file — retroactive registration of shipped groundwork)_ | 2026-03-25 | — (groundwork shipped: queue priority scorer #1802, away-mode detection #1806, away-mode wiring #1815; E2E integration blocked on 9a) |
 | SP-4-10 | Platform-10 core ops extraction | Phase 4, Step 6 / Phase 5 bridge (Platform-10) | in_progress | overnight fleet | _(no sub-plan file — retroactive registration of shipped groundwork)_ | 2026-03-25 | — (groundwork shipped: core ops ABCs #1807, extract core ops #1813, repo adapter #1817; integration deferred to Phase 5) |
 
