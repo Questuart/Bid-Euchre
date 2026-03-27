@@ -343,6 +343,77 @@ class TestNextRevealFlow:
         assert state_after.current_hand.paused_after_trick is False
         session_after.close()
 
+    def test_next_reveals_moon_exchange_and_transitions_to_trick_play(
+        self, client, app
+    ):
+        """POST /next flips exchange_revealed and transitions from moon exchange to trick play.
+
+        Verifies the route-level /next handler for the moon-exchange-pending
+        state: before the POST the interstitial is shown; after it the game
+        advances to trick play.  Closes #1930.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+        # Simulate a completed moon exchange that is pending reveal:
+        # phase is "trick_play" (engine sets this after exchange), but
+        # exchange_revealed is still False so the route renders the
+        # moon_exchange interstitial.
+        hand.phase = "trick_play"
+        hand.current_seat = HUMAN_SEAT
+        hand.turn_number = 6
+        hand.bidder_seat = 1
+        hand.winning_bid = 10
+        hand.bid_type = "moon"
+        hand.contract_type = "suit"
+        hand.trump = "H"
+        hand.revealed_auction_count = len(hand.auction)
+        hand.exchange_given = [["H", "10"], ["D", "10"]]
+        hand.exchange_received = [["H", "A"], ["H", "K"]]
+        hand.exchange_revealed = False
+        hand.exchange_phase = None
+        hand.hands = [
+            [Card("H", "A"), Card("H", "K"), Card("S", "A"), Card("S", "K")],
+            [Card("D", "A"), Card("D", "K")],
+            [Card("C", "A"), Card("C", "K")],
+            [Card("S", "Q"), Card("S", "J")],
+        ]
+        hand.current_trick = TrickState(leader=1)
+        match_row.match_state_json = json.dumps(state.to_dict())
+        session.commit()
+        session.close()
+
+        # Before /next: the moon exchange interstitial should be rendered
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "Moon Exchange" in resp.text
+        assert "Start Trick Play" in resp.text
+        # The moon_exchange partial has its own /next form button —
+        # trick play controls should NOT be visible yet
+        assert 'id="card-play-form"' not in resp.text
+
+        # POST /next to reveal the exchange
+        resp = client.post(f"/play/{link_uuid}/next")
+        assert resp.status_code == 200
+        # After reveal, the response should show trick play (not the exchange)
+        assert "Moon Exchange" not in resp.text
+        assert "Start Trick Play" not in resp.text
+
+        # Verify exchange_revealed was persisted
+        result_after = get_match_state(app, link_uuid)
+        assert result_after is not None
+        state_after, _, session_after = result_after
+        hand_after = state_after.current_hand
+        assert hand_after is not None
+        assert hand_after.exchange_revealed is True
+        assert hand_after.phase == "trick_play"
+        session_after.close()
+
 
 # ---------------------------------------------------------------------------
 # Test 5: Submit card → state advances
