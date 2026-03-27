@@ -3,8 +3,8 @@
 **ID:** SP-4-08
 **Date:** 2026-03-25
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 4, Step 4 (Platform-9a)
-**Status:** proposed
-**Owner:** unassigned
+**Status:** in_progress
+**Owner:** multi-lane (overnight fleet + author-c)
 
 ---
 
