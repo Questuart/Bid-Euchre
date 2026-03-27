@@ -171,14 +171,56 @@
             }
             clearCardSelection(getCardPlayForm());
             syncCardPlayFormControls(getCardPlayForm());
+            restoreTrickHistoryState();
+        }, true);
+    }
+
+    /* ---------------------------------------------------------------
+     * Trick history toggle — persist open/closed state across HTMX
+     * swaps so the panel doesn't collapse every time the board updates.
+     * --------------------------------------------------------------- */
+
+    var TRICK_HISTORY_KEY = 'trickHistoryOpen';
+
+    function saveTrickHistoryState() {
+        var details = document.getElementById('trick-history');
+        if (details) {
+            try {
+                sessionStorage.setItem(TRICK_HISTORY_KEY, details.open ? '1' : '0');
+            } catch (_) {
+                // sessionStorage unavailable — ignore
+            }
+        }
+    }
+
+    function restoreTrickHistoryState() {
+        var details = document.getElementById('trick-history');
+        if (!details) { return; }
+        try {
+            var saved = sessionStorage.getItem(TRICK_HISTORY_KEY);
+            if (saved === '1') {
+                details.open = true;
+            }
+        } catch (_) {
+            // sessionStorage unavailable — ignore
+        }
+    }
+
+    function attachTrickHistoryToggle() {
+        document.addEventListener('toggle', function (event) {
+            if (event.target && event.target.id === 'trick-history') {
+                saveTrickHistoryState();
+            }
         }, true);
     }
 
     function initialize() {
         attachDelegatedHandlers();
+        attachTrickHistoryToggle();
         var form = getCardPlayForm();
         clearCardSelection(form);
         syncCardPlayFormControls(form);
+        restoreTrickHistoryState();
     }
 
     initialize();

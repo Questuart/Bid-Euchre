@@ -11,6 +11,7 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
+from bid_euchre.core.cards import Card, effective_suit, is_left_bower, is_right_bower
 from bid_euchre.core.rules import get_legal_indices, trick_winner
 from bid_euchre.scoring import compute_points
 from bid_euchre.sim.deals import generate_deal
@@ -35,6 +36,66 @@ MATCH_TARGET = 52
 # Seats in bidding order relative to dealer: (dealer+1), (dealer+2), (dealer+3), dealer
 _NUM_PLAYERS = 4
 _TRICKS_PER_HAND = 10
+
+
+# Display suit order: Spades, Hearts, Diamonds, Clubs
+_SUIT_DISPLAY_ORDER: dict[str, int] = {"S": 0, "H": 1, "D": 2, "C": 3}
+
+# Within-suit rank order: J highest, then A-K-Q-T
+_RANK_DISPLAY_ORDER: dict[str, int] = {"J": 0, "A": 1, "K": 2, "Q": 3, "T": 4}
+
+# Low-contract rank order: T highest, then J-Q-K-A
+_RANK_DISPLAY_ORDER_LOW: dict[str, int] = {"T": 0, "J": 1, "Q": 2, "K": 3, "A": 4}
+
+
+def sort_hand_for_display(
+    hand: list[Card],
+    contract_type: str | None = None,
+    trump: str | None = None,
+) -> None:
+    """Sort a hand **in-place** for human display.
+
+    Grouping:
+    - Cards are grouped by effective suit (bowers move to trump group in suit
+      contracts).
+    - When trump is active, the trump suit appears first; remaining suits
+      follow standard order (S > H > D > C).
+
+    Within-suit ordering:
+    - Suit contracts: right bower > left bower > A > K > Q > (non-bower J) > T
+    - High / auction (no trump): J > A > K > Q > T
+    - Low contracts: T > J > Q > K > A
+    """
+
+    def _sort_key(card: Card) -> tuple[int, int]:
+        # Effective suit for grouping
+        if contract_type == "suit" and trump:
+            eff = effective_suit(card, trump, contract_type)
+        else:
+            eff = card.suit
+
+        # Suit ordering — trump first when active
+        if contract_type == "suit" and trump and eff == trump:
+            suit_key = -1
+        else:
+            suit_key = _SUIT_DISPLAY_ORDER.get(eff, 99)
+
+        # Rank ordering within suit
+        if contract_type == "suit" and trump and eff == trump:
+            if is_right_bower(card, trump):
+                rank_key = -2
+            elif is_left_bower(card, trump):
+                rank_key = -1
+            else:
+                rank_key = _RANK_DISPLAY_ORDER.get(card.rank, 99)
+        elif contract_type == "low":
+            rank_key = _RANK_DISPLAY_ORDER_LOW.get(card.rank, 99)
+        else:
+            rank_key = _RANK_DISPLAY_ORDER.get(card.rank, 99)
+
+        return (suit_key, rank_key)
+
+    hand.sort(key=_sort_key)
 
 
 def _bid_order(dealer_seat: int) -> list[int]:
@@ -420,6 +481,10 @@ class MatchEngine:
             turn_number=0,
         )
         state.current_hand = hand
+
+        # Sort human hand for display (no trump known yet during auction)
+        sort_hand_for_display(hand.hands[HUMAN_SEAT])
+
         return state
 
     # ------------------------------------------------------------------
@@ -519,6 +584,9 @@ class MatchEngine:
         leader = hand.bidder_seat
         hand.current_trick = TrickState(leader=leader)
         hand.current_seat = leader
+
+        # Re-sort human hand with bower awareness now that trump is known
+        sort_hand_for_display(hand.hands[HUMAN_SEAT], hand.contract_type, hand.trump)
 
         return state
 

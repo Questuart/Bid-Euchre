@@ -1,0 +1,56 @@
+{# Trick history (collapsible) — shows cards played in completed tricks.
+   Context variables:
+     - completed_tricks: list[dict] — {leader, plays: [[seat, [suit, rank]]], winner}
+     - tricks_team0: int — tricks won by human's team
+     - tricks_team1: int — tricks won by AI team
+#}
+{% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
+{% set seat_labels = {0: "You", 1: "Left", 2: "Partner", 3: "Right"} %}
+
+{% if completed_tricks %}
+<details id="trick-history" class="trick-history" role="region" aria-label="Cards played history">
+    <summary class="trick-history__toggle">
+        Cards Played ({{ completed_tricks | length }}/10)
+    </summary>
+    <div class="trick-history__content">
+        <table class="trick-history__table" aria-label="Trick-by-trick card history">
+            <thead>
+                <tr>
+                    <th class="trick-history__th">#</th>
+                    <th class="trick-history__th">You</th>
+                    <th class="trick-history__th">Left</th>
+                    <th class="trick-history__th">Partner</th>
+                    <th class="trick-history__th">Right</th>
+                    <th class="trick-history__th">Won</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for trick in completed_tricks %}
+                    {% set ns = namespace(cards={}) %}
+                    {% for play in trick.plays %}
+                        {% set _ = ns.cards.update({play[0]: play[1]}) %}
+                    {% endfor %}
+                    <tr class="trick-history__row">
+                        <td class="trick-history__cell trick-history__cell--num">{{ loop.index }}</td>
+                        {% for seat in [0, 1, 2, 3] %}
+                            <td class="trick-history__cell{% if seat == trick.winner %} trick-history__cell--winner{% endif %}{% if seat == trick.leader %} trick-history__cell--leader{% endif %}">
+                                {% if seat in ns.cards %}
+                                    {% set card = ns.cards[seat] %}
+                                    {% set suit = card[0] %}
+                                    <span class="card--inline card--{{ suit_classes.get(suit, 'spades') }}">{{ card[1] }}{{ suit_symbols.get(suit, suit) }}</span>
+                                {% else %}
+                                    <span class="trick-history__absent" aria-label="Sitting out">&mdash;</span>
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                        <td class="trick-history__cell trick-history__cell--won">
+                            {{ seat_labels.get(trick.winner, "?") }}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</details>
+{% endif %}

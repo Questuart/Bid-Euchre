@@ -110,6 +110,9 @@
     {# Trick area — always shown during active play #}
     {% include "partials/trick.html" %}
 
+    {# Collapsible trick history — shows cards played in completed tricks #}
+    {% include "partials/trick_history.html" %}
+
     {% if show_next %}
         {% include "partials/next_controls.html" %}
     {% endif %}
