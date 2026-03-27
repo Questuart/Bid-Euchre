@@ -1076,6 +1076,49 @@ class TestHandResult:
         assert "♣J" in html
         assert "♦9" in html
 
+    @pytest.mark.parametrize(
+        "seat_val,expected_label",
+        [("0", "You"), ("1", "AI Left"), ("2", "AI Partner"), ("3", "AI Right")],
+        ids=["str_seat0", "str_seat1", "str_seat2", "str_seat3"],
+    )
+    def test_string_bidder_seat_coerced_to_label(self, env, seat_val, expected_label):
+        """String bidder_seat values are coerced to int for label lookup (#1928)."""
+        html = env.get_template("partials/hand_result.html").render(
+            winning_bid=6,
+            bidder_seat=seat_val,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert expected_label in html
+        assert f"Seat {seat_val}" not in html
+
+    @pytest.mark.parametrize("seat", [0, 1, 2, 3])
+    def test_int_bidder_seat_still_works(self, env, seat):
+        """Int bidder_seat values continue to resolve to correct labels (#1928)."""
+        expected = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+        html = env.get_template("partials/hand_result.html").render(
+            winning_bid=6,
+            bidder_seat=seat,
+            contract_type="suit",
+            trump="H",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert expected[seat] in html
+        assert f"Seat {seat}" not in html
+
 
 # ---------------------------------------------------------------------------
 # moon_exchange.html
