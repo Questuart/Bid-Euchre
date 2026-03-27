@@ -3,7 +3,7 @@
 **Phase:** 4 (`4_remote_channel`)
 **Status:** IN_PROGRESS
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-27 by author-c (monitor push wiring PR #1944 merged, exit criteria updated)
+**Last updated:** 2026-03-27 by author-c (checkpoint reconciliation: session 2026-03-27 PRs cross-referenced)
 
 ---
 
@@ -101,3 +101,4 @@ implementation.
 | 2026-03-25 | **SP-4-07 COMPLETE** (author-a). All 6 exit criteria met. Final deliveries: #1719 (UserPromptSubmit alert injection), #1764 (PreToolUse guardrail), #1760 (inbound audit hook), #1755 (inbox+audit into reconcile), #1730 (proving run 2: noise discrimination). All 5 proving runs passed. Telegram e2e remote loop proven (messages 83-86). Step 3 marked COMPLETE, Step 4 unblocked (BLOCKED → PENDING). |
 | 2026-03-25 | **Checkpoint reconciliation** (analyst, #1836). Steps 5/6 annotated with shipped groundwork PRs: Platform-9b (#1802, #1806, #1815), Platform-10 (#1807, #1813, #1817). Sub-plan registry updated with SP-4-09 (9b) and SP-4-10 (10). Both remain BLOCKED on 9a E2E wiring (#1826) for integration. |
 | 2026-03-27 | **Platform-9a monitor wiring** (author-c, PR #1944). Added `evaluate_alert_push()` and `MonitorCycleResult` to `monitor.py`, making push evaluation a first-class monitor module concept instead of an ad-hoc CLI call. Replaced inline `run_push_cycle` in `cmd_monitor()` with the new structured wrapper. 9 unit tests added. Exit criteria E1 (push evaluator pure function) and E2 (push state dedup/backoff) remain ✅; E4 (monitor cycle wiring) upgraded from ⚠️ to ✅. Remaining gaps: E3 (Telegram adapter not called from live path), E7 (no live inbound ack consumer), E9 (no real remote round-trip). |
+| 2026-03-27 | **Session reconciliation** (author-c). Additional PRs merged this session: #1945 + #1946 (Telegram lane routing filter — restrict plugin to orchestrator only, fixes #1824), #1942 (tmux paste-bracket delay, fixes #1834), #1933 (squash merge verification tool, #1908), #1941 (data capture pipeline validation scaffold, #1926), #1943 (exhaustive bid/outcome test scaffold, #1918). From 2026-03-26: #1883 (reject naive monitor now overrides), #1884 (harden inbound channel sanitizing), #1888 (Telegram elapsed-time guidance). Platform-9a (#1826) and #1824 remain OPEN — Telegram competition partially addressed by #1945/#1946 but full E2E round-trip still outstanding. |
