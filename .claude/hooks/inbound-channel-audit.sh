@@ -21,6 +21,20 @@ INPUT=$(cat)
 # This is the common case — most prompts have no Telegram messages.
 echo "$INPUT" | grep -q '<channel' || exit 0
 
+# Lane guard: only the orchestrator should process inbound Telegram messages.
+# Other lanes may receive messages due to competing plugin instances (#1824).
+# Check the explicit env var first (fastest), then fall back to dir detection.
+if [ "${STEWARD_TELEGRAM_RECEIVER:-}" = "0" ]; then
+    exit 0
+fi
+if [ "${STEWARD_TELEGRAM_RECEIVER:-}" != "1" ]; then
+    # No explicit env var — check project dir basename.
+    _BASENAME=$(basename "${CLAUDE_PROJECT_DIR:-}")
+    if [ "$_BASENAME" != "Bid-Euchre" ]; then
+        exit 0
+    fi
+fi
+
 # Audit inbound channel tags.  Best-effort: failures are silently swallowed.
 echo "$INPUT" | uv run python "$CLAUDE_PROJECT_DIR/.claude/hooks/inbound-channel-audit.py" 2>/dev/null || true
 
