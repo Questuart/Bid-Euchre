@@ -1501,3 +1501,105 @@ class TestMoonLonerSerialization:
         visible = engine.get_visible_state(state)
         assert "bid_type" in visible
         assert "sitting_out_seat" in visible
+
+
+# ---------------------------------------------------------------------------
+# Test 19: Trick winner display — winning_card in visible state
+# ---------------------------------------------------------------------------
+
+
+class TestTrickWinnerDisplay:
+    """Verify completed trick dicts include the winning card."""
+
+    def test_completed_trick_has_winning_card(self) -> None:
+        """completed_tricks in visible state include a winning_card field."""
+        engine = MatchEngine(
+            bidding_policy=FixedBidder(5, "S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        # Play through multiple seeds until we find a completed trick in
+        # visible state (any seed where AI bids and tricks complete)
+        for seed in range(100):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if hand is None:
+                continue
+
+            # Auto-play through until we have at least one completed trick
+            for _ in range(200):  # max iterations to avoid infinite loop
+                hand = state.current_hand
+                if hand is None:
+                    break
+                if state.status == "complete":
+                    break
+                if hand.phase in ("complete", "redeal"):
+                    break
+                if hand.completed_tricks:
+                    break
+                if hand.current_seat == HUMAN_SEAT:
+                    if hand.phase == "auction":
+                        state = engine.submit_human_bid(state, BidAction.pass_bid())
+                    elif hand.phase == "trick_play":
+                        legal = engine.get_legal_plays(state)
+                        state = engine.submit_human_card(state, legal[0])
+
+            hand = state.current_hand
+            if hand is not None and hand.completed_tricks:
+                visible = engine.get_visible_state(state)
+                tricks = visible["completed_tricks"]
+                assert len(tricks) > 0
+                for tr in tricks:
+                    assert (
+                        "winning_card" in tr
+                    ), "completed trick must have winning_card"
+                    wc = tr["winning_card"]
+                    assert wc is not None, "winning_card must not be None"
+                    assert len(wc) == 2, "winning_card should be [suit, rank]"
+                    # Verify the winning_card matches the card played by the winner
+                    winner_seat = tr["winner"]
+                    winner_plays = [p[1] for p in tr["plays"] if p[0] == winner_seat]
+                    assert (
+                        wc in winner_plays
+                    ), f"winning_card {wc} not in winner's plays {winner_plays}"
+                return  # success
+
+        pytest.fail("Could not find a completed trick in 100 seeds")
+
+    def test_exchange_revealed_persists(self) -> None:
+        """exchange_revealed field survives serialization round-trip."""
+        engine = MatchEngine(
+            bidding_policy=MoonBidder("S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        for seed in range(100):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if hand is None:
+                continue
+
+            # Auto-play until moon exchange happens
+            for _ in range(20):
+                hand = state.current_hand
+                if hand is None:
+                    break
+                if hand.exchange_given is not None:
+                    break
+                if hand.current_seat == HUMAN_SEAT and hand.phase == "auction":
+                    state = engine.submit_human_bid(state, BidAction.pass_bid())
+
+            hand = state.current_hand
+            if hand is not None and hand.exchange_given is not None:
+                # Verify default is False
+                assert hand.exchange_revealed is False
+
+                # Toggle and round-trip
+                hand.exchange_revealed = True
+                data = engine.serialize(state)
+                restored = engine.deserialize(data)
+                assert restored.current_hand is not None
+                assert restored.current_hand.exchange_revealed is True
+                return
+
+        pytest.fail("Could not find a moon exchange in 100 seeds")

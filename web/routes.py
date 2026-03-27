@@ -184,10 +184,21 @@ def _has_hidden_auction(hand) -> bool:
     return hand.revealed_auction_count < len(hand.auction)
 
 
+def _has_pending_exchange(hand) -> bool:
+    """Return True when a moon exchange happened but hasn't been shown yet."""
+    return (
+        hand.bid_type == "moon"
+        and hand.exchange_given is not None
+        and not hand.exchange_revealed
+    )
+
+
 def _awaiting_next(hand) -> bool:
     """Whether hosted play is paused waiting on a reveal-step advance."""
-    return _has_hidden_auction(hand) or (
-        hand.phase == "trick_play" and hand.paused_after_trick
+    return (
+        _has_hidden_auction(hand)
+        or _has_pending_exchange(hand)
+        or (hand.phase == "trick_play" and hand.paused_after_trick)
     )
 
 
@@ -195,6 +206,8 @@ def _next_reason(hand) -> str | None:
     """Human-readable label for the current reveal pause."""
     if _has_hidden_auction(hand):
         return "Reveal the next auction action."
+    if _has_pending_exchange(hand):
+        return "Review the moon exchange."
     if hand.phase == "trick_play" and hand.paused_after_trick:
         return "Continue to the next trick."
     return None
@@ -215,6 +228,8 @@ def _game_phase(state) -> str:
         return "hand_result"
     if _has_hidden_auction(hand):
         return "auction"
+    if _has_pending_exchange(hand):
+        return "moon_exchange"
     # "auction", "trick_play", or "redeal" pass through directly
     return hand.phase
 
@@ -1025,6 +1040,8 @@ async def next_step(
 
         if _has_hidden_auction(hand):
             hand.revealed_auction_count += 1
+        elif _has_pending_exchange(hand):
+            hand.exchange_revealed = True
         elif hand.phase == "trick_play" and hand.paused_after_trick:
             hand.paused_after_trick = False
         else:

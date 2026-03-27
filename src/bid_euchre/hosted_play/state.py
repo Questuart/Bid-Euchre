@@ -102,6 +102,7 @@ class HandState:
     exchange_received: list[list[str]] | None = (
         None  # moon: cards received from partner
     )
+    exchange_revealed: bool = False  # moon: True once exchange interstitial shown
     tricks_team0: int = 0
     tricks_team1: int = 0
     points_team0: int = 0
@@ -126,6 +127,7 @@ class HandState:
             "sitting_out_seat": self.sitting_out_seat,
             "exchange_given": self.exchange_given,
             "exchange_received": self.exchange_received,
+            "exchange_revealed": self.exchange_revealed,
             "current_trick": (
                 None if self.current_trick is None else self.current_trick.to_dict()
             ),
@@ -168,6 +170,7 @@ class HandState:
             ),
             exchange_given=data.get("exchange_given"),
             exchange_received=data.get("exchange_received"),
+            exchange_revealed=bool(data.get("exchange_revealed", False)),
             current_trick=(
                 None
                 if data.get("current_trick") is None
