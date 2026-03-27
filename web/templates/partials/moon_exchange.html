@@ -1,0 +1,109 @@
+{# Moon exchange interstitial — shown after a moon bid wins auction.
+   Displays the 2-card exchange between the mooner and their partner
+   before trick play begins.
+
+   Context variables:
+     - bidder_seat: int — seat of the moon bidder
+     - exchange_given: list[[suit, rank]] — cards given to partner
+     - exchange_received: list[[suit, rank]] — cards received from partner
+     - contract_type: str — "suit", "high", or "low"
+     - trump: str | None — trump suit letter
+     - link_uuid: str — player game link UUID
+     - human_hand: list[[suit, rank]] — human's hand after exchange
+#}
+{% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
+{% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set mooner_label = seat_labels.get(bidder_seat | default(0), "Seat " ~ bidder_seat) %}
+{% set partner_seat = (bidder_seat + 2) % 4 if bidder_seat is defined else 2 %}
+{% set partner_label = seat_labels.get(partner_seat, "Seat " ~ partner_seat) %}
+{% set exchange_given_cards = exchange_given | default([], true) %}
+{% set exchange_received_cards = exchange_received | default([], true) %}
+
+<div id="moon-exchange" class="moon-exchange" role="alert" aria-live="assertive">
+    <div class="moon-exchange__header">
+        <h2 class="moon-exchange__title">
+            <span aria-hidden="true">&#x1F319;</span> Moon Exchange
+        </h2>
+        <p class="moon-exchange__subtitle">
+            {{ mooner_label }} bid Moon
+            {% if contract_type == "suit" and trump %}
+                in {{ suit_symbols.get(trump, trump) }}
+            {% elif contract_type == "high" %}
+                High
+            {% elif contract_type == "low" %}
+                Low
+            {% endif %}
+        </p>
+    </div>
+
+    <div class="moon-exchange__cards" role="region" aria-label="Exchange summary">
+        {% if exchange_given_cards %}
+            <div class="moon-exchange__group">
+                <h3 class="moon-exchange__group-title">
+                    Given to {{ partner_label }}
+                </h3>
+                <div class="moon-exchange__card-list" role="list">
+                    {% for card in exchange_given_cards %}
+                        {% set suit = card[0] %}
+                        <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--exchange"
+                             role="listitem"
+                             aria-label="{{ card[1] }} of {{ suit_names.get(suit, suit) }}">
+                            <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
+                            <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+
+        {% if exchange_received_cards %}
+            <div class="moon-exchange__group">
+                <h3 class="moon-exchange__group-title">
+                    Received from {{ partner_label }}
+                </h3>
+                <div class="moon-exchange__card-list" role="list">
+                    {% for card in exchange_received_cards %}
+                        {% set suit = card[0] %}
+                        <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--exchange card--exchange-received"
+                             role="listitem"
+                             aria-label="{{ card[1] }} of {{ suit_names.get(suit, suit) }}">
+                            <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
+                            <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    {# Show current hand after exchange #}
+    {% if human_hand %}
+        <div class="moon-exchange__hand" role="region" aria-label="Your hand after exchange">
+            <h3 class="moon-exchange__group-title">Your Hand</h3>
+            <div class="moon-exchange__card-list" role="list">
+                {% for card in human_hand %}
+                    {% set suit = card[0] %}
+                    <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--hand"
+                         role="listitem"
+                         aria-label="{{ card[1] }} of {{ suit_names.get(suit, suit) }}">
+                        <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
+                        <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+
+    <form method="post"
+          action="/play/{{ link_uuid | default('') }}/next"
+          hx-post="/play/{{ link_uuid | default('') }}/next"
+          hx-target="#game-board"
+          hx-swap="innerHTML"
+          class="moon-exchange__controls">
+        <button type="submit" class="btn btn--next-step" aria-label="Continue to trick play">
+            Start Trick Play
+        </button>
+    </form>
+</div>
