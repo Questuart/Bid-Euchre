@@ -39,6 +39,7 @@ from bid_euchre.hosted_play.engine import (
     _bid_order,
     _next_active_seat,
     _players_per_trick,
+    sort_hand_for_display,
 )
 from bid_euchre.hosted_play.state import MatchState
 from bid_euchre.scoring import compute_points
@@ -1603,3 +1604,162 @@ class TestTrickWinnerDisplay:
                 return
 
         pytest.fail("Could not find a moon exchange in 100 seeds")
+
+
+# ---------------------------------------------------------------------------
+# 20. sort_hand_for_display
+# ---------------------------------------------------------------------------
+
+
+class TestSortHandForDisplay:
+    """Tests for the display-sorting helper."""
+
+    def test_groups_by_suit(self) -> None:
+        """Cards are grouped by printed suit when no trump is active."""
+        hand = [
+            Card("H", "A"),
+            Card("S", "K"),
+            Card("D", "Q"),
+            Card("S", "A"),
+            Card("H", "T"),
+            Card("C", "J"),
+        ]
+        sort_hand_for_display(hand)
+        suits = [c.suit for c in hand]
+        # S group first, then H, D, C
+        assert suits == ["S", "S", "H", "H", "D", "C"]
+
+    def test_within_suit_rank_order(self) -> None:
+        """Within a suit: J > A > K > Q > T (no trump)."""
+        hand = [
+            Card("H", "T"),
+            Card("H", "A"),
+            Card("H", "J"),
+            Card("H", "Q"),
+            Card("H", "K"),
+        ]
+        sort_hand_for_display(hand)
+        ranks = [c.rank for c in hand]
+        assert ranks == ["J", "A", "K", "Q", "T"]
+
+    def test_trump_suit_first(self) -> None:
+        """With trump active, trump group appears before other suits."""
+        hand = [
+            Card("S", "A"),
+            Card("H", "A"),
+            Card("D", "A"),
+            Card("C", "A"),
+        ]
+        sort_hand_for_display(hand, contract_type="suit", trump="D")
+        suits = [c.suit for c in hand]
+        assert suits[0] == "D"  # Trump first
+        # Remaining suits in standard order: S, H, C
+        assert suits[1:] == ["S", "H", "C"]
+
+    def test_right_bower_highest_in_trump(self) -> None:
+        """Right bower (J of trump) sorts highest in trump group."""
+        hand = [
+            Card("H", "A"),
+            Card("H", "J"),  # Right bower
+            Card("H", "K"),
+        ]
+        sort_hand_for_display(hand, contract_type="suit", trump="H")
+        ranks = [c.rank for c in hand]
+        assert ranks == ["J", "A", "K"]  # J (right bower) first
+
+    def test_left_bower_moves_to_trump_group(self) -> None:
+        """Left bower (J of same color) moves from its printed suit to trump."""
+        hand = [
+            Card("H", "A"),  # Trump
+            Card("D", "J"),  # Left bower (same color as H)
+            Card("H", "J"),  # Right bower
+            Card("D", "A"),  # Non-trump D (J removed)
+        ]
+        sort_hand_for_display(hand, contract_type="suit", trump="H")
+        # Trump group: right bower J♥, left bower J♦, A♥
+        # Then remaining: D♦ A
+        result = [(c.suit, c.rank) for c in hand]
+        assert result == [
+            ("H", "J"),  # right bower
+            ("D", "J"),  # left bower (effective suit = H)
+            ("H", "A"),  # trump A
+            ("D", "A"),  # non-trump D
+        ]
+
+    def test_low_contract_rank_order(self) -> None:
+        """Low contract: T > J > Q > K > A (10 is high)."""
+        hand = [
+            Card("S", "A"),
+            Card("S", "T"),
+            Card("S", "K"),
+            Card("S", "J"),
+            Card("S", "Q"),
+        ]
+        sort_hand_for_display(hand, contract_type="low")
+        ranks = [c.rank for c in hand]
+        assert ranks == ["T", "J", "Q", "K", "A"]
+
+    def test_high_contract_no_bower_awareness(self) -> None:
+        """High contract: no bowers, standard J-A-K-Q-T order."""
+        hand = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+        ]
+        sort_hand_for_display(hand, contract_type="high")
+        # Both Js stay in their printed suits, no bower movement
+        result = [(c.suit, c.rank) for c in hand]
+        assert result == [
+            ("H", "J"),
+            ("H", "A"),
+            ("D", "J"),
+        ]
+
+    def test_sort_is_stable_idempotent(self) -> None:
+        """Sorting an already-sorted hand produces the same order."""
+        hand = [
+            Card("S", "J"),
+            Card("S", "A"),
+            Card("H", "K"),
+            Card("D", "Q"),
+        ]
+        sort_hand_for_display(hand)
+        first_pass = list(hand)
+        sort_hand_for_display(hand)
+        assert hand == first_pass
+
+    def test_duplicate_cards_handled(self) -> None:
+        """Double-deck duplicates don't cause errors."""
+        hand = [
+            Card("H", "A"),
+            Card("H", "A"),
+            Card("S", "K"),
+            Card("S", "K"),
+        ]
+        sort_hand_for_display(hand)
+        result = [(c.suit, c.rank) for c in hand]
+        assert result == [
+            ("S", "K"),
+            ("S", "K"),
+            ("H", "A"),
+            ("H", "A"),
+        ]
+
+    def test_engine_sorts_after_deal(self) -> None:
+        """After starting a match, the human hand is sorted by suit."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        human_cards = hand.hands[HUMAN_SEAT]
+        # Verify grouped by suit: each suit's cards are contiguous
+        seen_suits: list[str] = []
+        for card in human_cards:
+            if not seen_suits or seen_suits[-1] != card.suit:
+                seen_suits.append(card.suit)
+        # No suit should appear more than once in the seen list
+        assert len(seen_suits) == len(set(seen_suits))
