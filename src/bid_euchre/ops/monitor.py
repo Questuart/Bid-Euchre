@@ -2078,6 +2078,16 @@ def process_inbound_ack(
                 "process_inbound_ack: failed to save fleet status after mutation",
                 exc_info=True,
             )
+            return InboundAckResult(
+                is_ack_command=True,
+                success=False,
+                reply_text=(
+                    "\u274c Ack processed but failed to persist — "
+                    "the change will be lost on next reload."
+                ),
+                item_id=ack_result.item_id,
+                action=cmd.action.value,
+            )
 
     # Step 5: Format confirmation.
     reply_text = format_ack_confirmation(ack_result)
