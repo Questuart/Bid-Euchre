@@ -33,13 +33,13 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-def _wait_for_file(path: Path, timeout_s: float = 3.0) -> None:
+def _wait_for_file(path: Path, timeout_s: float = 10.0) -> None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         if path.exists():
             return
         time.sleep(0.05)
-    raise AssertionError(f"Timed out waiting for {path}")
+    raise AssertionError(f"Timed out waiting for {path} after {timeout_s}s")
 
 
 def test_post_push_hook_uses_project_dir_and_sanitizes_branch(

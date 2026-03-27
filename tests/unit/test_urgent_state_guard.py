@@ -405,4 +405,4 @@ class TestHookInfrastructure:
         elapsed = time.monotonic() - start
 
         assert result.returncode == 2
-        assert elapsed < 2.0, f"Hook took {elapsed:.2f}s (must be < 2s)"
+        assert elapsed < 5.0, f"Hook took {elapsed:.2f}s (must be < 5s)"

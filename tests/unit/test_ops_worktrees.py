@@ -922,9 +922,29 @@ class TestQuarantineWorktree:
     ) -> None:
         """Repeated quarantines produce different diff files (F2)."""
         import subprocess as sp
-        import time
+        from datetime import datetime as real_datetime
+        from datetime import timezone
 
         from bid_euchre.ops import worktrees as wt_mod
+
+        # Use fake timestamps to avoid a 1+ second sleep.  The production code
+        # formats timestamps at second resolution (%Y%m%dT%H%M%S), so we need
+        # two datetimes that differ by at least 1 second.
+        _call_count = 0
+        _fake_times = [
+            real_datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+            real_datetime(2026, 1, 1, 0, 0, 5, tzinfo=timezone.utc),
+        ]
+
+        class _FakeDatetime(real_datetime):
+            @classmethod  # type: ignore[override]
+            def now(cls, tz=None):  # noqa: ANN001, ANN206
+                nonlocal _call_count
+                idx = min(_call_count, len(_fake_times) - 1)
+                _call_count += 1
+                return _fake_times[idx]
+
+        monkeypatch.setattr(wt_mod, "datetime", _FakeDatetime)
 
         monkeypatch.setattr(
             sp,
@@ -938,9 +958,6 @@ class TestQuarantineWorktree:
             runtime_dir,
             events_dir=tmp_path / "events",
         )
-
-        # Ensure at least 1 second passes for distinct timestamp
-        time.sleep(1.1)
 
         monkeypatch.setattr(
             sp,
