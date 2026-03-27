@@ -146,8 +146,11 @@ def test_start_game_bid_play_verify_score(
     # If in auction, submit a pass bid
     if has_bid_panel:
         page.click("button.pass-btn")
-        # Wait for the board to update after bid submission
-        page.wait_for_timeout(2000)
+        # Wait for the board to update after bid submission (HTMX swap)
+        page.wait_for_selector(
+            "#trick-area, #hand-result, #match-result, #bid-panel",
+            timeout=10000,
+        )
         _advance_next_steps(page)
 
     # After passing (or if AI already completed auction), we should see
@@ -166,8 +169,11 @@ def test_start_game_bid_play_verify_score(
     legal_cards = page.locator(".card--legal")
     if legal_cards.count() > 0:
         legal_cards.first.click()
-        # Wait for the board to update
-        page.wait_for_timeout(2000)
+        # Wait for the board to update (HTMX swap)
+        page.wait_for_selector(
+            "#trick-area, #hand-result, #match-result, #score-bar",
+            timeout=10000,
+        )
         _advance_next_steps(page)
 
     # Verify the game is still running (board has content)
@@ -231,7 +237,6 @@ def test_moon_bid_ui_available(
         # Select Moon and verify the bid level wrapper hides
         bid_type_select.select_option("moon")
         bid_type_select.dispatch_event("change")
-        page.wait_for_timeout(500)
 
         # Moon is always level 10, so the level selector should be hidden
         level_wrapper = page.locator("#bid-level-wrapper")
@@ -445,9 +450,6 @@ def test_invalid_invite_code_shows_error(
     # Enter an invalid code
     page.fill("#invite-code-input", "INVALID9")
     page.click("button:has-text('Enter Game')")
-
-    # Wait for the form to update (HTMX swaps the form content)
-    page.wait_for_timeout(2000)
 
     # The error message should be visible
     error_div = page.locator(".invite-error")

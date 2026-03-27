@@ -120,6 +120,7 @@ def live_server(_db_path: str) -> Generator[str, None, None]:
         olsa_artifact=olsa_artifact,
         gbt_artifact=gbt_artifact,
         debug=True,
+        test_seed=42,
     )
 
     app = create_app(config)

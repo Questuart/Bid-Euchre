@@ -73,6 +73,11 @@ class HostedPlayConfig:
     gbt_artifact: str | None = _DEFAULT_GBT_ARTIFACT
     models_dir: str | None = None
 
+    # Testing -----------------------------------------------------------
+    # When set, forces deterministic match seeding in select_ai.
+    # Used by browser tests for reproducible AI decisions.
+    test_seed: int | None = None
+
     # App ---------------------------------------------------------------
     debug: bool = False
 
