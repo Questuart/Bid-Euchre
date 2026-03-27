@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bid_euchre.ops.worker_pool import (
+    _PASTE_BRACKET_DELAY,
     DEFAULT_TMUX_SESSION,
     IDLE_PARK_MINUTES,
     LANE_DOMAINS,
@@ -1881,8 +1882,11 @@ class TestNudgePane:
     """Test nudge_pane() with mocked subprocess."""
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
+    @patch(f"{_WORKER_POOL}.time.sleep")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_nudge_success(self, mock_run: MagicMock, mock_resolve: MagicMock) -> None:
+    def test_nudge_success(
+        self, mock_run: MagicMock, mock_sleep: MagicMock, mock_resolve: MagicMock
+    ) -> None:
         mock_run.return_value = MagicMock(returncode=0)
         result = nudge_pane("author-a", "pkt123")
         assert result.executed is True
@@ -1903,11 +1907,14 @@ class TestNudgePane:
             capture_output=True,
             timeout=5,
         )
+        # Verify paste-bracket delay between text and Enter (#1834)
+        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="custom:author-b")
+    @patch(f"{_WORKER_POOL}.time.sleep")
     @patch(f"{_WORKER_POOL}.subprocess.run")
     def test_nudge_custom_session(
-        self, mock_run: MagicMock, mock_resolve: MagicMock
+        self, mock_run: MagicMock, mock_sleep: MagicMock, mock_resolve: MagicMock
     ) -> None:
         mock_run.return_value = MagicMock(returncode=0)
         result = nudge_pane("author-b", "pkt456", tmux_session="custom")
@@ -1925,6 +1932,7 @@ class TestNudgePane:
             capture_output=True,
             timeout=5,
         )
+        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
@@ -1999,6 +2007,59 @@ class TestNudgePane:
             assert result.executed is True
             call_args = mock_run.call_args[0][0]
             assert call_args[3] == "steward:platform.1"
+
+
+class TestPasteBracketDelay:
+    """Verify text → sleep → Enter ordering for paste-bracket fix (#1834)."""
+
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
+    def test_nudge_call_order(self, mock_resolve: MagicMock) -> None:
+        """nudge_pane sends text, sleeps, then sends Enter — in that order."""
+        call_log: list[str] = []
+
+        def track_run(cmd: list[str], **_kw: object) -> MagicMock:
+            # Record whether we're sending text or Enter
+            if cmd[-1] == "Enter":
+                call_log.append("enter")
+            else:
+                call_log.append("text")
+            return MagicMock(returncode=0)
+
+        def track_sleep(seconds: float) -> None:
+            call_log.append(f"sleep({seconds})")
+
+        with (
+            patch(f"{_WORKER_POOL}.subprocess.run", side_effect=track_run),
+            patch(f"{_WORKER_POOL}.time.sleep", side_effect=track_sleep),
+        ):
+            result = nudge_pane("author-a", "pkt123")
+            assert result.executed is True
+
+        assert call_log == ["text", f"sleep({_PASTE_BRACKET_DELAY})", "enter"]
+
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
+    def test_clear_session_call_order(self, mock_resolve: MagicMock) -> None:
+        """clear_session sends /clear, sleeps, then sends Enter — in that order."""
+        call_log: list[str] = []
+
+        def track_run(cmd: list[str], **_kw: object) -> MagicMock:
+            if cmd[-1] == "Enter":
+                call_log.append("enter")
+            else:
+                call_log.append("text")
+            return MagicMock(returncode=0)
+
+        def track_sleep(seconds: float) -> None:
+            call_log.append(f"sleep({seconds})")
+
+        with (
+            patch(f"{_WORKER_POOL}.subprocess.run", side_effect=track_run),
+            patch(f"{_WORKER_POOL}.time.sleep", side_effect=track_sleep),
+        ):
+            result = clear_session("author-a")
+            assert result.executed is True
+
+        assert call_log == ["text", f"sleep({_PASTE_BRACKET_DELAY})", "enter"]
 
 
 # ---------------------------------------------------------------------------
@@ -2241,8 +2302,11 @@ class TestClearSession:
     """Test clear_session() with mocked subprocess."""
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
+    @patch(f"{_WORKER_POOL}.time.sleep")
     @patch(f"{_WORKER_POOL}.subprocess.run")
-    def test_clear_success(self, mock_run: MagicMock, mock_resolve: MagicMock) -> None:
+    def test_clear_success(
+        self, mock_run: MagicMock, mock_sleep: MagicMock, mock_resolve: MagicMock
+    ) -> None:
         mock_run.return_value = MagicMock(returncode=0)
         result = clear_session("author-a")
         assert result.executed is True
@@ -2262,11 +2326,14 @@ class TestClearSession:
             capture_output=True,
             timeout=5,
         )
+        # Verify paste-bracket delay between text and Enter (#1834)
+        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="custom:author-b")
+    @patch(f"{_WORKER_POOL}.time.sleep")
     @patch(f"{_WORKER_POOL}.subprocess.run")
     def test_clear_custom_session(
-        self, mock_run: MagicMock, mock_resolve: MagicMock
+        self, mock_run: MagicMock, mock_sleep: MagicMock, mock_resolve: MagicMock
     ) -> None:
         mock_run.return_value = MagicMock(returncode=0)
         result = clear_session("author-b", tmux_session="custom")
@@ -2275,6 +2342,7 @@ class TestClearSession:
         second_call = mock_run.call_args_list[1][0][0]
         assert first_call[3] == "custom:author-b"
         assert second_call[3] == "custom:author-b"
+        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
