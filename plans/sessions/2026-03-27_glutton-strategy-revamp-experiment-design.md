@@ -17,7 +17,7 @@ mismatch.
 
 ### Where Conservatism Lives
 
-Analysis of the GluttonStrategy source (lines 78-547 of `greedy.py`) reveals
+Analysis of the GluttonStrategy source (lines 78-547 of `src/bid_euchre/strategy/greedy.py`) reveals
 these specific conservatism patterns:
 
 1. **Partner deference is unconditional** (L482-526): When partner is winning,
@@ -56,7 +56,7 @@ viable. **It is not viable now**, for three reasons:
    decisions per-action from the SQLite database. But the browser game
    is newly deployed — there are at most dozens of human-played games,
    far below the ≥2,000 deals minimum for any statistical inference
-   (per `05_rigor.md`). Teacher-student needs 10,000+ labeled examples
+   (per `.claude/rules/deferred/05_rigor.md`). Teacher-student needs 10,000+ labeled examples
    to train even a simple model.
 
 2. **Label quality**: Human play decisions from a web game are noisy —
@@ -65,7 +65,7 @@ viable. **It is not viable now**, for three reasons:
    requires a teacher that demonstrably outperforms the student.
 
 3. **Existing infrastructure gap**: The models/ directory has training
-   pipelines for *bidding* models (`train_olsa.py`, `train_bidder.py`)
+   pipelines for *bidding* models (`src/bid_euchre/models/train_olsa.py`, `src/bid_euchre/models/train_bidder.py`)
    but no training pipeline for *play* models. Building one is a separate
    multi-PR initiative.
 
@@ -169,7 +169,7 @@ scenarios:
 
 **Metrics**: `avg_tricks_team0`, `win_rate_team0`, trick distribution.
 **Sample size**: 50,000 deals × 6 scenarios × 2 directions = 600K matchups.
-Per 05_rigor.md, 50K exceeds the 2K minimum for bias detection.
+Per `.claude/rules/deferred/05_rigor.md`, 50K exceeds the 2K minimum for bias detection.
 
 **Validation command**:
 ```bash
@@ -265,7 +265,7 @@ Same bidders as 1B, comparing GluttonV2 vs Glutton as the play strategy.
 
 #### Experiment 3C: GluttonV2 Feature Isolation
 
-Extend `glutton_feature_isolation.yaml` pattern with new V2 feature flags
+Extend `experiments/configs/glutton_feature_isolation.yaml` pattern with new V2 feature flags
 to measure individual contribution of each aggression adjustment.
 
 **Success criterion**: Each enabled flag individually improves net_eppd
@@ -342,13 +342,13 @@ Phase 3 evaluation runs after 2C merges.
 **Task packets to create**:
 
 1. **PR 2A: Wire bid context to play strategy**
-   - `scope_declared`: `src/bid_euchre/strategy/base.py`, `src/bid_euchre/sim/simulation.py`, `tests/unit/test_strategy_base.py`
-   - `validation`: `uv run python -m pytest tests/unit/test_strategy_base.py tests/unit/test_simulation.py -x`
+   - `scope_declared`: `src/bid_euchre/strategy/base.py`, `src/bid_euchre/sim/simulation.py`, `tests/unit/test_strategy.py`
+   - `validation`: `uv run python -m pytest tests/unit/test_strategy.py tests/integration/test_simulation_validation.py -x`
    - Estimated: 1-2 hours
 
 2. **PR 2B: GluttonV2 strategy with bid-aware aggression**
-   - `scope_declared`: `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py`
-   - `validation`: `uv run python -m pytest tests/unit/test_greedy.py -x`
+   - `scope_declared`: `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_glutton.py`
+   - `validation`: `uv run python -m pytest tests/unit/test_glutton.py tests/unit/test_strategy_correctness.py -x`
    - Estimated: 3-4 hours
 
 3. **PR 2C: Register GluttonV2 + experiment configs**
