@@ -4,12 +4,24 @@ Runs a single monitoring sweep across lane health, open PRs, CI status,
 and stale dispatched packets.  Produces structured findings that are
 optionally sent to the orchestrator inbox via the message bus.
 
+After the monitoring sweep, callers may run :func:`evaluate_alert_push`
+to prepare a Telegram alert push for unresolved HIGH/URGENT items.
+The push evaluator reads the latest fleet status from disk (written by
+:func:`~bid_euchre.ops.control_plane.reconcile`) and returns a
+:class:`MonitorCycleResult` that bundles findings and push payload.
+
 Usage::
 
-    from bid_euchre.ops.monitor import run_monitoring_cycle
+    from bid_euchre.ops.monitor import run_monitoring_cycle, evaluate_alert_push
 
     findings = run_monitoring_cycle()
     # findings is a list of MonitorFinding dataclasses
+
+    # After reconcile(), evaluate alert push:
+    result = evaluate_alert_push(findings=findings)
+    if result.push_result is not None:
+        # Caller sends result.push_result.message via Telegram MCP reply
+        ...
 
 The CLI wrapper (``ops.py monitor``) calls this and formats the output.
 """
@@ -55,6 +67,25 @@ class MonitorFinding:
     severity: str  # "info", "warn", "high"
     summary: str
     details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class MonitorCycleResult:
+    """Complete result from a monitoring sweep plus optional alert push.
+
+    Bundles the monitoring findings with the push evaluator result so that
+    callers receive a single object with everything needed to act on the
+    cycle outcome.
+
+    Attributes:
+        findings: All findings from the monitoring sweep.
+        push_result: Alert push payload ready for Telegram delivery, or
+            ``None`` if no push is needed (Telegram disabled, fleet active,
+            no eligible items, etc.).
+    """
+
+    findings: list[MonitorFinding]
+    push_result: Any = None  # PushResult | None — typed as Any to avoid hard import
 
 
 # ---------------------------------------------------------------------------
@@ -1888,3 +1919,65 @@ def format_findings_json(findings: list[MonitorFinding]) -> dict[str, Any]:
         "info": sum(1 for f in findings if f.severity == SEVERITY_INFO),
         "findings": [asdict(f) for f in findings],
     }
+
+
+# ---------------------------------------------------------------------------
+# Alert push integration (Platform-9a)
+# ---------------------------------------------------------------------------
+
+
+def evaluate_alert_push(
+    findings: list[MonitorFinding],
+    *,
+    runtime_dir: Path | None = None,
+    audit_dir: Path | None = None,
+    now: datetime | None = None,
+) -> MonitorCycleResult:
+    """Evaluate alert push after a monitoring sweep and return a combined result.
+
+    This function bridges the monitoring cycle and the push evaluator from
+    :mod:`~bid_euchre.ops.telegram_push`.  It is designed to be called
+    **after** :func:`run_monitoring_cycle` and
+    :func:`~bid_euchre.ops.control_plane.reconcile`, so that the fleet
+    status on disk reflects the latest controller projection.
+
+    The push evaluator reads fleet status from disk, evaluates which
+    items need pushing (respecting cooldown, severity, and idle-gate),
+    formats a Telegram-ready message, and records the push in the audit
+    trail.  This function wraps that call with error handling (push is
+    best-effort — never blocks the monitor cycle) and returns a
+    :class:`MonitorCycleResult` that bundles findings + push payload.
+
+    The **caller** is responsible for actually sending
+    ``result.push_result.message`` to ``result.push_result.chat_id``
+    via the Telegram MCP ``reply`` tool.
+
+    Args:
+        findings: Findings from :func:`run_monitoring_cycle`.
+        runtime_dir: Override for the runtime directory root.
+        audit_dir: Override audit trail directory.  If ``None`` and
+            *runtime_dir* is set, defaults to ``runtime_dir / audit_trail``.
+        now: Override current time (for testing).
+
+    Returns:
+        A :class:`MonitorCycleResult` with the original findings and an
+        optional :class:`~bid_euchre.ops.telegram_push.PushResult`.
+    """
+    push_result = None
+    try:
+        from bid_euchre.ops.telegram_push import run_push_cycle
+
+        effective_audit_dir = audit_dir
+        if effective_audit_dir is None and runtime_dir is not None:
+            effective_audit_dir = runtime_dir / "audit_trail"
+
+        push_result = run_push_cycle(
+            runtime_dir=runtime_dir,
+            audit_dir=effective_audit_dir,
+            now=now,
+        )
+    except Exception:
+        # Push is best-effort — log and continue.
+        logger.warning("Alert push evaluation failed", exc_info=True)
+
+    return MonitorCycleResult(findings=findings, push_result=push_result)

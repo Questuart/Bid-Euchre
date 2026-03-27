@@ -8,12 +8,15 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from bid_euchre.ops.monitor import (
     ESCALATION_AGE_MINUTES,
     MAX_AUTO_DISPATCH_PER_CYCLE,
     SEVERITY_HIGH,
     SEVERITY_INFO,
     SEVERITY_WARN,
+    MonitorCycleResult,
     MonitorFinding,
     _default_stall_state_path,
     _detect_active_work,
@@ -30,6 +33,7 @@ from bid_euchre.ops.monitor import (
     check_recently_merged_prs,
     check_stale_dispatches,
     check_stalled_lanes,
+    evaluate_alert_push,
     format_findings_json,
     format_findings_text,
     run_monitoring_cycle,
@@ -3410,3 +3414,137 @@ class TestMonitorCycleRobustness:
         assert "lane_health" in categories
         # Escalation check should produce a finding (info or warn).
         assert "escalation" in categories
+
+
+# ---------------------------------------------------------------------------
+# MonitorCycleResult tests
+# ---------------------------------------------------------------------------
+
+
+class TestMonitorCycleResult:
+    """Tests for the MonitorCycleResult dataclass."""
+
+    def test_default_push_result_is_none(self) -> None:
+        """Push result defaults to None."""
+        result = MonitorCycleResult(findings=[])
+        assert result.findings == []
+        assert result.push_result is None
+
+    def test_with_findings_and_push(self) -> None:
+        """Result carries both findings and push_result."""
+        finding = MonitorFinding(
+            category="lane_health",
+            severity="info",
+            summary="Pool: 2 active",
+        )
+        mock_push = MagicMock()
+        mock_push.chat_id = "12345"
+        mock_push.message = "Alert text"
+        mock_push.items_pushed = []
+
+        result = MonitorCycleResult(findings=[finding], push_result=mock_push)
+        assert len(result.findings) == 1
+        assert result.push_result is mock_push
+        assert result.push_result.chat_id == "12345"
+
+
+# ---------------------------------------------------------------------------
+# evaluate_alert_push tests
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluateAlertPush:
+    """Tests for evaluate_alert_push() integration wrapper."""
+
+    def test_returns_cycle_result_with_none_when_disabled(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """When Telegram is disabled, push_result is None."""
+        monkeypatch.setenv("STEWARD_TELEGRAM_ENABLED", "0")
+        findings = [
+            MonitorFinding(category="lane_health", severity="info", summary="ok")
+        ]
+        result = evaluate_alert_push(findings, runtime_dir=tmp_path)
+        assert isinstance(result, MonitorCycleResult)
+        assert result.findings is findings
+        assert result.push_result is None
+
+    def test_returns_cycle_result_with_none_when_no_chat_id(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """When Telegram enabled but no chat ID, push_result is None."""
+        monkeypatch.setenv("STEWARD_TELEGRAM_ENABLED", "1")
+        monkeypatch.delenv("STEWARD_ALERT_PUSH_CHAT_ID", raising=False)
+        findings = [
+            MonitorFinding(category="lane_health", severity="info", summary="ok")
+        ]
+        result = evaluate_alert_push(findings, runtime_dir=tmp_path)
+        assert result.push_result is None
+
+    @patch("bid_euchre.ops.telegram_push.run_push_cycle")
+    def test_returns_push_result_when_available(
+        self, mock_push: MagicMock, tmp_path: Path
+    ) -> None:
+        """When run_push_cycle returns a result, it's in push_result."""
+        mock_pr = MagicMock()
+        mock_pr.chat_id = "999"
+        mock_pr.message = "🚨 Alert"
+        mock_pr.items_pushed = [MagicMock()]
+        mock_push.return_value = mock_pr
+
+        findings = [
+            MonitorFinding(category="stale_dispatch", severity="high", summary="stale")
+        ]
+        result = evaluate_alert_push(findings, runtime_dir=tmp_path)
+        assert result.push_result is mock_pr
+        assert result.findings is findings
+        mock_push.assert_called_once()
+
+    @patch("bid_euchre.ops.telegram_push.run_push_cycle")
+    def test_returns_none_push_on_exception(
+        self, mock_push: MagicMock, tmp_path: Path
+    ) -> None:
+        """When run_push_cycle raises, push_result is None (best-effort)."""
+        mock_push.side_effect = RuntimeError("boom")
+
+        findings = [
+            MonitorFinding(category="lane_health", severity="info", summary="ok")
+        ]
+        result = evaluate_alert_push(findings, runtime_dir=tmp_path)
+        assert result.push_result is None
+        assert result.findings is findings
+
+    @patch("bid_euchre.ops.telegram_push.run_push_cycle")
+    def test_passes_audit_dir_from_runtime_dir(
+        self, mock_push: MagicMock, tmp_path: Path
+    ) -> None:
+        """Audit dir defaults to runtime_dir/audit_trail when not explicit."""
+        mock_push.return_value = None
+        evaluate_alert_push([], runtime_dir=tmp_path)
+        call_kwargs = mock_push.call_args.kwargs
+        assert call_kwargs["audit_dir"] == tmp_path / "audit_trail"
+        assert call_kwargs["runtime_dir"] == tmp_path
+
+    @patch("bid_euchre.ops.telegram_push.run_push_cycle")
+    def test_explicit_audit_dir_overrides_default(
+        self, mock_push: MagicMock, tmp_path: Path
+    ) -> None:
+        """Explicit audit_dir takes precedence over runtime_dir-derived."""
+        mock_push.return_value = None
+        custom_audit = tmp_path / "custom_audit"
+        evaluate_alert_push([], runtime_dir=tmp_path, audit_dir=custom_audit)
+        call_kwargs = mock_push.call_args.kwargs
+        assert call_kwargs["audit_dir"] == custom_audit
+
+    @patch("bid_euchre.ops.telegram_push.run_push_cycle")
+    def test_passes_now_to_push_cycle(
+        self, mock_push: MagicMock, tmp_path: Path
+    ) -> None:
+        """The now parameter is forwarded to run_push_cycle."""
+        mock_push.return_value = None
+        from datetime import datetime, timezone
+
+        ts = datetime(2026, 3, 27, 12, 0, 0, tzinfo=timezone.utc)
+        evaluate_alert_push([], runtime_dir=tmp_path, now=ts)
+        call_kwargs = mock_push.call_args.kwargs
+        assert call_kwargs["now"] == ts
