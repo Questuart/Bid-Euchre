@@ -1013,6 +1013,193 @@ class TestHandResult:
 
 
 # ---------------------------------------------------------------------------
+# moon_exchange.html
+# ---------------------------------------------------------------------------
+
+
+class TestMoonExchange:
+    """Tests for the moon exchange interstitial template."""
+
+    def test_renders_exchange_cards(self, env):
+        """Exchange given/received cards are rendered."""
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            exchange_given=[["H", "10"], ["D", "J"]],
+            exchange_received=[["S", "A"], ["C", "K"]],
+            human_hand=[
+                ["S", "A"],
+                ["S", "K"],
+                ["C", "K"],
+                ["H", "Q"],
+            ],
+        )
+        assert "Moon Exchange" in html
+        assert "\u2665" in html  # hearts symbol for given card
+        assert "\u2666" in html  # diamond symbol for given card
+        assert "\u2660" in html  # spade for trump/received
+        assert "\u2663" in html  # club for received
+        assert "Start Trick Play" in html
+        assert 'hx-post="/play/abc-123/next"' in html
+
+    def test_shows_mooner_label(self, env):
+        """Mooner seat label is displayed."""
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            bidder_seat=1,
+            contract_type="suit",
+            trump="H",
+            exchange_given=[["S", "10"], ["D", "J"]],
+            exchange_received=[["H", "A"], ["C", "K"]],
+            human_hand=[],
+        )
+        assert "AI Left" in html
+        assert "AI Right" in html  # partner of seat 1
+
+    def test_shows_contract_info(self, env):
+        """Trump suit is displayed in subtitle."""
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            bidder_seat=0,
+            contract_type="suit",
+            trump="H",
+            exchange_given=[["S", "10"]],
+            exchange_received=[["H", "A"]],
+            human_hand=[],
+        )
+        assert "\u2665" in html  # hearts symbol
+
+    def test_high_contract_label(self, env):
+        """High contract renders 'High' label."""
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            bidder_seat=0,
+            contract_type="high",
+            trump=None,
+            exchange_given=[["S", "10"]],
+            exchange_received=[["H", "A"]],
+            human_hand=[],
+        )
+        assert "High" in html
+
+    def test_empty_exchange_graceful(self, env):
+        """Template handles empty exchange lists gracefully."""
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            exchange_given=[],
+            exchange_received=[],
+            human_hand=[],
+        )
+        assert "Moon Exchange" in html
+        assert "Start Trick Play" in html
+
+
+# ---------------------------------------------------------------------------
+# trick.html — winning card display
+# ---------------------------------------------------------------------------
+
+
+class TestTrickWinnerCard:
+    """Verify the trick-winner paragraph shows the winning card."""
+
+    def test_winning_card_shown(self, env):
+        """Trick winner paragraph includes the winning card."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick=None,
+            completed_tricks=[
+                {
+                    "plays": [
+                        [1, ["D", "A"]],
+                        [2, ["S", "K"]],
+                        [3, ["H", "Q"]],
+                    ],
+                    "winner": 1,
+                    "winning_card": ["D", "A"],
+                },
+            ],
+            dealer_seat=0,
+            bidder_seat=1,
+            current_seat=1,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=1,
+        )
+        assert "AI Left" in html
+        assert "won" in html
+        assert "with" in html
+        assert "\u2666" in html  # diamond symbol
+        assert "A" in html  # rank
+
+    def test_no_winning_card_graceful(self, env):
+        """Trick winner paragraph without winning_card is still valid."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick=None,
+            completed_tricks=[
+                {
+                    "plays": [
+                        [0, ["S", "A"]],
+                        [1, ["S", "K"]],
+                    ],
+                    "winner": 0,
+                    # No winning_card key — backward compat
+                },
+            ],
+            dealer_seat=0,
+            bidder_seat=0,
+            current_seat=0,
+            sitting_out_seat=None,
+            tricks_team0=1,
+            tricks_team1=0,
+        )
+        assert "You" in html
+        assert "won" in html
+        # No "with" since winning_card is absent
+        assert "with" not in html
+
+    def test_human_winner_shows_card(self, env):
+        """When human wins, 'You won with' is rendered."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick=None,
+            completed_tricks=[
+                {
+                    "plays": [
+                        [0, ["S", "A"]],
+                        [1, ["S", "K"]],
+                        [2, ["H", "Q"]],
+                        [3, ["D", "J"]],
+                    ],
+                    "winner": 0,
+                    "winning_card": ["S", "A"],
+                },
+            ],
+            dealer_seat=1,
+            bidder_seat=0,
+            current_seat=0,
+            sitting_out_seat=None,
+            tricks_team0=1,
+            tricks_team1=0,
+        )
+        assert "You" in html
+        assert "won" in html
+        assert "with" in html
+        assert "\u2660" in html  # spade symbol
+        assert "A" in html
+
+
+# ---------------------------------------------------------------------------
 # match_result.html
 # ---------------------------------------------------------------------------
 

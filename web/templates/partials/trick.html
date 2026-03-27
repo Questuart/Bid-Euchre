@@ -99,13 +99,22 @@
         </div>
     </div>
     {% if display_winner is not none %}
+        {% set winning_card = None %}
+        {% if completed_tricks %}
+            {% set last = completed_tricks[-1] %}
+            {% if last.winning_card is defined %}
+                {% set winning_card = last.winning_card %}
+            {% endif %}
+        {% endif %}
         <p class="trick-winner" aria-live="polite">
             {% if display_winner == 0 %}
                 You
             {% else %}
                 {{ seat_labels[display_winner] if display_winner in seat_labels else ("Seat " ~ display_winner) }}
             {% endif %}
-            won
+            won{% if winning_card %} with
+                <span class="card-text card-text--{{ suit_classes.get(winning_card[0], 'spades') }}"
+                      aria-label="{{ winning_card[1] }} of {{ suit_names.get(winning_card[0], winning_card[0]) }}">{{ suit_symbols.get(winning_card[0], winning_card[0]) }}{{ winning_card[1] }}</span>{% endif %}
         </p>
     {% endif %}
 </div>

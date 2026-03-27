@@ -268,6 +268,10 @@ class MatchEngine:
                 "leader": tr.leader,
                 "plays": [[s, [c.suit, c.rank]] for s, c in tr.plays],
                 "winner": tr.winner,
+                "winning_card": next(
+                    ([c.suit, c.rank] for s, c in tr.plays if s == tr.winner),
+                    None,
+                ),
             }
             for tr in hand.completed_tricks
         ]

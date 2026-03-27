@@ -22,6 +22,10 @@
 {% elif phase == "hand_result" %}
     {% include "partials/hand_result.html" %}
 
+{# ---- Moon exchange interstitial ---- #}
+{% elif phase == "moon_exchange" %}
+    {% include "partials/moon_exchange.html" %}
+
 {# ---- Active game phases: auction and trick play ---- #}
 {% elif phase in ("auction", "trick_play", "redeal") %}
 
