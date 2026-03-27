@@ -152,7 +152,18 @@ except Exception as exc:
     print(f'post-merge-notify: task transition failed: {exc}', file=sys.stderr)
     _transition_failed = True
 
-# 2. Send completion message to orchestrator via message bus (advisory)
+# 2. Clean up orphaned build/test processes from this lane's worktree.
+#    Prevents pytest/make/uv accumulation across fleet task cycles (#1951).
+if lane_id:
+    try:
+        from bid_euchre.ops.worker_pool import cleanup_lane_processes
+        killed = cleanup_lane_processes(lane_id)
+        if killed:
+            print(f'post-merge-notify: cleaned up {len(killed)} orphaned process(es)', file=sys.stderr)
+    except Exception as exc:
+        print(f'post-merge-notify: process cleanup failed: {exc}', file=sys.stderr)
+
+# 3. Send completion message to orchestrator via message bus (advisory)
 from_lane = lane_id or 'unknown'
 suffix = ' (auto-merge)' if auto_merge else ''
 payload = {'pr_number': pr_num, 'packet_id': packet_id}

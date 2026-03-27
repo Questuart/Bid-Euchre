@@ -24,6 +24,7 @@ Usage::
         dispatch_to_worker,
         nudge_pane,
         run_pool_maintenance,
+        cleanup_lane_processes,
     )
 
     pool = take_pool_snapshot()
@@ -35,7 +36,9 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import asdict, dataclass, field
@@ -411,6 +414,186 @@ def _resolve_worktree_path(
     for lane in report.lanes:
         if lane.lane_id == lane_id:
             return lane.worktree_path
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Process cleanup
+# ---------------------------------------------------------------------------
+
+#: Process name patterns eligible for cleanup.  Only processes whose command
+#: line matches one of these AND contains the worktree path are killed.
+_CLEANUP_PROCESS_PATTERNS: tuple[str, ...] = ("pytest", "make", "python", "uv")
+
+
+def cleanup_lane_processes(
+    lane_id: str,
+    *,
+    runtime_dir: Path | None = None,
+    dry_run: bool = False,
+) -> list[int]:
+    """Kill orphaned build/test processes spawned from a lane's worktree.
+
+    Finds ``pytest``, ``make``, ``python``, and ``uv`` processes whose command
+    line contains the lane's worktree path, then sends SIGTERM.  The current
+    process (PID) and its parent are excluded to avoid self-termination.
+
+    This is called automatically during :func:`park_worker` and from the
+    post-merge notification hook to prevent process accumulation during
+    fleet runs.
+
+    Args:
+        lane_id: Lane whose orphaned processes should be cleaned up.
+        runtime_dir: Override for the runtime directory root.
+        dry_run: If True, identify processes but do not kill them.
+
+    Returns:
+        List of PIDs that were killed (or would be killed in dry_run mode).
+    """
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+
+    worktree_path = _resolve_worktree_path(lane_id, runtime_dir)
+    if not worktree_path:
+        logger.debug(
+            "cleanup_lane_processes: no worktree path for %s, skipping",
+            lane_id,
+        )
+        return []
+
+    # Normalise so we match regardless of trailing slash
+    wt_path = str(Path(worktree_path).resolve())
+
+    own_pid = os.getpid()
+    parent_pid = os.getppid()
+    exclude_pids = {own_pid, parent_pid}
+
+    killed: list[int] = []
+
+    for pattern in _CLEANUP_PROCESS_PATTERNS:
+        pids = _find_matching_pids(pattern, wt_path, exclude_pids)
+        for pid in pids:
+            if dry_run:
+                logger.info(
+                    "cleanup_lane_processes [dry-run]: would kill PID %d "
+                    "(pattern=%s, lane=%s)",
+                    pid,
+                    pattern,
+                    lane_id,
+                )
+            else:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    logger.info(
+                        "cleanup_lane_processes: killed PID %d (pattern=%s, lane=%s)",
+                        pid,
+                        pattern,
+                        lane_id,
+                    )
+                except (ProcessLookupError, PermissionError) as exc:
+                    logger.debug(
+                        "cleanup_lane_processes: could not kill PID %d: %s",
+                        pid,
+                        exc,
+                    )
+                    continue
+            killed.append(pid)
+
+    if killed:
+        logger.info(
+            "cleanup_lane_processes: %s %d process(es) for lane %s",
+            "would kill" if dry_run else "killed",
+            len(killed),
+            lane_id,
+        )
+    return killed
+
+
+def _find_matching_pids(
+    process_pattern: str,
+    worktree_path: str,
+    exclude_pids: set[int],
+) -> list[int]:
+    """Find PIDs matching a process pattern whose cmdline contains the worktree path.
+
+    Uses ``pgrep -f`` for a two-stage match: the process pattern narrows
+    candidates, then the worktree path filters to lane-specific processes.
+
+    Args:
+        process_pattern: Process name pattern (e.g., ``"pytest"``).
+        worktree_path: Resolved worktree path to match in command lines.
+        exclude_pids: PIDs to skip (self and parent).
+
+    Returns:
+        List of matching PIDs, excluding those in *exclude_pids*.
+    """
+    # pgrep -f matches against the full command line.  We search for the
+    # process pattern first, then filter by worktree path in a second pass
+    # using /proc or ps to read the full command line.
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", process_pattern],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        # pgrep exits 1 when no processes match — not an error.
+        if result.returncode not in (0, 1):
+            return []
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return []
+
+    candidate_pids: list[int] = []
+    for line in result.stdout.strip().splitlines():
+        line = line.strip()
+        if line.isdigit():
+            pid = int(line)
+            if pid not in exclude_pids:
+                candidate_pids.append(pid)
+
+    if not candidate_pids:
+        return []
+
+    # Second pass: verify each candidate's command line contains the worktree path.
+    matched: list[int] = []
+    for pid in candidate_pids:
+        cmdline = _read_cmdline(pid)
+        if cmdline and worktree_path in cmdline:
+            matched.append(pid)
+    return matched
+
+
+def _read_cmdline(pid: int) -> str | None:
+    """Read the full command line for a PID.
+
+    Tries ``/proc/<pid>/cmdline`` first (Linux), falls back to
+    ``ps -p <pid> -o args=`` (macOS/BSD).
+
+    Returns:
+        The command line as a string, or None if unreadable.
+    """
+    # Try /proc (Linux)
+    proc_path = Path(f"/proc/{pid}/cmdline")
+    try:
+        raw = proc_path.read_bytes()
+        if raw:
+            return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace")
+    except (FileNotFoundError, PermissionError, OSError):
+        pass
+
+    # Fallback: ps (macOS/BSD)
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "args="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
     return None
 
 
@@ -880,13 +1063,21 @@ def park_worker(
             error="has_active_task",
         )
 
+    # Clean up orphaned build/test processes before parking.
+    # This prevents pytest/make/uv processes from accumulating across
+    # fleet runs when lanes are parked and re-dispatched.
+    killed_pids = cleanup_lane_processes(lane_id, runtime_dir=runtime_dir)
+    cleanup_note = (
+        f"; killed {len(killed_pids)} orphaned process(es)" if killed_pids else ""
+    )
+
     # Set visibility to hidden
     set_lane_visibility(lane_id, "hidden", runtime_dir)
 
     return PoolAction(
         action="park",
         lane_id=lane_id,
-        reason="Set visibility to hidden; tmux pane left running",
+        reason=f"Set visibility to hidden; tmux pane left running{cleanup_note}",
         executed=True,
     )
 

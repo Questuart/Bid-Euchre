@@ -25,13 +25,33 @@ and sending alerts to an orchestrator that has stopped reading them.
 
 ## Workflow
 
-### Step 1 — List Active Cron Jobs
+### Step 1 — Kill Orphaned Build/Test Processes
+
+Before cleaning up cron jobs, kill any orphaned pytest, make, or uv processes
+that were spawned from this lane's worktree. These accumulate during fleet runs
+and exhaust system memory if not cleaned up.
+
+```bash
+uv run python -c "
+from bid_euchre.ops.worker_pool import cleanup_lane_processes
+killed = cleanup_lane_processes('<lane_id>')
+print(f'Killed {len(killed)} orphaned process(es)')
+"
+```
+
+Replace `<lane_id>` with the lane identity (e.g., `author-a`, `brws-author-b`).
+This is safe to run even if no orphaned processes exist (returns empty list).
+
+**Note:** `park_worker()` also calls this automatically when invoked
+programmatically, so this step is primarily for manual `/park` usage.
+
+### Step 2 — List Active Cron Jobs
 
 Use `CronList` to see all active cron jobs in this session.
 
-If no cron jobs are listed, skip to Step 3.
+If no cron jobs are listed, skip to Step 4.
 
-### Step 2 — Delete Each Cron Job
+### Step 3 — Delete Each Cron Job
 
 For **every** cron job returned by CronList, call `CronDelete` with its ID
 to stop it. Do not skip any — even jobs that look harmless will continue
@@ -46,20 +66,21 @@ CronDelete job_id_1
 CronDelete job_id_2
 ```
 
-### Step 3 — Verify Cleanup
+### Step 4 — Verify Cleanup
 
 Call `CronList` again to confirm the list is empty. If any jobs remain,
-repeat Step 2 for the stragglers.
+repeat Step 3 for the stragglers.
 
-### Step 4 — Confirm Parked
+### Step 5 — Confirm Parked
 
 Report the shutdown result:
+- How many orphaned processes were killed (Step 1)
 - How many cron jobs were deleted
 - Confirmation that CronList is now empty
 - The lane is safe to `/clear`
 
 Do **not** automatically run `/clear` — let the operator or orchestrator
-decide when to clear context. The park skill's job is cron cleanup only.
+decide when to clear context. The park skill's job is process + cron cleanup.
 
 ## Orchestrator Usage
 
