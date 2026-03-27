@@ -37,6 +37,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,6 +65,14 @@ DEFAULT_TMUX_SESSION: str = "steward"
 
 #: Pool status values.
 POOL_STATUSES: frozenset[str] = frozenset({"active", "idle", "parked", "retired"})
+
+#: Delay (seconds) between sending text and Enter via tmux send-keys.
+#: Modern terminals use bracketed paste mode, which wraps pasted text in
+#: escape sequences (``\e[200~...\e[201~``).  If Enter follows immediately,
+#: it lands inside the paste bracket and is consumed as pasted text rather
+#: than acting as a submit key.  A short delay lets the terminal close the
+#: bracket before Enter arrives.  See issue #1834.
+_PASTE_BRACKET_DELAY: float = 0.1
 
 #: Default domain assignment for each managed lane.
 #: Lanes with ``None`` are "flex" — available to any domain when same-domain
@@ -1136,6 +1145,10 @@ def clear_session(
             capture_output=True,
             timeout=5,
         )
+        # Delay to let the terminal close its paste bracket before Enter
+        # arrives.  Without this, Enter is consumed inside the bracket and
+        # the command is pasted but never submitted.  See #1834.
+        time.sleep(_PASTE_BRACKET_DELAY)
         subprocess.run(
             ["tmux", "send-keys", "-t", target, "Enter"],
             check=True,
@@ -1202,6 +1215,10 @@ def nudge_pane(
             capture_output=True,
             timeout=5,
         )
+        # Delay to let the terminal close its paste bracket before Enter
+        # arrives.  Without this, Enter is consumed inside the bracket and
+        # the command is pasted but never submitted.  See #1834.
+        time.sleep(_PASTE_BRACKET_DELAY)
         subprocess.run(
             ["tmux", "send-keys", "-t", target, "Enter"],
             check=True,
@@ -1379,7 +1396,6 @@ def dispatch_to_worker(
             if auto_refresh.executed:
                 logger.info("Auto-refresh succeeded for %s", lane_id)
                 session_cleared = True
-                import time
 
                 # Brief pause to let /clear complete before sending /start-task
                 time.sleep(2)
@@ -1409,7 +1425,6 @@ def dispatch_to_worker(
                 clear_result.reason,
             )
         session_cleared = True
-        import time
 
         # Brief pause to let /clear complete before sending /start-task
         time.sleep(2)
@@ -1504,8 +1519,6 @@ def dispatch_to_worker(
                 lane_id, tmux_session=tmux_session, runtime_dir=runtime_dir
             )
             if clear_result.executed:
-                import time
-
                 # Pause to let /clear complete before sending /start-task
                 time.sleep(3)
             else:
