@@ -1470,3 +1470,208 @@ class TestRuntimeLimitTimeout:
         assert (
             "READY_TO_MERGE" in loop.stop_reason
         ), "stop_reason should mention the state for operator diagnostics"
+
+
+class TestAuthFailureEarlyTermination:
+    """Auth failure in _step_waiting_for_codex stops immediately (non-retryable).
+
+    PR #1982 added an early-termination branch that detects ``error_type ==
+    "auth_failure"`` from the Codex adapter and stops the review loop without
+    retrying.  These tests verify the driver-level integration of that path:
+    state transition, non-retryable treatment, status publication, and stop
+    reason content.
+
+    Regression test for issue #1983 (T1 — untested behavior change).
+    """
+
+    def test_auth_failure_transitions_to_stopped(self, tmp_path: Path):
+        """Auth failure → STOPPED_REVIEW_FAILURE immediately (no retry)."""
+        from codex_review_adapter import CodexReviewResult
+        from review_driver import _step_waiting_for_codex
+        from review_state import ReviewLoopState, ReviewState, save_state
+
+        loop = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.WAITING_FOR_CODEX.value,
+            current_head_sha="sha_auth_fail",
+            codex_retry_count=0,
+        )
+        save_state(loop, tmp_path)
+
+        auth_result = CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output="Please log in",
+            latency_seconds=1.0,
+            error="Codex CLI auth expired",
+            error_type="auth_failure",
+        )
+
+        status_calls: list[tuple[int, str, str]] = []
+        comment_calls: list[tuple[str]] = []
+
+        def mock_publish(pr, status, desc):
+            status_calls.append((pr, status, desc))
+
+        def mock_comment(loop_state, findings, outcome):
+            comment_calls.append((outcome,))
+
+        with (
+            patch("codex_review_adapter.invoke_codex_cli", return_value=auth_result),
+            patch("codex_review_adapter.save_review_result"),
+            patch("review_driver._publish_status", mock_publish),
+            patch("review_driver._post_review_comment", mock_comment),
+            patch("review_driver.save_state"),
+        ):
+            result = _step_waiting_for_codex(loop, tmp_path)
+
+        # 1. State transitions to STOPPED_REVIEW_FAILURE
+        assert result.current_state == ReviewState.STOPPED_REVIEW_FAILURE
+
+        # 2. codex_retry_count is NOT incremented (non-retryable)
+        assert (
+            result.codex_retry_count == 0
+        ), "Auth failure must not increment retry count — it is non-retryable"
+
+        # 3. Status published as "failure"
+        # First call is "pending" (in-progress), second is "failure" (auth)
+        failure_calls = [(pr, s, d) for pr, s, d in status_calls if s == "failure"]
+        assert (
+            len(failure_calls) == 1
+        ), f"Expected 1 failure status, got {failure_calls}"
+        _, _, desc = failure_calls[0]
+        assert (
+            "auth" in desc.lower()
+        ), f"Failure description should mention auth: {desc}"
+
+        # 4. Stop reason mentions "Auth failure" and "non-retryable"
+        assert result.stop_reason is not None
+        assert (
+            "auth failure" in result.stop_reason.lower()
+        ), f"stop_reason should mention auth failure: {result.stop_reason}"
+        assert (
+            "non-retryable" in result.stop_reason.lower()
+        ), f"stop_reason should mention non-retryable: {result.stop_reason}"
+
+    def test_auth_failure_posts_blocked_comment(self, tmp_path: Path):
+        """Auth failure posts a 'blocked' review comment."""
+        from codex_review_adapter import CodexReviewResult
+        from review_driver import _step_waiting_for_codex
+        from review_state import ReviewLoopState, ReviewState, save_state
+
+        loop = ReviewLoopState(
+            pr_number=43,
+            branch="test-branch",
+            state=ReviewState.WAITING_FOR_CODEX.value,
+            current_head_sha="sha_auth_comment",
+            codex_retry_count=0,
+        )
+        save_state(loop, tmp_path)
+
+        auth_result = CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output="auth prompt detected",
+            latency_seconds=0.5,
+            error="Codex CLI auth expired",
+            error_type="auth_failure",
+        )
+
+        comment_outcomes: list[str] = []
+
+        def mock_comment(loop_state, findings, outcome):
+            comment_outcomes.append(outcome)
+
+        with (
+            patch("codex_review_adapter.invoke_codex_cli", return_value=auth_result),
+            patch("codex_review_adapter.save_review_result"),
+            patch("review_driver._publish_status"),
+            patch("review_driver._post_review_comment", mock_comment),
+            patch("review_driver.save_state"),
+        ):
+            _step_waiting_for_codex(loop, tmp_path)
+
+        assert (
+            comment_outcomes == ["blocked"]
+        ), f"Auth failure should post exactly one 'blocked' comment, got {comment_outcomes}"
+
+    def test_auth_failure_does_not_retry_even_with_budget(self, tmp_path: Path):
+        """Auth failure stops on first attempt even if retry budget remains."""
+        from codex_review_adapter import CodexReviewResult
+        from review_driver import _step_waiting_for_codex
+        from review_state import ReviewLoopState, ReviewState, save_state
+
+        # Start with retry count at 0 — plenty of budget for normal errors
+        loop = ReviewLoopState(
+            pr_number=44,
+            branch="test-branch",
+            state=ReviewState.WAITING_FOR_CODEX.value,
+            current_head_sha="sha_auth_budget",
+            codex_retry_count=0,
+        )
+        save_state(loop, tmp_path)
+
+        auth_result = CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output="",
+            latency_seconds=0.1,
+            error="auth expired",
+            error_type="auth_failure",
+        )
+
+        with (
+            patch("codex_review_adapter.invoke_codex_cli", return_value=auth_result),
+            patch("codex_review_adapter.save_review_result"),
+            patch("review_driver._publish_status"),
+            patch("review_driver._post_review_comment"),
+            patch("review_driver.save_state"),
+        ):
+            result = _step_waiting_for_codex(loop, tmp_path)
+
+        # Must be terminal — no retry state
+        assert result.current_state == ReviewState.STOPPED_REVIEW_FAILURE
+        assert result.codex_retry_count == 0
+        assert result.last_codex_status == "failed"
+
+    def test_normal_error_still_retries(self, tmp_path: Path):
+        """Non-auth errors still increment retry count (contrast with auth path)."""
+        from codex_review_adapter import CodexReviewResult
+        from review_driver import _step_waiting_for_codex
+        from review_state import ReviewLoopState, ReviewState, save_state
+
+        loop = ReviewLoopState(
+            pr_number=45,
+            branch="test-branch",
+            state=ReviewState.WAITING_FOR_CODEX.value,
+            current_head_sha="sha_normal_error",
+            codex_retry_count=0,
+        )
+        save_state(loop, tmp_path)
+
+        normal_error = CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output="timeout",
+            latency_seconds=600.0,
+            error="Codex CLI timed out",
+            error_type="cli_review_error",
+        )
+
+        with (
+            patch("codex_review_adapter.invoke_codex_cli", return_value=normal_error),
+            patch("codex_review_adapter.save_review_result"),
+            patch("review_driver._publish_status"),
+            patch("review_driver._post_review_comment"),
+            patch("review_driver.save_state"),
+        ):
+            result = _step_waiting_for_codex(loop, tmp_path)
+
+        # Normal error increments retry count and does NOT stop on first attempt
+        assert (
+            result.codex_retry_count == 1
+        ), "Normal errors should increment retry count"
+        assert (
+            result.current_state != ReviewState.STOPPED_REVIEW_FAILURE
+        ), "Normal errors with budget remaining should not stop"
