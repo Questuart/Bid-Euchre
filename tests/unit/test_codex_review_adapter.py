@@ -17,10 +17,12 @@ from codex_review_adapter import (
     CodexFinding,
     CodexReviewResult,
     _classify_error,
+    _detect_auth_prompt,
     _parse_reversed_format,
     _parse_standard_format,
     _resolve_codex_binary,
     _strip_to_relative,
+    check_codex_auth,
     get_blocking_findings,
     invoke_codex_cli,
     parse_codex_output,
@@ -1244,3 +1246,146 @@ class TestParseOrdering:
         assert len(findings) >= 1
         # This should be parsed by prose (no [P1] tag)
         assert findings[0].severity == "P1"  # "unseeded" → P1
+
+
+# ---------------------------------------------------------------------------
+# Auth pre-check and auth prompt detection tests
+# ---------------------------------------------------------------------------
+
+
+class TestAuthPromptDetection:
+    """Tests for _detect_auth_prompt — early termination on auth stalls."""
+
+    def test_detects_please_visit_url(self):
+        output = "Please visit https://auth.openai.com/device to authenticate"
+        assert _detect_auth_prompt(output) is True
+
+    def test_detects_login_required(self):
+        output = "Login required. Run `codex login` to authenticate."
+        assert _detect_auth_prompt(output) is True
+
+    def test_detects_not_logged_in(self):
+        output = "Error: not logged in. Use `codex login` to sign in."
+        assert _detect_auth_prompt(output) is True
+
+    def test_detects_device_code(self):
+        output = "Device code: ABCD-1234. Waiting for authentication..."
+        assert _detect_auth_prompt(output) is True
+
+    def test_detects_authorize_device(self):
+        output = "Please authorize this device at https://example.com"
+        assert _detect_auth_prompt(output) is True
+
+    def test_no_false_positive_on_normal_review(self):
+        output = "[P1] src/foo.py:42 — Some issue\nReview complete. 1 finding."
+        assert _detect_auth_prompt(output) is False
+
+    def test_no_false_positive_on_clean_review(self):
+        output = "No issues found. The code looks good."
+        assert _detect_auth_prompt(output) is False
+
+    def test_no_false_positive_on_empty(self):
+        assert _detect_auth_prompt("") is False
+
+    def test_case_insensitive(self):
+        output = "PLEASE VISIT https://auth.openai.com/device"
+        assert _detect_auth_prompt(output) is True
+
+
+class TestCheckCodexAuth:
+    """Tests for check_codex_auth — pre-flight auth validation."""
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter.shutil.which", return_value="/usr/bin/codex")
+    def test_auth_ok(self, _mock_which, mock_run):
+        """Successful auth check returns True."""
+        mock_run.return_value = type(
+            "Result",
+            (),
+            {"returncode": 0, "stdout": "Logged in using ChatGPT", "stderr": ""},
+        )()
+        ok, msg = check_codex_auth()
+        assert ok is True
+        assert "Logged in" in msg
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter.shutil.which", return_value="/usr/bin/codex")
+    def test_auth_failed_exit_code(self, _mock_which, mock_run):
+        """Non-zero exit code from login status returns False."""
+        mock_run.return_value = type(
+            "Result", (), {"returncode": 1, "stdout": "", "stderr": "not logged in"}
+        )()
+        ok, msg = check_codex_auth()
+        assert ok is False
+        assert "exit 1" in msg
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter.shutil.which", return_value="/usr/bin/codex")
+    def test_auth_exit_0_but_inactive(self, _mock_which, mock_run):
+        """Exit 0 with 'not logged in' text still returns False."""
+        mock_run.return_value = type(
+            "Result", (), {"returncode": 0, "stdout": "not logged in", "stderr": ""}
+        )()
+        ok, msg = check_codex_auth()
+        assert ok is False
+        assert "inactive" in msg.lower()
+
+    @patch("codex_review_adapter.subprocess.run", side_effect=FileNotFoundError)
+    @patch("codex_review_adapter.shutil.which", return_value=None)
+    def test_codex_not_found(self, _mock_which, _mock_run):
+        """FileNotFoundError returns False with descriptive message."""
+        ok, msg = check_codex_auth()
+        assert ok is False
+        assert "not found" in msg.lower()
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter.shutil.which", return_value="/usr/bin/codex")
+    def test_timeout(self, _mock_which, mock_run):
+        """TimeoutExpired returns False."""
+        import subprocess as sp
+
+        mock_run.side_effect = sp.TimeoutExpired(cmd=["codex"], timeout=15)
+        ok, msg = check_codex_auth()
+        assert ok is False
+        assert "timed out" in msg.lower()
+
+
+class TestInvokeCodexAuthPreCheck:
+    """Tests that invoke_codex_cli's auth pre-check works correctly."""
+
+    @patch(
+        "codex_review_adapter.check_codex_auth", return_value=(False, "not logged in")
+    )
+    def test_auth_failure_returns_early(self, _mock_auth):
+        """Auth pre-check failure returns immediately without PTY invocation."""
+        result = invoke_codex_cli()
+        assert result.success is False
+        assert result.error_type == "auth_failure"
+        assert result.latency_seconds == 0.0
+
+    @patch(
+        "codex_review_adapter.check_codex_auth", return_value=(False, "token expired")
+    )
+    def test_auth_failure_error_message(self, _mock_auth):
+        """Auth failure includes the auth check message in the error."""
+        result = invoke_codex_cli()
+        assert "token expired" in result.error
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty", return_value=(0, "No issues found.")
+    )
+    @patch("codex_review_adapter.check_codex_auth", return_value=(True, "Logged in"))
+    def test_auth_ok_proceeds_to_review(self, _mock_auth, mock_pty):
+        """When auth passes, the review invocation proceeds normally."""
+        result = invoke_codex_cli()
+        assert result.success is True
+        mock_pty.assert_called_once()
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty", return_value=(0, "No issues found.")
+    )
+    def test_skip_auth_check_flag(self, mock_pty):
+        """skip_auth_check=True bypasses the pre-flight check."""
+        result = invoke_codex_cli(skip_auth_check=True)
+        assert result.success is True
+        mock_pty.assert_called_once()

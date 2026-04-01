@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -43,6 +44,23 @@ _CLI_ARG_ERROR_PATTERNS = [
 _RETRYABLE_BACKEND_RE = re.compile(
     r"(?i)(?:interrupted|re-run\s+/review|try\s+again|please\s+wait|rate\s+limit)"
 )
+
+# Patterns in PTY output that indicate Codex CLI is waiting for interactive
+# authentication.  When detected during ``_run_with_pty``, we can fail fast
+# instead of waiting for the full 10-minute timeout.
+_AUTH_PROMPT_PATTERNS = [
+    "please visit",
+    "login required",
+    "authentication required",
+    "sign in to",
+    "authorize this device",
+    "open the following url",
+    "device code",
+    "waiting for authentication",
+    "logged out",
+    "not logged in",
+    "log in with",
+]
 
 # Mode-specific review prompts (aligned with AGENTS.md guidance).
 #
@@ -248,7 +266,9 @@ class CodexReviewResult:
     latency_seconds: float
     error: str | None = None
     exit_code: int | None = None
-    error_type: str | None = None  # "cli_invocation_error" or "cli_review_error"
+    error_type: str | None = (
+        None  # "cli_invocation_error", "cli_review_error", or "auth_failure"
+    )
     parse_confidence: str | None = (
         None  # "structured", "clean_signal", "unparseable", "backend_error"
     )
@@ -560,6 +580,62 @@ def _resolve_codex_binary() -> list[str]:
     return ["npx", "@openai/codex"]
 
 
+def check_codex_auth(*, timeout: int = 15) -> tuple[bool, str]:
+    """Pre-flight check: verify Codex CLI auth is valid.
+
+    Runs ``codex login status`` and inspects the output. This catches expired
+    or missing auth tokens *before* launching the 10-minute review invocation,
+    preventing the common stall pattern where the CLI waits for interactive
+    browser-based OAuth that cannot complete in an unattended PTY session.
+
+    Args:
+        timeout: Maximum seconds to wait for the auth check.
+
+    Returns:
+        Tuple of (is_authenticated, status_message).
+        ``is_authenticated`` is True when ``codex login status`` exits 0 and
+        the output indicates an active session. False otherwise (expired,
+        missing, or check failure).
+    """
+    # Always use the direct `codex` binary for auth checks, NOT the custom
+    # launcher from CODEX_REVIEW_CMD (which may be a Docker wrapper that
+    # doesn't support `login status`). Fall back to npx if codex isn't in PATH.
+    if shutil.which("codex"):
+        cmd = ["codex", "login", "status"]
+    else:
+        cmd = ["npx", "@openai/codex", "login", "status"]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        output = (result.stdout + result.stderr).strip()
+        if result.returncode == 0:
+            # Check for known auth failure indicators even on exit 0
+            lower = output.lower()
+            if any(p in lower for p in ("not logged in", "logged out", "no session")):
+                logger.warning("Codex auth check: exit 0 but auth inactive: %s", output)
+                return False, f"Auth inactive: {output}"
+            logger.info("Codex auth check: OK — %s", output)
+            return True, output
+        else:
+            logger.warning(
+                "Codex auth check failed (exit %d): %s", result.returncode, output
+            )
+            return False, f"Auth check failed (exit {result.returncode}): {output}"
+    except FileNotFoundError:
+        logger.error("Codex CLI not found — cannot check auth")
+        return False, "Codex CLI not found"
+    except subprocess.TimeoutExpired:
+        logger.warning("Codex auth check timed out after %ds", timeout)
+        return False, f"Auth check timed out after {timeout}s"
+    except Exception as e:
+        logger.warning("Codex auth check error: %s", e)
+        return False, f"Auth check error: {e}"
+
+
 def _classify_error(stderr: str) -> str:
     """Classify a CLI error as invocation vs. runtime.
 
@@ -573,12 +649,24 @@ def _classify_error(stderr: str) -> str:
     return "cli_review_error"
 
 
+def _detect_auth_prompt(output: str) -> bool:
+    """Check if Codex CLI output contains interactive auth prompts.
+
+    When auth tokens are expired, Codex CLI may emit prompts asking the user
+    to visit a URL or authenticate interactively. In a PTY session, this stalls
+    indefinitely. Detecting these prompts allows early termination.
+    """
+    lower = output.lower()
+    return any(pattern in lower for pattern in _AUTH_PROMPT_PATTERNS)
+
+
 def invoke_codex_cli(
     *,
     mode: str = "standard",
     base: str = "main",
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     cwd: Path | None = None,
+    skip_auth_check: bool = False,
 ) -> CodexReviewResult:
     """Invoke Codex CLI review and parse the output.
 
@@ -590,11 +678,32 @@ def invoke_codex_cli(
         base: Git base ref for the review.
         timeout: Maximum wait time in seconds.
         cwd: Working directory (defaults to cwd).
+        skip_auth_check: Skip the pre-flight auth validation (for testing).
 
     Returns:
         CodexReviewResult with parsed findings or error info.
     """
     from codex_plan_review_adapter import _run_with_pty
+
+    # Pre-flight auth check: fail fast instead of waiting 10 minutes
+    # for a PTY auth prompt that can't complete unattended.
+    if not skip_auth_check:
+        auth_ok, auth_msg = check_codex_auth()
+        if not auth_ok:
+            logger.error(
+                "Codex CLI auth pre-check failed — skipping review invocation. "
+                "Fix: run 'codex login' interactively to refresh auth tokens. "
+                "Detail: %s",
+                auth_msg,
+            )
+            return CodexReviewResult(
+                success=False,
+                findings=[],
+                raw_output="",
+                latency_seconds=0.0,
+                error=f"Auth pre-check failed: {auth_msg}",
+                error_type="auth_failure",
+            )
 
     cmd = [*_resolve_codex_binary(), "review", "--base", base]
 
@@ -623,6 +732,21 @@ def invoke_codex_cli(
     elapsed = time.monotonic() - start
 
     if returncode is None:
+        # Check if timeout was caused by an auth prompt (stall pattern)
+        if _detect_auth_prompt(output):
+            logger.error(
+                "Codex CLI timed out due to auth prompt (%.1fs). "
+                "Fix: run 'codex login' interactively to refresh auth tokens.",
+                elapsed,
+            )
+            return CodexReviewResult(
+                success=False,
+                findings=[],
+                raw_output=output,
+                latency_seconds=elapsed,
+                error="Timeout due to auth prompt — run 'codex login' to fix",
+                error_type="auth_failure",
+            )
         logger.warning("Codex CLI timed out after %.1fs", elapsed)
         return CodexReviewResult(
             success=False,
@@ -630,6 +754,23 @@ def invoke_codex_cli(
             raw_output=output,
             latency_seconds=elapsed,
             error=f"Timeout after {timeout}s",
+        )
+
+    # Check for auth prompts even on non-zero exit (CLI may exit 1 on auth failure)
+    if _detect_auth_prompt(output):
+        logger.error(
+            "Codex CLI auth failure detected in output (exit %d, %.1fs). "
+            "Fix: run 'codex login' interactively to refresh auth tokens.",
+            returncode,
+            elapsed,
+        )
+        return CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output=output,
+            latency_seconds=elapsed,
+            error="Auth failure — run 'codex login' to fix",
+            error_type="auth_failure",
         )
 
     if returncode != 0:

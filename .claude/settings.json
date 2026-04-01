@@ -117,7 +117,28 @@
       "Edit(MEMORY.md)",
       "Write(MEMORY.md)",
       "Edit(plans/**)",
-      "Write(plans/**)"
+      "Write(plans/**)",
+      "Edit(src/**)",
+      "Write(src/**)",
+      "Edit(tests/**)",
+      "Write(tests/**)",
+      "Edit(scripts/**)",
+      "Write(scripts/**)",
+      "Edit(experiments/**)",
+      "Write(experiments/**)",
+      "Edit(docs/**)",
+      "Write(docs/**)",
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(make *)",
+      "Bash(uv run *)",
+      "Bash(uv sync *)",
+      "Bash(ruff *)",
+      "Bash(codex *)",
+      "Bash(pwd *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(mkdir *)"
     ]
   }
 }

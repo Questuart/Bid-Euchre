@@ -1048,6 +1048,10 @@ def _step_waiting_for_codex(
 
     Invokes Codex CLI, parses findings, and transitions to SCORING_FINDINGS
     for confidence-based filtering. On invocation failure, retries or stops.
+
+    Auth failures are treated as non-retryable — the review stops immediately
+    instead of burning 3 × 10min timeout cycles waiting for interactive auth
+    that cannot complete unattended.
     """
     from codex_review_adapter import invoke_codex_cli, save_review_result
 
@@ -1063,6 +1067,30 @@ def _step_waiting_for_codex(
     save_review_result(result, loop_state.pr_number, iteration, base_dir)
 
     if not result.success:
+        # Auth failures are non-retryable — stop immediately instead of
+        # wasting 3 × 10min timeout cycles on interactive auth prompts.
+        is_auth_failure = getattr(result, "error_type", None) == "auth_failure"
+        if is_auth_failure:
+            _publish_status(
+                loop_state.pr_number,
+                "failure",
+                "Codex CLI auth expired — run 'codex login' to fix",
+            )
+            loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+            loop_state.last_codex_status = "failed"
+            loop_state.stop_reason = (
+                f"Auth failure (non-retryable): {result.error}. "
+                f"Fix: run 'codex login' interactively."
+            )
+            _post_review_comment(loop_state, [], "blocked")
+            save_state(loop_state, base_dir)
+            logger.error(
+                "PR #%d: Codex CLI auth failure -- stopped immediately "
+                "(no retry). Fix: run 'codex login' interactively.",
+                loop_state.pr_number,
+            )
+            return loop_state
+
         loop_state.codex_retry_count += 1
         if loop_state.codex_retry_count >= 3:
             _publish_status(
