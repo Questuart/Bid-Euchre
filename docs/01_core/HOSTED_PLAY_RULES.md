@@ -5,7 +5,7 @@
 - V1 baseline: `plans/browser_game/governing_plan.md`
 - Expansion: `plans/browser_game_expansion/governing_plan.md`
 **Extends:** [RULES.md](./RULES.md) §6.5 (match scoring) and §7.2 (match termination)
-**Last updated:** 2026-03-25
+**Last updated:** 2026-04-01
 
 ---
 
@@ -133,6 +133,9 @@ updated model serving, improved game flow, and pilot access control.
   trick play: the declarer's partner gives their best cards to the declarer,
   who returns the same number of cards.  The exchange uses
   `perform_exchange()` from canonical repo logic.
+- After the exchange, the declarer's partner **sits out** for the hand.
+  Only three seats participate in trick play (declarer + both opponents).
+  This matches the canonical rule in [RULES.md](./RULES.md) §3.6.2.
 - Moon scoring follows `compute_points()` with the moon bid type.
 
 ## 13. Loner Bids (Expansion)
