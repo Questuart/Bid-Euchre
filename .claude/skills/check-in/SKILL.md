@@ -207,6 +207,37 @@ Examples:
     records every outbound Telegram MCP call in the audit trail JSONL. No
     manual audit step is needed.
 
+    **PostToolUse relay:** The `post-monitor-push-relay.sh` hook automatically
+    detects push payloads in monitor output and injects `additionalContext`
+    with a delivery instruction. If this context appears in your conversation,
+    follow its instruction to call the Telegram MCP reply tool — this is the
+    primary delivery mechanism. The stdout-based parsing above is a fallback.
+
+### Phase 2d — Inbound Ack Reply Delivery
+
+> When the `inbound-channel-audit.py` hook detects an ack command from
+> Telegram, it mutates controller state (automated) and injects
+> `additionalContext` containing a reply instruction (requires your action).
+
+15. **If `additionalContext` contains a `TELEGRAM ACK REPLY` block, deliver
+    the confirmation.** The injected context looks like:
+
+    ```
+    TELEGRAM ACK REPLY (chat_id=<id>):
+    <confirmation text>
+    → Reply to Telegram chat <id> with the above confirmation.
+    ```
+
+    **Action:** Call `mcp__plugin_telegram_telegram__reply()` with the
+    provided `chat_id` and text. This confirms to the operator that their
+    ack was processed.
+
+    **Skip conditions:**
+    - You already sent this exact confirmation text in the current turn
+      (avoid duplicates).
+    - The `additionalContext` is stale (from a previous conversation turn
+      that you already acted on).
+
 ### Phase 3 — PR and CI Health
 
 9. **List open PRs:**

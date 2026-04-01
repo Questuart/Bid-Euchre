@@ -2399,6 +2399,11 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 f" → chat {pr.chat_id}"
             )
             print(pr.message)
+            # Machine-readable line for PostToolUse hook consumption
+            import json as _json
+
+            relay = _json.dumps({"chat_id": pr.chat_id, "message": pr.message})
+            print(f"\nPUSH_RELAY:{relay}")
 
     # Exit 1 if any high-severity findings
     has_high = any(f.severity == "high" for f in findings)

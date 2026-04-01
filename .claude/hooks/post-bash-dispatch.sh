@@ -13,7 +13,8 @@
 #   5. post-merge-review.sh — triggers post-merge review after gh pr merge
 #   6. post-tool-daemon-notify.sh — checks for background daemon failures
 #   7. post-task-event.sh — emits task events on relevant commands
-#   8. post-merge-notify.sh — auto-completes task lifecycle on merge
+#   8. post-monitor-push-relay.sh — injects additionalContext for Telegram push
+#   9. post-merge-notify.sh — auto-completes task lifecycle on merge
 #
 # For typical Bash commands (cd, ls, git status, pytest, etc.), all hooks
 # exit immediately (<100ms each). Only specific commands (gh pr create,
@@ -68,6 +69,7 @@ run_hook "$HOOKS_DIR/post-merge-ci-check.sh"
 run_hook "$HOOKS_DIR/post-merge-review.sh"
 run_hook "$HOOKS_DIR/post-tool-daemon-notify.sh"
 run_hook "$HOOKS_DIR/post-task-event.sh"
+run_hook "$HOOKS_DIR/post-monitor-push-relay.sh"
 run_hook "$HOOKS_DIR/post-merge-notify.sh"
 
 # Return combined output (if any hooks produced context),
