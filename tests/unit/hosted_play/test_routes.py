@@ -414,6 +414,77 @@ class TestNextRevealFlow:
         assert hand_after.phase == "trick_play"
         session_after.close()
 
+    def test_hidden_auction_hides_trick_play_state(self, client, app):
+        """Trick data must not render while auction bids are still hidden.
+
+        Regression test: when the engine auto-advances from auction into
+        trick play (AI bids completing the auction + AI leading the first
+        trick), the route-level game context must suppress trick-play state
+        until all auction entries are revealed via /next.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Simulate: engine finished auction → trick_play, but only 1 of 4
+        # auction bids has been revealed to the user.
+        hand.phase = "trick_play"
+        hand.dealer_seat = 3
+        hand.current_seat = HUMAN_SEAT
+        hand.turn_number = 5  # 4 bids + 1 AI card play
+        hand.bidder_seat = 1
+        hand.winning_bid = 5
+        hand.bid_type = "regular"
+        hand.contract_type = "suit"
+        hand.trump = "S"
+        hand.auction = [
+            {
+                "seat": 0,
+                "n": 5,
+                "action": "bid",
+                "contract": "S",
+                "bid_type": "regular",
+            },
+            {"seat": 1, "n": 0, "action": "pass"},
+            {"seat": 2, "n": 0, "action": "pass"},
+            {"seat": 3, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 1  # Only human's bid revealed
+
+        # AI already played a card into the trick (engine auto-advance)
+        hand.current_trick = TrickState(
+            leader=1,
+            plays=[(1, Card("D", "A"))],
+        )
+        # AI hand now has 9 cards (one played)
+        hand.hands[1] = hand.hands[1][:9]
+
+        match_row.match_state_json = json.dumps(state.to_dict())
+        session.commit()
+        session.close()
+
+        # Render the game page — should show auction reveal, NOT trick data
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+
+        # The "Next" button should be visible (auction reveal in progress)
+        assert f'hx-post="/play/{link_uuid}/next"' in resp.text
+
+        # Trick area should NOT show the AI's played card
+        # D♦ / A would appear as card rank+suit in the trick area
+        assert "card--played" not in resp.text
+
+        # AI Left hand count should show 10 (pre-play), not 9
+        assert "AI Left (10)" in resp.text
+
+        # No "Play card" button — still in auction reveal
+        assert 'id="card-play-form"' not in resp.text
+
 
 # ---------------------------------------------------------------------------
 # Test 5: Submit card → state advances
