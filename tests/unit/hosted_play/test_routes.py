@@ -2150,3 +2150,153 @@ class TestInviteCodeFlow:
         resp = client.post("/new", follow_redirects=False)
         assert resp.status_code == 302
         assert "/play/" in resp.headers["location"]
+
+
+# ---------------------------------------------------------------------------
+# Test: Moon exchange route — AI leads after exchange (#1910)
+# ---------------------------------------------------------------------------
+
+
+class TestMoonExchangeRoute:
+    """Route-level tests for moon exchange flow.
+
+    Regression test for #1910: when an AI bids moon, the game was stuck
+    after the exchange because ``submit_exchange_selection`` did not call
+    ``_advance_ai``.  The human saw trick play but no AI had played,
+    making it appear as if the partner was "sitting out".
+    """
+
+    def test_ai_mooner_exchange_then_trick_play(self, client, app):
+        """After AI moon exchange + reveal, the game is in a playable state.
+
+        Sets up a state where AI Partner (seat 2) bid moon and the human
+        is the exchange partner.  After submitting the exchange and clicking
+        "Start Trick Play", the board must show trick play with the human's
+        turn (AI should have already played via _advance_ai).
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Simulate: AI Partner (seat 2) bid moon, auction complete.
+        # Human (seat 0) is the exchange partner — interactive exchange.
+        hand.phase = "moon_exchange"
+        hand.exchange_phase = "selecting"
+        hand.current_seat = HUMAN_SEAT
+        hand.turn_number = 6
+        hand.bidder_seat = 2  # AI Partner is the mooner
+        hand.winning_bid = 10
+        hand.bid_type = "moon"
+        hand.contract_type = "suit"
+        hand.trump = "S"
+        hand.sitting_out_seat = None  # Moon = no sit-out
+        hand.revealed_auction_count = len(hand.auction)
+        hand.exchange_given = None
+        hand.exchange_received = None
+        hand.exchange_revealed = False
+        # Give everyone valid 10-card hands (ranks use "T" for 10)
+        hand.hands = [
+            [
+                Card("S", "A"),
+                Card("S", "K"),
+                Card("S", "Q"),
+                Card("S", "J"),
+                Card("S", "T"),
+                Card("H", "A"),
+                Card("H", "K"),
+                Card("H", "Q"),
+                Card("H", "J"),
+                Card("H", "T"),
+            ],
+            [
+                Card("D", "A"),
+                Card("D", "K"),
+                Card("D", "Q"),
+                Card("D", "J"),
+                Card("D", "T"),
+                Card("C", "A"),
+                Card("C", "K"),
+                Card("C", "Q"),
+                Card("C", "J"),
+                Card("C", "T"),
+            ],
+            [
+                Card("S", "A"),
+                Card("S", "K"),
+                Card("S", "Q"),
+                Card("S", "J"),
+                Card("S", "T"),
+                Card("H", "A"),
+                Card("H", "K"),
+                Card("H", "Q"),
+                Card("H", "J"),
+                Card("H", "T"),
+            ],
+            [
+                Card("D", "A"),
+                Card("D", "K"),
+                Card("D", "Q"),
+                Card("D", "J"),
+                Card("D", "T"),
+                Card("C", "A"),
+                Card("C", "K"),
+                Card("C", "Q"),
+                Card("C", "J"),
+                Card("C", "T"),
+            ],
+        ]
+
+        match_row.match_state_json = json.dumps(state.to_dict())
+        session.commit()
+        session.close()
+
+        # Step 1: GET shows moon exchange selection form
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "exchange" in resp.text.lower()
+
+        # Step 2: Submit exchange — human gives 2 cards
+        resp = client.post(
+            f"/play/{link_uuid}/exchange",
+            data={"card_index_0": 0, "card_index_1": 1},
+        )
+        assert resp.status_code == 200
+
+        # Step 3: After exchange, we should see the exchange interstitial
+        # (exchange_revealed is False at this point)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "Moon Exchange" in resp.text
+        assert "Start Trick Play" in resp.text
+
+        # Step 4: Click "Start Trick Play" to reveal the exchange
+        resp = client.post(f"/play/{link_uuid}/next")
+        assert resp.status_code == 200
+        # After reveal, exchange interstitial should be gone
+        assert "Moon Exchange" not in resp.text
+
+        # Step 5: Verify the game state is playable (not stuck)
+        result_after = get_match_state(app, link_uuid)
+        assert result_after is not None
+        state_after, _, session_after = result_after
+        hand_after = state_after.current_hand
+        assert hand_after is not None
+        assert hand_after.phase == "trick_play"
+        assert hand_after.exchange_revealed is True
+        assert (
+            hand_after.sitting_out_seat is None
+        ), "Moon bid must not set sitting_out_seat"
+        # AI should have advanced — current_seat must be HUMAN_SEAT
+        # (or the hand might have completed if AI played through).
+        # The key assertion: the game is NOT stuck on an AI seat.
+        if hand_after.phase == "trick_play":
+            assert hand_after.current_seat == HUMAN_SEAT, (
+                f"Game stuck on AI seat {hand_after.current_seat} "
+                f"after moon exchange — _advance_ai not called"
+            )
+        session_after.close()
