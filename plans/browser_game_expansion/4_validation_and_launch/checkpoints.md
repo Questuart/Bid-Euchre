@@ -21,7 +21,7 @@
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
-| SP-4-01 | `4_validation_and_launch/sub/2026-03-24_browser-automation-smoke-and-proving.md` | in_progress | Steps 4-5 |
+| SP-4-01 | `plans/browser_game_expansion/4_validation_and_launch/sub/2026-03-24_browser-automation-smoke-and-proving.md` | in_progress | Steps 4-5 |
 
 ## Blockers
 
