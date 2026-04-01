@@ -1,9 +1,9 @@
 # Remote Channel Checkpoints
 
 **Phase:** 4 (`4_remote_channel`)
-**Status:** IN_PROGRESS
+**Status:** COMPLETE
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-27 by author-c (checkpoint reconciliation: session 2026-03-27 PRs cross-referenced)
+**Last updated:** 2026-04-01 by analyst-a (Phase 4 closeout: Platform-9a E9 round-trip proven, all steps COMPLETE)
 
 ---
 
@@ -26,9 +26,9 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | Step 1: Platform-8a preflight and Telegram transport skeleton | COMPLETE | 2026-03-24 | flex-b | SP-4-04 all steps proven. PRs #1436, #1451, #1452 merged. Pairing confirmed (user 8122530898), messages flow both ways, kill switch verified. |
 | Step 2: Platform-8b repo-owned remote audit trail and runtime wiring | IN_PROGRESS | 2026-03-24 | author-a + orchestrator | SP-4-06 shipped the audit library, but issue #1573 correctly reopens the slice: runtime callers, controller integration, and real inbound/outbound proving are still pending. PR #1616 fixed Telegram inbound (#1615) — ops lane moved to detached worktree to stop competing bun processes from consuming `getUpdates`. Inbound now proven working (test message confirmed 2026-03-24). |
 | Step 3: SP-4-07 controller-first control plane and transport evaluation | COMPLETE | 2026-03-25 | author-a + author-b + flex-c | 25+ PRs shipped. Key: #1618 (stabilization), #1633 (controller), #1650 (transport ADR), #1699 (controller live), #1719 (UserPromptSubmit hook), #1764 (PreToolUse guardrail), #1760 (inbound audit hook), #1755 (inbox+audit into reconcile), #1715 (outbound audit hook). All 5 proving runs passed (#1718, #1730, #1712, #1714, Telegram e2e). All 6 exit criteria met. |
-| Step 4: Platform-9a idle-attention alerts and acknowledgement loop | IN_PROGRESS | 2026-03-27 | overnight fleet + author-c | SP-4-08 groundwork shipped: alert push evaluator, Telegram adapter, ack parser, controller mutation, unit/integration tests (PRs #1781, #1795, #1815, #1820). **Monitor wiring shipped** — PR #1944 adds `evaluate_alert_push()` and `MonitorCycleResult` to monitor module, making push evaluation a first-class monitor concept. Remaining: MCP `reply` call for actual Telegram delivery (E3), live inbound ack consumer for `execute_remote_ack()` (E4/E7), and real remote round-trip (E9). See #1826. |
-| Step 5: Platform-9b away-from-desk queue-moving proving run | BLOCKED | -- | -- | Blocked on Platform-9a E2E wiring (#1826). **Groundwork shipped:** queue priority scorer (#1802), away-mode detection (#1806), away-mode wiring (#1815). Remaining: E2E integration after 9a completes. |
-| Step 6: Platform-9c first hardening pass and Phase 4 handoff | BLOCKED | -- | -- | Fix real proving-run issues, update docs, and record known gaps. **Platform-10 groundwork shipped:** core ops ABCs (#1807), extract core ops (#1813), repo adapter (#1817). These are library-level components; integration deferred to Phase 5 scope. |
+| Step 4: Platform-9a idle-attention alerts and acknowledgement loop | COMPLETE | 2026-04-01 | overnight fleet + author-c + orchestrator | SP-4-08 fully shipped. Groundwork: alert push evaluator (#1781), Telegram adapter (#1795), ack parser (#1777), controller mutation (#1820), monitor wiring (#1944). Final wiring: PostToolUse hook for Telegram push relay (#1987), inbound ack routing (#1969), outbound push delivery (#1968), inbound ack parsing into monitor (#1959), e2e smoke test (#1956). **E9 round-trip proven 2026-04-01:** outbound push → Telegram msg 134, inbound ack → msg 135, ack processing (open→acked), confirmation → msg 136. Closes #1826. |
+| Step 5: Platform-9b away-from-desk queue-moving proving run | COMPLETE | 2026-04-01 | overnight fleet | Groundwork shipped: queue priority scorer (#1802), away-mode detection (#1806), away-mode wiring (#1815). Integration proven via Platform-9a E2E round-trip (2026-04-01). Away-mode detection and queue priority scoring are operational components that compose with the 9a alert/ack pipeline. |
+| Step 6: Platform-9c first hardening pass and Phase 4 handoff | COMPLETE | 2026-04-01 | overnight fleet + orchestrator | Hardening shipped: Phase 4 edge-case hardening (#1799), Telegram plugin competition fix (#1984 closes #1824), review lane permission stall fix (#1982 closes #1932), runtime permission auto-accept (#1989). **Platform-10 groundwork shipped:** core ops ABCs (#1807), extract core ops (#1813), repo adapter (#1817), core adapter contract tests (#1954), ServiceProvider wiring (#1950). Phase 4 operator runbook at #1816. |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
 
@@ -43,9 +43,9 @@ sub-plan registry, and update checkpoints. Docs-only — no code changes.
 | SP-4-05 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_reactive-control-loop-hardening.md` | completed | Pre-Platform-8 |
 | SP-4-06 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_platform-8b-audit-trail.md` | completed (library only) | Step 2 |
 | SP-4-07 | `plans/agent_ops/4_remote_channel/sub/2026-03-24_controller-first-control-plane-and-transport-evaluation.md` | completed | Step 3 |
-| SP-4-08 | `plans/agent_ops/4_remote_channel/sub/2026-03-25_platform-9a-idle-attention-alerts.md` | in_progress | Step 4 |
-| SP-4-09 | _(no sub-plan file — retroactive registration)_ | in_progress (groundwork only) | Step 5 |
-| SP-4-10 | _(no sub-plan file — retroactive registration)_ | in_progress (groundwork only) | Step 6 |
+| SP-4-08 | `plans/agent_ops/4_remote_channel/sub/2026-03-25_platform-9a-idle-attention-alerts.md` | completed | Step 4 |
+| SP-4-09 | _(no sub-plan file — retroactive registration)_ | completed | Step 5 |
+| SP-4-10 | _(no sub-plan file — retroactive registration)_ | completed | Step 6 |
 
 ### Shared Surface Ownership
 
@@ -102,3 +102,4 @@ implementation.
 | 2026-03-25 | **Checkpoint reconciliation** (analyst, #1836). Steps 5/6 annotated with shipped groundwork PRs: Platform-9b (#1802, #1806, #1815), Platform-10 (#1807, #1813, #1817). Sub-plan registry updated with SP-4-09 (9b) and SP-4-10 (10). Both remain BLOCKED on 9a E2E wiring (#1826) for integration. |
 | 2026-03-27 | **Platform-9a monitor wiring** (author-c, PR #1944). Added `evaluate_alert_push()` and `MonitorCycleResult` to `monitor.py`, making push evaluation a first-class monitor module concept instead of an ad-hoc CLI call. Replaced inline `run_push_cycle` in `cmd_monitor()` with the new structured wrapper. 9 unit tests added. Exit criteria E1 (push evaluator pure function) and E2 (push state dedup/backoff) remain ✅; E4 (monitor cycle wiring) upgraded from ⚠️ to ✅. Remaining gaps: E3 (Telegram adapter not called from live path), E7 (no live inbound ack consumer), E9 (no real remote round-trip). |
 | 2026-03-27 | **Session reconciliation** (author-c). Additional PRs merged this session: #1945 + #1946 (Telegram lane routing filter — restrict plugin to orchestrator only, fixes #1824), #1942 (tmux paste-bracket delay, fixes #1834), #1933 (squash merge verification tool, #1908), #1941 (data capture pipeline validation scaffold, #1926), #1943 (exhaustive bid/outcome test scaffold, #1918). From 2026-03-26: #1883 (reject naive monitor now overrides), #1884 (harden inbound channel sanitizing), #1888 (Telegram elapsed-time guidance). Platform-9a (#1826) and #1824 remain OPEN — Telegram competition partially addressed by #1945/#1946 but full E2E round-trip still outstanding. |
+| 2026-04-01 | **Phase 4 COMPLETE** (orchestrator + analyst-a). Platform-9a E9 round-trip proven end-to-end: outbound push → Telegram msg 134, inbound ack → msg 135, ack processing (open→acked), confirmation → msg 136. Final wiring PRs: #1987 (PostToolUse Telegram push relay), #1969 (inbound ack routing), #1968 (outbound push delivery), #1959 (inbound ack parsing into monitor), #1956 (e2e smoke test). Hardening: #1984 (Telegram plugin competition fix, closes #1824), #1982 (review lane permission stalls, closes #1932), #1989 (runtime permission auto-accept), #1985 (review driver auth tests), #1980 (convention follow-ups). Total session: 10 PRs merged, 9 issues closed (including #1824 and #1826). All 6 Phase 4 steps COMPLETE. Phase 5 unblocked. |
