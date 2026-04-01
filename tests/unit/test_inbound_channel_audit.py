@@ -326,24 +326,14 @@ class TestRouteAck:
 
         assert reply is None
 
-    def test_missing_chat_id_still_works(self, hook: ModuleType) -> None:
-        """Reply should still be generated even without a chat_id."""
-        mock_result = MagicMock()
-        mock_result.is_ack_command = True
-        mock_result.reply_text = "✅ Acked"
+    def test_missing_chat_id_returns_none(self, hook: ModuleType) -> None:
+        """Missing chat_id should short-circuit — cannot route reply without destination."""
+        tag = '<channel source="telegram">'
+        reply = hook._route_ack("ack abc1", tag)
 
-        with patch(
-            "bid_euchre.ops.monitor.process_inbound_ack",
-            return_value=mock_result,
-        ):
-            tag = '<channel source="telegram">'
-            reply = hook._route_ack("ack abc1", tag)
-
-        assert reply is not None
-        assert "TELEGRAM ACK REPLY (chat_id=)" in reply
-        assert "✅ Acked" in reply
-        # No "Reply to Telegram chat" line when chat_id is empty
-        assert "Reply to Telegram chat" not in reply
+        # chat_id validation happens before process_inbound_ack is called,
+        # so no mock is needed — the function exits early.
+        assert reply is None
 
 
 # ---------------------------------------------------------------------------

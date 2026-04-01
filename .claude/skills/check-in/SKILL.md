@@ -168,8 +168,13 @@ Examples:
 
 13. **Run the monitoring cycle with push evaluation:**
     ```bash
-    uv run python scripts/internal/ops.py monitor
+    uv run python scripts/internal/ops.py monitor || true
     ```
+    **Note:** The monitor command exits non-zero when it finds HIGH-severity
+    items — this is expected behavior, not an error.  The `|| true` prevents
+    the shell from treating findings as a command failure.  Always parse the
+    full stdout regardless of exit code.
+
     The monitor command:
     - Collects lane, PR, and task findings
     - Updates the controller projection (`fleet_status.json`)

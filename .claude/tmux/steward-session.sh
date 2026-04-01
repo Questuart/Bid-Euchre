@@ -120,10 +120,16 @@ merge_settings_local() {
     mkdir -p "$dir"
     if [ -f "$file_path" ]; then
         local merged
-        merged="$(jq --argjson frag "$fragment" '. + $frag' "$file_path")"
+        merged="$(jq --argjson frag "$fragment" '. * $frag' "$file_path")" || {
+            echo "merge_settings_local: jq merge failed for $file_path" >&2
+            return 1
+        }
         printf '%s\n' "$merged" > "$file_path"
     else
-        printf '%s\n' "$fragment" | jq '.' > "$file_path"
+        printf '%s\n' "$fragment" | jq '.' > "$file_path" || {
+            echo "merge_settings_local: jq format failed for $file_path" >&2
+            return 1
+        }
     fi
 }
 
