@@ -73,6 +73,29 @@ header h1 a:hover {
     text-decoration: underline;
 }
 
+.header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+}
+
+.header-nav {
+    display: flex;
+    gap: 1rem;
+}
+
+.header-nav a {
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+}
+
+.header-nav a:hover {
+    color: var(--color-text);
+    text-decoration: underline;
+}
+
 /* --------------------------------------------------------------------------
    2. Main / Game Board Container
    -------------------------------------------------------------------------- */

@@ -26,6 +26,7 @@ from bid_euchre.strategy.bidding import BidAction
 
 from .ai_manager import AIManager
 from .db import Decision, Hand, InviteCode, Match, Player
+from .leaderboard import get_leaderboard
 from .middleware import check_match_limit
 
 router = APIRouter()
@@ -1210,6 +1211,41 @@ async def new_match(
                     "models": models,
                 }
             )
+        )
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Leaderboard
+# ---------------------------------------------------------------------------
+
+
+@router.get("/leaderboard/{link_uuid}", response_class=HTMLResponse)
+async def leaderboard(request: Request, link_uuid: str):
+    """Leaderboard page — ranked table of player stats.
+
+    Gated behind invite-code auth: the ``link_uuid`` must correspond to a
+    valid player (created via invite code redemption).  Returns 404 for
+    unknown UUIDs.
+    """
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Player not found")
+
+        rankings = get_leaderboard(session)
+
+        return templates.TemplateResponse(
+            "leaderboard.html",
+            {
+                "request": request,
+                "link_uuid": link_uuid,
+                "nickname": player.nickname,
+                "rankings": rankings,
+            },
         )
     finally:
         session.close()

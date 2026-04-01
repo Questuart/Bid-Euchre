@@ -25,7 +25,15 @@
 <body>
     <a href="#main-content" class="skip-link">Skip to game</a>
     <header role="banner">
-        <h1><a href="/" aria-label="Bid Euchre home">Bid Euchre</a></h1>
+        <div class="header-bar">
+            <h1><a href="/" aria-label="Bid Euchre home">Bid Euchre</a></h1>
+            {% if link_uuid is defined and link_uuid %}
+            <nav class="header-nav" aria-label="Main navigation">
+                <a href="/play/{{ link_uuid }}">Game</a>
+                <a href="/leaderboard/{{ link_uuid }}">Leaderboard</a>
+            </nav>
+            {% endif %}
+        </div>
     </header>
     <main id="main-content" role="main">
         {% block content %}{% endblock %}

@@ -16,8 +16,8 @@ the leaderboard and forum depend on.
 
 | Step | Status | Validates | Date | Agent/Session | Notes |
 |------|--------|-----------|------|---------------|-------|
-| Step 1: Leaderboard data model and backend | PENDING | Player stats aggregation queries return correct net_eppd, games_won, win_rate, avg_margin_victory, matches_played | -- | -- | SP-AC-01 |
-| Step 2: Leaderboard route and UI tab | PENDING | `/leaderboard` route renders ranked table within shared invited-user shell; invite-only gated | -- | -- | SP-AC-01 |
+| Step 1: Leaderboard data model and backend | COMPLETE | Player stats aggregation queries return correct net_eppd, games_won, win_rate, avg_margin_victory, matches_played | 2026-04-01 | brws-author-a | SP-AC-01 |
+| Step 2: Leaderboard route and UI tab | COMPLETE | `/leaderboard` route renders ranked table within shared invited-user shell; invite-only gated | 2026-04-01 | brws-author-a | SP-AC-01 |
 | Step 3: Forum data model and backend | PENDING | Post CRUD, category assignment, and hide/unhide moderation work at the DB layer | -- | -- | SP-AC-02 |
 | Step 4: Forum route and UI tab | PENDING | `/forum` route renders post list and create-post form within shared invited-user shell; invite-only gated | -- | -- | SP-AC-02 |
 | Step 5: Claude bot constraints | PENDING | Claude (bot) user is labeled automated, cannot admin invites, cannot moderate, cannot edit/delete others, respects rate limits (1 active match, 3 completed/24h, 3 forum posts/24h) | -- | -- | SP-AC-02 |

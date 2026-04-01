@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}Bid Euchre — Leaderboard{% endblock %}
+
+{% block head %}
+<style>
+    .leaderboard {
+        max-width: 960px;
+        margin: 1rem auto;
+        padding: 0 1rem;
+    }
+
+    .leaderboard__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .leaderboard__title {
+        font-size: 1.5rem;
+        margin: 0;
+    }
+
+    .leaderboard__back {
+        color: var(--color-text-muted);
+        text-decoration: none;
+        font-size: 0.9rem;
+    }
+
+    .leaderboard__back:hover {
+        color: var(--color-text);
+        text-decoration: underline;
+    }
+
+    .leaderboard__empty {
+        text-align: center;
+        padding: 3rem 1rem;
+        color: var(--color-text-muted);
+    }
+
+    .leaderboard__table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .leaderboard__table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+
+    .leaderboard__table th,
+    .leaderboard__table td {
+        padding: 0.5rem 0.75rem;
+        text-align: right;
+        white-space: nowrap;
+        border-bottom: 1px solid var(--color-surface-light);
+    }
+
+    .leaderboard__table th:first-child,
+    .leaderboard__table td:first-child {
+        text-align: center;
+        width: 2.5rem;
+    }
+
+    .leaderboard__table th:nth-child(2),
+    .leaderboard__table td:nth-child(2) {
+        text-align: left;
+    }
+
+    .leaderboard__table thead th {
+        background: var(--color-surface);
+        color: var(--color-text-muted);
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .leaderboard__table tbody tr:hover {
+        background: var(--color-surface-light);
+    }
+
+    .leaderboard__table .rank-col { width: 2.5rem; }
+    .leaderboard__table .name-col { min-width: 8rem; }
+    .leaderboard__table .primary-col {
+        font-weight: 600;
+        color: var(--color-moon);
+    }
+
+    .leaderboard__table .positive { color: var(--color-positive); }
+    .leaderboard__table .negative { color: var(--color-negative); }
+
+    .leaderboard__toggle {
+        margin-top: 0.75rem;
+        text-align: center;
+    }
+
+    .leaderboard__toggle button {
+        background: var(--color-surface);
+        color: var(--color-text-muted);
+        border: 1px solid var(--color-surface-light);
+        padding: 0.4rem 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8rem;
+    }
+
+    .leaderboard__toggle button:hover {
+        background: var(--color-surface-light);
+        color: var(--color-text);
+    }
+
+    /* Secondary columns hidden by default */
+    .secondary-col { display: none; }
+    .leaderboard__table.show-secondary .secondary-col { display: table-cell; }
+
+    @media (max-width: 600px) {
+        .leaderboard__table { font-size: 0.75rem; }
+        .leaderboard__table th,
+        .leaderboard__table td { padding: 0.35rem 0.4rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="leaderboard" role="region" aria-label="Player leaderboard">
+    <div class="leaderboard__header">
+        <h2 class="leaderboard__title">Leaderboard</h2>
+        <a href="/play/{{ link_uuid }}" class="leaderboard__back">Back to Game</a>
+    </div>
+
+    {% if rankings|length == 0 %}
+    <div class="leaderboard__empty">
+        <p>No completed matches yet. Play a game to appear on the leaderboard!</p>
+    </div>
+    {% else %}
+    <div class="leaderboard__table-wrap">
+        <table class="leaderboard__table" id="leaderboard-table"
+               role="table" aria-label="Player rankings">
+            <thead>
+                <tr>
+                    <th class="rank-col" scope="col">#</th>
+                    <th class="name-col" scope="col">Player</th>
+                    <th class="primary-col" scope="col" title="Net expected points per deal">Net EPPD</th>
+                    <th scope="col">Won</th>
+                    <th scope="col" title="Win percentage">Win %</th>
+                    <th scope="col" title="Average margin when winning">Avg Margin</th>
+                    <th scope="col">Matches</th>
+                    {# Secondary columns — toggled via JS #}
+                    <th class="secondary-col" scope="col">Hands</th>
+                    <th class="secondary-col" scope="col" title="Average match score margin">Match Margin</th>
+                    <th class="secondary-col" scope="col" title="Fraction of hands declaring">Bid %</th>
+                    <th class="secondary-col" scope="col" title="Fraction of contracts made">Make %</th>
+                    <th class="secondary-col" scope="col" title="Average bid level">Avg Bid</th>
+                    <th class="secondary-col" scope="col" title="Moon call rate">Moon %</th>
+                    <th class="secondary-col" scope="col" title="Moon make rate">Moon Make</th>
+                    <th class="secondary-col" scope="col" title="Loner call rate">Loner %</th>
+                    <th class="secondary-col" scope="col" title="Loner make rate">Loner Make</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in rankings %}
+                <tr>
+                    <td class="rank-col">{{ loop.index }}</td>
+                    <td class="name-col">{{ entry.nickname or "Anonymous" }}</td>
+                    <td class="primary-col {% if entry.net_eppd > 0 %}positive{% elif entry.net_eppd < 0 %}negative{% endif %}">
+                        {{ "%.3f"|format(entry.net_eppd) }}
+                    </td>
+                    <td>{{ entry.games_won }}</td>
+                    <td>{{ "%.1f"|format(entry.win_rate * 100) }}%</td>
+                    <td>{{ "%.1f"|format(entry.avg_margin_victory) }}</td>
+                    <td>{{ entry.matches_played }}</td>
+                    {# Secondary columns #}
+                    <td class="secondary-col">{{ entry.hands_played }}</td>
+                    <td class="secondary-col {% if entry.avg_match_margin > 0 %}positive{% elif entry.avg_match_margin < 0 %}negative{% endif %}">
+                        {{ "%.1f"|format(entry.avg_match_margin) }}
+                    </td>
+                    <td class="secondary-col">{{ "%.1f"|format(entry.bid_rate * 100) }}%</td>
+                    <td class="secondary-col">{{ "%.1f"|format(entry.make_rate * 100) }}%</td>
+                    <td class="secondary-col">{{ "%.1f"|format(entry.avg_bid_level) }}</td>
+                    <td class="secondary-col">{{ "%.1f"|format(entry.moon_call_rate * 100) }}%</td>
+                    <td class="secondary-col">{{ "%.1f"|format(entry.moon_make_rate * 100) }}%</td>
+                    <td class="secondary-col">{{ "%.1f"|format(entry.loner_call_rate * 100) }}%</td>
+                    <td class="secondary-col">{{ "%.1f"|format(entry.loner_make_rate * 100) }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="leaderboard__toggle">
+        <button type="button" id="toggle-secondary"
+                onclick="document.getElementById('leaderboard-table').classList.toggle('show-secondary'); this.textContent = this.textContent === 'Show More Stats' ? 'Show Less' : 'Show More Stats'">
+            Show More Stats
+        </button>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
