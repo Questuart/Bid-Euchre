@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 # Add scripts/internal to path for imports
 sys.path.insert(
     0, str(Path(__file__).resolve().parent.parent.parent / "scripts" / "internal")
@@ -27,6 +29,19 @@ from codex_review_adapter import (
     invoke_codex_cli,
     parse_codex_output,
 )
+
+
+@pytest.fixture(autouse=True)
+def _mock_codex_auth():
+    """Mock Codex auth pre-check so tests pass in CI without Codex login.
+
+    The ``check_codex_auth()`` function runs ``codex login status`` as a
+    real subprocess.  In CI there is no Codex installation, so the check
+    fails and short-circuits every test that exercises ``invoke_codex_cli``.
+    """
+    with patch("codex_review_adapter.check_codex_auth", return_value=(True, "mocked")):
+        yield
+
 
 # --- Fixture: Codex CLI output samples ---
 
