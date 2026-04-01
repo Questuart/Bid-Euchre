@@ -68,9 +68,13 @@ class AIManager:
     # ------------------------------------------------------------------
 
     def _load_models(self, config: HostedPlayConfig) -> None:
-        """Register and preload the approved browser roster."""
-        self._try_load_olsa(config)
+        """Register and preload the approved browser roster.
+
+        Bud Bot is loaded first so it appears first in the UI dropdown
+        (default opponent).  OLSa follows as the "Easy" alternative.
+        """
         self._try_load_bud_bot(config)
+        self._try_load_olsa(config)
 
         expected_roster = {"olsa", "bud_bot"}
         missing_models = sorted(expected_roster - self.available_models.keys())
@@ -124,8 +128,8 @@ class AIManager:
 
                 self.available_models["olsa"] = ModelInfo(
                     id="olsa",
-                    name="OLSa",
-                    description=("Action-value bidder with Glutton card play."),
+                    name="OLSa (Easy)",
+                    description=("Conservative action-value bidder — easier opponent."),
                     bidding_policy=ActionValueBidder(
                         artifact_path=path,
                         name="olsa",

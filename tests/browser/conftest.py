@@ -116,7 +116,7 @@ def live_server(_db_path: str) -> Generator[str, None, None]:
         secret_key="test-browser-secret",
         allowed_origins=["*"],
         app_url=f"http://127.0.0.1:{port}",
-        default_model_id="olsa",
+        default_model_id="bud_bot",
         olsa_artifact=olsa_artifact,
         gbt_artifact=gbt_artifact,
         debug=True,

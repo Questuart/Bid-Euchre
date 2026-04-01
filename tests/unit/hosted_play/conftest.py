@@ -207,7 +207,7 @@ def make_hosted_play_test_config(tmp_path: Path, **overrides: Any) -> HostedPlay
     olsa_artifact, gbt_artifact = create_browser_ai_test_artifacts(tmp_path)
     defaults: dict[str, Any] = {
         "database_url": f"sqlite:///{db_path}",
-        "default_model_id": "olsa",
+        "default_model_id": "bud_bot",
         "olsa_artifact": olsa_artifact,
         "gbt_artifact": gbt_artifact,
     }

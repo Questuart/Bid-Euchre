@@ -57,10 +57,10 @@ class TestBrowserRoster:
             )
         )
 
-        assert list(mgr.available_models) == ["olsa", "bud_bot"]
+        assert list(mgr.available_models) == ["bud_bot", "olsa"]
 
         olsa = mgr.get_model_info("olsa")
-        assert olsa.name == "OLSa"
+        assert olsa.name == "OLSa (Easy)"
         assert isinstance(olsa.bidding_policy, ActionValueBidder)
         assert isinstance(olsa.play_strategy, GluttonStrategy)
 
@@ -77,7 +77,7 @@ class TestBrowserRoster:
                 gbt_artifact=gbt_artifact,
             )
         )
-        assert [model.id for model in mgr.list_available()] == ["olsa", "bud_bot"]
+        assert [model.id for model in mgr.list_available()] == ["bud_bot", "olsa"]
 
     def test_default_model_must_be_in_roster(self, tmp_path):
         olsa_artifact, gbt_artifact = create_browser_ai_test_artifacts(tmp_path)

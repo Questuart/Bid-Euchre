@@ -72,23 +72,37 @@ class ModelStub:
 class TestModelSelect:
     def test_renders_models_dropdown(self, env):
         models = [
-            ModelStub("olsa", "OLSa", "Action-value bidder"),
             ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder"),
+            ModelStub("olsa", "OLSa (Easy)", "Conservative action-value bidder"),
         ]
         tmpl = env.get_template("partials/model_select.html")
-        html = tmpl.render(link_uuid="abc-123", nickname="Alice", models=models)
+        html = tmpl.render(
+            link_uuid="abc-123",
+            nickname="Alice",
+            models=models,
+            default_model_id="bud_bot",
+        )
         assert 'value="olsa"' in html
-        assert "OLSa" in html
+        assert "OLSa (Easy)" in html
         assert 'value="bud_bot"' in html
         assert "Bud Bot" in html
         assert "Alice" in html
         assert 'action="/play/abc-123/select-ai"' in html
+        # Bud Bot should be pre-selected as default
+        assert 'value="bud_bot" selected' in html
+        # OLSa should NOT be pre-selected
+        assert 'value="olsa" selected' not in html
 
     def test_renders_single_model(self, env):
-        models = [ModelStub("olsa", "OLSa", "Action-value bidder")]
+        models = [ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder")]
         tmpl = env.get_template("partials/model_select.html")
-        html = tmpl.render(link_uuid="x", nickname="Bob", models=models)
-        assert 'value="olsa"' in html
+        html = tmpl.render(
+            link_uuid="x",
+            nickname="Bob",
+            models=models,
+            default_model_id="bud_bot",
+        )
+        assert 'value="bud_bot"' in html
         assert "Start Match" in html
 
 
@@ -1825,9 +1839,14 @@ class TestAccessibilityForms:
         assert 'aria-label="Set your nickname"' in html
 
     def test_model_select_has_region(self, env):
-        models = [ModelStub("olsa", "OLSa", "Action-value bidder")]
+        models = [ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder")]
         tmpl = env.get_template("partials/model_select.html")
-        html = tmpl.render(link_uuid="x", nickname="Bob", models=models)
+        html = tmpl.render(
+            link_uuid="x",
+            nickname="Bob",
+            models=models,
+            default_model_id="bud_bot",
+        )
         assert 'role="region"' in html
         assert 'aria-label="Choose AI opponent"' in html
 
