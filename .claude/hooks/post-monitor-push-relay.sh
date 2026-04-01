@@ -54,8 +54,8 @@ fi
 
 # Build the additionalContext delivery instruction.
 # Use a prominent format that the orchestrator can't miss in conversation context.
-# Truncate message to first 2000 chars to avoid oversized context injection.
-TRUNCATED_MESSAGE="${MESSAGE:0:2000}"
+# Truncate message to Telegram's 4096-char limit to avoid oversized context injection.
+TRUNCATED_MESSAGE="${MESSAGE:0:4096}"
 
 CONTEXT="TELEGRAM ALERT PUSH (chat_id=${CHAT_ID}):
 ${TRUNCATED_MESSAGE}
