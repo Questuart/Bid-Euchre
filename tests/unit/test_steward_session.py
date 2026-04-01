@@ -835,12 +835,11 @@ class TestTelegramSingleReceiver:
             assert (
                 f'"{var}"' in content
             ), f"Non-orchestrator worktree {var} must be covered by plugin disablement"
-        # Must write empty enabledPlugins
+        # Must explicitly disable the Telegram plugin
         assert (
-            '"enabledPlugins":{}' in content
-            or "'enabledPlugins':{}'" in content
-            or '"enabledPlugins": {}' in content
-        ), "Non-orchestrator worktrees must receive empty enabledPlugins"
+            '"telegram@claude-plugins-official":false' in content
+            or '"telegram@claude-plugins-official": false' in content
+        ), "Non-orchestrator worktrees must explicitly disable the Telegram plugin"
 
     def test_negative_enforcement_inside_enabled_guard(self) -> None:
         """Bug 2: Plugin disablement loop must be inside STEWARD_TELEGRAM_ENABLED=1 guard."""
@@ -857,7 +856,8 @@ class TestTelegramSingleReceiver:
                     break
         guard_text = "\n".join(guard_body)
         assert (
-            '"enabledPlugins":{}' in guard_text or '"enabledPlugins": {}' in guard_text
+            '"telegram@claude-plugins-official":false' in guard_text
+            or '"telegram@claude-plugins-official": false' in guard_text
         ), "Non-orchestrator plugin disablement must be inside the TELEGRAM_ENABLED=1 guard"
 
     def test_telegram_receiver_env_set(self) -> None:
@@ -953,8 +953,8 @@ cat "{target}"
         assert data["enabledPlugins"]["telegram@claude-plugins-official"] is True
         assert data["someOtherKey"] == 42, "Existing keys must be preserved"
 
-    def test_merge_settings_local_empty_plugins(self, tmp_path: Path) -> None:
-        """Functional test: merging empty enabledPlugins overrides existing plugins."""
+    def test_merge_settings_local_explicit_disable(self, tmp_path: Path) -> None:
+        """Functional test: explicit false overrides existing plugin enable via deep merge."""
         target = tmp_path / ".claude" / "settings.local.json"
         # Pre-populate with a plugin enabled
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -975,13 +975,13 @@ merge_settings_local() {{
     mkdir -p "$dir"
     if [ -f "$file_path" ]; then
         local merged
-        merged="$(jq --argjson frag "$fragment" '. + $frag' "$file_path")"
+        merged="$(jq --argjson frag "$fragment" '. * $frag' "$file_path")"
         printf '%s\\n' "$merged" > "$file_path"
     else
         printf '%s\\n' "$fragment" | jq '.' > "$file_path"
     fi
 }}
-merge_settings_local "{target}" '{{"enabledPlugins":{{}}}}'
+merge_settings_local "{target}" '{{"enabledPlugins":{{"telegram@claude-plugins-official":false}}}}'
 cat "{target}"
 """,
             ],
@@ -991,8 +991,8 @@ cat "{target}"
         assert result.returncode == 0, f"stderr: {result.stderr}"
         data = json.loads(target.read_text())
         assert (
-            data["enabledPlugins"] == {}
-        ), "Empty enabledPlugins must override existing plugins"
+            data["enabledPlugins"]["telegram@claude-plugins-official"] is False
+        ), "Explicit false must override existing plugin enable"
 
 
 class TestBoundaryValidation:

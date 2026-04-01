@@ -411,7 +411,7 @@ if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
                "$REVIEW" "$OPS"; do
         if [ -d "$_wt" ]; then
             merge_settings_local "$_wt/.claude/settings.local.json" \
-                '{"enabledPlugins":{}}'
+                '{"enabledPlugins":{"telegram@claude-plugins-official":false}}'
         fi
     done
     unset _wt
