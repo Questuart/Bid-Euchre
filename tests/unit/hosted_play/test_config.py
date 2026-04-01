@@ -25,7 +25,7 @@ class TestHostedPlayConfigDefaults:
 
     def test_default_model_id(self):
         cfg = HostedPlayConfig()
-        assert cfg.default_model_id == "olsa"
+        assert cfg.default_model_id == "bud_bot"
 
     def test_default_olsa_artifact(self):
         cfg = HostedPlayConfig()
@@ -215,7 +215,7 @@ class TestFromEnv:
         assert cfg.secret_key.startswith("dev-insecure-")
         assert cfg.allowed_origins == ["*"]
         assert cfg.app_url == "http://localhost:8000"
-        assert cfg.default_model_id == "olsa"
+        assert cfg.default_model_id == "bud_bot"
         assert (
             cfg.olsa_artifact
             == "data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json"

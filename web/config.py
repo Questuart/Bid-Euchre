@@ -68,7 +68,7 @@ class HostedPlayConfig:
     app_url: str = "http://localhost:8000"
 
     # AI model roster ---------------------------------------------------
-    default_model_id: str = "olsa"
+    default_model_id: str = "bud_bot"
     olsa_artifact: str | None = _DEFAULT_OLSA_ARTIFACT
     gbt_artifact: str | None = _DEFAULT_GBT_ARTIFACT
     models_dir: str | None = None
@@ -91,7 +91,7 @@ class HostedPlayConfig:
             secret_key=os.environ.get("SECRET_KEY", _default_secret_key()),
             allowed_origins=_parse_origins(raw_origins),
             app_url=os.environ.get("APP_URL", "http://localhost:8000"),
-            default_model_id=os.environ.get("DEFAULT_MODEL_ID", "olsa"),
+            default_model_id=os.environ.get("DEFAULT_MODEL_ID", "bud_bot"),
             olsa_artifact=os.environ.get("OLSA_ARTIFACT", _DEFAULT_OLSA_ARTIFACT),
             gbt_artifact=os.environ.get("GBT_ARTIFACT", _DEFAULT_GBT_ARTIFACT),
             models_dir=os.environ.get("MODELS_DIR"),

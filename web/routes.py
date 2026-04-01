@@ -676,6 +676,7 @@ async def game_page(request: Request, link_uuid: str):
                     "link_uuid": link_uuid,
                     "nickname": player.nickname,
                     "models": models,
+                    "default_model_id": ai_manager.default_model_id,
                 },
             )
 
@@ -718,6 +719,7 @@ async def set_nickname(
                     "link_uuid": link_uuid,
                     "nickname": nickname,
                     "models": models,
+                    "default_model_id": ai_manager.default_model_id,
                 }
             )
         )
@@ -1209,6 +1211,7 @@ async def new_match(
                     "link_uuid": link_uuid,
                     "nickname": player.nickname or "Player",
                     "models": models,
+                    "default_model_id": ai_manager.default_model_id,
                 }
             )
         )
