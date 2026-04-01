@@ -364,6 +364,12 @@ def _build_game_context(
         visible["auction"] = visible.get("auction", [])[: hand.revealed_auction_count]
         visible["contract_type"] = None
         visible["trump"] = None
+        # Hide trick-play state leaked by engine auto-advance — the user
+        # hasn't finished revealing auction bids yet.
+        visible["current_trick"] = None
+        visible["completed_tricks"] = []
+        visible["tricks_team0"] = 0
+        visible["tricks_team1"] = 0
     if hand is not None and hand.phase == "trick_play" and hand.paused_after_trick:
         visible["current_trick"] = None
 
@@ -415,10 +421,18 @@ def _build_game_context(
                 else "Choose 2 cards to give to the mooner"
             )
 
-        # AI hand card counts (face-down display)
-        ctx["opp_left_count"] = len(hand.hands[1]) if len(hand.hands) > 1 else 0
-        ctx["partner_count"] = len(hand.hands[2]) if len(hand.hands) > 2 else 0
-        ctx["opp_right_count"] = len(hand.hands[3]) if len(hand.hands) > 3 else 0
+        # AI hand card counts (face-down display).
+        # During hidden-auction reveal the engine may have auto-advanced
+        # into trick play (reducing AI hand sizes), but the user hasn't
+        # seen the auction result yet — show pre-play counts.
+        if _has_hidden_auction(hand):
+            ctx["opp_left_count"] = 10
+            ctx["partner_count"] = 10
+            ctx["opp_right_count"] = 10
+        else:
+            ctx["opp_left_count"] = len(hand.hands[1]) if len(hand.hands) > 1 else 0
+            ctx["partner_count"] = len(hand.hands[2]) if len(hand.hands) > 2 else 0
+            ctx["opp_right_count"] = len(hand.hands[3]) if len(hand.hands) > 3 else 0
     else:
         ctx["winning_bid"] = None
         ctx["bidder_seat"] = None
