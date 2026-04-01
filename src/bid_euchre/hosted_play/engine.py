@@ -342,6 +342,11 @@ class MatchEngine:
         # Re-sort human hand with bower awareness
         sort_hand_for_display(hand.hands[HUMAN_SEAT], hand.contract_type, hand.trump)
 
+        # Auto-advance AI just like submit_human_bid/submit_human_card.
+        # Without this, the game is stuck when the leader (bidder) is an AI
+        # seat because no mechanism triggers AI card play after exchange.
+        state = self._advance_ai(state)
+
         return state
 
     def get_legal_bids(self, state: MatchState) -> list[BidAction]:

@@ -1487,6 +1487,140 @@ class TestInteractiveMoonExchange:
 
 
 # ---------------------------------------------------------------------------
+# Test 14c: Moon exchange — AI advance after exchange (#1910)
+# ---------------------------------------------------------------------------
+
+
+class TestMoonExchangeAIAdvance:
+    """After moon exchange, AI auto-advances when the leader is an AI seat.
+
+    Regression tests for #1910: the game was stuck after a moon exchange
+    when the bidder (who leads the first trick) was an AI, because
+    ``submit_exchange_selection`` did not call ``_advance_ai``.
+    """
+
+    def test_ai_mooner_advances_after_partner_exchange(self) -> None:
+        """When an AI bids moon and human is the partner, AI leads after exchange.
+
+        After submit_exchange_selection, the engine must auto-advance AI
+        so that the game isn't stuck on the AI leader's turn.
+        """
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        # Find a seed where seat 2 (AI Partner) bids moon.
+        # The human (seat 0) is the partner — exchange is interactive.
+        for seed in range(1000):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if hand is None:
+                continue
+
+            # If human's turn in auction, pass (so AI partner can bid)
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+                hand = state.current_hand
+                if hand is None:
+                    continue
+
+            # Look for interactive exchange where seat 2 is the mooner
+            if hand.phase == "moon_exchange" and hand.bidder_seat == 2:
+                assert hand.exchange_phase == "selecting"
+
+                # Human is the partner — select 2 cards to give
+                state = engine.submit_exchange_selection(state, [0, 1])
+                hand = state.current_hand
+                assert hand is not None
+
+                # After exchange + AI advance, the game must be playable:
+                # sitting_out_seat is None (moon, not loner)
+                assert hand.sitting_out_seat is None
+
+                # If trick play: current_seat should be HUMAN_SEAT
+                # (the AI leader and subsequent AI seats should have
+                # already played via _advance_ai)
+                if hand.phase == "trick_play":
+                    assert hand.current_seat == HUMAN_SEAT, (
+                        f"Game stuck on AI seat {hand.current_seat}; "
+                        f"_advance_ai did not run after exchange"
+                    )
+                    # AI should have played cards already
+                    assert hand.current_trick is not None
+                    assert len(hand.current_trick.plays) > 0
+                return
+
+        pytest.skip("No seed found where AI Partner (seat 2) bids moon")
+
+    def test_moon_no_sitting_out_after_exchange(self) -> None:
+        """Moon bids must never set sitting_out_seat — all 4 players play.
+
+        This is the core invariant that distinguishes moon from loner.
+        """
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        found = False
+        for seed in range(500):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if hand is None:
+                continue
+
+            # Pass if it's the human's turn
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+                hand = state.current_hand
+                if hand is None:
+                    continue
+
+            # Handle interactive exchange
+            if hand.phase == "moon_exchange":
+                state = engine.submit_exchange_selection(state, [0, 1])
+                hand = state.current_hand
+                assert hand is not None
+
+            if hand.bid_type == "moon":
+                assert hand.sitting_out_seat is None, (
+                    f"Moon bid should never set sitting_out_seat, "
+                    f"got {hand.sitting_out_seat}"
+                )
+                found = True
+
+        assert found, "No moon bid occurred across 500 seeds"
+
+    def test_human_mooner_leads_after_exchange(self) -> None:
+        """When human bids moon and is the leader, no AI advance is needed."""
+        engine = MatchEngine(
+            bidding_policy=AlwaysPassBidder(),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.moon("S"))
+            hand = state.current_hand
+            assert hand is not None
+
+            if hand.phase == "moon_exchange":
+                state = engine.submit_exchange_selection(state, [0, 1])
+                hand = state.current_hand
+                assert hand is not None
+
+                # Human bid moon → human leads → current_seat is HUMAN_SEAT
+                if hand.phase == "trick_play":
+                    assert hand.current_seat == HUMAN_SEAT
+                    assert hand.bidder_seat == HUMAN_SEAT
+                    assert hand.sitting_out_seat is None
+                    # No AI plays yet — human leads
+                    assert hand.current_trick is not None
+                    assert len(hand.current_trick.plays) == 0
+
+
+# ---------------------------------------------------------------------------
 # Test 15: Loner sit-out trick flow
 # ---------------------------------------------------------------------------
 
