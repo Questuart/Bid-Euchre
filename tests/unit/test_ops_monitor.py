@@ -4175,6 +4175,45 @@ class TestPushRelayOutput:
         assert "test alert" in ctx
         assert "DELIVER NOW" in ctx
 
+    def test_hook_script_preserves_messages_up_to_4096_chars(self) -> None:
+        """Regression: messages up to Telegram's 4096-char limit are not truncated.
+
+        Previously the hook truncated at 2000 chars (#1988). Telegram supports
+        4096, so messages within that limit must be relayed intact.
+        """
+        import json
+        import subprocess
+
+        hook_path = Path(__file__).resolve().parents[2] / (
+            ".claude/hooks/post-monitor-push-relay.sh"
+        )
+        if not hook_path.exists():
+            pytest.skip("hook script not found in worktree")
+
+        # Build a message that is 3000 chars — was truncated before the fix
+        long_message = "A" * 3000
+        relay = json.dumps({"chat_id": "42", "message": long_message})
+        stdout_content = f"Some findings\nPUSH_RELAY:{relay}"
+        payload = json.dumps(
+            {
+                "tool_input": {"command": "ops.py monitor"},
+                "tool_response": {"exit_code": 1, "stdout": stdout_content},
+            }
+        )
+
+        result = subprocess.run(
+            [str(hook_path)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        # The full 3000-char message must appear — no truncation at 2000
+        assert long_message in ctx
+
     def test_hook_script_silent_on_no_push(self) -> None:
         """The hook emits nothing when no PUSH_RELAY: marker in stdout."""
         import json
