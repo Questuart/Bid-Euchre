@@ -114,6 +114,8 @@
       "Write(.claude/rules/**)",
       "Edit(.claude/settings.json)",
       "Write(.claude/settings.json)",
+      "Edit(.claude/runtime/**)",
+      "Write(.claude/runtime/**)",
       "Edit(MEMORY.md)",
       "Write(MEMORY.md)",
       "Edit(plans/**)",
