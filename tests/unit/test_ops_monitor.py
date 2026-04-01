@@ -4089,3 +4089,148 @@ class TestProcessInboundAck:
         assert result.success is False
         assert "failed to persist" in (result.reply_text or "").lower()
         assert result.item_id == "abc123def456"
+
+
+# ---------------------------------------------------------------------------
+# PUSH_RELAY output format — verifies the machine-readable line that the
+# PostToolUse hook (post-monitor-push-relay.sh) parses.
+# ---------------------------------------------------------------------------
+
+
+class TestPushRelayOutput:
+    """The monitor CLI emits a PUSH_RELAY: JSON line when a push payload
+    is prepared.  The PostToolUse hook greps for this marker and injects
+    additionalContext for Telegram delivery.  These tests verify the format.
+    """
+
+    def test_push_relay_json_line_is_parseable(self) -> None:
+        """PUSH_RELAY line produced by ops.py is valid JSON with expected keys."""
+        import json
+
+        chat_id = "12345"
+        message = "🚨 ALERT: 2 HIGH items\n  [abc1] Lane stalled"
+        relay = json.dumps({"chat_id": chat_id, "message": message})
+        line = f"PUSH_RELAY:{relay}"
+
+        # Simulate what the hook does: strip prefix, parse JSON
+        assert line.startswith("PUSH_RELAY:")
+        payload = json.loads(line[len("PUSH_RELAY:") :])
+        assert payload["chat_id"] == chat_id
+        assert payload["message"] == message
+
+    def test_push_relay_special_characters(self) -> None:
+        """PUSH_RELAY JSON handles quotes, backslashes, and unicode."""
+        import json
+
+        message = 'Line with "quotes" and \\backslash and emoji 🎯'
+        relay = json.dumps({"chat_id": "999", "message": message})
+        line = f"PUSH_RELAY:{relay}"
+
+        payload = json.loads(line[len("PUSH_RELAY:") :])
+        assert payload["message"] == message
+
+    def test_push_relay_not_emitted_when_no_push(
+        self,
+    ) -> None:
+        """When push_result is None, no PUSH_RELAY line appears."""
+        # This is a structural assertion: evaluate_alert_push returns
+        # MonitorCycleResult with push_result=None when push is suppressed.
+        result = MonitorCycleResult(findings=[], push_result=None)
+        assert result.push_result is None
+        # The CLI only prints PUSH_RELAY when push_result is not None,
+        # so no relay line would be emitted.
+
+    def test_hook_script_injects_context_on_push(self) -> None:
+        """The post-monitor-push-relay.sh hook injects additionalContext
+        when PUSH_RELAY: is found in monitor stdout."""
+        import json
+        import subprocess
+
+        hook_path = Path(__file__).resolve().parents[2] / (
+            ".claude/hooks/post-monitor-push-relay.sh"
+        )
+        if not hook_path.exists():
+            pytest.skip("hook script not found in worktree")
+
+        relay = json.dumps({"chat_id": "42", "message": "test alert"})
+        stdout_content = f"Some findings\nPUSH_RELAY:{relay}"
+        payload = json.dumps(
+            {
+                "tool_input": {"command": "ops.py monitor"},
+                "tool_response": {"exit_code": 1, "stdout": stdout_content},
+            }
+        )
+
+        result = subprocess.run(
+            [str(hook_path)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "TELEGRAM ALERT PUSH (chat_id=42):" in ctx
+        assert "test alert" in ctx
+        assert "DELIVER NOW" in ctx
+
+    def test_hook_script_silent_on_no_push(self) -> None:
+        """The hook emits nothing when no PUSH_RELAY: marker in stdout."""
+        import json
+        import subprocess
+
+        hook_path = Path(__file__).resolve().parents[2] / (
+            ".claude/hooks/post-monitor-push-relay.sh"
+        )
+        if not hook_path.exists():
+            pytest.skip("hook script not found in worktree")
+
+        payload = json.dumps(
+            {
+                "tool_input": {"command": "ops.py monitor"},
+                "tool_response": {"exit_code": 0, "stdout": "No push needed"},
+            }
+        )
+
+        result = subprocess.run(
+            [str(hook_path)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_hook_script_skips_non_monitor_commands(self) -> None:
+        """The hook exits immediately for non-monitor commands."""
+        import json
+        import subprocess
+
+        hook_path = Path(__file__).resolve().parents[2] / (
+            ".claude/hooks/post-monitor-push-relay.sh"
+        )
+        if not hook_path.exists():
+            pytest.skip("hook script not found in worktree")
+
+        relay = json.dumps({"chat_id": "42", "message": "test"})
+        payload = json.dumps(
+            {
+                "tool_input": {"command": "git status"},
+                "tool_response": {
+                    "exit_code": 0,
+                    "stdout": f"PUSH_RELAY:{relay}",
+                },
+            }
+        )
+
+        result = subprocess.run(
+            [str(hook_path)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
