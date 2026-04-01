@@ -17,12 +17,16 @@ If there is any conflict between code and this document, **this document wins** 
 - **Seat**: One of 4 players. Indexing convention: `0..3` (clockwise).
 - **Partnerships**: Seats `(0,2)` vs `(1,3)` unless otherwise stated.
 - **Hand**: A full deal from auction through trick play and scoring, or an **auction-only redeal event** if all players pass.
-- **Trick**: One card played by each seat (4 cards total).
+- **Trick**: One card played by each active seat (4 cards in regular hands, 3 cards in moon/loner hands).
 - **Trump**: The suit that beats non-trump cards (suit contracts only).
 - **Led suit (effective)**: The **effective suit** of the first card played in a trick (see Section 4.3). In suit contracts, the Left Bower counts as trump. In high/low contracts, effective suit equals printed suit.
 - **Legal play**: A card play permitted by the rules given the player's hand and current trick context.
 - **Bid / Contract**: The declarer's commitment: **take at least N tricks**, and the declared contract type (and trump suit for SUIT contracts).
 - **Declarer**: The seat that wins the auction by making the highest bid (largest `tricks_bid`). The declarer's team is the declaring team and must satisfy the contract.
+- **Moon bid**: A special level-10 bid (`bid_type="moon"`) that requires winning all 10 tricks. Triggers a partner exchange before play, then the partner sits out.
+- **Loner bid**: A special level-10 bid (`bid_type="loner"`) that requires winning all 10 tricks. The partner sits out with no exchange.
+- **Partner exchange**: The pre-play card swap between declarer and partner in moon hands. After the exchange, the partner sits out.
+- **Sit-out seat**: The declarer's partner in moon or loner hands, who does not participate in trick play.
 
 ### Implementation Notes
 
@@ -105,12 +109,14 @@ A bid is a tuple:
 - `tricks_bid`: integer in `[0..10]`
 - `contract_type`: one of `{"suit", "high", "low"}`
 - `trump`: one of `♠ ♥ ♦ ♣` **only if** `contract_type = "suit"` (otherwise null)
+- `bid_type`: one of `{"regular", "moon", "loner"}` (default `"regular"`)
 
 Where:
-- `tricks_bid = 0` means **PASS** (and `contract_type`/`trump` are null).
+- `tricks_bid = 0` means **PASS** (and `contract_type`/`trump`/`bid_type` are null).
 - A **bid** must have `tricks_bid >= 1`.
 - If `contract_type = "suit"`, `trump` must be provided.
 - If `contract_type ∈ {"high", "low"}`, `trump` must be null.
+- If `bid_type ∈ {"moon", "loner"}`, `tricks_bid` must be `10`.
 
 > "No minimum bid" means the first player may pass, and the first non-pass bid may be as low as **1**.
 
@@ -163,6 +169,50 @@ If all four seats pass (no `tricks_bid >= 1`):
 - The next deal is a fresh hand with a new `hand_id` and new `deal_id`.
 
 This redeal event must be logged explicitly (see Section 8).
+
+### 3.6 Moon and loner bids
+
+Moon and loner are special bids that require taking **all 10 tricks**. They use the `bid_type` field on the bid action to distinguish from regular bids.
+
+#### 3.6.1 Overcall hierarchy
+
+Bids follow a strict overcall hierarchy based on `bid_type`:
+
+1. **Regular bids** are ordered by `tricks_bid` (strictly increasing, Section 3.3).
+2. A **moon bid** (`bid_type="moon"`) overcalls any regular bid at any level, including a regular level-10 bid.
+3. A **loner bid** (`bid_type="loner"`) overcalls a moon bid and all regular bids.
+
+Within the same `bid_type`, standard strictly-increasing rules apply (Section 3.3). Because moon and loner both require `tricks_bid = 10`, at most one moon bid and one loner bid can be made per auction.
+
+#### 3.6.2 Moon pre-play: partner exchange and sit-out
+
+After a moon bid wins the auction:
+
+1. A **partner exchange** occurs: the declarer's partner gives their best cards to the declarer, who returns the same number of cards.
+2. After the exchange, the declarer's partner **sits out** for the hand.
+3. Only **three seats** participate in trick play: the declarer and both opponents.
+4. The sit-out seat plays no cards and wins no tricks.
+
+#### 3.6.3 Loner pre-play: partner sit-out
+
+After a loner bid wins the auction:
+
+1. **No card exchange** occurs.
+2. The declarer's partner **sits out** for the entire hand.
+3. Only **three seats** participate in trick play: the declarer and both opponents.
+4. The sit-out seat plays no cards and wins no tricks.
+
+#### 3.6.4 Three-player trick play (moon and loner)
+
+For both moon and loner hands:
+
+- Only 3 active seats participate: the declarer and both opponents.
+- Each trick consists of **3 cards** (one per active player).
+- All 10 tricks are played; the total remains 10.
+- The sit-out seat is skipped during trick play (no cards dealt to play, no turns taken).
+- Follow-suit rules, trick resolution, effective suit, and all other trick rules (Section 5) apply normally among the 3 active players.
+- The declarer still leads the first trick (Section 5.1).
+- The `tricks_declaring + tricks_defending = 10` invariant holds (Section 6.1).
 
 ---
 
@@ -265,7 +315,7 @@ Example ("suit" contract, trump = ♠):
 
 ### 5.4 Determining the trick winner (contract-type aware)
 
-Given the four played cards in order:
+Given the played cards in order (4 in regular hands, 3 in moon/loner hands):
 
 1. Compute each card’s `effective_suit(card, contract_type, contract_trump)` (Section 4.3).
 2. Let `led_effective_suit` be the effective suit of the first card played.
@@ -298,6 +348,17 @@ Illegal plays MUST be prevented by the engine:
 - The engine exposes `legal_actions(state, seat)` and rejects illegal actions.
 - Policies must never be able to force an illegal action.
 
+### 5.6 Three-player trick play (moon and loner hands)
+
+In moon and loner hands, only 3 seats are active (Section 3.6.4). The following adjustments apply:
+
+- **Trick size:** Each trick consists of 3 cards (one per active player), not 4.
+- **Turn order:** The sit-out seat is skipped. Turn order among active seats follows the normal clockwise rotation, skipping the inactive seat.
+- **Follow-suit:** Applies normally among the 3 active players.
+- **Trick winner determination:** Determined by the same rules (Section 5.4) applied to the 3 played cards.
+- **Leading:** The declarer leads the first trick. Subsequent trick leaders are the winners of the previous trick, as normal (Section 5.2).
+- All other rules (effective suit, legality, bowers, duplicate tie-break) are unchanged.
+
 ---
 
 ## 6. Scoring (Per-Hand, Independent Hands)
@@ -320,7 +381,7 @@ Let:
 - `tricks_defending` be tricks won by `defending_team` (0–10)
 
 Invariant:
-- `tricks_declaring + tricks_defending = 10`
+- `tricks_declaring + tricks_defending = 10` (holds for regular, moon, and loner hands)
 
 ### 6.2 Making the bid (contract success)
 
@@ -388,9 +449,14 @@ If the auction results in an all-pass redeal event (Section 3.5):
 - No points are awarded
 - Declarer/contract fields are null
 
-### 6.6 Placeholder: match scoring (future)
+### 6.6 Match scoring
 
-A future experiment mode may aggregate per-hand points into a running match score (e.g., first to target points, fixed number of hands). This is intentionally out of scope for the current phase.
+In hosted play and match-mode experiments, per-hand points are aggregated into a running match score:
+
+- Each hand's `points_team_0` and `points_team_1` are added to running totals.
+- The match ends when either team's cumulative score reaches **+52** (win) or **-52** (loss).
+
+See `HOSTED_PLAY_RULES.md` for the hosted browser-play match scoring contract. Experiment-mode match scoring is configured via experiment YAML configs.
 
 ---
 
@@ -400,10 +466,11 @@ A future experiment mode may aggregate per-hand points into a running match scor
 
 A hand ends when one of the following occurs:
 
-- **Normal hand:** 10 tricks are completed.
+- **Normal hand (regular bid):** 10 tricks are completed (4 cards per trick).
+- **Moon or loner hand:** 10 tricks are completed (3 cards per trick, 3 active players).
 - **All-pass redeal event:** all four seats pass in the auction (Section 3.5). In this case, no tricks are played.
 
-Per-hand outcomes (tricks, make-bid, points) are computed once at the end of the hand, **only for normal hands**.
+Per-hand outcomes (tricks, make-bid, points) are computed once at the end of the hand for all non-redeal hands (regular, moon, and loner).
 
 ### 7.2 End of experiment (future)
 
@@ -521,6 +588,10 @@ These are required invariants:
 6. **All-pass redeal:** If all four pass, the result is a redeal event and must be logged as such (Section 3.5, 8.1).
 7. **First lead:** Declarer leads the first trick (Section 5.1).
 8. **Effective-suit following:** Suit-following uses **effective suit** (Section 5.3); in "suit" contracts, the Left Bower is trump for legality and trick resolution.
+9. **Moon/loner overcall hierarchy:** Loner overcalls moon, moon overcalls all regular bids, regular bids are ordered by `tricks_bid` (Section 3.6.1).
+10. **Moon exchange then sit-out:** Moon hands require a partner exchange before play, then the partner sits out. Both steps are mandatory (Section 3.6.2).
+11. **Loner sit-out only:** Loner hands have no exchange; the partner sits out directly (Section 3.6.3).
+12. **Three-player trick play:** Moon and loner hands use 3-player tricks (3 cards per trick, 10 tricks). The sit-out seat plays no cards and wins no tricks (Section 3.6.4, 5.6).
 
 ---
 
