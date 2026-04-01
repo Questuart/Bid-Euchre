@@ -108,13 +108,10 @@ Each active phase maintains a checkpoint file at:
 
 Current active phase:
 
-- Phase 4 (`4_remote_channel`) is unblocked and ready for entry. SP-3-05
-  (dual-domain layout transition) is COMPLETE — the proving run passed
-  2026-03-23. Phase 4 scaffolding exists at
-  `plans/agent_ops/4_remote_channel/plan.md` and
-  `plans/agent_ops/4_remote_channel/checkpoints.md`.
-  Phase 5 (`5_portability_and_learning`) remains unentered and depends on
-  Phase 3 completion (satisfied).
+- Phase 5 (`5_portability_and_learning`) is the next unentered phase.
+  Depends on Phase 3 completion (satisfied). Phase 4 completion (satisfied
+  2026-04-01) unblocks this phase. No scaffolding exists yet — scope lock
+  needed before entry.
 
 Completed phases:
 
@@ -122,6 +119,7 @@ Completed phases:
 - `plans/agent_ops/1_coordination_core/checkpoints.md` (Phase 1 — COMPLETE, 2026-03-21)
 - `plans/agent_ops/2_visible_operating_model/checkpoints.md` (Phase 2 — COMPLETE, 2026-03-22)
 - `plans/agent_ops/3_supervision_and_scaling/checkpoints.md` (Phase 3 — COMPLETE, 2026-03-22)
+- `plans/agent_ops/4_remote_channel/checkpoints.md` (Phase 4 — COMPLETE, 2026-04-01)
 
 Agents should treat checkpoints as the human-readable source of current step
 status, blockers, and session handoff state.
