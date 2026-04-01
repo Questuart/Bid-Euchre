@@ -105,18 +105,21 @@ def _route_ack(body: str, tag_text: str) -> str | None:
     """
     from bid_euchre.ops.monitor import process_inbound_ack  # noqa: E402
 
+    # Extract and validate chat_id before processing ack commands.
+    # A missing or empty chat_id means the tag is malformed or synthetic —
+    # we cannot route a reply without knowing the destination chat.
+    attrs = _parse_tag_attrs(tag_text)
+    chat_id = attrs.get("chat_id", "")
+    if not chat_id:
+        return None
+
     result = process_inbound_ack(body)
     if not result.is_ack_command or not result.reply_text:
         return None
 
-    # Extract chat_id so the orchestrator knows which Telegram chat to reply to.
-    attrs = _parse_tag_attrs(tag_text)
-    chat_id = attrs.get("chat_id", "")
-
     parts = [f"TELEGRAM ACK REPLY (chat_id={chat_id}):"]
     parts.append(result.reply_text)
-    if chat_id:
-        parts.append(f"→ Reply to Telegram chat {chat_id} with the above confirmation.")
+    parts.append(f"→ Reply to Telegram chat {chat_id} with the above confirmation.")
     return "\n".join(parts)
 
 
