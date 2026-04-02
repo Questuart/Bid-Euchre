@@ -16,9 +16,11 @@
 
 All core game flows — landing, invite code, opponent selection, auction,
 trick play, hand results, moon exchange, game over, history, and
-leaderboard — render and function on a 375px mobile viewport. No P1
-game-breaking bugs found on mobile (contrast with desktop report which
-found card-play 400 errors via HTMX).
+leaderboard — were exercised on a 375px mobile viewport. The httpx API
+driver completed all 5 games with no server-side errors. Visual layout
+was verified via Playwright screenshots at key states. Note: the httpx
+driver bypasses HTMX, so client-side rendering bugs (like the P1 HTMX
+state-sync issues found in the desktop report) were not tested here.
 
 ## Game Results
 
@@ -225,8 +227,8 @@ whether the HTMX-related P1 bugs also affect mobile browsers.
 # Start server
 uv run python -m uvicorn web.app:app --host 0.0.0.0 --port 8000
 
-# Automated gameplay (httpx, 5 games)
-uv run python /tmp/play_mobile_v2.py
+# Manual gameplay: open http://localhost:8000 in a 375x667 mobile viewport
+# Enter invite code MEEKSPILOT, select opponent, play through match
 ```
 
 ## Outcome
