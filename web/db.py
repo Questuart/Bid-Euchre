@@ -297,6 +297,46 @@ class InviteCode(Base):
         return f"<InviteCode id={self.id} code={self.code!r} status={self.status!r}>"
 
 
+class Comment(Base):
+    """Player comment on a game session.
+
+    Simple text-only comments, displayed newest first.  No threading,
+    editing, or deletion — a minimal community board for pilot users.
+    """
+
+    __tablename__ = "comments"
+
+    id = Column(Integer, primary_key=True)
+    player_id = Column(
+        Integer,
+        ForeignKey("players.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    match_id = Column(
+        Integer,
+        ForeignKey("matches.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    content = Column(
+        Text,
+        CheckConstraint("length(content) > 0"),
+        nullable=False,
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_comments_created", "created_at"),
+        Index("idx_comments_player", "player_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Comment id={self.id} player={self.player_id}>"
+
+
 def generate_invite_code(
     length: int = INVITE_CODE_LENGTH,
     alphabet: str = INVITE_CODE_ALPHABET,

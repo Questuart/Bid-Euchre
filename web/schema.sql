@@ -114,3 +114,19 @@ CREATE INDEX IF NOT EXISTS idx_invite_codes_code
 
 CREATE INDEX IF NOT EXISTS idx_invite_codes_status
     ON invite_codes(status);
+
+-- Comments board (expansion Phase: comments feature).
+-- Simple text-only comments, newest first.  No threading or editing.
+CREATE TABLE IF NOT EXISTS comments (
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    match_id INTEGER REFERENCES matches(id) ON DELETE CASCADE,
+    content TEXT NOT NULL CHECK (length(content) > 0),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_created
+    ON comments(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_comments_player
+    ON comments(player_id);

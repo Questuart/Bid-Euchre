@@ -2665,18 +2665,19 @@ class TestTabNavigation:
         assert resp.status_code == 200
         assert "header-nav__tab--active" in resp.text
 
-    def test_comments_tab_disabled(self, client):
-        """Comments tab is present but disabled with 'Coming soon' tooltip."""
+    def test_comments_tab_active_link(self, client):
+        """Comments tab is an active navigation link (not disabled)."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
         _select_ai(client, link_uuid)
 
         resp = client.get(f"/play/{link_uuid}")
         assert resp.status_code == 200
-        assert "header-nav__tab--disabled" in resp.text
-        assert "Coming soon" in resp.text
         assert "Comments" in resp.text
-        assert 'aria-disabled="true"' in resp.text
+        assert f"/comments/{link_uuid}" in resp.text
+        # No longer disabled
+        assert "header-nav__tab--disabled" not in resp.text
+        assert 'aria-disabled="true"' not in resp.text
 
     def test_tab_bar_uses_tablist_role(self, client):
         """The nav element uses role=tablist for accessibility."""
