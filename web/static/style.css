@@ -19,7 +19,7 @@
     --color-positive: #2e7d32;
     --color-negative: #c62828;
     --color-text: #fafafa;
-    --color-text-muted: #bdbdbd;
+    --color-text-muted: #d0d0d0;
     --color-surface: #263238;
     --color-surface-light: #37474f;
     --card-width: 60px;
@@ -1326,11 +1326,50 @@ main {
 .landing-hero {
     text-align: center;
     padding: 3rem 1rem;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Suit watermark — subtle repeating pattern behind the hero content */
+.landing-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("/static/suit-watermark.svg");
+    background-size: 120px 120px;
+    background-repeat: repeat;
+    opacity: 0.04;
+    pointer-events: none;
+}
+
+.landing-hero > * {
+    position: relative;
+    z-index: 1;
 }
 
 .landing-hero__title {
     font-size: 2rem;
     margin: 0 0 0.5rem;
+}
+
+.landing-hero__suits {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    margin: 1rem 0 1.25rem;
+    font-size: 2rem;
+    line-height: 1;
+    opacity: 0.85;
+}
+
+.landing-hero__suit--spade,
+.landing-hero__suit--club {
+    color: var(--color-text);
+}
+
+.landing-hero__suit--heart,
+.landing-hero__suit--diamond {
+    color: var(--color-red);
 }
 
 .landing-hero__subtitle {
