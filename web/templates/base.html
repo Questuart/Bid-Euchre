@@ -19,10 +19,11 @@
         }
     </style>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
     <script src="/static/game.js" defer></script>
     {% block head %}{% endblock %}
 </head>
-<body>
+<body hx-ext="morph">
     <a href="#main-content" class="skip-link">Skip to game</a>
     <header role="banner">
         <div class="header-bar">
