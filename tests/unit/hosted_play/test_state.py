@@ -278,6 +278,23 @@ class TestHandState:
         assert state.current_trick is None
         assert state.completed_tricks == []
         assert state.paused_after_trick is False
+        # auction_settled defaults to True for pre-existing games (#2134)
+        assert state.auction_settled is True
+
+    def test_round_trip_auction_settled_false(self) -> None:
+        """auction_settled=False survives serialization round-trip (#2134)."""
+        state = HandState(
+            phase="trick_play",
+            hands=[[Card("S", "A")], [Card("H", "K")], [], []],
+            dealer_seat=2,
+            deal_id=7,
+            auction_settled=False,
+        )
+        d = state.to_dict()
+        assert d["auction_settled"] is False
+        restored = HandState.from_dict(d)
+        assert restored.auction_settled is False
+        assert restored == state
 
     def test_json_serializable(self) -> None:
         state = HandState(

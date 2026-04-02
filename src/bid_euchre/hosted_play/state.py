@@ -104,6 +104,7 @@ class HandState:
     )
     exchange_revealed: bool = False  # moon: True once exchange interstitial shown
     exchange_phase: str | None = None  # "selecting" when human is choosing cards
+    auction_settled: bool = True  # False while settle pause is active after auction
     tricks_team0: int = 0
     tricks_team1: int = 0
     points_team0: int = 0
@@ -130,6 +131,7 @@ class HandState:
             "exchange_received": self.exchange_received,
             "exchange_revealed": self.exchange_revealed,
             "exchange_phase": self.exchange_phase,
+            "auction_settled": self.auction_settled,
             "current_trick": (
                 None if self.current_trick is None else self.current_trick.to_dict()
             ),
@@ -174,6 +176,7 @@ class HandState:
             exchange_received=data.get("exchange_received"),
             exchange_revealed=bool(data.get("exchange_revealed", False)),
             exchange_phase=data.get("exchange_phase"),
+            auction_settled=bool(data.get("auction_settled", True)),
             current_trick=(
                 None
                 if data.get("current_trick") is None

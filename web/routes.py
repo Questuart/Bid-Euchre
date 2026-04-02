@@ -25,7 +25,7 @@ from starlette.templating import Jinja2Templates
 logger = logging.getLogger(__name__)
 
 from bid_euchre.core.rules import trick_winner
-from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
+from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine, sort_hand_for_display
 from bid_euchre.strategy.bidding import BidAction
 
 from .ai_manager import AIManager
@@ -211,6 +211,16 @@ def _has_hidden_auction(hand) -> bool:
     return hand.revealed_auction_count < len(hand.auction)
 
 
+def _auction_reveal_active(hand) -> bool:
+    """Return True when auction reveal or settle pause is in progress.
+
+    Covers two states:
+    1. Hidden bids remain to reveal (_has_hidden_auction)
+    2. All bids revealed but settle pause not yet dismissed (!auction_settled)
+    """
+    return _has_hidden_auction(hand) or not hand.auction_settled
+
+
 def _has_pending_exchange(hand) -> bool:
     """Return True when a moon exchange happened but hasn't been shown yet."""
     return (
@@ -223,7 +233,7 @@ def _has_pending_exchange(hand) -> bool:
 def _awaiting_next(hand) -> bool:
     """Whether hosted play is paused waiting on a reveal-step advance."""
     return (
-        _has_hidden_auction(hand)
+        _auction_reveal_active(hand)
         or _has_pending_exchange(hand)
         or (hand.phase == "trick_play" and hand.paused_after_trick)
         or hand.phase == "redeal"
@@ -234,6 +244,8 @@ def _next_reason(hand) -> str | None:
     """Human-readable label for the current reveal pause."""
     if _has_hidden_auction(hand):
         return "Reveal the next auction action."
+    if not hand.auction_settled:
+        return "Auction complete. Continue to play."
     if _has_pending_exchange(hand):
         return "Review the moon exchange."
     if hand.phase == "trick_play" and hand.paused_after_trick:
@@ -256,7 +268,7 @@ def _game_phase(state) -> str:
         return "model_select"
     if hand.phase == "complete":
         return "hand_result"
-    if _has_hidden_auction(hand):
+    if _auction_reveal_active(hand):
         return "auction"
     if hand.phase == "moon_exchange" and hand.exchange_phase == "selecting":
         return "moon_exchange_select"
@@ -422,6 +434,11 @@ def _build_game_context(
         visible["auction"] = visible.get("auction", [])[: hand.revealed_auction_count]
         visible["contract_type"] = None
         visible["trump"] = None
+        # Re-sort visible hand WITHOUT trump knowledge so card order doesn't
+        # reveal trump prematurely during the hidden auction reveal (#2133).
+        auction_hand = list(hand.hands[HUMAN_SEAT])
+        sort_hand_for_display(auction_hand)  # no contract_type / trump
+        visible["human_hand"] = [[c.suit, c.rank] for c in auction_hand]
         # Hide trick-play state leaked by engine auto-advance — the user
         # hasn't finished revealing auction bids yet.
         visible["current_trick"] = None
@@ -450,6 +467,7 @@ def _build_game_context(
         ctx["current_high_bid"] = (
             0 if _has_hidden_auction(hand) else hand.current_high_bid
         )
+        ctx["auction_settled"] = hand.auction_settled
         ctx["points_team0"] = hand.points_team0
         ctx["points_team1"] = hand.points_team1
         ctx["action_rail"] = _build_action_rail(visible, state)
@@ -1066,6 +1084,11 @@ async def submit_bid(
                 len(current_hand.auction),
                 pre_auction_count + 1,
             )
+            # Activate settle pause when hidden bids remain after auto-advance.
+            # When the human bids last (no hidden bids), settle stays True and
+            # play proceeds immediately — no extra click needed (#2134).
+            if _has_hidden_auction(current_hand):
+                current_hand.auction_settled = False
 
         # Log AI decisions captured during auto-advance
         _log_ai_decisions_after_advance(
@@ -1226,6 +1249,9 @@ async def next_step(
 
         if _has_hidden_auction(hand):
             hand.revealed_auction_count += 1
+        elif not hand.auction_settled:
+            # Settle pause dismissed — all bids were visible, user acknowledged.
+            hand.auction_settled = True
         elif _has_pending_exchange(hand):
             hand.exchange_revealed = True
             # Moon: trigger deferred AI advancement.  When the human is
