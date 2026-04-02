@@ -161,9 +161,14 @@ main {
     cursor: pointer;
 }
 
-.card--legal:hover {
-    transform: translateY(-12px);
-    box-shadow: 0 0 12px var(--color-legal-glow);
+/* Hover raise only on devices with a real pointer — prevents sticky
+   :hover on mobile after HTMX swaps which makes a card appear "jumped"
+   on initial render (see fix/mobile-card-raised-initial). */
+@media (hover: hover) {
+    .card--legal:hover {
+        transform: translateY(-12px);
+        box-shadow: 0 0 12px var(--color-legal-glow);
+    }
 }
 
 /* Illegal card — dimmed, no interaction */
@@ -2218,9 +2223,11 @@ main {
     border: 2px solid var(--color-felt);
 }
 
-.card--exchange-selectable:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 0 6px rgba(255, 160, 0, 0.3);
+@media (hover: hover) {
+    .card--exchange-selectable:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 0 6px rgba(255, 160, 0, 0.3);
+    }
 }
 
 /* Selected state for exchange cards */
