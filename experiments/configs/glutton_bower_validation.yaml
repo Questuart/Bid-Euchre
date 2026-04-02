@@ -1,0 +1,70 @@
+# Glutton Bower Validation Experiment
+#
+# Validates that GluttonStrategy correctly handles bowers in the simulation
+# path (which was never affected by the hosted-play bower bug in PR #2126).
+#
+# Design: Glutton vs Greedy head-to-head across all 6 bidless scenarios,
+# with both seat directions to control for position effects.
+# Suit contracts (C/D/H/S) exercise bower logic; high/low serve as controls.
+#
+# Run with:
+#   uv run python experiments/run_experiment.py \
+#     --config experiments/configs/glutton_bower_validation.yaml \
+#     --seed 42
+#
+# Expected: Glutton beats Greedy in all scenarios, with the largest margin
+# in suit contracts where bower handling matters most.
+
+experiment_name: glutton_bower_validation
+
+parameters:
+  n_per: 2000
+  seed: 42
+  log_level: none
+  mode: head_to_head_matrix
+
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+
+  - name: glutton
+    class_name: GluttonStrategy
+
+# Both directions to control for seat/position effects
+matchups:
+  - team0: glutton
+    team1: greedy
+
+  - team0: greedy
+    team1: glutton
+
+  # Self-play baselines for sanity check
+  - team0: greedy
+    team1: greedy
+
+  - team0: glutton
+    team1: glutton
+
+# All bidless scenarios — suit contracts exercise bowers, high/low are controls
+scenarios:
+  - name: suit_C
+    contract_type: suit
+    trump_suit: C
+
+  - name: suit_D
+    contract_type: suit
+    trump_suit: D
+
+  - name: suit_H
+    contract_type: suit
+    trump_suit: H
+
+  - name: suit_S
+    contract_type: suit
+    trump_suit: S
+
+  - name: high
+    contract_type: high
+
+  - name: low
+    contract_type: low
