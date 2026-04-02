@@ -60,10 +60,19 @@
         <div class="header-bar">
             <h1><a href="/" aria-label="Bid Euchre home">Bid Euchre</a></h1>
             {% if link_uuid is defined and link_uuid %}
-            <nav class="header-nav" aria-label="Main navigation">
-                <a href="/play/{{ link_uuid }}">Game</a>
-                <a href="/history/{{ link_uuid }}">History</a>
-                <a href="/leaderboard/{{ link_uuid }}">Leaderboard</a>
+            {% set _page = current_page | default("") %}
+            <nav class="header-nav" role="tablist" aria-label="Main navigation">
+                <a href="/play/{{ link_uuid }}" role="tab"
+                   class="header-nav__tab{% if _page == 'game' %} header-nav__tab--active{% endif %}"
+                   {% if _page == 'game' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Game</a>
+                <a href="/history/{{ link_uuid }}" role="tab"
+                   class="header-nav__tab{% if _page == 'history' %} header-nav__tab--active{% endif %}"
+                   {% if _page == 'history' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>History</a>
+                <a href="/leaderboard/{{ link_uuid }}" role="tab"
+                   class="header-nav__tab{% if _page == 'leaderboard' %} header-nav__tab--active{% endif %}"
+                   {% if _page == 'leaderboard' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Leaderboard</a>
+                <span class="header-nav__tab header-nav__tab--disabled" role="tab"
+                      aria-disabled="true" title="Coming soon">Comments</span>
             </nav>
             {% endif %}
             <button id="text-size-toggle"

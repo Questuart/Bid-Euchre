@@ -24,17 +24,6 @@
         margin: 0;
     }
 
-    .history__back {
-        color: var(--color-text-muted);
-        text-decoration: none;
-        font-size: 0.9rem;
-    }
-
-    .history__back:hover {
-        color: var(--color-text);
-        text-decoration: underline;
-    }
-
     .history__empty {
         text-align: center;
         padding: 3rem 1rem;
@@ -100,7 +89,6 @@
 <div class="history" role="region" aria-label="Match history">
     <div class="history__header">
         <h2 class="history__title">Match History</h2>
-        <a href="/play/{{ link_uuid }}" class="history__back">Back to Game</a>
     </div>
 
     {% if matches|length == 0 %}

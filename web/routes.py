@@ -420,6 +420,7 @@ def _build_game_context(
 
     ctx: dict[str, Any] = {
         "link_uuid": link_uuid,
+        "current_page": "game",
         "match_status": state.status,
         **visible,
     }
@@ -773,6 +774,7 @@ async def game_page(request: Request, link_uuid: str):
                         "request": request,
                         "phase": "nickname",
                         "link_uuid": link_uuid,
+                        "current_page": "game",
                     },
                 )
             )
@@ -805,6 +807,7 @@ async def game_page(request: Request, link_uuid: str):
                         "request": request,
                         "phase": "model_select",
                         "link_uuid": link_uuid,
+                        "current_page": "game",
                         "nickname": player.nickname,
                         "models": models,
                         "default_model_id": ai_manager.default_model_id,
@@ -1434,6 +1437,7 @@ async def leaderboard(request: Request, link_uuid: str):
             {
                 "request": request,
                 "link_uuid": link_uuid,
+                "current_page": "leaderboard",
                 "nickname": player.nickname,
                 "rankings": rankings,
                 "metric_defs": METRIC_DEFINITIONS,
@@ -1492,6 +1496,7 @@ async def match_history(request: Request, link_uuid: str):
             {
                 "request": request,
                 "link_uuid": link_uuid,
+                "current_page": "history",
                 "nickname": player.nickname,
                 "matches": history_entries,
             },
