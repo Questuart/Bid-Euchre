@@ -50,24 +50,27 @@
 <div id="hand-result" class="hand-result hand-result--animated {{ result_class }}"
      role="alert" aria-live="assertive">
     <div class="result-banner">
+        {# --- Contextual title class: green for human-positive, red for human-negative --- #}
+        {% set title_mood = "result-title--positive" if is_good_for_human else "result-title--negative" %}
+
         {# --- Moon / Loner special banners --- #}
         {% if hand_bid_type == "moon" %}
             {% if made %}
-                <h2 class="result-title"><span aria-hidden="true">🌙</span> Moon Made!</h2>
+                <h2 class="result-title {{ title_mood }}"><span aria-hidden="true">🌙</span> Moon Made!</h2>
             {% else %}
-                <h2 class="result-title"><span aria-hidden="true">🌙</span> Moon Set!</h2>
+                <h2 class="result-title {{ title_mood }}"><span aria-hidden="true">🌙</span> Moon Set!</h2>
             {% endif %}
         {% elif hand_bid_type == "loner" %}
             {% if made %}
-                <h2 class="result-title"><span aria-hidden="true">🃏</span> Loner Made!</h2>
+                <h2 class="result-title {{ title_mood }}"><span aria-hidden="true">🃏</span> Loner Made!</h2>
             {% else %}
-                <h2 class="result-title"><span aria-hidden="true">🃏</span> Loner Set!</h2>
+                <h2 class="result-title {{ title_mood }}"><span aria-hidden="true">🃏</span> Loner Set!</h2>
             {% endif %}
         {# --- Regular bid banners --- #}
         {% elif made %}
-            <h2 class="result-title">Made it!</h2>
+            <h2 class="result-title {{ title_mood }}">Made it!</h2>
         {% else %}
-            <h2 class="result-title">Set!</h2>
+            <h2 class="result-title {{ title_mood }}">Set!</h2>
         {% endif %}
 
         {# Score delta emphasis for moon/loner #}
