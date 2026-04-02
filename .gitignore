@@ -203,6 +203,9 @@ secrets.*
 CLAUDE.local.md
 .claude/settings.local.json
 
+# Playwright MCP artifacts (screenshots, snapshots, console logs)
+.playwright-mcp/
+
 # Autonomous review loop and agent ops runtime state
 # Ignore all runtime contents, but track README.md schema docs in metadata dirs.
 # Git requires un-ignoring parent dirs before un-ignoring children.
