@@ -111,7 +111,7 @@ def test_start_game_bid_play_verify_score(
     enter_game(page, live_server, invite_code, "SmokePlayer")
 
     # Select the default OLSa AI model and start match
-    page.select_option("select[name='model_id']", "olsa")
+    page.click("input[name='model_id'][value='olsa']")
     page.click("button:has-text('Start Match')")
 
     # Wait for the game board to show auction or trick play
@@ -200,7 +200,7 @@ def test_moon_bid_ui_available(
     enter_game(page, live_server, invite_code, "MoonTester")
 
     # Start a match
-    page.select_option("select[name='model_id']", "olsa")
+    page.click("input[name='model_id'][value='olsa']")
     page.click("button:has-text('Start Match')")
     _advance_next_steps(page)
     page.wait_for_function(
@@ -321,7 +321,7 @@ def test_full_hand_verify_transition(
     enter_game(page, live_server, invite_code, "HandFlowTester")
 
     # Start a match
-    page.select_option("select[name='model_id']", "olsa")
+    page.click("input[name='model_id'][value='olsa']")
     page.click("button:has-text('Start Match')")
     initial_hand_number = _wait_for_hand_number(page)
 

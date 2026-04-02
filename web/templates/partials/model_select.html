@@ -1,4 +1,4 @@
-{# AI model picker partial.
+{# AI model picker partial — radio card variant.
    Context variables:
      - link_uuid: str — player's game link UUID
      - nickname: str — player's (escaped) nickname
@@ -15,12 +15,24 @@
           hx-target="#game-board"
           hx-swap="morph:innerHTML"
           aria-label="Select AI model and start match">
-        <label for="model-select-dropdown" class="sr-only">AI opponent</label>
-        <select id="model-select-dropdown" name="model_id" required aria-label="AI opponent model">
+        <fieldset class="model-cards" role="radiogroup" aria-label="AI opponent model">
+            <legend class="sr-only">AI opponent model</legend>
             {% for model in models %}
-            <option value="{{ model.id }}"{% if model.id == default_model_id %} selected{% endif %}>{{ model.name }} &mdash; {{ model.description }}</option>
+            <label class="model-card" for="model-{{ model.id }}">
+                <input type="radio"
+                       id="model-{{ model.id }}"
+                       name="model_id"
+                       value="{{ model.id }}"
+                       {% if model.id == default_model_id %}checked{% endif %}
+                       required>
+                <span class="model-card-content">
+                    <span class="model-card-name">{{ model.name }}</span>
+                    <span class="model-card-desc">{{ model.description }}</span>
+                </span>
+            </label>
             {% endfor %}
-        </select>
+        </fieldset>
+        <p class="match-info">Expect <strong>6–12 hands</strong> per match — about 10–20 minutes.</p>
         <button type="submit" aria-label="Start match with selected AI">Start Match</button>
     </form>
 </div>

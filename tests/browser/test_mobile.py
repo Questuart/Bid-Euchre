@@ -62,7 +62,7 @@ def test_mobile_viewport_tap_targets(
         enter_game(mobile_page, live_server, invite_code, "MobileTester")
 
         # Start a match
-        mobile_page.select_option("select[name='model_id']", "olsa")
+        mobile_page.click("input[name='model_id'][value='olsa']")
         mobile_page.click("button:has-text('Start Match')")
         mobile_page.wait_for_selector("#game-board", timeout=10000)
 

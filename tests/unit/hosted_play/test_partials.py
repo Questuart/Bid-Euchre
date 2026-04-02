@@ -70,7 +70,7 @@ class ModelStub:
 
 
 class TestModelSelect:
-    def test_renders_models_dropdown(self, env):
+    def test_renders_radio_cards(self, env):
         models = [
             ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder"),
             ModelStub("olsa", "OLSa (Easy)", "Conservative action-value bidder"),
@@ -88,10 +88,39 @@ class TestModelSelect:
         assert "Bud Bot" in html
         assert "Alice" in html
         assert 'action="/play/abc-123/select-ai"' in html
+        # Radio cards instead of select dropdown
+        assert 'type="radio"' in html
+        assert 'name="model_id"' in html
+        assert "model-card" in html
         # Bud Bot should be pre-selected as default
-        assert 'value="bud_bot" selected' in html
-        # OLSa should NOT be pre-selected
-        assert 'value="olsa" selected' not in html
+        assert 'value="bud_bot"' in html
+        # Check that checked attribute is on the default model's radio
+        # (bud_bot checked, olsa not)
+        assert 'id="model-bud_bot"' in html
+        assert 'id="model-olsa"' in html
+
+    def test_default_model_checked(self, env):
+        models = [
+            ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder"),
+            ModelStub("olsa", "OLSa (Easy)", "Conservative action-value bidder"),
+        ]
+        tmpl = env.get_template("partials/model_select.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            nickname="Alice",
+            models=models,
+            default_model_id="bud_bot",
+        )
+        # The radio input spans multiple lines; extract each <input ...> block
+        import re
+
+        inputs = re.findall(r"<input[^>]+>", html, re.DOTALL)
+        bud_bot_inputs = [i for i in inputs if 'value="bud_bot"' in i]
+        olsa_inputs = [i for i in inputs if 'value="olsa"' in i]
+        assert len(bud_bot_inputs) == 1
+        assert "checked" in bud_bot_inputs[0]
+        assert len(olsa_inputs) == 1
+        assert "checked" not in olsa_inputs[0]
 
     def test_renders_single_model(self, env):
         models = [ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder")]
@@ -104,6 +133,36 @@ class TestModelSelect:
         )
         assert 'value="bud_bot"' in html
         assert "Start Match" in html
+        assert 'type="radio"' in html
+
+    def test_shows_match_info(self, env):
+        models = [ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder")]
+        tmpl = env.get_template("partials/model_select.html")
+        html = tmpl.render(
+            link_uuid="x",
+            nickname="Bob",
+            models=models,
+            default_model_id="bud_bot",
+        )
+        assert "6–12 hands" in html
+        assert "match-info" in html
+
+    def test_model_descriptions_shown(self, env):
+        models = [
+            ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder"),
+            ModelStub("olsa", "OLSa (Easy)", "Conservative action-value bidder"),
+        ]
+        tmpl = env.get_template("partials/model_select.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            nickname="Alice",
+            models=models,
+            default_model_id="bud_bot",
+        )
+        assert "Gradient-boosted bidder" in html
+        assert "Conservative action-value bidder" in html
+        assert "model-card-desc" in html
+        assert "model-card-name" in html
 
 
 # ---------------------------------------------------------------------------
