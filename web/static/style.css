@@ -436,6 +436,20 @@ main {
 .seat-marker--dealer {
     background: #ef6c00;
     color: #fff;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1.5px #ef6c00;
+    position: relative;
+    padding-left: 0.35rem;
+}
+
+.seat-marker__chip {
+    display: inline-block;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    border: 1.5px solid #fff;
+    margin-right: 0.15rem;
+    vertical-align: middle;
 }
 
 .seat-marker--declarer {
@@ -520,10 +534,21 @@ main {
 }
 
 .trick-winner {
-    font-size: 0.72rem;
-    color: var(--color-text-muted);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text);
     text-align: center;
-    margin: 0.25rem 0 0;
+    margin: 0.35rem 0 0;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    animation: trick-winner-flash 1.5s ease-out;
+}
+
+/* Winner card highlight — glow around the winning card in trick display */
+.trick-slot--winner .card {
+    box-shadow: 0 0 10px rgba(76, 175, 80, 0.6);
+    border: 2px solid var(--color-legal-glow);
+    animation: winner-card-glow 1.5s ease-in-out 2;
 }
 
 .last-trick {
@@ -947,10 +972,12 @@ main {
 
 .result--made .result-title {
     color: var(--color-positive);
+    text-shadow: 0 0 12px rgba(46, 125, 50, 0.5);
 }
 
 .result--set .result-title {
     color: var(--color-negative);
+    text-shadow: 0 0 12px rgba(198, 40, 40, 0.5);
 }
 
 .result-detail {
@@ -1917,6 +1944,16 @@ main {
     50% { box-shadow: 0 0 20px rgba(126, 87, 194, 0.6); }
 }
 
+@keyframes trick-winner-flash {
+    0% { background-color: rgba(76, 175, 80, 0.3); }
+    100% { background-color: transparent; }
+}
+
+@keyframes winner-card-glow {
+    0%, 100% { box-shadow: 0 0 5px rgba(76, 175, 80, 0.4); }
+    50% { box-shadow: 0 0 15px rgba(76, 175, 80, 0.8); }
+}
+
 .hand-result--animated {
     animation: banner-slide-in 0.4s ease-out;
 }
@@ -2136,6 +2173,14 @@ main {
     .pacing-dots::after {
         animation: none;
         content: "...";
+    }
+
+    .trick-winner {
+        animation: none;
+    }
+
+    .trick-slot--winner .card {
+        animation: none;
     }
 }
 
