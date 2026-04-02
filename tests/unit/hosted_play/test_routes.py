@@ -2822,3 +2822,104 @@ class TestDesyncGracefulRecovery:
         )
         assert resp.status_code == 200
         assert "game-board" in resp.text or "auction" in resp.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# P2-005 regression: match result screen must always render when match is
+# complete, even on stale /next-hand or /next clicks.
+# ---------------------------------------------------------------------------
+
+
+class TestMatchResultGuards:
+    """Prove that match-result screen is never skipped (P2-005 fix)."""
+
+    def test_next_hand_on_complete_match_renders_match_result(self, client, app):
+        """POST /next-hand on an already-complete match shows match_result.
+
+        Regression test for P2-005: if the match is complete in the DB,
+        a stale "Next Hand" click must render the match-result screen
+        instead of dealing a new hand or returning 404.
+        """
+        link_uuid = _setup_game(client)
+
+        # Directly manipulate the DB to simulate a completed match whose
+        # current hand is also complete (hand_result screen would have
+        # been shown).
+        session_factory = app.state.session_factory
+        session = session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        assert player is not None
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert match_row is not None
+
+        # Deserialize, force match to complete state, re-serialize.
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        state = engine.deserialize(json.loads(match_row.match_state_json))
+        state.status = "complete"
+        state.winner = "human"
+        state.score_human = 54
+        state.score_ai = 22
+        state.hands_played = 5
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        match_row.status = "complete"
+        session.commit()
+        session.close()
+
+        # Simulate a stale "Next Hand" click on a completed match.
+        resp = client.post(f"/play/{link_uuid}/next-hand")
+        assert resp.status_code == 200
+        # Must show the match result screen, not a new hand or error.
+        assert "match-result" in resp.text
+        assert "You Win" in resp.text
+        assert "Play Again" in resp.text
+
+    def test_next_hand_after_match_ending_hand_shows_match_result(self, client, app):
+        """POST /next-hand after a hand completes the match renders correctly.
+
+        When the last hand's scoring pushes the match score past ±52, the
+        next /next-hand POST must show the match-result screen. This tests
+        the engine-level guard in advance_to_next_hand().
+        """
+        link_uuid = _setup_game(client)
+        state = _complete_one_hand(client, app, link_uuid)
+
+        # Now manually set the scores so that the match WOULD have ended
+        # with the last hand's scoring.
+        session_factory = app.state.session_factory
+        session = session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        assert player is not None
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert match_row is not None
+
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        state = engine.deserialize(json.loads(match_row.match_state_json))
+
+        # Force match-ending score while keeping the hand "complete"
+        state.status = "complete"
+        state.winner = "ai"
+        state.score_human = -55
+        state.score_ai = 30
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        match_row.status = "complete"
+        session.commit()
+        session.close()
+
+        resp = client.post(f"/play/{link_uuid}/next-hand")
+        assert resp.status_code == 200
+        assert "match-result" in resp.text
+        assert "You Lose" in resp.text

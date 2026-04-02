@@ -1274,7 +1274,9 @@ async def next_step(
             state,
         )
 
-        # Persist hand state
+        # After exchange-reveal auto-advance (especially moon/loner where
+        # human sits out), the hand may have completed and the match may
+        # have ended.  Ensure hand row metadata is persisted (P2-005).
         if current_hand is not None and current_hand.phase == "complete":
             _update_hand_row(hand_row, current_hand)
         elif current_hand is not None:
@@ -1350,13 +1352,22 @@ async def next_hand(
     request: Request,
     link_uuid: str,
 ):
-    """Advance from hand result to next hand."""
+    """Advance from hand result to next hand.
+
+    If the match is already complete (score reached ±52 on a previous
+    hand), this renders the match-result screen instead of dealing a new
+    hand.  This guards against the case where the hand-result template
+    is shown but the match has already ended (P2-005 defensive fix).
+    """
     session = _get_session(request)
     try:
         player = session.query(Player).filter_by(link_uuid=link_uuid).first()
         if player is None:
             raise HTTPException(status_code=404, detail="Game not found")
 
+        # Look for an active match first; fall back to the most recent
+        # completed match so that a stale "Next Hand" click renders the
+        # match-result screen instead of a 404 (P2-005 defensive fix).
         match_row = (
             session.query(Match)
             .filter_by(player_id=player.id, status="active")
@@ -1364,11 +1375,23 @@ async def next_hand(
             .first()
         )
         if match_row is None:
+            match_row = (
+                session.query(Match)
+                .filter_by(player_id=player.id, status="complete")
+                .order_by(Match.created_at.desc())
+                .first()
+            )
+        if match_row is None:
             raise HTTPException(status_code=404, detail="No active match")
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
         state = _deserialize_state(engine, match_row.match_state_json)
+
+        # If the match is already complete, render the result screen
+        # immediately — do not advance to a new hand (P2-005).
+        if state.status == "complete":
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         hand = state.current_hand
         if hand is None:
