@@ -91,3 +91,7 @@ Thumbs.db
 *.bak
 *.log
 *.logs
+
+# Whitelist model artifacts needed for deployment
+!web/models/
+!web/models/**
