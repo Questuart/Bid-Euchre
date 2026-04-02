@@ -11,6 +11,7 @@ no rule/scoring logic lives here.
 from __future__ import annotations
 
 import json
+import logging
 import random
 import uuid
 from datetime import datetime, timezone
@@ -20,6 +21,8 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 from starlette.templating import Jinja2Templates
+
+logger = logging.getLogger(__name__)
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
 from bid_euchre.strategy.bidding import BidAction
@@ -697,7 +700,30 @@ async def game_page(request: Request, link_uuid: str):
         # Active or completed match — restore current state
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
-        state = _deserialize_state(engine, match_row.match_state_json)
+        try:
+            state = _deserialize_state(engine, match_row.match_state_json)
+        except Exception:
+            logger.warning(
+                "Failed to deserialize match %s — marking abandoned",
+                match_row.match_uuid,
+                exc_info=True,
+            )
+            # Mark the corrupt match as abandoned and show model selection
+            match_row.status = "abandoned"
+            match_row.completed_at = datetime.now(timezone.utc)
+            session.commit()
+            models = ai_manager.list_available()
+            return templates.TemplateResponse(
+                "game.html",
+                {
+                    "request": request,
+                    "phase": "model_select",
+                    "link_uuid": link_uuid,
+                    "nickname": player.nickname,
+                    "models": models,
+                    "default_model_id": ai_manager.default_model_id,
+                },
+            )
         ctx = _build_game_context(engine, state, link_uuid)
         ctx["request"] = request
         ctx["nickname"] = player.nickname

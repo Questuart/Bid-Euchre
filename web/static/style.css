@@ -2306,7 +2306,105 @@ main {
 }
 
 /* --------------------------------------------------------------------------
-   20. Utilities
+   20. Error Toast & Offline Banner
+   -------------------------------------------------------------------------- */
+
+.error-toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(1rem);
+    opacity: 0;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 2px solid var(--color-negative);
+    border-radius: 8px;
+    padding: 0.75rem 1.25rem;
+    max-width: 90vw;
+    width: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+}
+
+.error-toast--visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+
+.error-toast__message {
+    flex: 1;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.error-toast__dismiss {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.error-toast__dismiss:hover {
+    color: var(--color-text);
+}
+
+.offline-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: var(--color-negative);
+    color: #fff;
+    text-align: center;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    z-index: 10000;
+    letter-spacing: 0.02em;
+}
+
+.htmx-error {
+    text-align: center;
+    padding: 2rem 1rem;
+    max-width: 480px;
+    margin: 2rem auto;
+}
+
+.htmx-error__message {
+    font-size: 1rem;
+    color: var(--color-text-muted);
+    margin: 0 0 1.5rem;
+    line-height: 1.5;
+}
+
+.htmx-error__home {
+    display: inline-block;
+}
+
+@media (max-width: 600px) {
+    .error-toast {
+        bottom: 1rem;
+        max-width: 95vw;
+        padding: 0.625rem 1rem;
+    }
+
+    .error-toast__message {
+        font-size: 0.85rem;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   21. Utilities
    -------------------------------------------------------------------------- */
 
 .sr-only {

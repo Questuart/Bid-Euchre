@@ -1,0 +1,15 @@
+{#
+    Inline error partial for HTMX swap targets.
+
+    Rendered inside the #game-board div when an HTMX request hits a
+    server error — keeps the page intact instead of replacing the full
+    document with a 404/500 error page.
+
+    Context variables:
+        status_code  — HTTP status code (int)
+        message      — human-readable error message (str)
+#}
+<div class="htmx-error" role="alert" aria-live="assertive">
+    <p class="htmx-error__message">{{ message }}</p>
+    <a href="/" class="btn btn--play-again htmx-error__home">Back to Table</a>
+</div>

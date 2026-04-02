@@ -80,6 +80,7 @@ def _run_self_test(engine, templates_dir: Path, static_dir: Path) -> None:
                 "landing.html",
                 "errors/404.html",
                 "errors/500.html",
+                "errors/htmx_error.html",
             ):
                 test_templates.get_template(name)
         except Exception as exc:
@@ -173,9 +174,21 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
 
     _error_templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
+    def _is_htmx(request: Request) -> bool:
+        """Return True when the request was initiated by HTMX."""
+        return request.headers.get("HX-Request") == "true"
+
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc: HTTPException) -> HTMLResponse:
-        """Render game-themed 404 page."""
+        """Render game-themed 404 page (partial for HTMX, full for browser)."""
+        if _is_htmx(request):
+            detail = getattr(exc, "detail", "Not found")
+            return HTMLResponse(
+                _error_templates.get_template("errors/htmx_error.html").render(
+                    {"request": request, "status_code": 404, "message": str(detail)}
+                ),
+                status_code=404,
+            )
         return HTMLResponse(
             _error_templates.get_template("errors/404.html").render(
                 {"request": request}
@@ -185,8 +198,19 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
 
     @app.exception_handler(500)
     async def server_error_handler(request: Request, exc: Exception) -> HTMLResponse:
-        """Render game-themed 500 page."""
+        """Render game-themed 500 page (partial for HTMX, full for browser)."""
         logger.exception("Unhandled server error on %s %s", request.method, request.url)
+        if _is_htmx(request):
+            return HTMLResponse(
+                _error_templates.get_template("errors/htmx_error.html").render(
+                    {
+                        "request": request,
+                        "status_code": 500,
+                        "message": "Something went wrong. Please try again.",
+                    }
+                ),
+                status_code=500,
+            )
         return HTMLResponse(
             _error_templates.get_template("errors/500.html").render(
                 {"request": request}
