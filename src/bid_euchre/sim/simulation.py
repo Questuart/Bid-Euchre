@@ -118,8 +118,8 @@ def play_single_hand(
                     dealer_rng = random.Random(deal_seed + deal_id)
                     dealer_index = dealer_rng.randrange(4)
                 else:
-                    # Fallback: use local RNG to avoid global random state
-                    dealer_index = random.Random().randrange(4)
+                    # Fallback: intentionally unseeded — no seed provided by caller
+                    dealer_index = random.Random().randrange(4)  # no-seed fallback
 
         current_high_bid = 0
         final_contract = None
@@ -538,8 +538,8 @@ def play_single_hand(
             if rng is not None:
                 initial_leader = rng.randrange(4)
             else:
-                # Fallback: use local RNG to avoid global random state
-                initial_leader = random.Random().randrange(4)
+                # Fallback: intentionally unseeded — no seed provided by caller
+                initial_leader = random.Random().randrange(4)  # no-seed fallback
     leader = initial_leader
 
     # Determine active seats for trick play (loner/moon bids exclude declarer's partner)
