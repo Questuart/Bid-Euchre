@@ -696,6 +696,25 @@ class TestGameControls:
         assert "High/Low" in html
         assert "+52 or -52" in html
 
+    def test_game_controls_legend_icons(self, env):
+        """Help drawer includes an icon/indicator legend."""
+        tmpl = env.get_template("partials/game_controls.html")
+        html = tmpl.render()
+        assert "Icons &amp; Indicators" in html
+        # Each seat marker variant is present
+        assert "seat-marker--dealer" in html
+        assert "seat-marker--declarer" in html
+        assert "seat-marker--leader" in html
+        assert "seat-marker--turn" in html
+        assert "seat-marker--sitting-out" in html
+        # Green glow swatch
+        assert "help-legend__swatch--legal" in html
+        # Descriptions
+        assert "Dealer" in html
+        assert "Declarer" in html
+        assert "Sitting out" in html
+        assert "legal play" in html
+
 
 # ---------------------------------------------------------------------------
 # score.html
