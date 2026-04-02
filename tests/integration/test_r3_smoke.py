@@ -110,7 +110,7 @@ class TestMoonEndToEnd:
     """Validate moon bid through the simulation engine."""
 
     def test_moon_game_completes_with_exchange(self):
-        """Moon bid triggers card exchange and completes 10 tricks with 4 players."""
+        """Moon bid triggers card exchange and completes 10 tricks with 3 players."""
         rng = random.Random(42)
         deck = create_deck()
         shuffle_deck(deck, rng=rng)
@@ -164,10 +164,11 @@ class TestMoonEndToEnd:
         assert (
             len(exchange_received) == 2
         ), f"Expected 2 cards received, got {len(exchange_received)}"
-        # sitting_out should be None for moon (only loner)
+        # sitting_out should be partner seat (moon is 3-player like loner)
+        # declarer=seat 0, partner=seat 2
         assert (
-            sitting_out is None
-        ), f"sitting_out should be None for moon, got {sitting_out}"
+            sitting_out == 2
+        ), f"sitting_out should be 2 (partner) for moon, got {sitting_out}"
 
     def test_moon_scoring_made(self):
         """When declaring team wins all 10 tricks, they get +20."""
