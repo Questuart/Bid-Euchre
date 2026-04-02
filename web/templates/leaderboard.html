@@ -24,17 +24,6 @@
         margin: 0;
     }
 
-    .leaderboard__back {
-        color: var(--color-text-muted);
-        text-decoration: none;
-        font-size: 0.9rem;
-    }
-
-    .leaderboard__back:hover {
-        color: var(--color-text);
-        text-decoration: underline;
-    }
-
     .leaderboard__ranking-info {
         font-size: 0.8rem;
         color: var(--color-text-muted);
@@ -199,7 +188,6 @@
      hx-select=".leaderboard" hx-swap="outerHTML">
     <div class="leaderboard__header">
         <h2 class="leaderboard__title">Leaderboard</h2>
-        <a href="/play/{{ link_uuid }}" class="leaderboard__back">Back to Game</a>
     </div>
     <p class="leaderboard__ranking-info">
         Ranked by Net EPPD — your average point advantage per hand.

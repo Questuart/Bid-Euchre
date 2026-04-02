@@ -2502,3 +2502,59 @@ class TestMatchHistory:
         resp = client.get(f"/play/{link_uuid}")
         assert resp.status_code == 200
         assert f"/history/{link_uuid}" in resp.text
+
+
+class TestTabNavigation:
+    """Header tab navigation — active state, accessibility, and placeholder."""
+
+    def test_game_tab_active_on_game_page(self, client):
+        """Game tab is active when viewing the game page."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # The Game tab should have the active class
+        assert "header-nav__tab--active" in resp.text
+        # Game tab link should be the one marked active (contains Game and active)
+        assert "header-nav__tab header-nav__tab--active" in resp.text
+
+    def test_leaderboard_tab_active_on_leaderboard_page(self, client):
+        """Leaderboard tab is active when viewing the leaderboard."""
+        link_uuid = _create_game(client)
+        resp = client.get(f"/leaderboard/{link_uuid}")
+        assert resp.status_code == 200
+        assert "header-nav__tab--active" in resp.text
+        # Should contain aria-selected="true" for the leaderboard tab
+        assert 'aria-selected="true"' in resp.text
+
+    def test_history_tab_active_on_history_page(self, client):
+        """History tab is active when viewing the history page."""
+        link_uuid = _create_game(client)
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        assert "header-nav__tab--active" in resp.text
+
+    def test_comments_tab_disabled(self, client):
+        """Comments tab is present but disabled with 'Coming soon' tooltip."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "header-nav__tab--disabled" in resp.text
+        assert "Coming soon" in resp.text
+        assert "Comments" in resp.text
+        assert 'aria-disabled="true"' in resp.text
+
+    def test_tab_bar_uses_tablist_role(self, client):
+        """The nav element uses role=tablist for accessibility."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert 'role="tablist"' in resp.text
