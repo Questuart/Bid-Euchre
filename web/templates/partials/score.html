@@ -13,7 +13,7 @@
      - phase: str — current hand phase
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
-{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
 <div id="score-bar" class="score-bar" role="status" aria-label="Match score and hand information" aria-live="polite">
     <div class="score-section" aria-label="Match score: You {{ score_human }}, AI {{ score_ai }}">

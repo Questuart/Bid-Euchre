@@ -65,7 +65,7 @@ CONTRACTS: list[tuple[str, str | None]] = [
 
 SUIT_SYMBOLS = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 
-SEAT_LABELS = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+SEAT_LABELS = {0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +297,7 @@ class TestDisplayConsistency:
 
     @pytest.mark.parametrize("case", MATRIX, ids=MATRIX_IDS)
     def test_seat_label(self, case: Case, jinja_env: jinja2.Environment) -> None:
-        """Correct seat label (You / AI Left / AI Partner / AI Right)."""
+        """Correct seat label (You / Slim / Ace / Deuce)."""
         html, _, _ = _render(jinja_env, case)
         expected = SEAT_LABELS[case.bidder_seat]
         assert expected in html, f"Seat label '{expected}' not in HTML"

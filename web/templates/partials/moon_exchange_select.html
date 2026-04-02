@@ -13,7 +13,7 @@
 {% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
 {% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
 {% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
-{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 {% set mooner_label = seat_labels.get(bidder_seat | default(0), "Seat " ~ bidder_seat) %}
 
 <div id="moon-exchange-select" class="moon-exchange" role="region" aria-live="polite">

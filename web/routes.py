@@ -41,6 +41,18 @@ from .middleware import (
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
+# AI character names — replace positional labels with personality
+# ---------------------------------------------------------------------------
+# Positional info is conveyed by seat position on the board.  Character names
+# add flavour to the card-game feel.
+SEAT_LABELS: dict[int, str] = {
+    0: "You",
+    1: "Slim",  # left opponent
+    2: "Ace",  # partner
+    3: "Deuce",  # right opponent
+}
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -256,8 +268,7 @@ def _game_phase(state) -> str:
 
 def _format_auction_event(seat: int | None, action: dict[str, Any]) -> str:
     """Format a single auction event for the auction log."""
-    seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
-    seat_label = seat_labels.get(int(seat), f"Seat {seat}")
+    seat_label = SEAT_LABELS.get(int(seat), f"Seat {seat}")
 
     if action.get("action") == "pass":
         return f"{seat_label} passed"
@@ -325,7 +336,6 @@ def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
     if hand is None:
         return []
 
-    seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
     events: list[dict[str, str]] = []
 
     # Auction activity (in order).
@@ -358,7 +368,7 @@ def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
 
     # Hand-complete outcomes (compact summary).
     if hand.phase == "complete":
-        bidder = seat_labels.get(hand.bidder_seat, f"Seat {hand.bidder_seat}")
+        bidder = SEAT_LABELS.get(hand.bidder_seat, f"Seat {hand.bidder_seat}")
         if hand.contract_type == "suit" and hand.trump is not None:
             contract = hand.trump
         elif hand.contract_type == "high":
@@ -425,6 +435,7 @@ def _build_game_context(
         "link_uuid": link_uuid,
         "current_page": "game",
         "match_status": state.status,
+        "seat_labels": SEAT_LABELS,
         **visible,
     }
     ctx["phase"] = phase

@@ -582,12 +582,12 @@ class TestTrick:
             tricks_team1=1,
         )
         assert "Trick 1 of 10 complete" in html
-        assert "AI Left" in html
-        assert "AI Partner" in html
-        assert "AI Right" in html
+        assert "Slim" in html
+        assert "Ace" in html
+        assert "Deuce" in html
         assert "\u2666" in html  # ♦
         assert "\u2660" in html  # ♠
-        assert "AI Partner" in html
+        assert "Ace" in html
         assert "won" in html
         assert "Last Trick" not in html
 
@@ -1161,8 +1161,8 @@ class TestHandResult:
             exchange_received=[["C", "J"], ["D", "9"]],
         )
         assert "Moon Exchange" in html
-        assert "AI Left" in html
-        assert "AI Right" in html
+        assert "Slim" in html
+        assert "Deuce" in html
         assert "♠A" in html
         assert "♥K" in html
         assert "♣J" in html
@@ -1170,7 +1170,7 @@ class TestHandResult:
 
     @pytest.mark.parametrize(
         "seat_val,expected_label",
-        [("0", "You"), ("1", "AI Left"), ("2", "AI Partner"), ("3", "AI Right")],
+        [("0", "You"), ("1", "Slim"), ("2", "Ace"), ("3", "Deuce")],
         ids=["str_seat0", "str_seat1", "str_seat2", "str_seat3"],
     )
     def test_string_bidder_seat_coerced_to_label(self, env, seat_val, expected_label):
@@ -1194,7 +1194,7 @@ class TestHandResult:
     @pytest.mark.parametrize("seat", [0, 1, 2, 3])
     def test_int_bidder_seat_still_works(self, env, seat):
         """Int bidder_seat values continue to resolve to correct labels (#1928)."""
-        expected = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+        expected = {0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}
         html = env.get_template("partials/hand_result.html").render(
             winning_bid=6,
             bidder_seat=seat,
@@ -1372,8 +1372,8 @@ class TestMoonExchange:
             exchange_received=[["H", "A"], ["C", "K"]],
             human_hand=[],
         )
-        assert "AI Left" in html
-        assert "AI Right" in html  # partner of seat 1
+        assert "Slim" in html
+        assert "Deuce" in html  # partner of seat 1
 
     def test_shows_contract_info(self, env):
         """Trump suit is displayed in subtitle."""
@@ -1460,7 +1460,7 @@ class TestMoonExchangeSelect:
             is_mooner=False,
         )
         assert "Choose 2 cards to give to the mooner" in html
-        assert "AI Partner" in html  # mooner label for seat 2
+        assert "Ace" in html  # mooner label for seat 2
 
     def test_submit_button_disabled_by_default(self, env):
         """Submit button starts disabled."""
@@ -1524,7 +1524,7 @@ class TestTrickWinnerCard:
             tricks_team0=0,
             tricks_team1=1,
         )
-        assert "AI Left" in html
+        assert "Slim" in html
         assert "won" in html
         assert "with" in html
         assert "\u2666" in html  # diamond symbol
@@ -1726,11 +1726,11 @@ class TestGameBoardSeatZeroRegression:
         # Compact badge container present
         assert 'class="ai-hands-compact"' in html
         # Badges with correct card counts
-        assert "L:8" in html
-        assert "P:7" in html
-        assert "R:9" in html
+        assert "S:8" in html  # Slim (seat 1)
+        assert "A:7" in html  # Ace (seat 2)
+        assert "D:9" in html  # Deuce (seat 3)
         # Seat markers present inside compact badges
-        # dealer at seat 1 → L badge; declarer at seat 2 → P badge; turn at seat 3 → R badge
+        # dealer at seat 1 → Slim badge; declarer at seat 2 → Ace badge; turn at seat 3 → Deuce badge
         assert "ai-badge" in html
 
     def test_compact_badges_auction_phase(self, env):
@@ -1768,9 +1768,9 @@ class TestGameBoardSeatZeroRegression:
             action_rail=[],
         )
         assert 'class="ai-hands-compact"' in html
-        assert "L:10" in html
-        assert "P:10" in html
-        assert "R:10" in html
+        assert "S:10" in html  # Slim (seat 1)
+        assert "A:10" in html  # Ace (seat 2)
+        assert "D:10" in html  # Deuce (seat 3)
 
 
 # ---------------------------------------------------------------------------
@@ -1794,7 +1794,7 @@ class TestContractBar:
         assert "contract-bar" in html
         assert "6" in html
         assert "\u2665" in html  # Heart symbol
-        assert "AI Left" in html
+        assert "Slim" in html
 
     def test_high_contract(self, env):
         """High (no-trump) contract displays 'High' label."""
@@ -1822,7 +1822,7 @@ class TestContractBar:
         )
         assert "7" in html
         assert "Low" in html
-        assert "AI Partner" in html
+        assert "Ace" in html
 
     def test_moon_contract(self, env):
         """Moon bid shows moon emoji and label."""
@@ -1837,7 +1837,7 @@ class TestContractBar:
         assert "Moon" in html
         assert "contract-bar__type--moon" in html
         assert "\u2660" in html  # Spade symbol
-        assert "AI Right" in html
+        assert "Deuce" in html
 
     def test_loner_contract(self, env):
         """Loner bid shows loner emoji and label."""
@@ -2075,7 +2075,7 @@ class TestAccessibilityTrick:
             tricks_team0=0,
             tricks_team1=0,
         )
-        assert "AI Left played A of Hearts" in html
+        assert "Slim played A of Hearts" in html
 
     def test_empty_slot_has_waiting_label(self, env):
         tmpl = env.get_template("partials/trick.html")
@@ -2102,7 +2102,7 @@ class TestActionRail:
         tmpl = env.get_template("partials/action_rail.html")
         html = tmpl.render(
             action_rail=[
-                {"kind": "auction", "text": "AI Left passed"},
+                {"kind": "auction", "text": "Slim passed"},
                 {"kind": "trick", "text": "Your team won Trick 1"},
                 {"kind": "system", "text": "Hand starts"},
             ],
@@ -2110,7 +2110,7 @@ class TestActionRail:
         )
         assert 'id="action-rail"' in html
         assert "Auction Log" in html
-        assert "AI Left passed" in html
+        assert "Slim passed" in html
         assert "Your team won Trick 1" in html
         assert "Hand starts" in html
         assert "action-rail__item--auction" in html
@@ -2347,9 +2347,9 @@ class TestGameTemplateAccessibility:
             bidder_seat=None,
         )
         assert 'class="ai-card-count" aria-hidden="true"' not in html
-        assert "AI Left (10)" in html
-        assert "Partner (10)" in html
-        assert "AI Right (10)" in html
+        assert "Slim (10)" in html
+        assert "Ace (10)" in html
+        assert "Deuce (10)" in html
 
 
 # ---------------------------------------------------------------------------
@@ -2520,16 +2520,16 @@ class TestBidRecap:
             sitting_out_seat=2,
         )
         assert "bid-recap__sitting-out" in html
-        assert "AI Partner" in html
+        assert "Ace" in html
         assert "sits out" in html
 
     def test_loner_sitting_out_seat_labels(self, env):
         """Sitting-out uses correct seat labels for each seat."""
         for seat, label in [
             (0, "You"),
-            (1, "AI Left"),
-            (2, "AI Partner"),
-            (3, "AI Right"),
+            (1, "Slim"),
+            (2, "Ace"),
+            (3, "Deuce"),
         ]:
             html = self._render(
                 env,
@@ -2588,7 +2588,7 @@ class TestBidRecap:
 
     def test_seat_labels_correct(self, env):
         """Declarer label matches the seat label mapping."""
-        labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+        labels = {0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}
         for seat, expected_label in labels.items():
             html = self._render(
                 env,
@@ -2732,7 +2732,7 @@ class TestTrickHistory:
             completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
         )
         assert "You" in html  # Trick 1 won by seat 0
-        assert "Left" in html  # Trick 2 won by seat 1
+        assert "Slim" in html  # Trick 2 won by seat 1
 
     def test_has_table_headers(self, env, completed_tricks):
         """Table has column headers for seat labels."""
@@ -2740,8 +2740,8 @@ class TestTrickHistory:
         html = tmpl.render(
             completed_tricks=completed_tricks, tricks_team0=1, tricks_team1=1
         )
-        assert "Partner" in html
-        assert "Right" in html
+        assert "Ace" in html
+        assert "Deuce" in html
         assert "Won" in html
 
     def test_sitting_out_seat_shows_dash(self, env):

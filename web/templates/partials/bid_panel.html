@@ -9,7 +9,7 @@
      - bid_type: str — current winning bid type ("regular", "moon", or "loner")
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
-{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 {% set bid_type_labels = {"regular": "", "moon": " Moon", "loner": " Loner"} %}
 
 <div id="bid-panel" role="region" aria-label="Auction panel">

@@ -13,6 +13,7 @@
 {% set sitting_out_seat = sitting_out_seat | default(None, true) %}
 {% set show_next = show_next | default(false, true) %}
 {% set show_bid_panel = show_bid_panel | default(false, true) %}
+{% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
 {# ---- Match result (win/loss screen) ---- #}
 {% if phase == "match_result" %}
@@ -35,22 +36,22 @@
 
     {# AI hands — compact badges (mobile only, hidden on desktop via CSS) #}
     <div class="ai-hands-compact" role="region" aria-label="AI opponent hands">
-        <span class="ai-badge" aria-label="AI Left: {{ opp_left_count | default(0) }} cards">
-            L:{{ opp_left_count | default(0) }}
+        <span class="ai-badge" aria-label="{{ seat_labels[1] }}: {{ opp_left_count | default(0) }} cards">
+            {{ seat_labels[1][0] }}:{{ opp_left_count | default(0) }}
             {%- if dealer_seat == 1 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
             {%- if bidder_seat == 1 %}<span class="seat-marker seat-marker--declarer" title="Declarer">X</span>{% endif -%}
             {%- if current_seat == 1 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
             {%- if sitting_out_seat == 1 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
         </span>
-        <span class="ai-badge" aria-label="Partner: {{ partner_count | default(0) }} cards">
-            P:{{ partner_count | default(0) }}
+        <span class="ai-badge" aria-label="{{ seat_labels[2] }}: {{ partner_count | default(0) }} cards">
+            {{ seat_labels[2][0] }}:{{ partner_count | default(0) }}
             {%- if dealer_seat == 2 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
             {%- if bidder_seat == 2 %}<span class="seat-marker seat-marker--declarer" title="Declarer">X</span>{% endif -%}
             {%- if current_seat == 2 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
             {%- if sitting_out_seat == 2 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
         </span>
-        <span class="ai-badge" aria-label="AI Right: {{ opp_right_count | default(0) }} cards">
-            R:{{ opp_right_count | default(0) }}
+        <span class="ai-badge" aria-label="{{ seat_labels[3] }}: {{ opp_right_count | default(0) }} cards">
+            {{ seat_labels[3][0] }}:{{ opp_right_count | default(0) }}
             {%- if dealer_seat == 3 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
             {%- if bidder_seat == 3 %}<span class="seat-marker seat-marker--declarer" title="Declarer">X</span>{% endif -%}
             {%- if current_seat == 3 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
@@ -58,14 +59,14 @@
         </span>
     </div>
 
-    {# Compass-rose grid: Partner top, AI Left left, AI Right right, Human bottom #}
+    {# Compass-rose grid: Ace (partner) top, Slim left, Deuce right, Human bottom #}
     <div class="compass-layout" role="region" aria-label="Game table">
 
         {# Top — Partner (seat 2) #}
-        <div class="compass-top" role="region" aria-label="Partner hand">
+        <div class="compass-top" role="region" aria-label="{{ seat_labels[2] }} hand">
             <div class="ai-hand-block">
                 <div class="ai-seat-label">
-                    {{ "AI Partner" }}
+                    {{ seat_labels[2] }}
                     {% if dealer_seat == 2 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
                     {% endif %}
@@ -82,20 +83,20 @@
                         <span class="bid-tag" title="Bid: {{ seat_bids[2] }}">{{ seat_bids[2] }}</span>
                     {% endif %}
                 </div>
-                <div class="ai-hand" role="img" aria-label="Partner has {{ partner_count | default(0) }} cards">
+                <div class="ai-hand" role="img" aria-label="{{ seat_labels[2] }} has {{ partner_count | default(0) }} cards">
                     {% for _ in range(partner_count | default(0)) %}
                     <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count">Partner ({{ partner_count | default(0) }})</span>
+                <span class="ai-card-count">{{ seat_labels[2] }} ({{ partner_count | default(0) }})</span>
             </div>
         </div>
 
-        {# Left — AI Left opponent (seat 1) — vertical orientation #}
-        <div class="compass-left" role="region" aria-label="AI Left hand">
+        {# Left — Slim opponent (seat 1) — vertical orientation #}
+        <div class="compass-left" role="region" aria-label="{{ seat_labels[1] }} hand">
             <div class="ai-hand-block ai-hand-block--vertical">
                 <div class="ai-seat-label">
-                    {{ "AI Left" }}
+                    {{ seat_labels[1] }}
                     {% if dealer_seat == 1 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
                     {% endif %}
@@ -112,12 +113,12 @@
                         <span class="bid-tag" title="Bid: {{ seat_bids[1] }}">{{ seat_bids[1] }}</span>
                     {% endif %}
                 </div>
-                <div class="ai-hand ai-hand--vertical" role="img" aria-label="AI Left has {{ opp_left_count | default(0) }} cards">
+                <div class="ai-hand ai-hand--vertical" role="img" aria-label="{{ seat_labels[1] }} has {{ opp_left_count | default(0) }} cards">
                     {% for _ in range(opp_left_count | default(0)) %}
                     <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count">AI Left ({{ opp_left_count | default(0) }})</span>
+                <span class="ai-card-count">{{ seat_labels[1] }} ({{ opp_left_count | default(0) }})</span>
             </div>
         </div>
 
@@ -144,11 +145,11 @@
             {% endif %}
         </div>
 
-        {# Right — AI Right opponent (seat 3) — vertical orientation #}
-        <div class="compass-right" role="region" aria-label="AI Right hand">
+        {# Right — Deuce opponent (seat 3) — vertical orientation #}
+        <div class="compass-right" role="region" aria-label="{{ seat_labels[3] }} hand">
             <div class="ai-hand-block ai-hand-block--vertical">
                 <div class="ai-seat-label">
-                    {{ "AI Right" }}
+                    {{ seat_labels[3] }}
                     {% if dealer_seat == 3 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
                     {% endif %}
@@ -165,12 +166,12 @@
                         <span class="bid-tag" title="Bid: {{ seat_bids[3] }}">{{ seat_bids[3] }}</span>
                     {% endif %}
                 </div>
-                <div class="ai-hand ai-hand--vertical" role="img" aria-label="AI Right has {{ opp_right_count | default(0) }} cards">
+                <div class="ai-hand ai-hand--vertical" role="img" aria-label="{{ seat_labels[3] }} has {{ opp_right_count | default(0) }} cards">
                     {% for _ in range(opp_right_count | default(0)) %}
                     <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count">AI Right ({{ opp_right_count | default(0) }})</span>
+                <span class="ai-card-count">{{ seat_labels[3] }} ({{ opp_right_count | default(0) }})</span>
             </div>
         </div>
 
