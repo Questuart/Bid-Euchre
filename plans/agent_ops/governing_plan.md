@@ -108,10 +108,10 @@ Each active phase maintains a checkpoint file at:
 
 Current active phase:
 
-- Phase 5 (`5_portability_and_learning`) is the next unentered phase.
-  Depends on Phase 3 completion (satisfied). Phase 4 completion (satisfied
-  2026-04-01) unblocks this phase. No scaffolding exists yet — scope lock
-  needed before entry.
+- Phase 5 (`5_portability_and_learning`) — **POSTPONED INDEFINITELY**.
+  2026-04-01: Operator decision — platform work postponed indefinitely to
+  focus on browser game product. Phase 4 was the final delivered platform
+  phase. All Phase 5+ scope locks and sub-plans marked POSTPONED.
 
 Completed phases:
 

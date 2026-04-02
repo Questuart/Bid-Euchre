@@ -1,6 +1,6 @@
 # Platform-11: Skill Learning Loop — Scope Lock
 
-**Status:** DRAFT (operator feedback incorporated)
+**Status:** POSTPONED INDEFINITELY (2026-04-01 operator decision — platform work postponed to focus on browser game product)
 **Author:** analyst lane
 **Date:** 2026-03-25
 **Updated:** 2026-03-25 (operator feedback round 1)
