@@ -23,6 +23,7 @@
 
             {% if phase == "trick_play" and legal_plays is not none and idx in legal_plays %}
                 <button type="button"
+                        id="hand-card-{{ idx }}"
                         class="card card--{{ suit_class }} card--legal"
                         title="{{ rank }}{{ suit_sym }} (tap to select)"
                         aria-label="Select {{ rank }} of {{ suit_name }}"
@@ -32,7 +33,8 @@
                 </button>
             {% else %}
                 {# Illegal or non-play-phase card — plain div #}
-                <div class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}"
+                <div id="hand-card-{{ idx }}"
+                     class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}"
                      title="{{ rank }}{{ suit_sym }}"
                      role="img"
                      aria-label="{{ rank }} of {{ suit_name }}{% if phase == 'trick_play' %} (cannot play){% endif %}">
@@ -50,7 +52,7 @@
               action="/play/{{ link_uuid }}/play-card"
               hx-post="/play/{{ link_uuid }}/play-card"
               hx-target="#game-board"
-              hx-swap="innerHTML">
+              hx-swap="morph:innerHTML">
             <input type="hidden" name="turn_number" value="{{ turn_number }}">
             <input type="hidden" id="selected-card-index" name="card_index" value="">
             <button id="card-play-submit"
