@@ -127,7 +127,9 @@
 {% endblock %}
 
 {% block content %}
-<div class="leaderboard" role="region" aria-label="Player leaderboard">
+<div class="leaderboard" role="region" aria-label="Player leaderboard"
+     hx-get="/leaderboard/{{ link_uuid }}" hx-trigger="every 30s"
+     hx-select=".leaderboard" hx-swap="outerHTML">
     <div class="leaderboard__header">
         <h2 class="leaderboard__title">Leaderboard</h2>
         <a href="/play/{{ link_uuid }}" class="leaderboard__back">Back to Game</a>
@@ -135,7 +137,7 @@
 
     {% if rankings|length == 0 %}
     <div class="leaderboard__empty">
-        <p>No completed matches yet. Play a game to appear on the leaderboard!</p>
+        <p>No hands played yet. Start a game to appear on the leaderboard!</p>
     </div>
     {% else %}
     <div class="leaderboard__table-wrap">

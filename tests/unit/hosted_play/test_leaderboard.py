@@ -1,7 +1,8 @@
 """Tests for the leaderboard stats aggregation and route.
 
 Covers:
-- PlayerStats computation from completed match/hand data
+- PlayerStats computation from match/hand data (active + completed matches)
+- In-progress match hand inclusion (live updates)
 - Leaderboard ranking (sorted by net_eppd descending)
 - Default and secondary column partitioning
 - Access gating (404 for unknown UUIDs)
@@ -106,7 +107,8 @@ class TestComputePlayerStats:
         result = compute_player_stats(db_session, player_id=999)
         assert result is None
 
-    def test_returns_none_for_no_completed_matches(self, db_session):
+    def test_returns_none_for_no_completed_hands(self, db_session):
+        """Active match with no completed hands → None."""
         player = _make_player(db_session)
         _make_match(db_session, player, status="active")
         result = compute_player_stats(db_session, player.id)
@@ -285,6 +287,105 @@ class TestComputePlayerStats:
         # avg_match_margin: (52-20 + 10-52) / 2 = (32 + -42) / 2 = -5.0
         assert stats.avg_match_margin == -5.0
 
+    def test_includes_hands_from_active_match(self, db_session):
+        """Hands from an active (in-progress) match are included in stats."""
+        player = _make_player(db_session, nickname="InProgress")
+        match = _make_match(
+            db_session, player, status="active", score_human=0, score_ai=0
+        )
+
+        _make_hand(
+            db_session,
+            match,
+            hand_number=0,
+            bidder_seat=0,
+            winning_bid_n=6,
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=6,
+            points_team1=3,
+        )
+        _make_hand(
+            db_session,
+            match,
+            hand_number=1,
+            bidder_seat=1,
+            winning_bid_n=5,
+            tricks_team0=4,
+            tricks_team1=6,
+            points_team0=4,
+            points_team1=5,
+        )
+
+        db_session.flush()
+        stats = compute_player_stats(db_session, player.id)
+
+        assert stats is not None
+        assert stats.nickname == "InProgress"
+        assert stats.hands_played == 2
+        # No completed matches → match-level stats are zero
+        assert stats.matches_played == 0
+        assert stats.games_won == 0
+        assert stats.win_rate == 0.0
+        assert stats.avg_match_margin == 0.0
+
+        # Hand-level stats are computed from the active match's hands
+        # net_eppd = ((6 - 3) + (4 - 5)) / 2 = (3 + -1) / 2 = 1.0
+        assert stats.net_eppd == 1.0
+        # bid_rate = 1 declaring / 2 total
+        assert stats.bid_rate == 0.5
+
+    def test_mixes_active_and_completed_match_hands(self, db_session):
+        """Hands from both active and completed matches combine in stats."""
+        player = _make_player(db_session, nickname="MixedPlayer")
+
+        # Completed match
+        m1 = _make_match(
+            db_session,
+            player,
+            status="complete",
+            score_human=52,
+            score_ai=30,
+            hands_played=1,
+        )
+        _make_hand(
+            db_session,
+            m1,
+            hand_number=0,
+            points_team0=6,
+            points_team1=2,
+        )
+
+        # Active match (in progress)
+        m2 = _make_match(
+            db_session,
+            player,
+            status="active",
+            score_human=0,
+            score_ai=0,
+            hands_played=1,
+        )
+        _make_hand(
+            db_session,
+            m2,
+            hand_number=10,
+            points_team0=4,
+            points_team1=5,
+        )
+
+        db_session.flush()
+        stats = compute_player_stats(db_session, player.id)
+
+        assert stats is not None
+        # Both hands counted
+        assert stats.hands_played == 2
+        # Only completed match for match-level stats
+        assert stats.matches_played == 1
+        assert stats.games_won == 1
+
+        # net_eppd includes both: ((6-2) + (4-5)) / 2 = (4 + -1) / 2 = 1.5
+        assert stats.net_eppd == 1.5
+
     def test_returns_dataclass_fields(self, db_session):
         """Verify all expected fields are present on PlayerStats."""
         player = _make_player(db_session)
@@ -354,27 +455,49 @@ class TestGetLeaderboard:
         assert rankings[1].nickname == "LowEppd"
         assert rankings[0].net_eppd > rankings[1].net_eppd
 
-    def test_min_matches_filter(self, db_session):
-        # Player with 1 match
-        player = _make_player(db_session, nickname="OneMatch")
+    def test_min_hands_filter(self, db_session):
+        # Player with 1 completed hand
+        player = _make_player(db_session, nickname="OneHand")
         match = _make_match(db_session, player)
         _make_hand(db_session, match)
 
         db_session.flush()
 
-        # min_matches=1 includes them
-        assert len(get_leaderboard(db_session, min_matches=1)) == 1
+        # min_hands=1 (default) includes them
+        assert len(get_leaderboard(db_session, min_hands=1)) == 1
 
-        # min_matches=2 excludes them
-        assert len(get_leaderboard(db_session, min_matches=2)) == 0
+        # min_hands=2 excludes them
+        assert len(get_leaderboard(db_session, min_hands=2)) == 0
 
-    def test_excludes_active_only_players(self, db_session):
-        player = _make_player(db_session, nickname="ActiveOnly")
+    def test_excludes_active_match_with_no_hands(self, db_session):
+        """Active match but zero completed hands → excluded."""
+        player = _make_player(db_session, nickname="ActiveNoHands")
         _make_match(db_session, player, status="active")
         db_session.flush()
 
         rankings = get_leaderboard(db_session)
         assert len(rankings) == 0
+
+    def test_includes_active_match_with_completed_hands(self, db_session):
+        """Active match with completed hands → included on leaderboard."""
+        player = _make_player(db_session, nickname="ActiveWithHands")
+        match = _make_match(db_session, player, status="active")
+        _make_hand(
+            db_session,
+            match,
+            hand_number=0,
+            points_team0=6,
+            points_team1=3,
+        )
+
+        db_session.flush()
+        rankings = get_leaderboard(db_session)
+
+        assert len(rankings) == 1
+        assert rankings[0].nickname == "ActiveWithHands"
+        assert rankings[0].hands_played == 1
+        assert rankings[0].matches_played == 0  # no completed matches yet
+        assert rankings[0].games_won == 0
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +568,20 @@ class TestLeaderboardRoute:
 
             resp = client.get(f"/leaderboard/{player.link_uuid}")
             assert resp.status_code == 200
-            assert "No completed matches yet" in resp.text
+            assert "No hands played yet" in resp.text
+        finally:
+            session.close()
+
+    def test_leaderboard_has_auto_refresh(self, app_and_client):
+        """Leaderboard page includes HTMX polling for live updates."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player = _make_player(session, nickname="RefreshTest")
+            session.commit()
+
+            resp = client.get(f"/leaderboard/{player.link_uuid}")
+            assert resp.status_code == 200
+            assert 'hx-trigger="every 30s"' in resp.text
         finally:
             session.close()
