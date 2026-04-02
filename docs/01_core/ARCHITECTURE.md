@@ -241,6 +241,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/run_tests.py` | Test runner utility |
 | `scripts/validate_configs.py` | Config validation |
 | `scripts/analyze_capture_pipeline.py` | Data capture pipeline analysis (charts + quality report) |
+| `scripts/load_test_concurrent.py` | Concurrent player load test (ThreadPoolExecutor + TestClient) |
 | `scripts/validate_teacher_roster.py` | Teacher roster validation |
 
 ### Internal tooling (`scripts/internal/`)
