@@ -40,7 +40,7 @@ found card-play 400 errors via HTMX).
 
 **Severity:** P2 (usable with scrolling, but confusing)
 **Frequency:** Every auction where player must bid
-**Screenshots:** `19_bid_form_mobile.png`, `20_bid_form_fullpage.png`
+**Screenshots:** `gameplay_screenshots/19_bid_form_mobile.png`, `gameplay_screenshots/20_bid_form_fullpage.png`
 
 **Description:** When the auction panel shows the bidding history table
 plus the Type/Bid/Contract dropdowns, the Submit Bid button and Pass
@@ -65,8 +65,8 @@ the horizontal Type/Bid/Contract row.
 
 **Severity:** P2 (playable but strains readability)
 **Frequency:** Every hand
-**Screenshots:** `02_game1_auction_mobile.png`, `18_auction_start_mobile.png`,
-`21_trick_play_mobile.png`
+**Screenshots:** `gameplay_screenshots/02_game1_auction_mobile.png`, `gameplay_screenshots/18_auction_start_mobile.png`,
+`gameplay_screenshots/21_trick_play_mobile.png`
 
 **Description:** With 10 cards displayed horizontally at 375px viewport
 width, each card is approximately 30-35px wide. Card ranks are readable
@@ -89,7 +89,7 @@ use a horizontally scrollable card tray with larger card faces.
 
 **Severity:** P3 (cosmetic)
 **Frequency:** Every game board view
-**Screenshots:** `02_game1_auction_mobile.png`, `19_bid_form_mobile.png`
+**Screenshots:** `gameplay_screenshots/02_game1_auction_mobile.png`, `gameplay_screenshots/19_bid_form_mobile.png`
 
 **Description:** The AI Left and AI Right labels with card counts (e.g.,
 "AI Left (10)") are rendered as rotated vertical text along the left and
@@ -106,7 +106,7 @@ with the green table area and is difficult to read. The compact badges
 
 **Severity:** P3 (cosmetic)
 **Frequency:** Leaderboard page
-**Screenshots:** `07_leaderboard_mobile.png`, `16_leaderboard_final_mobile.png`
+**Screenshots:** `gameplay_screenshots/07_leaderboard_mobile.png`, `gameplay_screenshots/16_leaderboard_final_mobile.png`
 
 **Description:** The leaderboard table shows #, Player, Net EPPD, Won,
 Win %, and the "Avg Margin" / "Matches" columns (when expanded) push
@@ -135,17 +135,17 @@ On mobile where accessibility matters more, a more descriptive label like
 
 | Feature | Mobile Behavior | Screenshot |
 |---------|----------------|------------|
-| Landing page | Clean, centered, invite code input usable | `01_landing_mobile.png` |
-| Opponent selection | Radio buttons large, touch-friendly | `05_game1_complete_mobile.png`, `17_opponent_select_mobile.png` |
-| Game over screen | Score display clear, Play Again prominent | `08_game1_you_lose_mobile.png`, `14_game_complete_olsa_mobile.png` |
-| Hand result | Made it!/Set! messaging clear, score deltas readable | `09_hand_result_mobile.png` |
-| Moon exchange (receiving) | Cards large enough to identify | `10_moon_exchange_mobile.png` |
-| Moon exchange (giving) | Card selection UI works, Confirm button visible | `13_moon_card_select_mobile.png` |
-| History page | Table columns fit, scrollable list works | `06_history_mobile.png`, `15_history_all_games_mobile.png` |
-| Compact AI badges | L:10/P:10/R:10 format works perfectly for mobile | `18_auction_start_mobile.png` |
+| Landing page | Clean, centered, invite code input usable | 01\_landing\_mobile |
+| Opponent selection | Radio buttons large, touch-friendly | 05\_game1\_complete\_mobile, 17\_opponent\_select\_mobile |
+| Game over screen | Score display clear, Play Again prominent | 08\_game1\_you\_lose\_mobile, 14\_game\_complete\_olsa\_mobile |
+| Hand result | Made it!/Set! messaging clear, score deltas readable | 09\_hand\_result\_mobile |
+| Moon exchange (receiving) | Cards large enough to identify | 10\_moon\_exchange\_mobile |
+| Moon exchange (giving) | Card selection UI works, Confirm button visible | 13\_moon\_card\_select\_mobile |
+| History page | Table columns fit, scrollable list works | 06\_history\_mobile, 15\_history\_all\_games\_mobile |
+| Compact AI badges | L:10/P:10/R:10 format works perfectly for mobile | 18\_auction\_start\_mobile |
 | Nav bar | Game/History/Leaderboard links fit at 375px | All screenshots |
-| Legal card highlighting | Green border clearly marks playable cards | `21_trick_play_mobile.png` |
-| Trick play | Card table, trick counter, score display all functional | `04_game1_trick1_mobile.png`, `21_trick_play_mobile.png` |
+| Legal card highlighting | Green border clearly marks playable cards | 21\_trick\_play\_mobile |
+| Trick play | Card table, trick counter, score display all functional | 04\_game1\_trick1\_mobile, 21\_trick\_play\_mobile |
 
 ## Mobile vs Desktop Comparison
 
@@ -175,49 +175,49 @@ whether the HTMX-related P1 bugs also affect mobile browsers.
 
 | # | File | Content |
 |---|------|---------|
-| 01 | `01_landing_mobile.png` | Landing page with invite code input |
-| 02 | `02_game1_auction_mobile.png` | Auction phase with bid form and hand |
-| 03 | `03_game1_auction_fullpage.png` | Full-page auction view |
-| 04 | `04_game1_trick1_mobile.png` | Trick play with cards on table |
-| 05 | `05_game1_complete_mobile.png` | Opponent selection screen |
-| 06 | `06_history_mobile.png` | Match history (2 games) |
-| 07 | `07_leaderboard_mobile.png` | Leaderboard (early, 1 win) |
-| 08 | `08_game1_you_lose_mobile.png` | Game over — loss screen |
-| 09 | `09_hand_result_mobile.png` | Hand result — "Made it!" |
-| 10 | `10_moon_exchange_mobile.png` | Moon exchange — receiving cards |
-| 11 | `11_mid_batch_state.png` | Opponent selection (mid-batch) |
-| 12 | `12_history_18_matches.png` | History with 18 matches played |
-| 13 | `13_moon_card_select_mobile.png` | Moon exchange — choosing cards to give |
+| 01 | 01\_landing\_mobile.png | Landing page with invite code input |
+| 02 | 02\_game1\_auction\_mobile.png | Auction phase with bid form and hand |
+| 03 | 03\_game1\_auction\_fullpage.png | Full-page auction view |
+| 04 | 04\_game1\_trick1\_mobile.png | Trick play with cards on table |
+| 05 | 05\_game1\_complete\_mobile.png | Opponent selection screen |
+| 06 | 06\_history\_mobile.png | Match history (2 games) |
+| 07 | 07\_leaderboard\_mobile.png | Leaderboard (early, 1 win) |
+| 08 | 08\_game1\_you\_lose\_mobile.png | Game over — loss screen |
+| 09 | 09\_hand\_result\_mobile.png | Hand result — "Made it!" |
+| 10 | 10\_moon\_exchange\_mobile.png | Moon exchange — receiving cards |
+| 11 | 11\_mid\_batch\_state.png | Opponent selection (mid-batch) |
+| 12 | 12\_history\_18\_matches.png | History with 18 matches played |
+| 13 | 13\_moon\_card\_select\_mobile.png | Moon exchange — choosing cards to give |
 
 ### New screenshots (14-21, this session)
 
 | # | File | Content |
 |---|------|---------|
-| 14 | `14_game_complete_olsa_mobile.png` | Game over vs OLSa — Loss 33-57 |
-| 15 | `15_history_all_games_mobile.png` | Full history (~24 matches) |
-| 16 | `16_leaderboard_final_mobile.png` | Leaderboard — Meeks -1.904 EPPD |
-| 17 | `17_opponent_select_mobile.png` | Opponent selection |
-| 18 | `18_auction_start_mobile.png` | Auction start — Next button visible |
-| 19 | `19_bid_form_mobile.png` | Bid form — controls hidden below fold (P2-001) |
-| 20 | `20_bid_form_fullpage.png` | Full-page bid form — confirms cut-off |
-| 21 | `21_trick_play_mobile.png` | Trick play — card selection with legal highlights |
+| 14 | 14\_game\_complete\_olsa\_mobile.png | Game over vs OLSa — Loss 33-57 |
+| 15 | 15\_history\_all\_games\_mobile.png | Full history (~24 matches) |
+| 16 | 16\_leaderboard\_final\_mobile.png | Leaderboard — Meeks -1.904 EPPD |
+| 17 | 17\_opponent\_select\_mobile.png | Opponent selection |
+| 18 | 18\_auction\_start\_mobile.png | Auction start — Next button visible |
+| 19 | 19\_bid\_form\_mobile.png | Bid form — controls hidden below fold (P2-001) |
+| 20 | 20\_bid\_form\_fullpage.png | Full-page bid form — confirms cut-off |
+| 21 | 21\_trick\_play\_mobile.png | Trick play — card selection with legal highlights |
 
 ### Desktop-viewport screenshots (from earlier agent attempt)
 
 | File | Content |
 |------|---------|
-| `game01_landing.png` | Desktop landing page |
-| `game01_auction.png` | Desktop auction view |
-| `game01_error_400_play_card.png` | Desktop 400 error on card play |
-| `game01_game_not_found.png` | Desktop 404 error state |
-| `game01_result.png` | Desktop game over |
-| `game01_state_jump.png` | Desktop mid-trick state |
-| `game02_hand_result.png` | Desktop hand result |
-| `game02_opponent_select.png` | Desktop opponent select |
-| `history_page.png` | Desktop history (5 games) |
-| `history_10_games.png` | Desktop history (10 games) |
-| `leaderboard_page.png` | Desktop leaderboard |
-| `leaderboard_stats_help.png` | Desktop leaderboard stats modal |
+| game01\_landing.png | Desktop landing page |
+| game01\_auction.png | Desktop auction view |
+| game01\_error\_400\_play\_card.png | Desktop 400 error on card play |
+| game01\_game\_not\_found.png | Desktop 404 error state |
+| game01\_result.png | Desktop game over |
+| game01\_state\_jump.png | Desktop mid-trick state |
+| game02\_hand\_result.png | Desktop hand result |
+| game02\_opponent\_select.png | Desktop opponent select |
+| history\_page.png | Desktop history (5 games) |
+| history\_10\_games.png | Desktop history (10 games) |
+| leaderboard\_page.png | Desktop leaderboard |
+| leaderboard\_stats\_help.png | Desktop leaderboard stats modal |
 
 ## Repro Commands
 
