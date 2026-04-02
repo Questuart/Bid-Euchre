@@ -141,25 +141,27 @@ on every hand where they could bid.
 
 ---
 
-#### P2-003: Tied score (55-55) displayed as "Loss" in match history
+#### P2-003: Tied score (55-55) displayed as "Loss" in match history ✅ FIXED
 
-**Severity:** P2
+**Severity:** P2 → **confirmed real bug**
 **Frequency:** Observed once
-**Details:** Match history shows a game with score 55-55 marked as "Loss".
-When both teams exceed the ±52 threshold in the same hand, the result
-depends on the stored `Match.won` boolean. The history template renders
-`"Win" if match.won else "Loss"` with no draw state — a 55-55 tie is
-stored as `won=False` (the declaring team that pushed the score over
-threshold is the winner, so the human's team lost).
+**Status:** Fixed in PR #2103
+**Details:** Match history showed a game with score 55-55 marked as "Loss"
+even when the human team actually won. The history route re-derived the
+result using `score_human > score_ai`, which returns `False` for tied
+scores — always showing "Loss" regardless of who actually won.
 
-**Root cause:** The `Match.won` boolean and history template lack nuance
-for close finishes. While RULES.md §6.6 says the declaring team wins when
-both teams cross ±52 in the same hand, the display is misleading: a 55-55
-result shown as plain "Loss" gives the player no indication that it was a
-near-tie decided by the declaring-team rule. The history template should
-either show the final score alongside the outcome or add a qualifier
-(e.g., "Loss — declaring team wins at 55-55") so the result is not
-confusing.
+**Root cause:** In the history route, `won = m.score_human > m.score_ai`
+ignored the engine's authoritative `winner` field stored in
+`match_state_json`. For tied scores like 55-55, this always evaluated to
+`False` → "Loss". The engine correctly determines the winner (declaring
+team wins when both teams cross ±52 in the same hand per RULES.md §6.6),
+but the history display discarded that determination.
+
+**Fix (PR #2103):** The history route now parses `match_state_json` to
+extract the engine's `winner` field. Falls back to score comparison only
+for legacy match rows that lack the `winner` field. Regression tests added
+for both human-win and AI-win tied-score scenarios.
 
 **Screenshot:** `gameplay_screenshots/history_10_games.png` (row 1)
 
@@ -218,26 +220,24 @@ Please include <meta name="mobile-web-app-capable" content="yes"> instead.
 
 ---
 
-#### ~~P3-003: No per-game nickname or opponent selection on first entry~~ (FALSE POSITIVE)
+#### P3-003: No per-game nickname or opponent selection on first entry — FALSE POSITIVE
 
-**Severity:** ~~P3~~ False positive
-**Frequency:** Every first entry via invite code
-**Details:** The first time entering via invite code, the game starts directly
-without showing the opponent selection screen. The "Welcome, Meeks!" opponent
-selection dialog only appears after clicking "Play Again" at the end of a match.
-The nickname ("Meeks") is derived from the invite code, not player input.
+**Severity:** P3 → **false positive** (working as designed)
+**Frequency:** N/A
+**Details:** The original finding claimed the first invite-code entry skipped
+opponent selection and derived the nickname from the code. This was inaccurate.
 
-**Root cause:** The invite code flow creates the player record with a nickname
-derived from the code, then redirects straight to a new match with the default
-opponent. The opponent selection screen only appears on the welcome/rematch
-page, not during initial invite code entry.
-First-entry flow is: invite code → player created → default opponent → play
-(opponent selection is skipped).
+**Actual first-entry flow (verified in code):**
+1. `POST /enter-code` — validates invite code, creates `Player(link_uuid=...)` with no nickname
+2. `GET /play/{link_uuid}` — detects `not player.nickname` → renders nickname prompt
+3. Player submits nickname → `POST /play/{link_uuid}/set-nickname`
+4. No active match exists → renders model selection screen
+5. Player selects opponent → `POST /play/{link_uuid}/start-match` → game begins
 
-**False positive rationale:** This is intentional design, not a bug. The
-first-entry flow deliberately starts the player with the default opponent to
-minimize friction. The nickname is auto-generated from the invite code as a
-feature, not a defect. Opponent selection is available on subsequent games.
+The nickname is entered by the player, not derived from the invite code.
+Opponent selection is shown before the first match. The original finding
+was likely an artifact of automated Playwright interaction that submitted
+forms faster than the observer could track the intermediate screens.
 
 ---
 
