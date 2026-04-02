@@ -2371,3 +2371,125 @@ class TestMoonExchangeRoute:
                 f"after moon exchange — _advance_ai not called"
             )
         session_after.close()
+
+
+# ---------------------------------------------------------------------------
+# Match History
+# ---------------------------------------------------------------------------
+
+
+class TestMatchHistory:
+    """GET /history/{link_uuid} shows completed matches."""
+
+    def test_history_unknown_uuid_404(self, client):
+        resp = client.get("/history/nonexistent-uuid")
+        assert resp.status_code == 404
+
+    def test_history_empty_when_no_completed_matches(self, client):
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        assert "No completed matches yet" in resp.text
+
+    def test_history_shows_completed_match(self, client, app):
+        """Create a completed match row directly and verify it appears."""
+        from datetime import datetime, timezone
+
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid, "HistoryTester")
+
+        # Directly insert a completed match for this player
+        session_factory = app.state.session_factory
+        session = session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        assert player is not None
+
+        import uuid as uuid_mod
+
+        completed_match = Match(
+            match_uuid=str(uuid_mod.uuid4()),
+            player_id=player.id,
+            ai_model="bud_bot",
+            status="complete",
+            seed=42,
+            score_human=52,
+            score_ai=38,
+            hands_played=7,
+            match_state_json="{}",
+            completed_at=datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        session.add(completed_match)
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        assert "Match History" in resp.text
+        # Should show the AI opponent name
+        assert "Bud Bot" in resp.text
+        # Should show scores
+        assert "52" in resp.text
+        assert "38" in resp.text
+        # Should show win result
+        assert "Win" in resp.text
+        # Should show hands played
+        assert "7" in resp.text
+        # Should show formatted date
+        assert "Mar 15, 2026" in resp.text
+
+    def test_history_shows_loss(self, client, app):
+        """A match where AI wins should show 'Loss'."""
+        from datetime import datetime, timezone
+
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid, "Loser")
+
+        session_factory = app.state.session_factory
+        session = session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+
+        import uuid as uuid_mod
+
+        lost_match = Match(
+            match_uuid=str(uuid_mod.uuid4()),
+            player_id=player.id,
+            ai_model="olsa",
+            status="complete",
+            seed=99,
+            score_human=30,
+            score_ai=54,
+            hands_played=9,
+            match_state_json="{}",
+            completed_at=datetime(2026, 4, 1, 8, 0, 0, tzinfo=timezone.utc),
+        )
+        session.add(lost_match)
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        assert "Loss" in resp.text
+        assert "OLSa" in resp.text
+
+    def test_history_excludes_active_matches(self, client, app):
+        """Active (in-progress) matches should NOT appear in history."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        # Select AI starts an active match
+        _select_ai(client, link_uuid)
+
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        # Active match should not appear — show empty state
+        assert "No completed matches yet" in resp.text
+
+    def test_history_nav_link_present(self, client):
+        """The header nav should include a History link when link_uuid is set."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert f"/history/{link_uuid}" in resp.text

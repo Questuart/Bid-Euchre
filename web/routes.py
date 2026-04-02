@@ -1268,6 +1268,62 @@ async def leaderboard(request: Request, link_uuid: str):
         session.close()
 
 
+@router.get("/history/{link_uuid}", response_class=HTMLResponse)
+async def match_history(request: Request, link_uuid: str):
+    """Match history page — list of completed matches with scores.
+
+    Shows all completed matches for the player identified by *link_uuid*,
+    ordered most-recent first.  Displays opponent AI name, final score,
+    win/loss result, date played, and number of hands.
+    """
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Player not found")
+
+        matches = (
+            session.query(Match)
+            .filter_by(player_id=player.id, status="complete")
+            .order_by(Match.completed_at.desc())
+            .all()
+        )
+
+        ai_manager = _get_ai_manager(request)
+        history_entries = []
+        for m in matches:
+            # Resolve AI display name from roster; fall back to raw model id
+            try:
+                ai_name = ai_manager.get_model_info(m.ai_model).name
+            except KeyError:
+                ai_name = m.ai_model
+
+            won = m.score_human > m.score_ai
+            history_entries.append(
+                {
+                    "ai_name": ai_name,
+                    "score_human": m.score_human,
+                    "score_ai": m.score_ai,
+                    "won": won,
+                    "hands_played": m.hands_played,
+                    "completed_at": m.completed_at,
+                }
+            )
+
+        return templates.TemplateResponse(
+            "history.html",
+            {
+                "request": request,
+                "link_uuid": link_uuid,
+                "nickname": player.nickname,
+                "matches": history_entries,
+            },
+        )
+    finally:
+        session.close()
+
+
 # ---------------------------------------------------------------------------
 # AI decision logging helper
 # ---------------------------------------------------------------------------
