@@ -481,9 +481,9 @@ class TestSeatLabelDisplay:
 
     EXPECTED_LABELS = {
         0: "You",
-        1: "AI Left",
-        2: "AI Partner",
-        3: "AI Right",
+        1: "Slim",
+        2: "Ace",
+        3: "Deuce",
     }
 
     @pytest.mark.parametrize("bidder_seat", ALL_SEATS, ids=lambda s: f"seat{s}")

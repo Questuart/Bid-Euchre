@@ -11,7 +11,7 @@
      - sitting_out_seat: int | None — seat sitting out (moon and loner bids)
 #}
 {% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
-{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
 {% if winning_bid is not none and bidder_seat is not none %}
 <div class="bid-recap" role="status" aria-label="Auction result">

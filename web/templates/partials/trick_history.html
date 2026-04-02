@@ -6,7 +6,7 @@
 #}
 {% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
 {% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
-{% set seat_labels = {0: "You", 1: "Left", 2: "Partner", 3: "Right"} %}
+{% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
 {% if completed_tricks %}
 <details id="trick-history" class="trick-history" role="region" aria-label="Cards played history">
@@ -19,9 +19,9 @@
                 <tr>
                     <th class="trick-history__th">#</th>
                     <th class="trick-history__th">You</th>
-                    <th class="trick-history__th">Left</th>
-                    <th class="trick-history__th">Partner</th>
-                    <th class="trick-history__th">Right</th>
+                    <th class="trick-history__th">{{ seat_labels[1] }}</th>
+                    <th class="trick-history__th">{{ seat_labels[2] }}</th>
+                    <th class="trick-history__th">{{ seat_labels[3] }}</th>
                     <th class="trick-history__th">Won</th>
                 </tr>
             </thead>

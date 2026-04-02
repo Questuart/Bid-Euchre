@@ -479,8 +479,8 @@ class TestNextRevealFlow:
         # D♦ / A would appear as card rank+suit in the trick area
         assert "card--played" not in resp.text
 
-        # AI Left hand count should show 10 (pre-play), not 9
-        assert "AI Left (10)" in resp.text
+        # Slim (seat 1) hand count should show 10 (pre-play), not 9
+        assert "Slim (10)" in resp.text
 
         # No "Play card" button — still in auction reveal
         assert 'id="card-play-form"' not in resp.text
@@ -1162,9 +1162,9 @@ class TestXSSPrevention:
         resp = client.get(f"/play/{link_uuid}")
         assert resp.status_code == 200
         # Count labels should be present on first render.
-        assert "AI Left" in resp.text
-        assert "AI Partner" in resp.text
-        assert "AI Right" in resp.text
+        assert "Slim" in resp.text
+        assert "Ace" in resp.text
+        assert "Deuce" in resp.text
         # Ensure accessibility-related count labels are not excluded.
         assert 'class="ai-card-count" aria-hidden="true"' not in resp.text
 

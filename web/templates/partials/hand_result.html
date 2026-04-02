@@ -14,7 +14,7 @@
      - hands_played: int — total hands completed
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
-{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+{% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 {% set bidder_seat = bidder_seat | int %}
 {% set hand_bid_type = bid_type | default("regular") %}
 {% set exchange_given_cards = exchange_given | default([], true) %}

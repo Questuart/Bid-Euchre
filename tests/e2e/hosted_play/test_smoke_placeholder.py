@@ -200,7 +200,7 @@ class TestTrickWinnerDisplay:
         assert "won" in html, "Expected 'won' text in trick winner display"
 
         # Verify the correct seat label appears
-        seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+        seat_labels = {0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}
         expected_label = seat_labels[winner_seat]
         assert (
             expected_label in html
@@ -439,7 +439,7 @@ class TestHandSorting:
 class TestSeatLabels:
     """Verify seat labels render correctly across all templates."""
 
-    EXPECTED_LABELS = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+    EXPECTED_LABELS = {0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}
 
     @pytest.mark.e2e
     def test_seat_labels_in_trick_area(
@@ -507,11 +507,9 @@ class TestSeatLabels:
         tmpl = jinja_env.get_template("partials/game_board.html")
         html = tmpl.render(**ctx)
 
-        assert "AI Left" in html, "Expected 'AI Left' in game board"
-        assert (
-            "AI Partner" in html or "Partner" in html
-        ), "Expected 'AI Partner' or 'Partner' in game board"
-        assert "AI Right" in html, "Expected 'AI Right' in game board"
+        assert "Slim" in html, "Expected 'Slim' in game board"
+        assert "Ace" in html, "Expected 'Ace' in game board"
+        assert "Deuce" in html, "Expected 'Deuce' in game board"
 
     @pytest.mark.e2e
     def test_seat_labels_in_trick_history(
@@ -535,8 +533,8 @@ class TestSeatLabels:
         html = tmpl.render(**ctx)
 
         winner = ctx["completed_tricks"][-1]["winner"]
-        # Trick history uses shortened labels
-        history_labels = {0: "You", 1: "Left", 2: "Partner", 3: "Right"}
+        # Trick history now uses character names
+        history_labels = {0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}
         expected = history_labels[winner]
         assert expected in html, f"Expected winner label '{expected}' in trick history"
 
