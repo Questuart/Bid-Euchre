@@ -249,6 +249,38 @@ def build_visible_context(
         ctx["partner_count"] = len(hand.hands[2]) if len(hand.hands) > 2 else 0
         ctx["opp_right_count"] = len(hand.hands[3]) if len(hand.hands) > 3 else 0
         ctx["action_rail"] = []
+        # Build seat → bid text mapping for inline bid display
+        auction = visible.get("auction", [])
+        seat_bids: dict[int, str] = {}
+        for entry in auction:
+            s = entry.get("seat")
+            if s is None:
+                continue
+            s = int(s)
+            if entry.get("action") == "pass":
+                seat_bids[s] = "Pass"
+            else:
+                bt = entry.get("bid_type", "regular")
+                if bt == "moon":
+                    seat_bids[s] = "Moon"
+                elif bt == "loner":
+                    seat_bids[s] = "Loner"
+                else:
+                    n = entry.get("n", 0)
+                    c = entry.get("contract", "")
+                    sym_map = {
+                        "S": "\u2660",
+                        "H": "\u2665",
+                        "D": "\u2666",
+                        "C": "\u2663",
+                    }
+                    if c == "HIGH":
+                        seat_bids[s] = f"{n} Hi"
+                    elif c == "LOW":
+                        seat_bids[s] = f"{n} Lo"
+                    else:
+                        seat_bids[s] = f"{n}{sym_map.get(str(c), str(c))}"
+        ctx["seat_bids"] = seat_bids
     else:
         ctx["winning_bid"] = None
         ctx["bidder_seat"] = None
@@ -260,6 +292,7 @@ def build_visible_context(
         ctx["partner_count"] = 0
         ctx["opp_right_count"] = 0
         ctx["action_rail"] = []
+        ctx["seat_bids"] = {}
         ctx["show_next"] = False
         ctx["next_reason"] = None
         ctx["show_bid_panel"] = False

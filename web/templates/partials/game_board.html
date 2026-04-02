@@ -53,6 +53,9 @@
                     {% if sitting_out_seat == 2 %}
                         <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
                     {% endif %}
+                    {% if seat_bids is defined and seat_bids[2] is defined %}
+                        <span class="bid-tag" title="Bid: {{ seat_bids[2] }}">{{ seat_bids[2] }}</span>
+                    {% endif %}
                 </div>
                 <div class="ai-hand" role="img" aria-label="Partner has {{ partner_count | default(0) }} cards">
                     {% for _ in range(partner_count | default(0)) %}
@@ -79,6 +82,9 @@
                     {% endif %}
                     {% if sitting_out_seat == 1 %}
                         <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                    {% endif %}
+                    {% if seat_bids is defined and seat_bids[1] is defined %}
+                        <span class="bid-tag" title="Bid: {{ seat_bids[1] }}">{{ seat_bids[1] }}</span>
                     {% endif %}
                 </div>
                 <div class="ai-hand ai-hand--vertical" role="img" aria-label="AI Left has {{ opp_left_count | default(0) }} cards">
@@ -130,6 +136,9 @@
                     {% if sitting_out_seat == 3 %}
                         <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
                     {% endif %}
+                    {% if seat_bids is defined and seat_bids[3] is defined %}
+                        <span class="bid-tag" title="Bid: {{ seat_bids[3] }}">{{ seat_bids[3] }}</span>
+                    {% endif %}
                 </div>
                 <div class="ai-hand ai-hand--vertical" role="img" aria-label="AI Right has {{ opp_right_count | default(0) }} cards">
                     {% for _ in range(opp_right_count | default(0)) %}
@@ -140,8 +149,20 @@
             </div>
         </div>
 
-        {# Bottom — Human hand #}
+        {# Bottom — Human hand with inline bid badge #}
         <div class="compass-bottom">
+            {% if seat_bids is defined and seat_bids[0] is defined %}
+                <div class="human-seat-label" role="status" aria-label="Your bid: {{ seat_bids[0] }}">
+                    You
+                    {% if dealer_seat == 0 %}
+                        <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                    {% endif %}
+                    {% if current_seat == 0 %}
+                        <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                    {% endif %}
+                    <span class="bid-tag" title="Bid: {{ seat_bids[0] }}">{{ seat_bids[0] }}</span>
+                </div>
+            {% endif %}
             {# Human hand — always shown during active play #}
             {% include "partials/hand.html" %}
         </div>

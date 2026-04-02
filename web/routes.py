@@ -272,6 +272,42 @@ def _format_auction_event(seat: int | None, action: dict[str, Any]) -> str:
     return f"{seat_label} bid {n} {contract_label}"
 
 
+_SUIT_SYMBOLS: dict[str, str] = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
+
+
+def _build_seat_bids(auction: list[dict[str, Any]]) -> dict[int, str]:
+    """Build a mapping from seat → compact bid text for inline display.
+
+    Returns at most one entry per seat (the most recent bid from each player
+    who has bid so far in the visible auction transcript).
+    """
+    seat_bids: dict[int, str] = {}
+    for entry in auction:
+        seat = entry.get("seat")
+        if seat is None:
+            continue
+        seat = int(seat)
+        if entry.get("action") == "pass":
+            seat_bids[seat] = "Pass"
+        else:
+            bid_type = entry.get("bid_type", "regular")
+            if bid_type == "moon":
+                seat_bids[seat] = "Moon"
+            elif bid_type == "loner":
+                seat_bids[seat] = "Loner"
+            else:
+                n = entry.get("n", 0)
+                contract = entry.get("contract", "")
+                if contract == "HIGH":
+                    seat_bids[seat] = f"{n} Hi"
+                elif contract == "LOW":
+                    seat_bids[seat] = f"{n} Lo"
+                else:
+                    sym = _SUIT_SYMBOLS.get(str(contract), str(contract))
+                    seat_bids[seat] = f"{n}{sym}"
+    return seat_bids
+
+
 def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
     """Build an event feed from auction/trick/redeal transitions.
 
@@ -397,6 +433,7 @@ def _build_game_context(
         ctx["points_team0"] = hand.points_team0
         ctx["points_team1"] = hand.points_team1
         ctx["action_rail"] = _build_action_rail(visible, state)
+        ctx["seat_bids"] = _build_seat_bids(visible.get("auction", []))
         ctx["show_bid_panel"] = (
             phase == "auction"
             and hand.phase == "auction"
@@ -462,6 +499,7 @@ def _build_game_context(
         ctx["partner_count"] = 0
         ctx["opp_right_count"] = 0
         ctx["action_rail"] = []
+        ctx["seat_bids"] = {}
         ctx["show_next"] = False
         ctx["next_reason"] = None
         ctx["show_bid_panel"] = False
