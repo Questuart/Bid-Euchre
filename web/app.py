@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.exc import IntegrityError
 from starlette.templating import Jinja2Templates
 
 from .ai_manager import AIManager
@@ -111,14 +112,23 @@ async def lifespan(app: FastAPI):
     create_tables(engine)
     session_factory = make_session_factory(engine)
 
-    # 2. Auto-seed invite code on fresh database
+    # 2. Auto-seed invite code on fresh database (atomic: skip if another
+    #    instance already seeded between our check and insert)
     seed_session = session_factory()
     try:
         if seed_session.query(InviteCode).count() == 0:
             code = generate_invite_code()
             seed_session.add(InviteCode(code=code, status="active", label="auto-seed"))
-            seed_session.commit()
-            logger.info("Auto-seeded invite code: %s", code)
+            try:
+                seed_session.commit()
+            except IntegrityError:
+                # Another instance already seeded — safe to ignore
+                seed_session.rollback()
+                logger.info(
+                    "Auto-seed invite code skipped — already seeded by another instance"
+                )
+            else:
+                logger.info("Auto-seeded invite code (label=auto-seed)")
     except Exception:
         seed_session.rollback()
         logger.warning("Invite code auto-seed failed — continuing", exc_info=True)
