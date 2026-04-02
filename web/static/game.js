@@ -287,6 +287,17 @@
         }
     }
 
+    function refreshGameBoard() {
+        // After reconnecting (online event), reload the current page to
+        // re-fetch the authoritative game state from the server.  This
+        // handles stale HTMX partial state that may have accumulated
+        // while the player was offline.
+        var gameBoard = document.getElementById('game-board');
+        if (gameBoard) {
+            window.location.reload();
+        }
+    }
+
     function attachErrorHandlers() {
         // HTMX response errors (server returned 4xx/5xx)
         document.body.addEventListener('htmx:responseError', function (event) {
@@ -326,6 +337,8 @@
         window.addEventListener('online', function () {
             hideOfflineBanner();
             dismissErrorToast();
+            // Refresh game board to recover from stale HTMX state
+            refreshGameBoard();
         });
     }
 

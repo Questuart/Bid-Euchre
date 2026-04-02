@@ -15,6 +15,10 @@
         Double-deck, 10-to-Ace, with bowers. Play against AI opponents.
     </p>
 
-    {% include "partials/invite_code_form.html" %}
+    {% if reconnect %}
+        {% include "partials/reconnect.html" %}
+    {% else %}
+        {% include "partials/invite_code_form.html" %}
+    {% endif %}
 </div>
 {% endblock %}

@@ -31,7 +31,12 @@ from bid_euchre.strategy.bidding import BidAction
 from .ai_manager import AIManager
 from .db import Decision, Hand, InviteCode, Match, Player
 from .leaderboard import METRIC_DEFINITIONS, format_metric, get_leaderboard
-from .middleware import check_match_limit
+from .middleware import (
+    check_match_limit,
+    get_player_link_from_cookie,
+    lookup_active_match,
+    set_player_cookie,
+)
 
 router = APIRouter()
 
@@ -570,8 +575,28 @@ async def ready(request: Request):
 
 @router.get("/", response_class=HTMLResponse)
 async def landing(request: Request):
-    """Landing page — invite code entry form."""
+    """Landing page — invite code form or reconnect prompt.
+
+    When the player has a session cookie with an active match, renders a
+    reconnect partial so they can resume without re-entering their invite
+    code.  Falls through to the standard invite code form otherwise.
+    """
     templates = _get_templates(request)
+    link_uuid = get_player_link_from_cookie(request)
+    if link_uuid is not None:
+        session = _get_session(request)
+        try:
+            match_info = lookup_active_match(session, link_uuid)
+            if match_info is not None:
+                return templates.TemplateResponse(
+                    "landing.html",
+                    {
+                        "request": request,
+                        "reconnect": match_info,
+                    },
+                )
+        finally:
+            session.close()
     return templates.TemplateResponse("landing.html", {"request": request})
 
 
@@ -620,11 +645,15 @@ async def enter_code(
                 redirect_url = f"/play/{player.link_uuid}"
                 # HTMX-aware redirect
                 if request.headers.get("HX-Request"):
-                    return HTMLResponse(
+                    resp = HTMLResponse(
                         "",
                         headers={"HX-Redirect": redirect_url},
                     )
-                return RedirectResponse(url=redirect_url, status_code=302)
+                    set_player_cookie(resp, player.link_uuid)
+                    return resp
+                resp = RedirectResponse(url=redirect_url, status_code=302)
+                set_player_cookie(resp, player.link_uuid)
+                return resp
 
         # --- Active code — create player and redeem ---
         link_uuid = str(uuid.uuid4())
@@ -640,11 +669,15 @@ async def enter_code(
         redirect_url = f"/play/{link_uuid}"
         # HTMX-aware redirect
         if request.headers.get("HX-Request"):
-            return HTMLResponse(
+            resp = HTMLResponse(
                 "",
                 headers={"HX-Redirect": redirect_url},
             )
-        return RedirectResponse(url=redirect_url, status_code=302)
+            set_player_cookie(resp, link_uuid)
+            return resp
+        resp = RedirectResponse(url=redirect_url, status_code=302)
+        set_player_cookie(resp, link_uuid)
+        return resp
     finally:
         session.close()
 
@@ -662,7 +695,9 @@ async def create_game(request: Request):
         player = Player(link_uuid=link_uuid)
         session.add(player)
         session.commit()
-        return RedirectResponse(url=f"/play/{link_uuid}", status_code=302)
+        resp = RedirectResponse(url=f"/play/{link_uuid}", status_code=302)
+        set_player_cookie(resp, link_uuid)
+        return resp
     finally:
         session.close()
 
