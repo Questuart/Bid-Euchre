@@ -770,13 +770,22 @@ async def game_page(request: Request, link_uuid: str):
                 )
             )
 
-        # Show the latest match for this player, including completed matches.
+        # Prefer the most recent *active* match so the reconnect prompt
+        # on the landing page and the game page agree.  Fall back to any
+        # match (e.g. completed) when no active match exists.  (#2056)
         match_row = (
             session.query(Match)
-            .filter_by(player_id=player.id)
+            .filter_by(player_id=player.id, status="active")
             .order_by(Match.created_at.desc())
             .first()
         )
+        if match_row is None:
+            match_row = (
+                session.query(Match)
+                .filter_by(player_id=player.id)
+                .order_by(Match.created_at.desc())
+                .first()
+            )
 
         if match_row is None:
             # No usable match — show model selection

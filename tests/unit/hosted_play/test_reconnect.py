@@ -136,6 +136,28 @@ class TestLookupActiveMatch:
         finally:
             session.close()
 
+    def test_prefers_active_over_completed(self, client):
+        """When both active and completed matches exist, returns the active one.
+
+        Mirrors the game_page query fix (#2056): the landing page reconnect
+        and the game page must agree on which match to show.
+        """
+        session = _get_session_factory(client)()
+        try:
+            player = create_test_player(session, nickname="Eve")
+            active_match = create_test_match(
+                session, player_id=player.id, status="active"
+            )
+            # Create a newer completed match
+            create_test_match(session, player_id=player.id, status="complete")
+            session.commit()
+
+            result = lookup_active_match(session, player.link_uuid)
+            assert result is not None
+            assert result["match_uuid"] == active_match.match_uuid
+        finally:
+            session.close()
+
 
 # ===================================================================
 # 2. Landing Page — Reconnect Detection
