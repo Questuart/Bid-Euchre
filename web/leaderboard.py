@@ -204,6 +204,9 @@ class PlayerStats:
     loner_call_rate: float  # fraction of hands with a loner bid
     loner_make_rate: float  # fraction of loner contracts made
 
+    # AI indicator (must be last — has default value)
+    is_ai: bool = False  # True for AI opponent aggregate entries
+
 
 def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None:
     """Compute aggregated stats for a single player.
@@ -330,10 +333,139 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
     )
 
 
+def compute_ai_stats(
+    session: Session,
+    ai_model: str,
+    *,
+    display_name: str | None = None,
+) -> PlayerStats | None:
+    """Compute aggregated stats for an AI opponent across all its matches.
+
+    The AI team is team 1 (seats 1 and 3).  Stats are computed from the
+    AI's perspective — net EPPD, win rate, bid rate, etc. all reflect the
+    AI opponent's performance, not the human's.
+
+    Returns ``None`` if the AI has no completed hands.
+    """
+    # All matches involving this AI model (active + complete)
+    all_matches = (
+        session.query(Match)
+        .filter(
+            Match.ai_model == ai_model,
+            Match.status.in_(_LEADERBOARD_MATCH_STATUSES),
+        )
+        .all()
+    )
+
+    if not all_matches:
+        return None
+
+    all_match_ids = [m.id for m in all_matches]
+
+    # Completed hands across active + completed matches
+    completed_hands = (
+        session.query(Hand)
+        .filter(Hand.match_id.in_(all_match_ids), Hand.status == "complete")
+        .all()
+    )
+    hands_played = len(completed_hands)
+
+    if hands_played == 0:
+        return None
+
+    # --- Match-level metrics (completed matches only) ---
+    completed_matches = [m for m in all_matches if m.status == "complete"]
+    matches_played = len(completed_matches)
+
+    # AI wins when score_ai > score_human
+    games_won = sum(1 for m in completed_matches if m.score_ai > m.score_human)
+    win_rate = games_won / matches_played if matches_played > 0 else 0.0
+
+    # Margins from AI perspective: score_ai - score_human
+    margins = [m.score_ai - m.score_human for m in completed_matches]
+    avg_match_margin = sum(margins) / len(margins) if margins else 0.0
+    winning_margins = [mg for mg in margins if mg > 0]
+    avg_margin_victory = (
+        sum(winning_margins) / len(winning_margins) if winning_margins else 0.0
+    )
+
+    # --- Hand-level metrics (all completed hands, AI = team 1) ---
+
+    # Net EPPD from AI perspective: (points_team1 - points_team0) / hands
+    total_net_points = sum(h.points_team1 - h.points_team0 for h in completed_hands)
+    net_eppd = total_net_points / hands_played
+
+    # Bidding stats — AI team is team 1, seats (1, 3)
+    declaring_hands = [
+        h
+        for h in completed_hands
+        if h.bidder_seat is not None and h.bidder_seat in (1, 3)
+    ]
+    bid_rate = len(declaring_hands) / hands_played if hands_played > 0 else 0.0
+
+    # Make rate: when AI declares, did team 1 make the contract?
+    made_contracts = [
+        h
+        for h in declaring_hands
+        if h.winning_bid_n is not None and h.tricks_team1 >= h.winning_bid_n
+    ]
+    make_rate = len(made_contracts) / len(declaring_hands) if declaring_hands else 0.0
+
+    # Average bid level when declaring
+    bid_levels = [
+        h.winning_bid_n for h in declaring_hands if h.winning_bid_n is not None
+    ]
+    avg_bid_level = sum(bid_levels) / len(bid_levels) if bid_levels else 0.0
+
+    # Moon stats (AI team declaring)
+    moon_hands = [h for h in completed_hands if h.winning_bid_type == "moon"]
+    moon_declaring = [h for h in moon_hands if h.bidder_seat in (1, 3)]
+    moon_call_rate = len(moon_declaring) / hands_played if hands_played > 0 else 0.0
+    moon_made = [
+        h
+        for h in moon_declaring
+        if h.winning_bid_n is not None and h.tricks_team1 >= h.winning_bid_n
+    ]
+    moon_make_rate = len(moon_made) / len(moon_declaring) if moon_declaring else 0.0
+
+    # Loner stats (AI team declaring)
+    loner_hands = [h for h in completed_hands if h.winning_bid_type == "loner"]
+    loner_declaring = [h for h in loner_hands if h.bidder_seat in (1, 3)]
+    loner_call_rate = len(loner_declaring) / hands_played if hands_played > 0 else 0.0
+    loner_made = [
+        h
+        for h in loner_declaring
+        if h.winning_bid_n is not None and h.tricks_team1 >= h.winning_bid_n
+    ]
+    loner_make_rate = len(loner_made) / len(loner_declaring) if loner_declaring else 0.0
+
+    # Use a negative player_id sentinel for AI entries (no real player row)
+    return PlayerStats(
+        player_id=-1,
+        nickname=display_name or ai_model,
+        is_ai=True,
+        net_eppd=round(net_eppd, 3),
+        games_won=games_won,
+        win_rate=round(win_rate, 3),
+        avg_margin_victory=round(avg_margin_victory, 1),
+        matches_played=matches_played,
+        hands_played=hands_played,
+        avg_match_margin=round(avg_match_margin, 1),
+        bid_rate=round(bid_rate, 3),
+        make_rate=round(make_rate, 3),
+        avg_bid_level=round(avg_bid_level, 1),
+        moon_call_rate=round(moon_call_rate, 3),
+        moon_make_rate=round(moon_make_rate, 3),
+        loner_call_rate=round(loner_call_rate, 3),
+        loner_make_rate=round(loner_make_rate, 3),
+    )
+
+
 def get_leaderboard(
     session: Session,
     *,
     min_hands: int = 1,
+    ai_display_names: dict[str, str] | None = None,
 ) -> list[PlayerStats]:
     """Return leaderboard rankings sorted by net_eppd descending.
 
@@ -341,6 +473,10 @@ def get_leaderboard(
     (across both active and completed matches).  This means players
     appear on the leaderboard after their very first completed hand,
     even during their first match.
+
+    When *ai_display_names* is provided (``{model_id: display_name}``),
+    AI opponent aggregate entries are included alongside human players.
+    Pass ``None`` (default) to show only human players.
     """
     # Find all players with enough completed hands across active+complete matches
     player_hand_counts = (
@@ -360,6 +496,27 @@ def get_leaderboard(
         stats = compute_player_stats(session, player_id)
         if stats is not None:
             stats_list.append(stats)
+
+    # Add AI opponent aggregate entries
+    if ai_display_names is not None:
+        # Find distinct AI models with enough completed hands
+        ai_hand_counts = (
+            session.query(Match.ai_model, func.count(Hand.id).label("n"))
+            .join(Hand, Hand.match_id == Match.id)
+            .filter(
+                Match.status.in_(_LEADERBOARD_MATCH_STATUSES),
+                Hand.status == "complete",
+            )
+            .group_by(Match.ai_model)
+            .having(func.count(Hand.id) >= min_hands)
+            .all()
+        )
+
+        for ai_model, _n in ai_hand_counts:
+            display_name = ai_display_names.get(ai_model, ai_model)
+            ai_stats = compute_ai_stats(session, ai_model, display_name=display_name)
+            if ai_stats is not None:
+                stats_list.append(ai_stats)
 
     # Sort by net_eppd descending (primary ranking metric)
     stats_list.sort(key=lambda s: s.net_eppd, reverse=True)

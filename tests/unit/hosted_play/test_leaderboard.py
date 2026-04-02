@@ -21,6 +21,7 @@ from web.db import Hand, Match, Player
 from web.leaderboard import (
     METRIC_DEFINITIONS,
     PlayerStats,
+    compute_ai_stats,
     compute_player_stats,
     format_metric,
     get_leaderboard,
@@ -406,6 +407,7 @@ class TestComputePlayerStats:
         expected_fields = {
             "player_id",
             "nickname",
+            "is_ai",
             "net_eppd",
             "games_won",
             "win_rate",
@@ -505,6 +507,318 @@ class TestGetLeaderboard:
         assert rankings[0].hands_played == 1
         assert rankings[0].matches_played == 0  # no completed matches yet
         assert rankings[0].games_won == 0
+
+
+# ---------------------------------------------------------------------------
+# AI stats tests
+# ---------------------------------------------------------------------------
+
+
+class TestComputeAiStats:
+    """Unit tests for compute_ai_stats (AI opponent perspective)."""
+
+    def test_returns_none_for_unknown_model(self, db_session):
+        result = compute_ai_stats(db_session, "nonexistent_model")
+        assert result is None
+
+    def test_returns_none_for_no_completed_hands(self, db_session):
+        """AI model with no completed hands → None."""
+        player = _make_player(db_session)
+        _make_match(db_session, player, status="active")
+        result = compute_ai_stats(db_session, "heuristic")
+        assert result is None
+
+    def test_basic_ai_stats(self, db_session):
+        """AI stats computed from team 1 perspective."""
+        player = _make_player(db_session, nickname="Alice")
+        match = _make_match(
+            db_session,
+            player,
+            score_human=30,
+            score_ai=52,
+            hands_played=5,
+        )
+
+        # 3 hands where human team declared
+        for i in range(3):
+            _make_hand(
+                db_session,
+                match,
+                hand_number=i,
+                bidder_seat=0,
+                winning_bid_n=6,
+                tricks_team0=7,
+                tricks_team1=3,
+                points_team0=6,
+                points_team1=3,
+            )
+        # 2 hands where AI team declared and made
+        for i in range(3, 5):
+            _make_hand(
+                db_session,
+                match,
+                hand_number=i,
+                bidder_seat=1,
+                winning_bid_n=5,
+                tricks_team0=4,
+                tricks_team1=6,
+                points_team0=4,
+                points_team1=5,
+            )
+
+        db_session.flush()
+        stats = compute_ai_stats(db_session, "heuristic", display_name="Test Bot")
+
+        assert stats is not None
+        assert stats.is_ai is True
+        assert stats.nickname == "Test Bot"
+        assert stats.matches_played == 1
+        assert stats.games_won == 1  # score_ai > score_human
+        assert stats.win_rate == 1.0
+        assert stats.hands_played == 5
+
+        # net_eppd from AI (team1) perspective:
+        # (3*3 + 2*5 - 3*6 - 2*4) / 5 = (9+10-18-8)/5 = -7/5 = -1.4
+        assert stats.net_eppd == -1.4
+
+        # bid_rate = 2 declaring (seat 1) / 5 total
+        assert stats.bid_rate == 0.4
+
+        # make_rate = 2 made (6 >= 5) / 2 declaring
+        assert stats.make_rate == 1.0
+
+    def test_ai_stats_aggregate_across_players(self, db_session):
+        """AI stats aggregate across matches from different human players."""
+        player_a = _make_player(db_session, nickname="A")
+        player_b = _make_player(db_session, nickname="B")
+
+        # Match 1: AI wins
+        m1 = _make_match(
+            db_session, player_a, score_human=20, score_ai=52, hands_played=2
+        )
+        _make_hand(
+            db_session,
+            m1,
+            hand_number=0,
+            bidder_seat=1,
+            winning_bid_n=5,
+            tricks_team0=3,
+            tricks_team1=7,
+            points_team0=3,
+            points_team1=5,
+        )
+        _make_hand(
+            db_session,
+            m1,
+            hand_number=1,
+            bidder_seat=0,
+            winning_bid_n=6,
+            tricks_team0=4,
+            tricks_team1=6,
+            points_team0=-6,
+            points_team1=6,
+        )
+
+        # Match 2: AI loses
+        m2 = _make_match(
+            db_session, player_b, score_human=52, score_ai=10, hands_played=2
+        )
+        _make_hand(
+            db_session,
+            m2,
+            hand_number=10,
+            bidder_seat=0,
+            winning_bid_n=6,
+            tricks_team0=8,
+            tricks_team1=2,
+            points_team0=6,
+            points_team1=2,
+        )
+        _make_hand(
+            db_session,
+            m2,
+            hand_number=11,
+            bidder_seat=3,
+            winning_bid_n=5,
+            tricks_team0=6,
+            tricks_team1=4,
+            points_team0=6,
+            points_team1=-5,
+        )
+
+        db_session.flush()
+        stats = compute_ai_stats(db_session, "heuristic")
+
+        assert stats is not None
+        assert stats.hands_played == 4  # across both matches
+        assert stats.matches_played == 2
+        assert stats.games_won == 1  # only m1 won
+        assert stats.win_rate == 0.5
+
+        # net_eppd: (5+6+2+(-5) - 3+(-6)+6+6) / 4 = (8 - 9) / 4 = -0.25
+        # team1 points: 5+6+2+(-5) = 8
+        # team0 points: 3+(-6)+6+6 = 9
+        assert stats.net_eppd == -0.25
+
+    def test_ai_stats_uses_display_name(self, db_session):
+        """display_name overrides the raw model id."""
+        player = _make_player(db_session)
+        match = _make_match(db_session, player)
+        _make_hand(db_session, match)
+        db_session.flush()
+
+        stats = compute_ai_stats(db_session, "heuristic", display_name="Bud Bot")
+        assert stats is not None
+        assert stats.nickname == "Bud Bot"
+
+    def test_ai_stats_defaults_to_model_id(self, db_session):
+        """Without display_name, nickname falls back to model id."""
+        player = _make_player(db_session)
+        match = _make_match(db_session, player)
+        _make_hand(db_session, match)
+        db_session.flush()
+
+        stats = compute_ai_stats(db_session, "heuristic")
+        assert stats is not None
+        assert stats.nickname == "heuristic"
+
+    def test_ai_stats_player_id_sentinel(self, db_session):
+        """AI entries use -1 as player_id sentinel."""
+        player = _make_player(db_session)
+        match = _make_match(db_session, player)
+        _make_hand(db_session, match)
+        db_session.flush()
+
+        stats = compute_ai_stats(db_session, "heuristic")
+        assert stats is not None
+        assert stats.player_id == -1
+
+    def test_ai_moon_and_loner_stats(self, db_session):
+        """Moon/loner stats computed from AI team perspective."""
+        player = _make_player(db_session)
+        match = _make_match(db_session, player)
+
+        # Moon hand — AI team declares, makes all 10
+        _make_hand(
+            db_session,
+            match,
+            hand_number=0,
+            bidder_seat=1,
+            winning_bid_n=10,
+            winning_bid_type="moon",
+            tricks_team0=0,
+            tricks_team1=10,
+            points_team0=0,
+            points_team1=20,
+        )
+
+        # Loner hand — AI team declares, fails
+        _make_hand(
+            db_session,
+            match,
+            hand_number=1,
+            bidder_seat=3,
+            winning_bid_n=10,
+            winning_bid_type="loner",
+            tricks_team0=5,
+            tricks_team1=5,
+            points_team0=5,
+            points_team1=-10,
+        )
+
+        # Regular hand — human declares
+        _make_hand(
+            db_session,
+            match,
+            hand_number=2,
+            bidder_seat=0,
+            winning_bid_n=5,
+            winning_bid_type="regular",
+            tricks_team0=6,
+            tricks_team1=4,
+            points_team0=5,
+            points_team1=4,
+        )
+
+        db_session.flush()
+        stats = compute_ai_stats(db_session, "heuristic")
+
+        assert stats is not None
+        assert stats.hands_played == 3
+        assert stats.moon_call_rate == pytest.approx(1 / 3, abs=0.001)
+        assert stats.moon_make_rate == 1.0  # 1 moon, all 10 tricks
+        assert stats.loner_call_rate == pytest.approx(1 / 3, abs=0.001)
+        assert stats.loner_make_rate == 0.0  # 1 loner, only 5 tricks
+
+
+class TestLeaderboardWithAI:
+    """Tests for get_leaderboard with AI opponent entries included."""
+
+    def test_includes_ai_when_display_names_provided(self, db_session):
+        """AI entries appear when ai_display_names is passed."""
+        player = _make_player(db_session, nickname="Human")
+        match = _make_match(db_session, player)
+        _make_hand(db_session, match, points_team0=5, points_team1=3)
+        db_session.flush()
+
+        rankings = get_leaderboard(
+            db_session, ai_display_names={"heuristic": "Test Bot"}
+        )
+        assert len(rankings) == 2
+        nicknames = {r.nickname for r in rankings}
+        assert "Human" in nicknames
+        assert "Test Bot" in nicknames
+
+    def test_excludes_ai_when_no_display_names(self, db_session):
+        """Without ai_display_names, only human players appear."""
+        player = _make_player(db_session, nickname="Human")
+        match = _make_match(db_session, player)
+        _make_hand(db_session, match, points_team0=5, points_team1=3)
+        db_session.flush()
+
+        rankings = get_leaderboard(db_session)
+        assert len(rankings) == 1
+        assert rankings[0].nickname == "Human"
+        assert rankings[0].is_ai is False
+
+    def test_ai_and_human_sorted_by_net_eppd(self, db_session):
+        """AI and human entries sort together by net_eppd."""
+        player = _make_player(db_session, nickname="Human")
+        match = _make_match(db_session, player, score_human=52, score_ai=20)
+
+        # Human team wins big: high positive eppd for human, negative for AI
+        _make_hand(
+            db_session,
+            match,
+            points_team0=10,
+            points_team1=2,
+        )
+        db_session.flush()
+
+        rankings = get_leaderboard(
+            db_session, ai_display_names={"heuristic": "Test Bot"}
+        )
+        assert len(rankings) == 2
+        # Human has positive EPPD (10-2=8), AI has negative (-8)
+        assert rankings[0].nickname == "Human"
+        assert rankings[0].is_ai is False
+        assert rankings[1].nickname == "Test Bot"
+        assert rankings[1].is_ai is True
+
+    def test_ai_respects_min_hands_filter(self, db_session):
+        """AI entries also respect the min_hands threshold."""
+        player = _make_player(db_session, nickname="Human")
+        match = _make_match(db_session, player)
+        _make_hand(db_session, match, points_team0=5, points_team1=3)
+        db_session.flush()
+
+        # min_hands=2 excludes both (only 1 hand each)
+        rankings = get_leaderboard(
+            db_session,
+            min_hands=2,
+            ai_display_names={"heuristic": "Test Bot"},
+        )
+        assert len(rankings) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +984,55 @@ class TestLeaderboardRoute:
         finally:
             session.close()
 
+    def test_leaderboard_shows_ai_opponents(self, app_and_client):
+        """AI opponents appear on the leaderboard with an AI badge."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player = _make_player(session, nickname="HumanPlayer")
+            # Match uses an AI model that the test roster provides
+            match = _make_match(
+                session,
+                player,
+                score_human=52,
+                score_ai=20,
+            )
+            # Override ai_model to match the test roster
+            match.ai_model = "bud_bot"
+            _make_hand(
+                session,
+                match,
+                points_team0=5,
+                points_team1=2,
+            )
+            session.commit()
+
+            resp = client.get(f"/leaderboard/{player.link_uuid}")
+            assert resp.status_code == 200
+            # Human player present
+            assert "HumanPlayer" in resp.text
+            # AI opponent present with badge
+            assert "Bud Bot" in resp.text
+            assert "AI" in resp.text
+            assert "leaderboard__ai-badge" in resp.text
+        finally:
+            session.close()
+
+    def test_leaderboard_no_ai_badge_for_humans(self, app_and_client):
+        """Human players do not have the AI badge in table rows."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player = _make_player(session, nickname="JustHuman")
+            session.commit()
+
+            resp = client.get(f"/leaderboard/{player.link_uuid}")
+            assert resp.status_code == 200
+            # Empty leaderboard — no table body, no AI badge in rows
+            assert 'title="AI opponent"' not in resp.text
+        finally:
+            session.close()
+
 
 # ---------------------------------------------------------------------------
 # format_metric tests
@@ -755,7 +1118,7 @@ class TestMetricDefinitions:
 
     def test_every_player_stats_field_has_definition(self):
         """Every numeric field on PlayerStats has a matching metric def."""
-        skip = {"player_id", "nickname"}
+        skip = {"player_id", "nickname", "is_ai"}
         stat_fields = {
             f.name
             for f in PlayerStats.__dataclass_fields__.values()

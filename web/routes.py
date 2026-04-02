@@ -1420,7 +1420,14 @@ async def leaderboard(request: Request, link_uuid: str):
         if player is None:
             raise HTTPException(status_code=404, detail="Player not found")
 
-        rankings = get_leaderboard(session)
+        # Build AI display name mapping from the roster
+        ai_manager = _get_ai_manager(request)
+        ai_display_names = {
+            model_id: info.name
+            for model_id, info in ai_manager.available_models.items()
+        }
+
+        rankings = get_leaderboard(session, ai_display_names=ai_display_names)
 
         return templates.TemplateResponse(
             "leaderboard.html",
