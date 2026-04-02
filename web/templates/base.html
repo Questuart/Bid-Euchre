@@ -71,8 +71,9 @@
                 <a href="/leaderboard/{{ link_uuid }}" role="tab"
                    class="header-nav__tab{% if _page == 'leaderboard' %} header-nav__tab--active{% endif %}"
                    {% if _page == 'leaderboard' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Leaderboard</a>
-                <span class="header-nav__tab header-nav__tab--disabled" role="tab"
-                      aria-disabled="true" title="Coming soon">Comments</span>
+                <a href="/comments/{{ link_uuid }}" role="tab"
+                   class="header-nav__tab{% if _page == 'comments' %} header-nav__tab--active{% endif %}"
+                   {% if _page == 'comments' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Comments</a>
             </nav>
             {% endif %}
             <button id="text-size-toggle"

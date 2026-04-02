@@ -29,7 +29,7 @@ from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
 from bid_euchre.strategy.bidding import BidAction
 
 from .ai_manager import AIManager
-from .db import Decision, Hand, InviteCode, Match, Player
+from .db import Comment, Decision, Hand, InviteCode, Match, Player
 from .leaderboard import METRIC_DEFINITIONS, format_metric, get_leaderboard
 from .middleware import (
     check_match_limit,
@@ -1573,6 +1573,146 @@ async def match_history(request: Request, link_uuid: str):
                 "matches": history_entries,
             },
         )
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Comments board
+# ---------------------------------------------------------------------------
+
+# Maximum comment length (characters) and page size
+_COMMENT_MAX_LENGTH = 500
+_COMMENTS_PAGE_SIZE = 50
+
+
+def _fetch_comments(session, *, limit: int = _COMMENTS_PAGE_SIZE) -> list[dict]:
+    """Return recent comments with player nicknames, newest first."""
+    rows = (
+        session.query(Comment, Player.nickname)
+        .join(Player, Comment.player_id == Player.id)
+        .order_by(Comment.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "nickname": nickname,
+            "content": comment.content,
+            "created_at": comment.created_at,
+        }
+        for comment, nickname in rows
+    ]
+
+
+@router.get("/comments/{link_uuid}", response_class=HTMLResponse)
+async def comments_page(request: Request, link_uuid: str):
+    """Comments board page — community message board for all players.
+
+    Lists recent comments newest-first with a form to post new ones.
+    Gated behind invite-code auth: the ``link_uuid`` must correspond to
+    a valid player.
+    """
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Player not found")
+
+        comments = _fetch_comments(session)
+
+        return templates.TemplateResponse(
+            "comments.html",
+            {
+                "request": request,
+                "link_uuid": link_uuid,
+                "current_page": "comments",
+                "nickname": player.nickname,
+                "comments": comments,
+                "error": None,
+            },
+        )
+    finally:
+        session.close()
+
+
+@router.get("/comments/{link_uuid}/list", response_class=HTMLResponse)
+async def comments_list(request: Request, link_uuid: str):
+    """HTMX partial — return the comments list for polling refresh."""
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Player not found")
+
+        comments = _fetch_comments(session)
+
+        return HTMLResponse(
+            templates.get_template("partials/comments_list.html").render(
+                {"comments": comments}
+            )
+        )
+    finally:
+        session.close()
+
+
+@router.post("/play/{link_uuid}/comment", response_class=HTMLResponse)
+async def post_comment(
+    request: Request,
+    link_uuid: str,
+    content: str = Form(...),
+):
+    """Submit a new comment to the board.
+
+    For HTMX requests, returns the updated comments list partial.
+    For regular form submissions, redirects back to the comments page.
+    """
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Player not found")
+
+        # Validate content
+        content = content.strip()
+        if not content:
+            error = "Comment cannot be empty."
+        elif len(content) > _COMMENT_MAX_LENGTH:
+            error = f"Comment too long (max {_COMMENT_MAX_LENGTH} characters)."
+        else:
+            error = None
+
+        if error is None:
+            comment = Comment(
+                player_id=player.id,
+                content=content,
+            )
+            session.add(comment)
+            session.commit()
+
+        # HTMX request — return the updated list partial
+        is_htmx = request.headers.get("HX-Request") == "true"
+
+        comments = _fetch_comments(session)
+
+        if is_htmx:
+            return HTMLResponse(
+                templates.get_template("partials/comments_list.html").render(
+                    {"comments": comments}
+                )
+            )
+
+        # Non-HTMX fallback — redirect to comments page
+        return RedirectResponse(
+            url=f"/comments/{link_uuid}",
+            status_code=303,
+        )
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 

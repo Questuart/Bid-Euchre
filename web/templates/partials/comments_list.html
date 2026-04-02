@@ -1,0 +1,25 @@
+{#
+    Comments list partial — rendered inside the #comments-list div.
+
+    Context variables:
+        comments — list of dicts with keys: nickname, content, created_at
+#}
+{% if comments|length == 0 %}
+<div class="comments__empty">
+    <p>No comments yet. Be the first to share your thoughts!</p>
+</div>
+{% else %}
+<ul class="comments__list" role="list" aria-label="Comment list">
+    {% for comment in comments %}
+    <li class="comments__item">
+        <div class="comments__meta">
+            <span class="comments__author">{{ comment.nickname or "Anonymous" }}</span>
+            <time class="comments__time" datetime="{{ comment.created_at.isoformat() }}">
+                {{ comment.created_at.strftime('%b %d, %Y %I:%M %p') }}
+            </time>
+        </div>
+        <div class="comments__content">{{ comment.content }}</div>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
