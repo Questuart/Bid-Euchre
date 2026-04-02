@@ -125,6 +125,9 @@ async def lifespan(app: FastAPI):
 
     # 5. Templates
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+    # Expose app_url as a Jinja2 global so templates can build absolute
+    # URLs (required for og:image and other meta tags that crawlers fetch).
+    templates.env.globals["app_url"] = config.app_url.rstrip("/")
 
     # 6. Stash on app.state for route access
     app.state.config = config

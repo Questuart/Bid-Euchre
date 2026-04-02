@@ -2285,6 +2285,38 @@ class TestAccessibilityBaseTemplate:
         assert "safe-area-inset-left" in html
 
 
+class TestOgImageAbsoluteUrl:
+    """Verify og:image uses app_url for absolute URL (#2058)."""
+
+    def test_og_image_relative_without_app_url(self, env):
+        """Without app_url global, og:image falls back to relative path."""
+        tmpl = env.get_template("base.html")
+        html = tmpl.render()
+        assert "og:image" in html
+        assert "/static/icons/icon-512.png" in html
+
+    def test_og_image_absolute_with_app_url(self, env):
+        """With app_url global, og:image produces an absolute URL."""
+        env.globals["app_url"] = "https://bideuchre.example.com"
+        try:
+            tmpl = env.get_template("base.html")
+            html = tmpl.render()
+            assert "https://bideuchre.example.com/static/icons/icon-512.png" in html
+        finally:
+            env.globals.pop("app_url", None)
+
+    def test_og_image_strips_trailing_slash(self, env):
+        """app_url with trailing slash does not produce double slash."""
+        env.globals["app_url"] = "https://bideuchre.example.com"
+        try:
+            tmpl = env.get_template("base.html")
+            html = tmpl.render()
+            # Should NOT contain double slash in static path
+            assert "https://bideuchre.example.com//static" not in html
+        finally:
+            env.globals.pop("app_url", None)
+
+
 class TestGameTemplateAccessibility:
     """Verify accessibility-sensitive behavior in the full-page game template."""
 
