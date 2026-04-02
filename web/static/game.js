@@ -210,7 +210,8 @@
         try {
             return localStorage.getItem(TEXT_SIZE_KEY) || 'default';
         } catch (_) {
-            return 'default';
+            // localStorage unavailable — fall back to document state
+            return document.documentElement.getAttribute('data-text-size') || 'default';
         }
     }
 

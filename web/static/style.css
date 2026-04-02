@@ -1736,9 +1736,10 @@ main {
         font-size: 0.8rem;
     }
 
-    /* Hide Play card button and help text — vestigial after tap-to-play */
+    /* Hide Play card button and help text — vestigial after tap-to-play.
+       Scoped to .card-play-form so moon-exchange guidance stays visible. */
     .btn--play-card,
-    .card-play-help {
+    .card-play-form .card-play-help {
         display: none;
     }
 
