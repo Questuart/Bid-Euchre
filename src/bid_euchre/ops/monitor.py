@@ -846,6 +846,8 @@ def check_stalled_lanes(
     _activity_probe: Any | None = None,
     _nudge_fn: Any | None = None,
     _capture_fn: Any | None = None,
+    _pane_pid_fn: Any | None = None,
+    _pgrep_fn: Any | None = None,
 ) -> list[MonitorFinding]:
     """Detect dispatched+acked lanes that have stopped making progress.
 
@@ -857,6 +859,8 @@ def check_stalled_lanes(
     4. The pane does NOT show active-work indicators (spinner, progress
        counters) — prevents false stall reports when the lane is actively
        thinking but producing no visible output (#1612).
+    5. No validation processes (make/pytest/ruff) are running in the lane's
+       process tree — prevents false stalls during ``make check`` (#2123).
 
     When recovery is enabled (``no_recovery=False``, the default), stall
     detection includes a 2-step recovery ladder:
@@ -885,6 +889,10 @@ def check_stalled_lanes(
         _capture_fn: Optional callable(lane_id) -> str|None for testing.
             If provided, used instead of ``_capture_pane_content()`` when
             checking for active-work indicators (#1612).
+        _pane_pid_fn: Optional callable(lane_id) -> str|None for testing.
+            If provided, used instead of tmux pane PID probe (#2123).
+        _pgrep_fn: Optional callable(pane_pid) -> list[str] for testing.
+            If provided, used instead of ``pgrep`` subprocess (#2123).
 
     Returns:
         List of findings for stalled lanes (WARN for detection, HIGH for
@@ -1011,6 +1019,20 @@ def check_stalled_lanes(
                 observations[lane_id]["recovery_count"] = 0
                 continue
 
+            # ---- Process-level validation guard (#2123) ----
+            # Even if pane content doesn't show spinners, check if
+            # make/pytest/ruff is running in the pane's process tree.
+            if _detect_background_validation(
+                lane_id,
+                tmux_session,
+                runtime_dir,
+                _pane_pid_fn=_pane_pid_fn,
+                _pgrep_fn=_pgrep_fn,
+            ):
+                observations[lane_id]["unchanged_count"] = 0
+                observations[lane_id]["recovery_count"] = 0
+                continue
+
             # ---- Recovery ladder ----
             if not no_recovery and recovery_count == 0:
                 # Step 1: Re-nudge the lane
@@ -1118,10 +1140,19 @@ _ACTIVE_WORK_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"Running[…\.]|timeout", re.IGNORECASE),
     # Tool execution progress (not prompts — these appear inline during runs)
     re.compile(r"(?:Bash|Edit|Read|Write|Grep|Glob)\(.*\.\.\.", re.IGNORECASE),
+    # make check / validation progress indicators
+    re.compile(
+        r"Running full check|Waiting for.*slot|make\[|All checks passed|"
+        r"Checks FAILED|check-gated|check-quiet",
+        re.IGNORECASE,
+    ),
 ]
 
 #: Number of trailing pane lines to scan for activity indicators.
-_ACTIVITY_TAIL_LINES: int = 5
+#: Increased from 5 to 20 (#2123) — Claude Code TUI renders Bash tool status
+#: (e.g. "⏺ Bash(make check-gated)…") above the visible prompt, so a 5-line
+#: window misses it when status-bar / blank lines push it up.
+_ACTIVITY_TAIL_LINES: int = 20
 
 #: Regex patterns that match Claude Code tool-approval / elicitation prompts.
 #: Each is compiled once at import time for efficiency.
@@ -1187,7 +1218,9 @@ def _capture_pane_content(
     target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
     try:
         result = subprocess.run(
-            ["tmux", "capture-pane", "-t", target, "-p"],
+            # -S -50: capture 50 lines of scrollback so we don't miss Bash
+            # tool status lines pushed above the visible area (#2123).
+            ["tmux", "capture-pane", "-t", target, "-p", "-S", "-50"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -1226,6 +1259,83 @@ def _detect_active_work(content: str) -> bool:
     for line in tail:
         for pattern in _ACTIVE_WORK_PATTERNS:
             if pattern.search(line):
+                return True
+    return False
+
+
+#: Process names that indicate validation is running in a lane's pane.
+_VALIDATION_PROCESS_NAMES: tuple[str, ...] = (
+    "make",
+    "pytest",
+    "ruff",
+    "python -m pytest",
+)
+
+
+def _detect_background_validation(
+    lane_id: str,
+    tmux_session: str = "steward",
+    runtime_dir: Path | None = None,
+    *,
+    _pane_pid_fn: Any | None = None,
+    _pgrep_fn: Any | None = None,
+) -> bool:
+    """Check if validation processes (make/pytest/ruff) are running in a lane's pane.
+
+    Uses the OS process tree rooted at the pane's shell PID to detect
+    ``make check``, ``pytest``, or ``ruff`` subprocesses — regardless of
+    whether the TUI renders visible progress indicators.
+
+    Args:
+        lane_id: The lane identifier.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+        _pane_pid_fn: Optional test callable(lane_id) -> str|None.
+        _pgrep_fn: Optional test callable(pane_pid) -> list[str].
+
+    Returns:
+        True if a validation process is detected in the lane's process tree.
+    """
+    # Step 1: Get the pane's shell PID
+    if _pane_pid_fn is not None:
+        pane_pid = _pane_pid_fn(lane_id)
+    else:
+        from bid_euchre.ops.worker_pool import _resolve_tmux_target
+
+        target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+        try:
+            result = subprocess.run(
+                ["tmux", "display-message", "-t", target, "-p", "#{pane_pid}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            pane_pid = result.stdout.strip() if result.returncode == 0 else None
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pane_pid = None
+
+    if not pane_pid:
+        return False
+
+    # Step 2: Check for validation processes in the pane's process tree
+    if _pgrep_fn is not None:
+        procs = _pgrep_fn(pane_pid)
+    else:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-P", pane_pid, "-a"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            procs = result.stdout.strip().splitlines() if result.returncode == 0 else []
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            procs = []
+
+    for proc_line in procs:
+        proc_lower = proc_line.lower()
+        for name in _VALIDATION_PROCESS_NAMES:
+            if name in proc_lower:
                 return True
     return False
 

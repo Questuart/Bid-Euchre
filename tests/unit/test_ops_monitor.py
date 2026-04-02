@@ -20,6 +20,7 @@ from bid_euchre.ops.monitor import (
     MonitorFinding,
     _default_stall_state_path,
     _detect_active_work,
+    _detect_background_validation,
     _match_approval_prompt,
     _save_stall_state,
     check_approval_stalls,
@@ -2702,12 +2703,231 @@ class TestDetectActiveWork:
 
     def test_only_checks_tail_lines(self) -> None:
         """Activity indicators early in the pane are ignored."""
-        # Put a spinner far from the bottom with 10+ empty/normal lines after
+        # Put a spinner far from the bottom with 25+ normal lines after
+        # (_ACTIVITY_TAIL_LINES is 20, so 25 padding lines push it out)
         lines = ["⏺ Running Bash(make check)…"]
-        lines.extend(["normal output"] * 10)
+        lines.extend(["normal output"] * 25)
         lines.append("Done.")
         content = "\n".join(lines) + "\n"
         assert _detect_active_work(content) is False
+
+    def test_detects_bash_spinner_at_line_8(self) -> None:
+        """Bash spinner at line 8 (outside old 5-line window) is now detected (#2123)."""
+        # Simulate: spinner at line 8 from bottom, status bar + blank lines below
+        lines = ["some output"] * 5
+        lines.append("⏺ Bash(make check-gated)…")
+        lines.extend([""] * 3)  # blank lines
+        lines.append("claude-3-5-sonnet  12345 tokens  2m 15s")
+        lines.append("❯")
+        content = "\n".join(lines) + "\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_make_check_progress_line(self) -> None:
+        """'Running full check' progress line is detected (#2123)."""
+        lines = ["some output"] * 5
+        lines.append(">>> Running full check (logs → /tmp/check-abc.log)")
+        lines.extend([""] * 3)
+        lines.append("❯")
+        content = "\n".join(lines) + "\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_waiting_for_slot(self) -> None:
+        """'Waiting for slot' message from check-gated is detected (#2123)."""
+        lines = ["previous output"] * 3
+        lines.append("Waiting for check-gated slot (3 of 3 occupied)")
+        lines.extend([""] * 2)
+        lines.append("❯")
+        content = "\n".join(lines) + "\n"
+        assert _detect_active_work(content) is True
+
+    def test_detects_check_quiet_in_output(self) -> None:
+        """check-quiet keyword in pane output is detected (#2123)."""
+        content = "running\ncheck-quiet started\n❯\n"
+        assert _detect_active_work(content) is True
+
+
+# ---------------------------------------------------------------------------
+# _detect_background_validation tests
+# ---------------------------------------------------------------------------
+
+
+class TestDetectBackgroundValidation:
+    """Tests for process-tree validation detection (#2123)."""
+
+    def test_detects_make_process(self) -> None:
+        """Returns True when 'make' is running in the pane's process tree."""
+        result = _detect_background_validation(
+            "author-a",
+            _pane_pid_fn=lambda _: "12345",
+            _pgrep_fn=lambda _: ["12346 make check-quiet"],
+        )
+        assert result is True
+
+    def test_detects_pytest_process(self) -> None:
+        """Returns True when 'pytest' is running in the pane's process tree."""
+        result = _detect_background_validation(
+            "author-a",
+            _pane_pid_fn=lambda _: "12345",
+            _pgrep_fn=lambda _: ["12347 python -m pytest tests/"],
+        )
+        assert result is True
+
+    def test_detects_ruff_process(self) -> None:
+        """Returns True when 'ruff' is running in the pane's process tree."""
+        result = _detect_background_validation(
+            "author-a",
+            _pane_pid_fn=lambda _: "12345",
+            _pgrep_fn=lambda _: ["12348 ruff check src/"],
+        )
+        assert result is True
+
+    def test_no_validation_process(self) -> None:
+        """Returns False when no validation process is running."""
+        result = _detect_background_validation(
+            "author-a",
+            _pane_pid_fn=lambda _: "12345",
+            _pgrep_fn=lambda _: ["12349 vim README.md"],
+        )
+        assert result is False
+
+    def test_empty_process_list(self) -> None:
+        """Returns False when no child processes exist."""
+        result = _detect_background_validation(
+            "author-a",
+            _pane_pid_fn=lambda _: "12345",
+            _pgrep_fn=lambda _: [],
+        )
+        assert result is False
+
+    def test_no_pane_pid(self) -> None:
+        """Returns False when pane PID cannot be determined."""
+        result = _detect_background_validation(
+            "author-a",
+            _pane_pid_fn=lambda _: None,
+            _pgrep_fn=lambda _: ["12346 make check"],
+        )
+        assert result is False
+
+    def test_empty_pane_pid(self) -> None:
+        """Returns False when pane PID is empty string."""
+        result = _detect_background_validation(
+            "author-a",
+            _pane_pid_fn=lambda _: "",
+            _pgrep_fn=lambda _: ["12346 make check"],
+        )
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# check_stalled_lanes process-level guard integration
+# ---------------------------------------------------------------------------
+
+
+class TestStalledLanesProcessGuard:
+    """Tests that process-level validation guard suppresses false stalls (#2123)."""
+
+    def test_stall_suppressed_when_make_running(self, tmp_path: Path) -> None:
+        """A lane running make check should NOT be flagged as stalled."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")  # 60min ago
+
+        def probe(_: str) -> int:
+            return 9999  # fixed epoch — simulates no change
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycle 1: first observation — no finding
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _capture_fn=lambda _: "❯\n",  # no spinner
+                _pane_pid_fn=lambda _: "12345",
+                _pgrep_fn=lambda _: ["12346 make check-quiet"],
+            )
+
+            # Cycle 2: unchanged but process guard not yet triggered (threshold not met)
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _capture_fn=lambda _: "❯\n",
+                _pane_pid_fn=lambda _: "12345",
+                _pgrep_fn=lambda _: ["12346 make check-quiet"],
+            )
+
+            # Cycle 3: threshold met, but process guard suppresses stall
+            f3 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _capture_fn=lambda _: "❯\n",
+                _pane_pid_fn=lambda _: "12345",
+                _pgrep_fn=lambda _: ["12346 make check-quiet"],
+            )
+
+        stall_findings = [f for f in f3 if "stall" in f.category]
+        assert len(stall_findings) == 0
+
+    def test_stall_detected_when_no_validation_process(self, tmp_path: Path) -> None:
+        """A truly idle lane (no validation running) IS flagged as stalled."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        now = datetime(2026, 3, 23, 12, 0, 0, tzinfo=timezone.utc)
+        pkt = _make_dispatched_pkt(created_at="2026-03-23T11:00:00Z")  # 60min ago
+
+        def probe(_: str) -> int:
+            return 9999  # fixed epoch
+
+        with (
+            patch("bid_euchre.ops.task_queue.list_packets", return_value=[pkt]),
+            patch("bid_euchre.ops.task_queue.load_ack", return_value=MagicMock()),
+        ):
+            # Cycle 1
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _capture_fn=lambda _: "❯\n",
+                _pane_pid_fn=lambda _: "12345",
+                _pgrep_fn=lambda _: [],  # no validation processes
+            )
+
+            # Cycle 2
+            check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _capture_fn=lambda _: "❯\n",
+                _pane_pid_fn=lambda _: "12345",
+                _pgrep_fn=lambda _: [],
+            )
+
+            # Cycle 3: should trigger stall (no spinner, no processes)
+            f3 = check_stalled_lanes(
+                runtime_dir,
+                now=now,
+                no_recovery=True,
+                _activity_probe=probe,
+                _capture_fn=lambda _: "❯\n",
+                _pane_pid_fn=lambda _: "12345",
+                _pgrep_fn=lambda _: [],
+            )
+
+        stall_findings = [f for f in f3 if "stall" in f.category]
+        assert len(stall_findings) == 1
+        assert "stalled" in stall_findings[0].summary
 
 
 # ---------------------------------------------------------------------------
