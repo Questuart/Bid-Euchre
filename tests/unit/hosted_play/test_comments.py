@@ -253,6 +253,19 @@ class TestPostComment:
         finally:
             session.close()
 
+    def test_post_comment_too_long_returns_error(self, client, app):
+        """Too-long comment returns validation error in HTMX response."""
+        link_uuid = _create_player(app, "Alice")
+        long_content = "x" * 501
+        resp = client.post(
+            f"/play/{link_uuid}/comment",
+            data={"content": long_content},
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == 200
+        assert "Comment too long" in resp.text
+        assert 'role="alert"' in resp.text
+
     def test_post_empty_comment(self, client, app):
         """Whitespace-only comment is rejected."""
         link_uuid = _create_player(app, "Alice")
@@ -268,6 +281,32 @@ class TestPostComment:
             assert session.query(Comment).count() == 0
         finally:
             session.close()
+
+    def test_post_empty_comment_returns_error(self, client, app):
+        """Empty comment returns validation error in HTMX response."""
+        link_uuid = _create_player(app, "Alice")
+        resp = client.post(
+            f"/play/{link_uuid}/comment",
+            data={"content": "   "},
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == 200
+        assert "Comment cannot be empty" in resp.text
+        assert 'role="alert"' in resp.text
+
+    def test_post_comment_too_long_non_htmx_returns_error(self, client, app):
+        """Non-HTMX submission with validation error renders full page with error."""
+        link_uuid = _create_player(app, "Alice")
+        long_content = "x" * 501
+        resp = client.post(
+            f"/play/{link_uuid}/comment",
+            data={"content": long_content},
+            follow_redirects=False,
+        )
+        # Should render full page (200) instead of redirecting
+        assert resp.status_code == 200
+        assert "Comment too long" in resp.text
+        assert "Comments" in resp.text  # full page rendered
 
     def test_post_comment_unknown_player(self, client):
         """Comment from unknown player returns 404."""
