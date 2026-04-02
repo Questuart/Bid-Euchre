@@ -113,6 +113,29 @@ main {
 }
 
 /* --------------------------------------------------------------------------
+   2b. Compass-Rose Game Layout
+   -------------------------------------------------------------------------- */
+
+.compass-layout {
+    display: grid;
+    grid-template-areas:
+        ".      partner  ."
+        "left   center   right"
+        ".      bottom   .";
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto 1fr auto;
+    gap: 0.35rem 0.5rem;
+    min-height: 0;
+    align-items: start;
+}
+
+.compass-top    { grid-area: partner; text-align: center; }
+.compass-left   { grid-area: left; align-self: center; }
+.compass-center { grid-area: center; min-width: 0; }
+.compass-right  { grid-area: right; align-self: center; }
+.compass-bottom { grid-area: bottom; }
+
+/* --------------------------------------------------------------------------
    3. Cards — Core
    -------------------------------------------------------------------------- */
 
@@ -269,9 +292,11 @@ main {
 .ai-card-count {
     font-size: 0.8rem;
     color: var(--color-text-muted);
-    margin-left: 0.5rem;
+    text-align: center;
+    display: block;
 }
 
+/* Legacy horizontal row (kept for non-compass contexts) */
 .ai-hands-row {
     display: flex;
     justify-content: space-between;
@@ -284,6 +309,7 @@ main {
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
+    align-items: center;
 }
 
 .ai-seat-label {
@@ -305,6 +331,29 @@ main {
 .ai-hand-block--edge {
     flex: 0 0 auto;
     min-width: 80px;
+}
+
+/* Vertical AI hands — left/right compass positions */
+.ai-hand-block--vertical {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    min-width: 48px;
+}
+
+.ai-hand--vertical {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+}
+
+.ai-hand--vertical .card-back {
+    width: 44px;
+    height: 14px;
+    border-radius: 3px;
+    margin: -1px 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -1432,6 +1481,20 @@ main {
         --card-overlap: -8px;
     }
 
+    /* Compass layout — compact for mobile */
+    .compass-layout {
+        gap: 0.25rem 0.35rem;
+    }
+
+    .ai-hand--vertical .card-back {
+        width: 36px;
+        height: 12px;
+    }
+
+    .ai-hand-block--vertical {
+        min-width: 40px;
+    }
+
     .card__rank {
         font-size: 1rem;
     }
@@ -1488,6 +1551,40 @@ main {
         --card-width: 44px;
         --card-height: 66px;
         --card-overlap: -6px;
+    }
+
+    /* Compass layout — phone-friendly */
+    .compass-layout {
+        gap: 0.2rem 0.25rem;
+    }
+
+    .ai-hand--vertical .card-back {
+        width: 32px;
+        height: 11px;
+    }
+
+    .ai-hand-block--vertical {
+        min-width: 32px;
+    }
+
+    /* Side hands — compact labels */
+    .ai-hand-block--vertical .ai-seat-label {
+        font-size: 0.6rem;
+        min-height: 1em;
+        writing-mode: vertical-lr;
+        text-orientation: mixed;
+        white-space: nowrap;
+    }
+
+    .ai-hand-block--vertical .ai-card-count {
+        font-size: 0.58rem;
+    }
+
+    /* Top partner — smaller card backs */
+    .compass-top .card-back {
+        width: 28px;
+        height: 40px;
+        margin: 0 -3px;
     }
 
     main {
@@ -1653,14 +1750,39 @@ main {
         gap: 0.35rem;
     }
 
-    .ai-hand {
+    /* On small phones, hide horizontal card backs in top partner hand */
+    .compass-top .ai-hand {
         display: none;
     }
 
+    /* Vertical side hands — hide card backs, show count only */
+    .ai-hand--vertical {
+        display: none;
+    }
+
+    .ai-hand-block--vertical {
+        min-width: 22px;
+    }
+
+    /* Side hand labels — ultra-compact on small phones */
+    .ai-hand-block--vertical .ai-seat-label {
+        font-size: 0.55rem;
+    }
+
+    .ai-hand-block--vertical .ai-card-count {
+        font-size: 0.55rem;
+        writing-mode: vertical-lr;
+        text-orientation: mixed;
+    }
+
     .ai-card-count {
-        margin-left: 0;
         font-size: 0.65rem;
         line-height: 1;
+    }
+
+    /* Compass grid — tighter on small phones */
+    .compass-layout {
+        gap: 0.15rem 0.15rem;
     }
 
     .trick-area h3,

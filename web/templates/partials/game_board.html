@@ -33,108 +33,122 @@
 {# ---- Active game phases: auction and trick play ---- #}
 {% elif phase in ("auction", "trick_play", "redeal") %}
 
-    {# AI hands — face-down card backs with counts #}
-    <div class="ai-hands-row" role="region" aria-label="AI opponent hands">
-        {# Left opponent (seat 1) #}
-        <div class="ai-hand-block ai-hand-block--edge">
-            <div class="ai-seat-label">
-                {{ "AI Left" }}
-                {% if dealer_seat == 1 %}
-                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
-                {% endif %}
-                {% if bidder_seat == 1 %}
-                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
-                {% endif %}
-                {% if current_seat == 1 %}
-                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
-                {% endif %}
-                {% if sitting_out_seat == 1 %}
-                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
-                {% endif %}
+    {# Compass-rose grid: Partner top, AI Left left, AI Right right, Human bottom #}
+    <div class="compass-layout" role="region" aria-label="Game table">
+
+        {# Top — Partner (seat 2) #}
+        <div class="compass-top" role="region" aria-label="Partner hand">
+            <div class="ai-hand-block">
+                <div class="ai-seat-label">
+                    {{ "AI Partner" }}
+                    {% if dealer_seat == 2 %}
+                        <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                    {% endif %}
+                    {% if bidder_seat == 2 %}
+                        <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                    {% endif %}
+                    {% if current_seat == 2 %}
+                        <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                    {% endif %}
+                    {% if sitting_out_seat == 2 %}
+                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                    {% endif %}
+                </div>
+                <div class="ai-hand" role="img" aria-label="Partner has {{ partner_count | default(0) }} cards">
+                    {% for _ in range(partner_count | default(0)) %}
+                    <div class="card-back" aria-hidden="true"></div>
+                    {% endfor %}
+                </div>
+                <span class="ai-card-count">Partner ({{ partner_count | default(0) }})</span>
             </div>
-            <div class="ai-hand" role="img" aria-label="AI Left has {{ opp_left_count | default(0) }} cards">
-                {% for _ in range(opp_left_count | default(0)) %}
-                <div class="card-back" aria-hidden="true"></div>
-                {% endfor %}
-            </div>
-            <span class="ai-card-count">AI Left ({{ opp_left_count | default(0) }})</span>
         </div>
 
-        {# Partner (seat 2) #}
-        <div class="ai-hand-block ai-hand-block--middle">
-            <div class="ai-seat-label">
-                {{ "AI Partner" }}
-                {% if dealer_seat == 2 %}
-                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
-                {% endif %}
-                {% if bidder_seat == 2 %}
-                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
-                {% endif %}
-                {% if current_seat == 2 %}
-                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
-                {% endif %}
-                {% if sitting_out_seat == 2 %}
-                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
-                {% endif %}
+        {# Left — AI Left opponent (seat 1) — vertical orientation #}
+        <div class="compass-left" role="region" aria-label="AI Left hand">
+            <div class="ai-hand-block ai-hand-block--vertical">
+                <div class="ai-seat-label">
+                    {{ "AI Left" }}
+                    {% if dealer_seat == 1 %}
+                        <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                    {% endif %}
+                    {% if bidder_seat == 1 %}
+                        <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                    {% endif %}
+                    {% if current_seat == 1 %}
+                        <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                    {% endif %}
+                    {% if sitting_out_seat == 1 %}
+                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                    {% endif %}
+                </div>
+                <div class="ai-hand ai-hand--vertical" role="img" aria-label="AI Left has {{ opp_left_count | default(0) }} cards">
+                    {% for _ in range(opp_left_count | default(0)) %}
+                    <div class="card-back" aria-hidden="true"></div>
+                    {% endfor %}
+                </div>
+                <span class="ai-card-count">AI Left ({{ opp_left_count | default(0) }})</span>
             </div>
-            <div class="ai-hand" role="img" aria-label="Partner has {{ partner_count | default(0) }} cards">
-                {% for _ in range(partner_count | default(0)) %}
-                <div class="card-back" aria-hidden="true"></div>
-                {% endfor %}
-            </div>
-            <span class="ai-card-count">Partner ({{ partner_count | default(0) }})</span>
         </div>
 
-        {# Right opponent (seat 3) #}
-        <div class="ai-hand-block ai-hand-block--edge">
-            <div class="ai-seat-label">
-                {{ "AI Right" }}
-                {% if dealer_seat == 3 %}
-                    <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
-                {% endif %}
-                {% if bidder_seat == 3 %}
-                    <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
-                {% endif %}
-                {% if current_seat == 3 %}
-                    <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
-                {% endif %}
-                {% if sitting_out_seat == 3 %}
-                    <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
-                {% endif %}
-            </div>
-            <div class="ai-hand" role="img" aria-label="AI Right has {{ opp_right_count | default(0) }} cards">
-                {% for _ in range(opp_right_count | default(0)) %}
-                <div class="card-back" aria-hidden="true"></div>
-                {% endfor %}
-            </div>
-            <span class="ai-card-count">AI Right ({{ opp_right_count | default(0) }})</span>
+        {# Center — trick area, controls, bid panel #}
+        <div class="compass-center">
+            {# Bid recap bar — persistent auction result summary during trick play #}
+            {% if phase == "trick_play" %}
+                {% include "partials/bid_recap.html" %}
+            {% endif %}
+
+            {# Trick area — always shown during active play #}
+            {% include "partials/trick.html" %}
+
+            {# Collapsible trick history — shows cards played in completed tricks #}
+            {% include "partials/trick_history.html" %}
+
+            {% if show_next %}
+                {% include "partials/next_controls.html" %}
+            {% endif %}
+
+            {# Bid panel — auction phase only, when it's the human's turn #}
+            {% if show_bid_panel %}
+                {% include "partials/bid_panel.html" %}
+            {% endif %}
         </div>
-    </div>
 
-    {# Bid recap bar — persistent auction result summary during trick play #}
-    {% if phase == "trick_play" %}
-        {% include "partials/bid_recap.html" %}
-    {% endif %}
+        {# Right — AI Right opponent (seat 3) — vertical orientation #}
+        <div class="compass-right" role="region" aria-label="AI Right hand">
+            <div class="ai-hand-block ai-hand-block--vertical">
+                <div class="ai-seat-label">
+                    {{ "AI Right" }}
+                    {% if dealer_seat == 3 %}
+                        <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+                    {% endif %}
+                    {% if bidder_seat == 3 %}
+                        <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+                    {% endif %}
+                    {% if current_seat == 3 %}
+                        <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                    {% endif %}
+                    {% if sitting_out_seat == 3 %}
+                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+                    {% endif %}
+                </div>
+                <div class="ai-hand ai-hand--vertical" role="img" aria-label="AI Right has {{ opp_right_count | default(0) }} cards">
+                    {% for _ in range(opp_right_count | default(0)) %}
+                    <div class="card-back" aria-hidden="true"></div>
+                    {% endfor %}
+                </div>
+                <span class="ai-card-count">AI Right ({{ opp_right_count | default(0) }})</span>
+            </div>
+        </div>
 
-    {# Trick area — always shown during active play #}
-    {% include "partials/trick.html" %}
+        {# Bottom — Human hand #}
+        <div class="compass-bottom">
+            {# Human hand — always shown during active play #}
+            {% include "partials/hand.html" %}
+        </div>
 
-    {# Collapsible trick history — shows cards played in completed tricks #}
-    {% include "partials/trick_history.html" %}
+    </div>{# /.compass-layout #}
 
-    {% if show_next %}
-        {% include "partials/next_controls.html" %}
-    {% endif %}
-
-    {# Bid panel — auction phase only, when it's the human's turn #}
-    {% if show_bid_panel %}
-        {% include "partials/bid_panel.html" %}
-    {% endif %}
-
-    {# Human hand — always shown during active play #}
-    {% include "partials/hand.html" %}
-
-    {# Score bar — always shown during active play #}
+    {# Score bar — outside compass grid, always at bottom #}
     {% include "partials/score.html" %}
 
     {% include "partials/action_rail.html" %}
