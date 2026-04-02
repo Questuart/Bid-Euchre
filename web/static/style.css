@@ -844,19 +844,12 @@ main {
     color: rgba(255, 255, 255, 0.2);
 }
 
-/* Inline card rendering (for trick history table) */
+/* Inline card rendering (for trick history table) —
+   all cards white; suit symbols provide identification.
+   Leader underline and winner highlight remain via cell classes. */
 .card--inline {
     font-weight: 700;
     white-space: nowrap;
-}
-
-.card--inline.card--hearts,
-.card--inline.card--diamonds {
-    color: var(--color-red);
-}
-
-.card--inline.card--spades,
-.card--inline.card--clubs {
     color: var(--color-text);
 }
 
