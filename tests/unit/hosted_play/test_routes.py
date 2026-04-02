@@ -2691,6 +2691,62 @@ class TestTabNavigation:
 
 
 # ---------------------------------------------------------------------------
+# Test: Guide page
+# ---------------------------------------------------------------------------
+
+
+class TestGuide:
+    """GET /guide/{link_uuid} — new player guide page."""
+
+    def test_guide_unknown_uuid_404(self, client):
+        resp = client.get("/guide/nonexistent-uuid")
+        assert resp.status_code == 404
+
+    def test_guide_renders_for_valid_player(self, client):
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        resp = client.get(f"/guide/{link_uuid}")
+        assert resp.status_code == 200
+        assert "How to Play" in resp.text
+
+    def test_guide_contains_key_sections(self, client):
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        resp = client.get(f"/guide/{link_uuid}")
+        assert resp.status_code == 200
+        assert "The Basics" in resp.text
+        assert "Bidding" in resp.text
+        assert "Card Play" in resp.text
+        assert "Scoring" in resp.text
+        assert "Tips" in resp.text
+        assert "Basic Strategies" in resp.text
+
+    def test_guide_tab_active_on_guide_page(self, client):
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        resp = client.get(f"/guide/{link_uuid}")
+        assert resp.status_code == 200
+        assert "header-nav__tab--active" in resp.text
+
+    def test_guide_tab_present_in_nav(self, client):
+        """The header nav should include a Guide link when link_uuid is set."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert f"/guide/{link_uuid}" in resp.text
+        assert "Guide" in resp.text
+
+    def test_guide_has_back_to_game_link(self, client):
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        resp = client.get(f"/guide/{link_uuid}")
+        assert resp.status_code == 200
+        assert f"/play/{link_uuid}" in resp.text
+
+
+# ---------------------------------------------------------------------------
 # Test: State-desync graceful recovery (P1-001 fix)
 # ---------------------------------------------------------------------------
 

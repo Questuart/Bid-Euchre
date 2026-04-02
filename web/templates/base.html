@@ -74,6 +74,9 @@
                 <a href="/comments/{{ link_uuid }}" role="tab"
                    class="header-nav__tab{% if _page == 'comments' %} header-nav__tab--active{% endif %}"
                    {% if _page == 'comments' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Comments</a>
+                <a href="/guide/{{ link_uuid }}" role="tab"
+                   class="header-nav__tab{% if _page == 'guide' %} header-nav__tab--active{% endif %}"
+                   {% if _page == 'guide' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Guide</a>
             </nav>
             {% endif %}
             <button id="text-size-toggle"

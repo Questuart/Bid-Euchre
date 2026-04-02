@@ -1730,6 +1730,38 @@ async def post_comment(
 
 
 # ---------------------------------------------------------------------------
+# Guide
+# ---------------------------------------------------------------------------
+
+
+@router.get("/guide/{link_uuid}", response_class=HTMLResponse)
+async def guide(request: Request, link_uuid: str):
+    """New player guide — rules walkthrough, tips, and strategies.
+
+    Gated behind invite-code auth: the ``link_uuid`` must correspond to
+    a valid player.  Returns 404 for unknown UUIDs.
+    """
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Player not found")
+
+        return templates.TemplateResponse(
+            "guide.html",
+            {
+                "request": request,
+                "link_uuid": link_uuid,
+                "current_page": "guide",
+                "nickname": player.nickname,
+            },
+        )
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
 # AI decision logging helper
 # ---------------------------------------------------------------------------
 
