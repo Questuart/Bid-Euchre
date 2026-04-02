@@ -1479,7 +1479,17 @@ async def match_history(request: Request, link_uuid: str):
             except KeyError:
                 ai_name = m.ai_model
 
-            won = m.score_human > m.score_ai
+            # Use the authoritative winner from match state rather than
+            # naive score comparison — tied scores (e.g. 55-55) are decided
+            # by the declaring-team rule and the engine records the correct
+            # winner in match_state_json.  Fall back to score comparison for
+            # legacy rows missing the winner field.
+            match_data = json.loads(m.match_state_json)
+            winner = match_data.get("winner")
+            if winner is not None:
+                won = winner == "human"
+            else:
+                won = m.score_human > m.score_ai
             history_entries.append(
                 {
                     "ai_name": ai_name,

@@ -2481,6 +2481,89 @@ class TestMatchHistory:
         assert "Loss" in resp.text
         assert "OLSa" in resp.text
 
+    def test_history_tied_score_uses_engine_winner(self, client, app):
+        """When scores are tied (e.g. 55-55), the result comes from the
+        engine's winner field in match_state_json, not from score comparison.
+
+        Regression test for P2-003: tied scores were always shown as 'Loss'
+        because the history route used ``score_human > score_ai``.
+        """
+        import json
+        from datetime import datetime, timezone
+
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid, "TiedScore")
+
+        session_factory = app.state.session_factory
+        session = session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        assert player is not None
+
+        import uuid as uuid_mod
+
+        # Both teams crossed 52 in the same hand — engine declared human winner
+        tied_match = Match(
+            match_uuid=str(uuid_mod.uuid4()),
+            player_id=player.id,
+            ai_model="bud_bot",
+            status="complete",
+            seed=42,
+            score_human=55,
+            score_ai=55,
+            hands_played=8,
+            match_state_json=json.dumps({"winner": "human"}),
+            completed_at=datetime(2026, 4, 2, 10, 0, 0, tzinfo=timezone.utc),
+        )
+        session.add(tied_match)
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        # Should show "Win" because the engine declared human as winner,
+        # even though scores are tied
+        assert "Win" in resp.text
+        assert "55" in resp.text
+
+    def test_history_tied_score_ai_winner(self, client, app):
+        """When scores are tied and engine declared AI winner, show 'Loss'.
+
+        This covers the negative-threshold tiebreak case (e.g. both at -55).
+        """
+        import json
+        from datetime import datetime, timezone
+
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid, "TiedLoss")
+
+        session_factory = app.state.session_factory
+        session = session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        assert player is not None
+
+        import uuid as uuid_mod
+
+        tied_match = Match(
+            match_uuid=str(uuid_mod.uuid4()),
+            player_id=player.id,
+            ai_model="bud_bot",
+            status="complete",
+            seed=42,
+            score_human=55,
+            score_ai=55,
+            hands_played=8,
+            match_state_json=json.dumps({"winner": "ai"}),
+            completed_at=datetime(2026, 4, 2, 10, 0, 0, tzinfo=timezone.utc),
+        )
+        session.add(tied_match)
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        assert "Loss" in resp.text
+        assert "55" in resp.text
+
     def test_history_excludes_active_matches(self, client, app):
         """Active (in-progress) matches should NOT appear in history."""
         link_uuid = _create_game(client)
