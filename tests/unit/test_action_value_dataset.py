@@ -761,6 +761,140 @@ class TestSimulateMoonCounterfactual:
             moon_results != regular_results
         ), "Moon results identical to regular — exchange may not be working"
 
+    def test_moon_uses_3_player_trick_play(self, hands):
+        """Moon counterfactual must route through _play_tricks_loner (3-player).
+
+        Regression test for PR #2114 — previously called _play_tricks (4-player).
+        """
+        from unittest.mock import patch
+
+        with patch(
+            "generate_action_value_dataset._play_tricks_loner",
+            wraps=_play_tricks_loner,
+        ) as spy:
+            simulate_moon_counterfactual(
+                hands, focal_seat=0, contract_type="suit", trump_suit="S"
+            )
+            spy.assert_called_once()
+
+    def test_moon_partner_sits_out(self, hands):
+        """Moon: the focal player's partner must be the sitting-out seat.
+
+        For focal_seat=0, partner is seat 2.
+        For focal_seat=1, partner is seat 3.
+        """
+        from unittest.mock import patch
+
+        for focal_seat, expected_partner in [(0, 2), (1, 3), (2, 0), (3, 1)]:
+            with patch(
+                "generate_action_value_dataset._play_tricks_loner",
+                wraps=_play_tricks_loner,
+            ) as spy:
+                simulate_moon_counterfactual(
+                    hands,
+                    focal_seat=focal_seat,
+                    contract_type="suit",
+                    trump_suit="S",
+                )
+                call_kwargs = spy.call_args
+                # sitting_out_seat is passed as a positional or keyword arg
+                # _play_tricks_loner(hands, focal_seat, partner_seat, ...)
+                # In simulate_moon_counterfactual, call is:
+                #   _play_tricks_loner(exchanged_hands, focal_seat, partner_seat, ...)
+                actual_sitting_out = call_kwargs[0][2]  # 3rd positional arg
+                assert actual_sitting_out == expected_partner, (
+                    f"focal_seat={focal_seat}: expected partner {expected_partner} "
+                    f"to sit out, got {actual_sitting_out}"
+                )
+
+    def test_moon_3_player_tricks_exclude_partner(self):
+        """Each trick in moon play has exactly 3 players; partner never plays.
+
+        Instruments trick_winner to observe plays per trick, verifying:
+        - Every trick has exactly 3 plays (not 4)
+        - The sitting-out partner seat never appears in any trick
+        """
+        from unittest.mock import patch
+
+        from bid_euchre.core.rules import trick_winner as real_trick_winner
+
+        for focal_seat in range(4):
+            partner_seat = (focal_seat + 2) % 4
+            deal_hands = generate_deal(42, 0)
+            recorded_tricks = []
+
+            def recording_trick_winner(plays, **kwargs):
+                recorded_tricks.append(list(plays))
+                return real_trick_winner(plays, **kwargs)
+
+            with patch(
+                "bid_euchre.core.rules.trick_winner",
+                side_effect=recording_trick_winner,
+            ):
+                t0, t1 = _play_tricks_loner(
+                    deal_hands,
+                    initial_leader=focal_seat,
+                    sitting_out_seat=partner_seat,
+                    contract_type="suit",
+                    trump_suit="S",
+                )
+
+            assert t0 + t1 == 10
+            assert (
+                len(recorded_tricks) == 10
+            ), f"Expected 10 tricks, got {len(recorded_tricks)}"
+
+            for trick_idx, plays in enumerate(recorded_tricks):
+                # Each trick must have exactly 3 plays
+                assert len(plays) == 3, (
+                    f"focal={focal_seat}, trick {trick_idx}: "
+                    f"expected 3 plays, got {len(plays)}"
+                )
+                # Partner seat must not appear
+                seats_in_trick = {seat for seat, _card in plays}
+                assert partner_seat not in seats_in_trick, (
+                    f"focal={focal_seat}, trick {trick_idx}: "
+                    f"partner seat {partner_seat} played but should sit out"
+                )
+
+    def test_moon_counterfactual_3_player_all_contract_types(self):
+        """Moon counterfactual uses 3-player play for all contract types."""
+        from unittest.mock import patch
+
+        from bid_euchre.core.rules import trick_winner as real_trick_winner
+
+        for ctype, trump in [
+            ("suit", "S"),
+            ("suit", "H"),
+            ("high", None),
+            ("low", None),
+        ]:
+            deal_hands = generate_deal(42, 0)
+            recorded_tricks = []
+
+            def recording_trick_winner(plays, **kwargs):
+                recorded_tricks.append(list(plays))
+                return real_trick_winner(plays, **kwargs)
+
+            with patch(
+                "bid_euchre.core.rules.trick_winner",
+                side_effect=recording_trick_winner,
+            ):
+                simulate_moon_counterfactual(
+                    deal_hands,
+                    focal_seat=0,
+                    contract_type=ctype,
+                    trump_suit=trump,
+                )
+
+            # All 10 tricks should have exactly 3 plays
+            assert len(recorded_tricks) == 10
+            for trick_idx, plays in enumerate(recorded_tricks):
+                assert len(plays) == 3, (
+                    f"contract={ctype}/{trump}, trick {trick_idx}: "
+                    f"expected 3 plays, got {len(plays)}"
+                )
+
 
 class TestSimulateLoner:
     def test_returns_tuple(self, hands):
