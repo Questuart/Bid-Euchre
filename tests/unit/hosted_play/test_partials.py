@@ -2103,15 +2103,15 @@ class TestActionRail:
         html = tmpl.render(
             action_rail=[
                 {"kind": "auction", "text": "AI Left passed"},
-                {"kind": "trick", "text": "AI Left won trick #1"},
+                {"kind": "trick", "text": "Your team won Trick 1"},
                 {"kind": "system", "text": "Hand starts"},
             ],
-            action_rail_label="Action Rail",
+            action_rail_label="Auction Log",
         )
         assert 'id="action-rail"' in html
-        assert "Action Rail" in html
+        assert "Auction Log" in html
         assert "AI Left passed" in html
-        assert "AI Left won trick #1" in html
+        assert "Your team won Trick 1" in html
         assert "Hand starts" in html
         assert "action-rail__item--auction" in html
         assert "action-rail__item--trick" in html

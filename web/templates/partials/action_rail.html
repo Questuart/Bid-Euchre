@@ -1,17 +1,15 @@
-{# DEPRECATED: Action rail removed in favour of inline bid tags next to seat labels.
-   Bids now display directly beside each player's name on the game board,
-   reclaiming vertical space on mobile. This file is retained for reference
-   but is no longer included by game_board.html.
+{# Auction log — compact event feed of auction bids, trick results, and
+   system messages.  (Formerly called "Action Rail" in dev jargon.)
 
-   Original context variables:
+   Context variables:
      - action_rail: list[dict] — ordered event objects:
          {"kind": "auction"|"trick"|"system", "text": str}
      - action_rail_label (optional): heading override
 #}
 {% set rail_items = action_rail | default([], true) %}
 
-<aside id="action-rail" class="action-rail" role="region" aria-label="{{ action_rail_label | default('Game action rail') }}" aria-live="polite">
-    <h3>{{ action_rail_label | default("Action Rail") }}</h3>
+<aside id="action-rail" class="action-rail" role="region" aria-label="{{ action_rail_label | default('Auction log') }}" aria-live="polite">
+    <h3>{{ action_rail_label | default("Auction Log") }}</h3>
     {% if rail_items %}
         <ul class="action-rail__list">
             {% for event in rail_items %}
