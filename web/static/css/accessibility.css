@@ -238,7 +238,54 @@ select:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
-   7. Pass Button Styling
+   7. Text Size Toggle
+   --------------------------------------------------------------------------
+   Two modes: default (browser 100%) and large (125%).
+   Since all font-size values in style.css use rem, scaling the root element
+   font-size propagates proportionally to every text element.
+   Activated via data-text-size="large" on <html>, persisted in localStorage.
+   -------------------------------------------------------------------------- */
+
+html[data-text-size="large"] {
+    font-size: 125%;
+}
+
+/* Toggle button — sits in the header bar, compact icon-style */
+.text-size-toggle {
+    background: transparent;
+    border: 1.5px solid var(--color-text-muted, #bdbdbd);
+    border-radius: 4px;
+    color: var(--color-text-muted, #bdbdbd);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 0.25rem 0.5rem;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.text-size-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--color-text, #fafafa);
+    border-color: var(--color-text, #fafafa);
+}
+
+/* Active state when large mode is on */
+html[data-text-size="large"] .text-size-toggle {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--color-text, #fafafa);
+    border-color: var(--color-legal-glow, #4caf50);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .text-size-toggle {
+        transition: none;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   8. Pass Button Styling
    --------------------------------------------------------------------------
    The pass button is styled as a secondary action distinct from Submit Bid.
    -------------------------------------------------------------------------- */

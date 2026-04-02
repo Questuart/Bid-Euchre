@@ -25,6 +25,10 @@
             padding: var(--safe-area-top) var(--safe-area-right) var(--safe-area-bottom) var(--safe-area-left);
         }
     </style>
+    <!-- Apply text size preference before first paint to prevent FOUC -->
+    <script>
+        (function(){try{var s=localStorage.getItem('textSize');if(s==='large'){document.documentElement.setAttribute('data-text-size','large');}}catch(e){}})();
+    </script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
     <script src="/static/game.js" defer></script>
@@ -42,6 +46,11 @@
                 <a href="/leaderboard/{{ link_uuid }}">Leaderboard</a>
             </nav>
             {% endif %}
+            <button id="text-size-toggle"
+                    class="text-size-toggle"
+                    type="button"
+                    aria-label="Toggle large text"
+                    title="Toggle large text">Aa</button>
         </div>
     </header>
     <main id="main-content" role="main">
