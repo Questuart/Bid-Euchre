@@ -343,6 +343,7 @@ PERSISTENT_LANES: tuple[str, ...] = (
     "flex-a",
     "flex-b",
     "flex-c",
+    "flex-d",
 )
 
 # Default retry cap per task

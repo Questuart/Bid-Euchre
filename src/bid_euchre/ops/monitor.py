@@ -1157,6 +1157,7 @@ _CHECKABLE_LANES: tuple[str, ...] = (
     "flex-a",
     "flex-b",
     "flex-c",
+    "flex-d",
 )
 
 

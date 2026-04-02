@@ -37,7 +37,8 @@ Skip straight to `make check` if you changed:
 Run full validation **once** before opening the PR:
 
 ```bash
-make check-quiet    # Minimal output, logs to tmpfile (preferred)
+make check-gated    # Preferred for fleet runs — caps concurrent validation to 3 lanes
+make check-quiet    # Minimal output, logs to tmpfile (no concurrency cap)
 make check          # Full output (use when debugging failures)
 ```
 

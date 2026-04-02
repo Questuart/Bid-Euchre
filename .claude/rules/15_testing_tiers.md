@@ -22,7 +22,8 @@ Widen to Tier 2 early if you changed:
 
 Run full validation **once** before opening the PR:
 
-    make check-quiet    # Minimal output, logs to tmpfile
+    make check-gated    # Preferred for fleet runs (caps to 3 concurrent)
+    make check-quiet    # Minimal output, logs to tmpfile (no concurrency cap)
     make check          # Full output (for debugging)
 
 ## After Review Fixes

@@ -931,6 +931,7 @@ _WORKTREE_TO_LANE: dict[str, str] = {
     "Bid-Euchre-steward-flex-a": "flex-a",
     "Bid-Euchre-steward-flex-b": "flex-b",
     "Bid-Euchre-steward-flex-c": "flex-c",
+    "Bid-Euchre-steward-flex-d": "flex-d",
     # Control plane
     "Bid-Euchre-steward-review": "review",
     "Bid-Euchre-steward-ops": "ops",

@@ -100,6 +100,7 @@ LANE_DOMAINS: dict[str, str | None] = {
     "flex-a": None,
     "flex-b": None,
     "flex-c": None,
+    "flex-d": None,
 }
 
 
