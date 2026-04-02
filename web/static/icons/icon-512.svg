@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#1b5e20"/>
+  <!-- Four card suits arranged in a 2x2 grid -->
+  <g fill="#fafafa">
+    <!-- Spade (top-left) -->
+    <g transform="translate(160,150) scale(0.8)">
+      <path d="M0-52 C-4-48-40-20-40 8 C-40 28-24 40-12 40 C-6 40-2 36 0 30 C2 36 6 40 12 40 C24 40 40 28 40 8 C40-20 4-48 0-52Z"/>
+      <rect x="-6" y="30" width="12" height="24" rx="2"/>
+    </g>
+    <!-- Heart (top-right) -->
+    <g transform="translate(352,150) scale(0.8)">
+      <path d="M0 44 C-4 40-44 8-44-16 C-44-36-28-48-12-48 C-2-48 0-40 0-34 C0-40 2-48 12-48 C28-48 44-36 44-16 C44 8 4 40 0 44Z"/>
+    </g>
+    <!-- Diamond (bottom-left) -->
+    <g transform="translate(160,352) scale(0.8)">
+      <path d="M0-52 L32 0 L0 52 L-32 0Z"/>
+    </g>
+    <!-- Club (bottom-right) -->
+    <g transform="translate(352,352) scale(0.8)">
+      <circle cx="0" cy="-24" r="22"/>
+      <circle cx="-22" cy="8" r="22"/>
+      <circle cx="22" cy="8" r="22"/>
+      <rect x="-6" y="16" width="12" height="28" rx="2"/>
+    </g>
+  </g>
+</svg>
