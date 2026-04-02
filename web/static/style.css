@@ -1708,10 +1708,39 @@ main {
         gap: 1rem;
     }
 
+    /* Trick table — reduce desktop 260px to mobile-friendly height */
+    .trick-table {
+        min-height: 180px;
+    }
+
+    /* Score bar — reorder above trick area on mobile */
+    #score-bar {
+        order: 1;
+    }
+
+    .ai-hands-compact {
+        order: 0;
+    }
+
+    .compass-layout {
+        order: 2;
+    }
+
     .score-bar {
         flex-direction: column;
         align-items: flex-start;
         font-size: 0.8rem;
+    }
+
+    /* Hide Play card button and help text — vestigial after tap-to-play */
+    .btn--play-card,
+    .card-play-help {
+        display: none;
+    }
+
+    /* Hide action rail on mobile — deprecated, reclaim vertical space */
+    .action-rail {
+        display: none;
     }
 
     .bid-controls {
@@ -1823,7 +1852,7 @@ main {
 
     .trick-table {
         padding: 0.75rem;
-        min-height: 200px;
+        min-height: 160px;
     }
 
     .trick-row-middle {
