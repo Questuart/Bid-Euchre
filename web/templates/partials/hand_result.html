@@ -152,6 +152,21 @@
         {% include "partials/trick_history.html" %}
     </div>
 
+    {# Defence-in-depth: if the match has ended but this partial is rendered
+       (e.g. stale HTMX morph, race condition), show the correct CTA.
+       Primary guard is _game_phase() returning "match_result" for complete
+       matches; this is a fallback (P2-005). #}
+    {% if match_status is defined and match_status == "complete" %}
+    <form method="post"
+          action="/play/{{ link_uuid | default("") }}/new-match"
+          hx-post="/play/{{ link_uuid | default("") }}/new-match"
+          hx-target="#game-board"
+          hx-swap="morph:innerHTML"
+          class="hand-result-controls"
+          aria-label="Start a new match">
+        <button type="submit" class="btn btn--play-again">Play Again</button>
+    </form>
+    {% else %}
     <form method="post"
           action="/play/{{ link_uuid | default("") }}/next-hand"
           hx-post="/play/{{ link_uuid | default("") }}/next-hand"
@@ -161,4 +176,5 @@
           aria-label="Start next hand">
         <button type="submit" class="btn btn--next-hand">Next Hand</button>
     </form>
+    {% endif %}
 </div>
