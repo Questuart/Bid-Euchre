@@ -267,8 +267,8 @@ class TestLonerTrickPlay:
                 tracker.plays_by_seat[seat] == 10
             ), f"Seat {seat} played {tracker.plays_by_seat[seat]} cards, expected 10"
 
-    def test_moon_game_still_4_players(self):
-        """Moon bids should still use 4-player trick play."""
+    def test_moon_game_3_players(self):
+        """Moon bids should use 3-player trick play (partner sits out after exchange)."""
         rng = random.Random(42)
         deck = create_deck()
         shuffle_deck(deck, rng=rng)
@@ -289,11 +289,85 @@ class TestLonerTrickPlay:
         t0, t1 = result[0], result[1]
         assert t0 + t1 == 10
 
-        # All 4 players should have played 10 cards each
+        # Partner (seat 2) should sit out — 0 cards played
+        partner_seat = _PARTNER[0]  # declarer=0, partner=2
+        assert tracker.plays_by_seat[partner_seat] == 0, (
+            f"Partner (seat {partner_seat}) played {tracker.plays_by_seat[partner_seat]} "
+            f"cards, expected 0 (should sit out in moon)"
+        )
+
+        # Active players should have played 10 cards each
         for seat in range(4):
+            if seat == partner_seat:
+                continue
             assert (
                 tracker.plays_by_seat[seat] == 10
-            ), f"Seat {seat} played {tracker.plays_by_seat[seat]} cards, expected 10"
+            ), f"Active seat {seat} played {tracker.plays_by_seat[seat]} cards, expected 10"
+
+        # Total plays should be 30 (3 players x 10 tricks)
+        total_plays = sum(tracker.plays_by_seat.values())
+        assert total_plays == 30, f"Expected 30 total plays, got {total_plays}"
+
+    @pytest.mark.parametrize("declarer_seat", [0, 1, 2, 3])
+    def test_moon_partner_sits_out(self, declarer_seat):
+        """Moon declarer's partner should sit out for all declarer seats."""
+        rng = random.Random(600 + declarer_seat)
+        deck = create_deck()
+        shuffle_deck(deck, rng=rng)
+        hands = deal_hands(deck, num_players=4, hand_size=10)
+
+        partner_seat = _PARTNER[declarer_seat]
+        tracker = TrackingStrategy()
+
+        play_single_hand(
+            contract_type=None,
+            bidding_policies=[AlwaysMoonPolicy(contract="H", seat_to_bid=declarer_seat)]
+            * 4,
+            strategy=tracker,
+            hands=hands,
+            initial_leader=declarer_seat,
+            deal_id=0,
+            rng=rng,
+        )
+
+        # Partner should never have played
+        assert tracker.plays_by_seat[partner_seat] == 0, (
+            f"Partner (seat {partner_seat}) played {tracker.plays_by_seat[partner_seat]} "
+            f"cards, expected 0"
+        )
+
+    @pytest.mark.parametrize("declarer_seat", [0, 1, 2, 3])
+    def test_moon_tricks_have_3_cards(self, declarer_seat):
+        """Each trick in a moon game should have exactly 3 cards."""
+        rng = random.Random(700 + declarer_seat)
+        deck = create_deck()
+        shuffle_deck(deck, rng=rng)
+        hands = deal_hands(deck, num_players=4, hand_size=10)
+
+        tracker = TrackingStrategy()
+
+        play_single_hand(
+            contract_type=None,
+            bidding_policies=[AlwaysMoonPolicy(contract="H", seat_to_bid=declarer_seat)]
+            * 4,
+            strategy=tracker,
+            hands=hands,
+            initial_leader=declarer_seat,
+            deal_id=0,
+            rng=rng,
+        )
+
+        tracker.finalize_trick_tracking()
+
+        assert (
+            len(tracker.trick_sizes) == 10
+        ), f"Expected 10 tricks, got {len(tracker.trick_sizes)}"
+        for i, size in enumerate(tracker.trick_sizes):
+            assert size == 3, f"Trick {i} had {size} cards, expected 3"
+
+        # Total plays should be 30
+        total_plays = sum(tracker.plays_by_seat.values())
+        assert total_plays == 30, f"Expected 30 total plays, got {total_plays}"
 
     def test_fixed_contract_still_4_players(self):
         """Fixed-contract mode (no auction) should still use 4-player tricks."""

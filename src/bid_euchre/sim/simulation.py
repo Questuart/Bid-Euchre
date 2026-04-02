@@ -542,11 +542,11 @@ def play_single_hand(
                 initial_leader = random.Random().randrange(4)
     leader = initial_leader
 
-    # Determine active seats for trick play (loner bids exclude declarer's partner)
+    # Determine active seats for trick play (loner/moon bids exclude declarer's partner)
     sitting_out_seat: Optional[int] = None
     if (
         winning_bid_action is not None
-        and winning_bid_action.bid_type == "loner"
+        and winning_bid_action.bid_type in {"loner", "moon"}
         and winning_bidder is not None
     ):
         # Partner sits out: partnerships are (0,2) and (1,3)
