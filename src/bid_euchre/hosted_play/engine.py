@@ -7,9 +7,12 @@ turns.  Delegates **all** rule evaluation to existing ``core/``, ``sim/``,
 
 from __future__ import annotations
 
+import logging
 import random
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from bid_euchre.core.cards import Card, effective_suit, is_left_bower, is_right_bower
 from bid_euchre.core.rules import get_legal_indices, trick_winner
@@ -564,6 +567,15 @@ class MatchEngine:
                         game_state=_build_game_snapshot(hand, seat),
                     )
                 )
+                logger.debug(
+                    "AI bid: seat=%d n=%d contract=%s bid_type=%s (deal=%d turn=%d)",
+                    seat,
+                    bid.n,
+                    bid.contract,
+                    bid.bid_type,
+                    state.deal_id,
+                    hand.turn_number,
+                )
 
                 state = self._process_bid(state, seat, bid)
 
@@ -595,6 +607,16 @@ class MatchEngine:
                         chosen_action=card_idx,
                         game_state=_build_game_snapshot(hand, seat),
                     )
+                )
+                card = hand.hands[seat][card_idx]
+                logger.debug(
+                    "AI play: seat=%d card=%s%s (deal=%d turn=%d, %d legal)",
+                    seat,
+                    card.rank,
+                    card.suit,
+                    state.deal_id,
+                    hand.turn_number,
+                    len(legal_indices),
                 )
 
                 state = self._process_card_play(state, seat, card_idx)
