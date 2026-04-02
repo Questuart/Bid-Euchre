@@ -129,7 +129,10 @@ class AIManager:
                 self.available_models["olsa"] = ModelInfo(
                     id="olsa",
                     name="OLSa (Easy)",
-                    description=("Conservative action-value bidder — easier opponent."),
+                    description=(
+                        "A cautious bidder who plays it safe. "
+                        "Good for learning the game."
+                    ),
                     bidding_policy=ActionValueBidder(
                         artifact_path=path,
                         name="olsa",
@@ -162,7 +165,10 @@ class AIManager:
                 self.available_models["bud_bot"] = ModelInfo(
                     id="bud_bot",
                     name="Bud Bot",
-                    description=("Gradient-boosted bidder with Glutton card play."),
+                    description=(
+                        "A confident bidder who plays aggressively. "
+                        "Your toughest opponent."
+                    ),
                     bidding_policy=GBTActionValueBidder(
                         artifact_path=path,
                         name="bud_bot",
