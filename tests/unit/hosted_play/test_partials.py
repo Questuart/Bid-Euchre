@@ -2325,6 +2325,293 @@ class TestGameTemplateAccessibility:
 # ---------------------------------------------------------------------------
 
 
+class TestBidRecap:
+    """Tests for partials/bid_recap.html — auction result summary bar.
+
+    Follow-up from PR #2017 review finding (issue #2021).
+    Covers: regular suit/high/low bids, moon, loner, sitting-out seat,
+    no-output guard, and seat label rendering.
+    """
+
+    def _render(self, env, **ctx):
+        """Render bid_recap.html with the given context variables."""
+        tmpl = env.get_template("partials/bid_recap.html")
+        return tmpl.render(**ctx)
+
+    # --- Regular bids ---
+
+    def test_regular_suit_bid(self, env):
+        """Regular suit bid shows level + suit symbol."""
+        html = self._render(
+            env,
+            winning_bid=6,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=None,
+        )
+        assert "bid-recap__level" in html
+        assert ">6<" in html
+        # Spade symbol (♠ = &#9824; or raw unicode)
+        assert "\u2660" in html
+        assert "bid-recap__suit--s" in html
+
+    def test_regular_hearts_bid(self, env):
+        html = self._render(
+            env,
+            winning_bid=7,
+            bidder_seat=1,
+            bid_type="regular",
+            contract_type="suit",
+            trump="H",
+            sitting_out_seat=None,
+        )
+        assert ">7<" in html
+        assert "\u2665" in html  # ♥
+        assert "bid-recap__suit--h" in html
+
+    def test_regular_diamonds_bid(self, env):
+        html = self._render(
+            env,
+            winning_bid=8,
+            bidder_seat=2,
+            bid_type="regular",
+            contract_type="suit",
+            trump="D",
+            sitting_out_seat=None,
+        )
+        assert "\u2666" in html  # ♦
+
+    def test_regular_clubs_bid(self, env):
+        html = self._render(
+            env,
+            winning_bid=9,
+            bidder_seat=3,
+            bid_type="regular",
+            contract_type="suit",
+            trump="C",
+            sitting_out_seat=None,
+        )
+        assert "\u2663" in html  # ♣
+
+    def test_high_contract_no_trump(self, env):
+        """HIGH contract shows level + 'High' text."""
+        html = self._render(
+            env,
+            winning_bid=6,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="high",
+            trump=None,
+            sitting_out_seat=None,
+        )
+        assert ">6<" in html
+        assert "bid-recap__no-trump" in html
+        assert "High" in html
+
+    def test_low_contract_no_trump(self, env):
+        """LOW contract shows level + 'Low' text."""
+        html = self._render(
+            env,
+            winning_bid=6,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="low",
+            trump=None,
+            sitting_out_seat=None,
+        )
+        assert ">6<" in html
+        assert "bid-recap__no-trump" in html
+        assert "Low" in html
+
+    # --- Moon bids ---
+
+    def test_moon_bid_with_emoji(self, env):
+        """Moon bid shows moon emoji + 'Moon' text."""
+        html = self._render(
+            env,
+            winning_bid=10,
+            bidder_seat=0,
+            bid_type="moon",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=None,
+        )
+        assert "bid-recap__type--moon" in html
+        assert "Moon" in html
+        # Moon emoji (🌙 = &#127769;)
+        assert "&#127769;" in html
+        # Moon bids should NOT show the numeric level
+        assert "bid-recap__level" not in html
+
+    def test_moon_bid_with_suit_symbol(self, env):
+        """Moon bid still shows the trump suit symbol."""
+        html = self._render(
+            env,
+            winning_bid=10,
+            bidder_seat=0,
+            bid_type="moon",
+            contract_type="suit",
+            trump="H",
+            sitting_out_seat=None,
+        )
+        assert "\u2665" in html  # ♥
+
+    # --- Loner bids ---
+
+    def test_loner_bid(self, env):
+        """Loner bid shows card emoji + 'Loner' text."""
+        html = self._render(
+            env,
+            winning_bid=10,
+            bidder_seat=0,
+            bid_type="loner",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=2,
+        )
+        assert "bid-recap__type--loner" in html
+        assert "Loner" in html
+        # Playing card emoji (🃏 = &#127183;)
+        assert "&#127183;" in html
+
+    def test_loner_shows_sitting_out(self, env):
+        """Loner bid shows which seat is sitting out."""
+        html = self._render(
+            env,
+            winning_bid=10,
+            bidder_seat=0,
+            bid_type="loner",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=2,
+        )
+        assert "bid-recap__sitting-out" in html
+        assert "AI Partner" in html
+        assert "sits out" in html
+
+    def test_loner_sitting_out_seat_labels(self, env):
+        """Sitting-out uses correct seat labels for each seat."""
+        for seat, label in [
+            (0, "You"),
+            (1, "AI Left"),
+            (2, "AI Partner"),
+            (3, "AI Right"),
+        ]:
+            html = self._render(
+                env,
+                winning_bid=10,
+                bidder_seat=1,
+                bid_type="loner",
+                contract_type="suit",
+                trump="S",
+                sitting_out_seat=seat,
+            )
+            assert label in html
+
+    # --- No-output guards ---
+
+    def test_no_output_without_winning_bid(self, env):
+        """No bid-recap div when winning_bid is None."""
+        html = self._render(
+            env,
+            winning_bid=None,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=None,
+        )
+        assert "bid-recap" not in html
+
+    def test_no_output_without_bidder_seat(self, env):
+        """No bid-recap div when bidder_seat is None."""
+        html = self._render(
+            env,
+            winning_bid=6,
+            bidder_seat=None,
+            bid_type="regular",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=None,
+        )
+        assert "bid-recap" not in html
+
+    def test_no_sitting_out_for_regular_bid(self, env):
+        """Regular bids with sitting_out_seat=None show no sits-out text."""
+        html = self._render(
+            env,
+            winning_bid=6,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=None,
+        )
+        assert "bid-recap__sitting-out" not in html
+        assert "sits out" not in html
+
+    # --- Seat labels ---
+
+    def test_seat_labels_correct(self, env):
+        """Declarer label matches the seat label mapping."""
+        labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
+        for seat, expected_label in labels.items():
+            html = self._render(
+                env,
+                winning_bid=6,
+                bidder_seat=seat,
+                bid_type="regular",
+                contract_type="suit",
+                trump="S",
+                sitting_out_seat=None,
+            )
+            assert expected_label in html
+
+    # --- Accessibility ---
+
+    def test_has_role_status(self, env):
+        """Bid recap bar has role=status for screen readers."""
+        html = self._render(
+            env,
+            winning_bid=6,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=None,
+        )
+        assert 'role="status"' in html
+        assert 'aria-label="Auction result"' in html
+
+    def test_moon_has_aria_label(self, env):
+        """Moon type span has an aria-label."""
+        html = self._render(
+            env,
+            winning_bid=10,
+            bidder_seat=0,
+            bid_type="moon",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=None,
+        )
+        assert 'aria-label="Moon bid"' in html
+
+    def test_loner_has_aria_label(self, env):
+        """Loner type span has an aria-label."""
+        html = self._render(
+            env,
+            winning_bid=10,
+            bidder_seat=0,
+            bid_type="loner",
+            contract_type="suit",
+            trump="S",
+            sitting_out_seat=2,
+        )
+        assert 'aria-label="Loner bid"' in html
+
+
 class TestTrickHistory:
     """Tests for the collapsible trick history partial."""
 
