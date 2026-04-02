@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="32" fill="#1b5e20"/>
+  <!-- Spade suit -->
+  <g transform="translate(96,100)" fill="#fafafa">
+    <!-- Spade body -->
+    <path d="M0-52 C-4-48-40-20-40 8 C-40 28-24 40-12 40 C-6 40-2 36 0 30 C2 36 6 40 12 40 C24 40 40 28 40 8 C40-20 4-48 0-52Z"/>
+    <!-- Spade stem -->
+    <rect x="-6" y="30" width="12" height="24" rx="2"/>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+{
+  "name": "Bid Euchre",
+  "short_name": "Bid Euchre",
+  "description": "Play Bid Euchre against AI opponents in your browser",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d3d0f",
+  "theme_color": "#1b5e20",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
