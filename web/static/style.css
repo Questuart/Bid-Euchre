@@ -2835,7 +2835,74 @@ main {
 }
 
 /* --------------------------------------------------------------------------
-   21. Utilities
+   21. Session Reconnect Prompt
+   -------------------------------------------------------------------------- */
+
+.reconnect-prompt {
+    text-align: center;
+    padding: 1.5rem;
+    margin: 1.5rem auto;
+    max-width: 420px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius, 8px);
+}
+
+.reconnect-prompt__heading {
+    font-size: 1.25rem;
+    margin: 0 0 0.5rem;
+    color: var(--color-text);
+}
+
+.reconnect-prompt__message {
+    font-size: 0.95rem;
+    color: var(--color-text-muted);
+    margin: 0 0 1.25rem;
+    line-height: 1.4;
+}
+
+.reconnect-prompt__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.reconnect-prompt__resume {
+    width: 100%;
+    max-width: 260px;
+    text-align: center;
+    text-decoration: none;
+}
+
+.reconnect-prompt__new-code {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius, 8px);
+    cursor: pointer;
+}
+
+.reconnect-prompt__new-code:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-muted);
+}
+
+@media (max-width: 600px) {
+    .reconnect-prompt {
+        padding: 1rem;
+        margin: 1rem auto;
+    }
+
+    .reconnect-prompt__heading {
+        font-size: 1.1rem;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   22. Utilities
    -------------------------------------------------------------------------- */
 
 .sr-only {

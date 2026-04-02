@@ -1,0 +1,30 @@
+{# Session reconnect prompt — shown when a returning player has an active match.
+   Context variables:
+     - reconnect.link_uuid: str — player's link UUID
+     - reconnect.nickname: str — player's display name
+     - reconnect.match_uuid: str — active match UUID
+#}
+<div id="reconnect-prompt" class="reconnect-prompt"
+     role="region" aria-label="Resume your game">
+    <h2 class="reconnect-prompt__heading">Welcome back, {{ reconnect.nickname }}!</h2>
+    <p class="reconnect-prompt__message">
+        You have a game in progress. Pick up where you left off?
+    </p>
+    <div class="reconnect-prompt__actions">
+        <a href="/play/{{ reconnect.link_uuid }}"
+           class="btn btn--play-again reconnect-prompt__resume"
+           role="button">
+            Resume Game
+        </a>
+        <button type="button"
+                class="btn btn--secondary reconnect-prompt__new-code"
+                onclick="document.getElementById('reconnect-prompt').style.display='none';document.getElementById('invite-code-fallback').style.display='block';"
+                aria-label="Enter a different invite code instead">
+            Use Different Code
+        </button>
+    </div>
+</div>
+
+<div id="invite-code-fallback" style="display:none;">
+    {% include "partials/invite_code_form.html" %}
+</div>
