@@ -982,15 +982,14 @@ async def submit_bid(
         if hand is None or turn_number < hand.turn_number:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
-        # Validate phase
+        # State-desync recovery — return the authoritative board for stale
+        # requests instead of 400 so HTMX can re-sync the DOM.
         if hand.phase != "auction":
-            raise HTTPException(status_code=400, detail="Not in auction phase")
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if hand.current_seat != HUMAN_SEAT:
-            raise HTTPException(status_code=400, detail="Not the human's turn")
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if _awaiting_next(hand):
-            raise HTTPException(
-                status_code=400, detail="Advance the reveal state first"
-            )
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         # Build bid action
         if bid_n == 0:
@@ -1121,15 +1120,18 @@ async def submit_card(
         if hand is None or turn_number < hand.turn_number:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
-        # Validate phase
+        # State-desync recovery — if HTMX morph left stale card buttons in
+        # the DOM the player may click a card while the server is in a
+        # different phase or waiting for a reveal advance.  Rather than
+        # returning a 400 (which requires a full page reload to recover),
+        # re-render the authoritative board so HTMX can swap in the correct
+        # state.  True validation errors (illegal card) still return 400.
         if hand.phase != "trick_play":
-            raise HTTPException(status_code=400, detail="Not in trick play phase")
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if hand.current_seat != HUMAN_SEAT:
-            raise HTTPException(status_code=400, detail="Not the human's turn")
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if _awaiting_next(hand):
-            raise HTTPException(
-                status_code=400, detail="Advance the reveal state first"
-            )
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         # Validate legality
         legal_plays = engine.get_legal_plays(state)
