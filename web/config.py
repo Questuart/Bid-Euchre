@@ -86,8 +86,15 @@ class HostedPlayConfig:
         """Build config from environment variables."""
         raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
 
+        # Render provides postgresql:// but we use psycopg v3, not psycopg2.
+        # Transform to the explicit psycopg dialect so SQLAlchemy loads the
+        # correct driver.
+        db_url = os.environ.get("DATABASE_URL", "sqlite:///hosted_play.db")
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
         return cls(
-            database_url=os.environ.get("DATABASE_URL", "sqlite:///hosted_play.db"),
+            database_url=db_url,
             secret_key=os.environ.get("SECRET_KEY", _default_secret_key()),
             allowed_origins=_parse_origins(raw_origins),
             app_url=os.environ.get("APP_URL", "http://localhost:8000"),

@@ -128,10 +128,23 @@ class TestFromEnv:
         ):
             monkeypatch.delenv(key, raising=False)
 
-    def test_reads_database_url(self, monkeypatch):
+    def test_reads_database_url_postgres_dialect_rewrite(self, monkeypatch):
+        """Render passes postgresql:// but we use psycopg v3, not psycopg2."""
         monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
         cfg = HostedPlayConfig.from_env()
-        assert cfg.database_url == "postgresql://localhost/test"
+        assert cfg.database_url == "postgresql+psycopg://localhost/test"
+
+    def test_database_url_already_psycopg_unchanged(self, monkeypatch):
+        """If the URL already specifies +psycopg, don't double-rewrite."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://localhost/test")
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.database_url == "postgresql+psycopg://localhost/test"
+
+    def test_database_url_sqlite_unchanged(self, monkeypatch):
+        """SQLite URLs pass through untouched."""
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///my.db")
+        cfg = HostedPlayConfig.from_env()
+        assert cfg.database_url == "sqlite:///my.db"
 
     def test_reads_default_model_id(self, monkeypatch):
         monkeypatch.setenv("DEFAULT_MODEL_ID", "olsa")
