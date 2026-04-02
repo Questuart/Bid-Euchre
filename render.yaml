@@ -31,3 +31,11 @@ services:
         value: /app/models
       - key: DEFAULT_MODEL_ID
         value: bud_bot
+      - key: ALLOWED_ORIGINS
+        value: https://bideuchre-web.onrender.com
+      - key: APP_URL
+        value: https://bideuchre-web.onrender.com
+      - key: OLSA_ARTIFACT
+        value: /app/models/training_artifact_full_ols_av.json
+      - key: GBT_ARTIFACT
+        value: /app/models/training_artifact_gbt_av.json
