@@ -198,9 +198,141 @@
         }, true);
     }
 
+    /* ---------------------------------------------------------------
+     * Error handling — show user-friendly toast when HTMX requests
+     * fail (network error, server error, timeout).
+     * --------------------------------------------------------------- */
+
+    var ERROR_TOAST_ID = 'error-toast';
+    var OFFLINE_BANNER_ID = 'offline-banner';
+    var _errorDismissTimer = null;
+
+    function showErrorToast(message, persistent) {
+        var existing = document.getElementById(ERROR_TOAST_ID);
+        if (existing) {
+            existing.remove();
+        }
+
+        if (_errorDismissTimer) {
+            clearTimeout(_errorDismissTimer);
+            _errorDismissTimer = null;
+        }
+
+        var toast = document.createElement('div');
+        toast.id = ERROR_TOAST_ID;
+        toast.className = 'error-toast';
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+
+        var msgSpan = document.createElement('span');
+        msgSpan.className = 'error-toast__message';
+        msgSpan.textContent = message;
+        toast.appendChild(msgSpan);
+
+        var dismissBtn = document.createElement('button');
+        dismissBtn.className = 'error-toast__dismiss';
+        dismissBtn.setAttribute('aria-label', 'Dismiss error');
+        dismissBtn.textContent = '\u00d7';
+        dismissBtn.addEventListener('click', function () {
+            dismissErrorToast();
+        });
+        toast.appendChild(dismissBtn);
+
+        document.body.appendChild(toast);
+
+        // Force reflow so the transition animates
+        toast.offsetHeight; // eslint-disable-line no-unused-expressions
+        toast.classList.add('error-toast--visible');
+
+        if (!persistent) {
+            _errorDismissTimer = setTimeout(function () {
+                dismissErrorToast();
+            }, 8000);
+        }
+    }
+
+    function dismissErrorToast() {
+        var toast = document.getElementById(ERROR_TOAST_ID);
+        if (toast) {
+            toast.classList.remove('error-toast--visible');
+            setTimeout(function () {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }
+        if (_errorDismissTimer) {
+            clearTimeout(_errorDismissTimer);
+            _errorDismissTimer = null;
+        }
+    }
+
+    function showOfflineBanner() {
+        if (document.getElementById(OFFLINE_BANNER_ID)) {
+            return;
+        }
+        var banner = document.createElement('div');
+        banner.id = OFFLINE_BANNER_ID;
+        banner.className = 'offline-banner';
+        banner.setAttribute('role', 'status');
+        banner.setAttribute('aria-live', 'polite');
+        banner.textContent = 'You are offline. Reconnecting\u2026';
+        document.body.insertBefore(banner, document.body.firstChild);
+    }
+
+    function hideOfflineBanner() {
+        var banner = document.getElementById(OFFLINE_BANNER_ID);
+        if (banner && banner.parentNode) {
+            banner.parentNode.removeChild(banner);
+        }
+    }
+
+    function attachErrorHandlers() {
+        // HTMX response errors (server returned 4xx/5xx)
+        document.body.addEventListener('htmx:responseError', function (event) {
+            var status = event.detail.xhr ? event.detail.xhr.status : 0;
+            var message;
+            if (status === 404) {
+                message = 'Game not found. It may have expired.';
+            } else if (status === 429) {
+                message = 'Too many active matches. Complete or abandon one first.';
+            } else if (status >= 500) {
+                message = 'Server error \u2014 please try again in a moment.';
+            } else {
+                message = 'Something went wrong. Please try again.';
+            }
+            showErrorToast(message, false);
+        });
+
+        // HTMX send errors (network failure, DNS, CORS, etc.)
+        document.body.addEventListener('htmx:sendError', function () {
+            if (!navigator.onLine) {
+                showOfflineBanner();
+            } else {
+                showErrorToast('Connection lost. Check your network and try again.', true);
+            }
+        });
+
+        // HTMX timeout
+        document.body.addEventListener('htmx:timeout', function () {
+            showErrorToast('Request timed out. Please try again.', false);
+        });
+
+        // Browser online/offline events
+        window.addEventListener('offline', function () {
+            showOfflineBanner();
+        });
+
+        window.addEventListener('online', function () {
+            hideOfflineBanner();
+            dismissErrorToast();
+        });
+    }
+
     function initialize() {
         attachDelegatedHandlers();
         attachTrickHistoryToggle();
+        attachErrorHandlers();
         var form = getCardPlayForm();
         clearCardSelection(form);
         syncCardPlayFormControls(form);
