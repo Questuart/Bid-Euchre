@@ -8,6 +8,7 @@
      - sitting_out_seat: int | None — loner sit-out seat
      - tricks_team0: int — tricks won by human's team (seats 0, 2)
      - tricks_team1: int — tricks won by AI team (seats 1, 3)
+     - trick_winning_seat: int | None — seat currently winning the active trick
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
@@ -55,9 +56,10 @@
     {% if seat in ns.cards %}
         {% set card = ns.cards[seat] %}
         {% set suit = card[0] %}
-        <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played"
+        {% set is_winning = (current_trick is not none and trick_winning_seat is defined and trick_winning_seat == seat) %}
+        <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played{% if is_winning %} card--winning{% endif %}"
              role="img"
-             aria-label="{{ seat_labels[seat] }} played {{ card[1] }} of {{ suit_names.get(suit, suit) }}">
+             aria-label="{{ seat_labels[seat] }} played {{ card[1] }} of {{ suit_names.get(suit, suit) }}{% if is_winning %} (currently winning){% endif %}">
             <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
             <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
         </div>
