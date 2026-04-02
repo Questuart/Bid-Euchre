@@ -1699,13 +1699,25 @@ async def post_comment(
         comments = _fetch_comments(session)
 
         if is_htmx:
+            ctx: dict = {"comments": comments}
+            if error is not None:
+                ctx["error"] = error
             return HTMLResponse(
-                templates.get_template("partials/comments_list.html").render(
-                    {"comments": comments}
-                )
+                templates.get_template("partials/comments_list.html").render(ctx)
             )
 
-        # Non-HTMX fallback — redirect to comments page
+        # Non-HTMX fallback — render full page with error (if any)
+        if error is not None:
+            return HTMLResponse(
+                templates.get_template("comments.html").render(
+                    {
+                        "request": request,
+                        "link_uuid": link_uuid,
+                        "comments": comments,
+                        "error": error,
+                    }
+                )
+            )
         return RedirectResponse(
             url=f"/comments/{link_uuid}",
             status_code=303,

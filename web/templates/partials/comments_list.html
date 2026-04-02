@@ -3,7 +3,11 @@
 
     Context variables:
         comments — list of dicts with keys: nickname, content, created_at
+        error    — (optional) validation error message to display
 #}
+{% if error %}
+<div class="comments__error" role="alert">{{ error }}</div>
+{% endif %}
 {% if comments|length == 0 %}
 <div class="comments__empty">
     <p>No comments yet. Be the first to share your thoughts!</p>
