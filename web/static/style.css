@@ -939,6 +939,21 @@ main {
     font-size: 0.85rem;
 }
 
+/* Trick log inside hand result — collapsed by default, max-height for scroll */
+.hand-result__trick-log {
+    margin-top: 0.75rem;
+}
+
+.hand-result__trick-log .trick-history {
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.hand-result__trick-log .trick-history__toggle {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+}
+
 .hand-result-controls {
     margin-top: 0.75rem;
 }

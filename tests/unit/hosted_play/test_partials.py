@@ -1133,6 +1133,121 @@ class TestHandResult:
         assert expected[seat] in html
         assert f"Seat {seat}" not in html
 
+    def test_trick_history_shown_with_completed_tricks(self, env):
+        """Hand result includes a collapsible trick-by-trick game log (#2006)."""
+        tricks = [
+            {
+                "leader": 0,
+                "plays": [
+                    [0, ["S", "A"]],
+                    [1, ["S", "K"]],
+                    [2, ["S", "Q"]],
+                    [3, ["S", "J"]],
+                ],
+                "winner": 0,
+            },
+            {
+                "leader": 0,
+                "plays": [
+                    [0, ["H", "A"]],
+                    [1, ["H", "K"]],
+                    [2, ["H", "Q"]],
+                    [3, ["H", "J"]],
+                ],
+                "winner": 0,
+            },
+        ]
+        html = env.get_template("partials/hand_result.html").render(
+            link_uuid="abc-123",
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+            completed_tricks=tricks,
+        )
+        # The trick history details element should be present
+        assert "trick-history" in html
+        assert "Cards Played" in html
+        # Card values rendered
+        assert "A" in html
+        assert "K" in html
+
+    def test_trick_history_absent_without_tricks(self, env):
+        """Hand result omits trick history when no tricks available (#2006)."""
+        html = env.get_template("partials/hand_result.html").render(
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=0,
+            tricks_team1=0,
+            points_team0=0,
+            points_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=1,
+            completed_tricks=[],
+        )
+        # With empty completed_tricks, the trick-history section is not rendered
+        assert "trick-history" not in html
+
+    def test_trick_history_defaults_gracefully(self, env):
+        """Hand result renders without completed_tricks in context (#2006)."""
+        html = env.get_template("partials/hand_result.html").render(
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        # Should render without error even when completed_tricks is not provided
+        assert "Made it!" in html
+        assert "trick-history" not in html
+
+    def test_trick_history_wrapper_has_class(self, env):
+        """The trick log wrapper uses the hand-result__trick-log class (#2006)."""
+        tricks = [
+            {
+                "leader": 1,
+                "plays": [
+                    [1, ["D", "10"]],
+                    [2, ["D", "J"]],
+                    [3, ["D", "Q"]],
+                    [0, ["D", "K"]],
+                ],
+                "winner": 0,
+            },
+        ]
+        html = env.get_template("partials/hand_result.html").render(
+            link_uuid="abc-123",
+            winning_bid=5,
+            bidder_seat=1,
+            contract_type="suit",
+            trump="D",
+            tricks_team0=6,
+            tricks_team1=4,
+            points_team0=6,
+            points_team1=4,
+            score_human=6,
+            score_ai=4,
+            hands_played=1,
+            completed_tricks=tricks,
+        )
+        assert "hand-result__trick-log" in html
+
 
 # ---------------------------------------------------------------------------
 # moon_exchange.html
