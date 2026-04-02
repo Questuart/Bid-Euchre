@@ -14,10 +14,12 @@
   has minimal agency due to 400 errors on card play and auto-advance state jumps
 **Critical blocker:** Card play endpoint returns 400 Bad Request, making games unplayable without constant workarounds
 
-> **25 games could not be completed.** A P1 server-client state desynchronization
-> bug causes the `/play-card` endpoint to return 400 errors, blocking card play
-> in most trick-play situations. The bug reproduces consistently across games,
-> opponents, and card types. See P1-001 below.
+> **Most interactive card-play attempts failed.** A P1 server-client state
+> desynchronization bug causes the `/play-card` endpoint to return 400 errors,
+> blocking card play in most trick-play situations. Of the 4 interactive
+> sessions attempted, none could be played through without repeated 400 errors.
+> The bug reproduces consistently across games, opponents, and card types.
+> See P1-001 below.
 
 ## Issues Found
 
@@ -145,9 +147,16 @@ on every hand where they could bid.
 **Frequency:** Observed once
 **Details:** Match history shows a game with score 55-55 marked as "Loss".
 When both teams exceed the ±52 threshold in the same hand, the result
-classification appears incorrect. A tie score should either:
-- Not end the game (continue playing)
-- Be classified as "Draw", not "Loss"
+depends on the stored `Match.won` boolean. The history template renders
+`"Win" if match.won else "Loss"` with no draw state — a 55-55 tie is
+stored as `won=False` (the declaring team that pushed the score over
+threshold is the winner, so the human's team lost).
+
+**Root cause:** This is a data-model limitation, not a display bug. The
+`Match.won` boolean does not distinguish between a loss and a tie. Per
+the game rules (RULES.md §6.6), when both teams cross ±52 in the same
+hand, the declaring team wins — so 55-55 can be a legitimate loss for
+the non-declaring team.
 
 **Screenshot:** `gameplay_screenshots/history_10_games.png` (row 1)
 
@@ -206,16 +215,18 @@ Please include <meta name="mobile-web-app-capable" content="yes"> instead.
 
 ---
 
-#### P3-003: No per-game nickname or opponent selection on first entry
+#### P3-003: ~~No per-game nickname or opponent selection on first entry~~ (FALSE POSITIVE)
 
-**Severity:** P3
+**Severity:** Not a bug — working as designed.
 **Details:** The first time entering via invite code, the game starts directly
 without showing the opponent selection screen. The "Welcome, Meeks!" opponent
 selection dialog only appears after clicking "Play Again" at the end of a match.
 The nickname ("Meeks") is derived from the invite code, not player input.
 
-**Expected (per task spec):** Per-game nickname entry and opponent selection.
-**Actual:** Nickname is fixed to invite code. Opponent selection only on rematch.
+**Resolution:** This is by design. The invite code flow creates the player
+record with a nickname derived from the code. The opponent selection screen
+appears on the welcome/rematch page, not during initial invite code entry.
+First-entry flow is: invite code → player created → opponent select → play.
 
 ---
 

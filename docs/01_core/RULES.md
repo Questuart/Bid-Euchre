@@ -112,7 +112,7 @@ A bid is a tuple:
 - `bid_type`: one of `{"regular", "moon", "loner"}` (default `"regular"`)
 
 Where:
-- `tricks_bid = 0` means **PASS** (`contract_type` and `trump` are null; `bid_type` defaults to `"regular"`).
+- `tricks_bid = 0` means **PASS** (`contract_type` and `trump` are null; `bid_type` is always `"regular"`, never null).
 - A **bid** must have `tricks_bid >= 1`.
 - If `contract_type = "suit"`, `trump` must be provided.
 - If `contract_type ∈ {"high", "low"}`, `trump` must be null.
@@ -189,9 +189,9 @@ Within the same `bid_type`, standard strictly-increasing rules apply (Section 3.
 After a moon bid wins the auction:
 
 1. A **partner exchange** occurs: the declarer's partner gives their best cards to the declarer, who returns the same number of cards.
-2. After the exchange, the declarer's partner **sits out** for the hand.
+2. After the exchange, the declarer's partner **sits out** for trick play only — all four players are dealt cards and participate in the auction normally.
 3. Only **three seats** participate in trick play: the declarer and both opponents.
-4. The sit-out seat plays no cards and wins no tricks.
+4. The sit-out seat plays no cards and wins no tricks during trick play.
 
 #### 3.6.3 Loner pre-play: partner sit-out
 
