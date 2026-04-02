@@ -1,6 +1,8 @@
 """Leaderboard stats aggregation for the browser game.
 
-Computes player performance metrics from completed match and hand data.
+Computes player performance metrics from match and hand data, including
+hands from in-progress matches so stats update after every hand.
+
 All queries operate on the hosted-play SQLAlchemy models — no raw SQL.
 
 The leaderboard is a product-facing feature: metrics optimize for player
@@ -21,6 +23,9 @@ from .db import Hand, Match, Player
 # Human is always seat 0; human's team is (seat 0, seat 2) = team 0.
 HUMAN_TEAM = 0
 
+# Match statuses that contribute hands to leaderboard stats.
+_LEADERBOARD_MATCH_STATUSES = ("active", "complete")
+
 
 @dataclass(frozen=True)
 class PlayerStats:
@@ -40,7 +45,7 @@ class PlayerStats:
 
     # Secondary columns
     hands_played: int
-    avg_match_margin: float  # average match score margin (all matches)
+    avg_match_margin: float  # average match score margin (completed matches)
     bid_rate: float  # fraction of hands where player's team won the bid
     make_rate: float  # fraction of contracts made when declaring
     avg_bid_level: float  # average bid level when declaring
@@ -53,28 +58,50 @@ class PlayerStats:
 def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None:
     """Compute aggregated stats for a single player.
 
-    Returns ``None`` if the player has no completed matches.
+    Returns ``None`` if the player has no completed hands.
+
+    Hand-level metrics (net_eppd, bid_rate, make_rate, etc.) include hands
+    from both active and completed matches so the leaderboard updates after
+    every hand.  Match-level metrics (games_won, win_rate, margins) use
+    completed matches only — you can't "win" an in-progress game.
     """
     player = session.query(Player).get(player_id)
     if player is None:
         return None
 
-    # Completed matches for this player
-    completed_matches = (
-        session.query(Match).filter_by(player_id=player_id, status="complete").all()
+    # All matches that contribute hands (active + complete)
+    all_matches = (
+        session.query(Match)
+        .filter(
+            Match.player_id == player_id,
+            Match.status.in_(_LEADERBOARD_MATCH_STATUSES),
+        )
+        .all()
     )
 
-    if not completed_matches:
+    if not all_matches:
         return None
 
-    matches_played = len(completed_matches)
-    match_ids = [m.id for m in completed_matches]
+    all_match_ids = [m.id for m in all_matches]
 
-    # Win/loss from matches (human is team 0 — score_human vs score_ai)
+    # Completed hands across active + completed matches
+    completed_hands = (
+        session.query(Hand)
+        .filter(Hand.match_id.in_(all_match_ids), Hand.status == "complete")
+        .all()
+    )
+    hands_played = len(completed_hands)
+
+    if hands_played == 0:
+        return None
+
+    # --- Match-level metrics (completed matches only) ---
+    completed_matches = [m for m in all_matches if m.status == "complete"]
+    matches_played = len(completed_matches)
+
     games_won = sum(1 for m in completed_matches if m.score_human > m.score_ai)
     win_rate = games_won / matches_played if matches_played > 0 else 0.0
 
-    # Score margins
     margins = [m.score_human - m.score_ai for m in completed_matches]
     avg_match_margin = sum(margins) / len(margins) if margins else 0.0
     winning_margins = [mg for mg in margins if mg > 0]
@@ -82,20 +109,11 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
         sum(winning_margins) / len(winning_margins) if winning_margins else 0.0
     )
 
-    # Completed hands across all completed matches
-    completed_hands = (
-        session.query(Hand)
-        .filter(Hand.match_id.in_(match_ids), Hand.status == "complete")
-        .all()
-    )
-    hands_played = len(completed_hands)
+    # --- Hand-level metrics (all completed hands) ---
 
     # Net EPPD: total net points / total hands
-    if hands_played > 0:
-        total_net_points = sum(h.points_team0 - h.points_team1 for h in completed_hands)
-        net_eppd = total_net_points / hands_played
-    else:
-        net_eppd = 0.0
+    total_net_points = sum(h.points_team0 - h.points_team1 for h in completed_hands)
+    net_eppd = total_net_points / hands_played
 
     # Bidding stats — human team is team 0, bidder_seat in (0, 2)
     declaring_hands = [
@@ -165,23 +183,30 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
 def get_leaderboard(
     session: Session,
     *,
-    min_matches: int = 1,
+    min_hands: int = 1,
 ) -> list[PlayerStats]:
     """Return leaderboard rankings sorted by net_eppd descending.
 
-    Only includes players with at least *min_matches* completed matches.
+    Only includes players with at least *min_hands* completed hands
+    (across both active and completed matches).  This means players
+    appear on the leaderboard after their very first completed hand,
+    even during their first match.
     """
-    # Find all players with completed matches
-    player_match_counts = (
-        session.query(Match.player_id, func.count(Match.id).label("n"))
-        .filter_by(status="complete")
+    # Find all players with enough completed hands across active+complete matches
+    player_hand_counts = (
+        session.query(Match.player_id, func.count(Hand.id).label("n"))
+        .join(Hand, Hand.match_id == Match.id)
+        .filter(
+            Match.status.in_(_LEADERBOARD_MATCH_STATUSES),
+            Hand.status == "complete",
+        )
         .group_by(Match.player_id)
-        .having(func.count(Match.id) >= min_matches)
+        .having(func.count(Hand.id) >= min_hands)
         .all()
     )
 
     stats_list: list[PlayerStats] = []
-    for player_id, _count in player_match_counts:
+    for player_id, _count in player_hand_counts:
         stats = compute_player_stats(session, player_id)
         if stats is not None:
             stats_list.append(stats)
