@@ -2641,3 +2641,138 @@ class TestTabNavigation:
         resp = client.get(f"/play/{link_uuid}")
         assert resp.status_code == 200
         assert 'role="tablist"' in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Test: State-desync graceful recovery (P1-001 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestDesyncGracefulRecovery:
+    """Stale HTMX button clicks get the authoritative board instead of 400.
+
+    When HTMX's morph swap fails to fully update the DOM, the player may
+    click a stale card-play or bid button.  The server returns the current
+    game board (200) so HTMX can re-sync, instead of returning 400 which
+    requires a full page reload.
+    """
+
+    def test_play_card_during_pause_returns_board(self, client, app):
+        """POST /play-card while paused_after_trick returns 200 board."""
+        link_uuid = _setup_game(client)
+
+        for _ in range(40):  # safety limit
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, match_row, session = result
+
+            hand = state.current_hand
+            if hand is None:
+                session.close()
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                session.close()
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+                continue
+
+            if hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                # Artificially set paused_after_trick to simulate the desync
+                # scenario: stale card buttons in the DOM while the server
+                # expects a "Next" press.
+                hand.paused_after_trick = True
+                match_row.match_state_json = json.dumps(state.to_dict())
+                session.commit()
+                session.close()
+
+                # Attempt to play a card — should get 200 board, not 400
+                resp = client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={"turn_number": hand.turn_number, "card_index": 0},
+                )
+                assert resp.status_code == 200
+                # Response should contain the game board HTML
+                assert "game-board" in resp.text or "next-controls" in resp.text
+                return
+
+            session.close()
+
+        pytest.fail("Never reached trick play to test desync recovery")
+
+    def test_bid_during_trick_play_returns_board(self, client, app):
+        """POST /bid while in trick_play phase returns 200 board."""
+        link_uuid = _setup_game(client)
+
+        for _ in range(40):
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+
+            hand = state.current_hand
+            if hand is None:
+                session.close()
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                session.close()
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+                continue
+
+            if hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                session.close()
+                # Stale bid button in DOM — should get 200 board, not 400
+                resp = client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+                assert resp.status_code == 200
+                assert "game-board" in resp.text or "trick" in resp.text
+                return
+
+            session.close()
+
+        pytest.fail("Never reached trick play to test cross-phase desync")
+
+    def test_play_card_wrong_phase_returns_board(self, client, app):
+        """POST /play-card while in auction phase returns 200 board."""
+        link_uuid = _setup_game(client)
+
+        advance_pending_reveals(client, app, link_uuid)
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+
+        hand = state.current_hand
+        if hand is None or hand.phase != "auction" or hand.current_seat != HUMAN_SEAT:
+            session.close()
+            pytest.skip("Game did not start in expected auction state")
+
+        session.close()
+
+        # Stale play-card button from previous hand — should get 200 board
+        resp = client.post(
+            f"/play/{link_uuid}/play-card",
+            data={"turn_number": hand.turn_number, "card_index": 0},
+        )
+        assert resp.status_code == 200
+        assert "game-board" in resp.text or "auction" in resp.text.lower()

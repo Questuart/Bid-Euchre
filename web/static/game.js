@@ -354,7 +354,13 @@
         document.body.addEventListener('htmx:responseError', function (event) {
             var status = event.detail.xhr ? event.detail.xhr.status : 0;
             var message;
-            if (status === 404) {
+            if (status === 400) {
+                // State desync — reload the page to recover the authoritative
+                // server state.  This handles stale card-play buttons left by
+                // HTMX morph swap failures.
+                refreshGameBoard();
+                return;
+            } else if (status === 404) {
                 message = 'Game not found. It may have expired.';
             } else if (status === 429) {
                 message = 'Too many active matches. Complete or abandon one first.';
