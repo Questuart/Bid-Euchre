@@ -9,7 +9,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <!-- PWA -->
     <link rel="manifest" href="/static/manifest.json">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Bid Euchre">
@@ -18,7 +18,7 @@
     <meta property="og:title" content="Bid Euchre">
     <meta property="og:description" content="Play Bid Euchre online against AI opponents. Double-deck, 10-to-Ace with bowers.">
     <meta property="og:type" content="website">
-    <meta property="og:image" content="/static/icons/icon-512.svg">
+    <meta property="og:image" content="/static/icons/icon-512.png">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/css/accessibility.css">
     <style>
@@ -40,6 +40,18 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
     <script src="/static/game.js" defer></script>
+    <!-- Morph-swap script fix: idiomorph doesn't re-execute inline <script>
+         tags when morphing DOM nodes.  After a game-board morph swap, clone
+         any <script> elements so the browser treats them as new and executes
+         them.  Fixes bid-panel controls and moon-exchange selection after
+         morph-swapped transitions. -->
+    <script>
+        document.addEventListener('htmx:afterSwap',function(e){
+            var t=e.target;if(!t||t.id!=='game-board')return;
+            var s=t.querySelectorAll('script');
+            for(var i=0;i<s.length;i++){var o=s[i],n=document.createElement('script');n.textContent=o.textContent;o.parentNode.replaceChild(n,o);}
+        });
+    </script>
     {% block head %}{% endblock %}
 </head>
 <body hx-ext="morph">
