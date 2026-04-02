@@ -317,3 +317,102 @@ class TestPostComment:
         resp = client.get(f"/comments/{link_uuid}/list")
         assert "Anonymous" in resp.text
         assert "Anon here" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# XSS / HTML escaping
+# ---------------------------------------------------------------------------
+
+
+class TestCommentXSSEscaping:
+    """Verify comment content is HTML-escaped to prevent XSS."""
+
+    _XSS_PAYLOADS = [
+        "<script>alert('xss')</script>",
+        '<img src=x onerror="alert(1)">',
+        "<b>bold</b> & <i>italic</i>",
+    ]
+
+    def test_htmx_partial_escapes_script_tags(self, client, app):
+        """Script tags in comment content are escaped in the HTMX partial."""
+        link_uuid = _create_player(app, "Alice")
+        payload = "<script>alert('xss')</script>"
+
+        client.post(
+            f"/play/{link_uuid}/comment",
+            data={"content": payload},
+            headers={"HX-Request": "true"},
+        )
+
+        resp = client.get(f"/comments/{link_uuid}/list")
+        assert resp.status_code == 200
+        # Raw <script> must NOT appear in rendered HTML
+        assert "<script>alert(" not in resp.text
+        # Escaped form must appear
+        assert "&lt;script&gt;" in resp.text
+
+    def test_full_page_escapes_script_tags(self, client, app):
+        """Script tags in comment content are escaped on the full page."""
+        link_uuid = _create_player(app, "Alice")
+        payload = "<script>alert('xss')</script>"
+
+        client.post(
+            f"/play/{link_uuid}/comment",
+            data={"content": payload},
+        )
+
+        resp = client.get(f"/comments/{link_uuid}")
+        assert resp.status_code == 200
+        # The full page has its own <script> tags (htmx, etc.),
+        # but the injected payload must be escaped in the content div.
+        assert "&lt;script&gt;alert(" in resp.text
+
+    def test_img_onerror_escaped(self, client, app):
+        """img-onerror XSS vector is escaped in rendered output."""
+        link_uuid = _create_player(app, "Alice")
+        payload = '<img src=x onerror="alert(1)">'
+
+        client.post(
+            f"/play/{link_uuid}/comment",
+            data={"content": payload},
+            headers={"HX-Request": "true"},
+        )
+
+        resp = client.get(f"/comments/{link_uuid}/list")
+        assert resp.status_code == 200
+        assert "<img " not in resp.text
+        assert "&lt;img " in resp.text
+
+    def test_html_entities_escaped(self, client, app):
+        """Ampersands and angle brackets are entity-encoded."""
+        link_uuid = _create_player(app, "Alice")
+        payload = "<b>bold</b> & <i>italic</i>"
+
+        client.post(
+            f"/play/{link_uuid}/comment",
+            data={"content": payload},
+            headers={"HX-Request": "true"},
+        )
+
+        resp = client.get(f"/comments/{link_uuid}/list")
+        assert resp.status_code == 200
+        assert "&lt;b&gt;bold&lt;/b&gt;" in resp.text
+        assert "&amp;" in resp.text
+
+    def test_nickname_escaped_in_comments(self, client, app):
+        """Player nicknames containing HTML are also escaped."""
+        link_uuid = _create_player(app, nickname="<script>bad</script>")
+
+        client.post(
+            f"/play/{link_uuid}/comment",
+            data={"content": "Innocent comment"},
+            headers={"HX-Request": "true"},
+        )
+
+        resp = client.get(f"/comments/{link_uuid}/list")
+        assert resp.status_code == 200
+        # Nickname must be escaped
+        assert "<script>bad</script>" not in resp.text
+        assert "&lt;script&gt;bad&lt;/script&gt;" in resp.text
+        # Comment content should render normally
+        assert "Innocent comment" in resp.text
