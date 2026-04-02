@@ -1204,6 +1204,16 @@ async def next_step(
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
+
+        # Log AI decisions captured during exchange-reveal auto-advance
+        _log_ai_decisions_after_advance(
+            session,
+            match_row,
+            hand_row,
+            engine,
+            state,
+        )
+
         hand_row.hand_state_json = json.dumps(hand.to_dict())
         _update_match_row(match_row, state)
         session.commit()
@@ -1250,6 +1260,16 @@ async def submit_exchange(
         state = engine.submit_exchange_selection(state, [card_index_0, card_index_1])
 
         hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
+
+        # Log AI decisions captured during exchange auto-advance
+        _log_ai_decisions_after_advance(
+            session,
+            match_row,
+            hand_row,
+            engine,
+            state,
+        )
+
         hand_row.hand_state_json = json.dumps(hand.to_dict())
         _update_match_row(match_row, state)
         session.commit()

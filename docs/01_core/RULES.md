@@ -112,7 +112,7 @@ A bid is a tuple:
 - `bid_type`: one of `{"regular", "moon", "loner"}` (default `"regular"`)
 
 Where:
-- `tricks_bid = 0` means **PASS** (and `contract_type`/`trump`/`bid_type` are null).
+- `tricks_bid = 0` means **PASS** (`contract_type` and `trump` are null; `bid_type` defaults to `"regular"`).
 - A **bid** must have `tricks_bid >= 1`.
 - If `contract_type = "suit"`, `trump` must be provided.
 - If `contract_type ∈ {"high", "low"}`, `trump` must be null.
