@@ -204,14 +204,22 @@ def _play_full_hand(
     # Handle interactive moon exchange
     state = _auto_exchange(engine, state)
 
-    # Handle trick play phase (skip if human is sitting out for moon/loner)
+    # Handle trick play phase (skip if human is sitting out for moon/loner).
+    # The engine now pauses after each trick completion, so we must resume
+    # AI advancement between human plays.
     while (
         state.status == "active"
         and state.current_hand is not None
         and state.current_hand.phase == "trick_play"
-        and state.current_hand.current_seat == HUMAN_SEAT
-        and state.current_hand.sitting_out_seat != HUMAN_SEAT
     ):
+        hand = state.current_hand
+        if hand.paused_after_trick:
+            state = engine.resume_ai(state)
+            continue
+        if hand.sitting_out_seat == HUMAN_SEAT:
+            break  # Human sits out — engine handles all play
+        if hand.current_seat != HUMAN_SEAT:
+            break  # Not human's turn, not paused — shouldn't happen
         legal = engine.get_legal_plays(state)
         state = engine.submit_human_card(state, legal[0])
 
@@ -221,7 +229,7 @@ def _play_full_hand(
 def _play_until_match_end(engine: MatchEngine, state: MatchState) -> MatchState:
     """Drive the full match to completion."""
     iterations = 0
-    max_iterations = 5000  # Safety valve
+    max_iterations = 10000  # Safety valve (more iterations needed with trick pauses)
     while state.status == "active" and iterations < max_iterations:
         hand = state.current_hand
         assert hand is not None
@@ -231,6 +239,12 @@ def _play_until_match_end(engine: MatchEngine, state: MatchState) -> MatchState:
             # Match is not finished yet, but the hand paused on the result
             # screen. Advance explicitly to continue testing full-match flow.
             state = engine.advance_to_next_hand(state)
+            continue
+        if hand.phase == "redeal":
+            state = engine.deal_after_redeal(state)
+            continue
+        if hand.phase == "trick_play" and hand.paused_after_trick:
+            state = engine.resume_ai(state)
             continue
         if hand.phase == "auction":
             if hand.current_seat != HUMAN_SEAT:
@@ -1372,7 +1386,17 @@ class TestInteractiveMoonExchange:
                 state = engine.advance_after_exchange_reveal(state)
                 hand = state.current_hand
                 assert hand is not None
-                # Now AI auto-plays all 10 tricks → hand complete
+                # AI auto-plays with trick-by-trick pauses.
+                # Resume through all pauses until hand completes.
+                for _ in range(20):  # Safety valve
+                    if hand.phase == "complete":
+                        break
+                    if hand.paused_after_trick:
+                        state = engine.resume_ai(state)
+                        hand = state.current_hand
+                        assert hand is not None
+                    else:
+                        break
                 assert (
                     hand.phase == "complete"
                 ), f"Expected 'complete' after reveal, got '{hand.phase}'"
@@ -1560,7 +1584,16 @@ class TestMoonExchangeAIAdvance:
                 hand = state.current_hand
                 assert hand is not None
 
-                # Human sits out → AI auto-plays everything → hand complete
+                # Human sits out → AI auto-plays with trick pauses
+                for _ in range(20):
+                    if hand.phase == "complete":
+                        break
+                    if hand.paused_after_trick:
+                        state = engine.resume_ai(state)
+                        hand = state.current_hand
+                        assert hand is not None
+                    else:
+                        break
                 assert (
                     hand.phase == "complete"
                 ), f"Expected 'complete' after reveal, got '{hand.phase}'"

@@ -214,6 +214,7 @@ def _awaiting_next(hand) -> bool:
         _has_hidden_auction(hand)
         or _has_pending_exchange(hand)
         or (hand.phase == "trick_play" and hand.paused_after_trick)
+        or hand.phase == "redeal"
     )
 
 
@@ -225,6 +226,8 @@ def _next_reason(hand) -> str | None:
         return "Review the moon exchange."
     if hand.phase == "trick_play" and hand.paused_after_trick:
         return "Continue to the next trick."
+    if hand.phase == "redeal":
+        return "All players passed. Deal a new hand."
     return None
 
 
@@ -1062,19 +1065,12 @@ async def submit_bid(
             state,
         )
 
-        # Update hand row if hand completed or redealt
+        # Update hand row based on resulting phase.
+        # Redeals are NOT auto-advanced here — the user sees a "redeal"
+        # interstitial and clicks Next to deal the new hand (handled
+        # by the /next endpoint).
         if current_hand is not None and current_hand.phase == "redeal":
-            # Persist the terminal redeal state before dealing next hand
             _update_hand_row(hand_row, current_hand)
-            state = engine.deal_after_redeal(state)
-            # Create a hand row for the newly dealt hand
-            if state.current_hand is not None:
-                _ensure_hand_row(
-                    session,
-                    match_row,
-                    state.current_hand,
-                    state.current_hand.deal_id,
-                )
         elif current_hand is not None and current_hand.phase == "complete":
             _update_hand_row(hand_row, current_hand)
         elif current_hand is not None:
@@ -1159,17 +1155,10 @@ async def submit_card(
             game_state=engine.get_visible_state(state),
         )
 
-        pre_completed_tricks = len(hand.completed_tricks)
-
-        # Apply action — engine auto-advances AI
+        # Apply action — engine auto-advances AI and sets
+        # paused_after_trick when a trick completes.
         state = engine.submit_human_card(state, card_index)
         current_hand = state.current_hand
-        if (
-            current_hand is not None
-            and current_hand.phase == "trick_play"
-            and len(current_hand.completed_tricks) > pre_completed_tricks
-        ):
-            current_hand.paused_after_trick = True
 
         # Log AI decisions captured during auto-advance
         _log_ai_decisions_after_advance(
@@ -1233,13 +1222,39 @@ async def next_step(
             # deferred _advance_ai so the interstitial could display first.
             state = engine.advance_after_exchange_reveal(state)
         elif hand.phase == "trick_play" and hand.paused_after_trick:
-            hand.paused_after_trick = False
+            # Resume AI advancement after trick-result interstitial.
+            # The engine will play AI turns until the next trick
+            # completion (setting paused_after_trick again), the
+            # human's turn, or hand/match end.
+            state = engine.resume_ai(state)
+        elif hand.phase == "redeal":
+            # All players passed — persist the terminal redeal hand,
+            # then deal the next hand and auto-advance AI bids.
+            hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
+            _update_hand_row(hand_row, hand)
+            state = engine.deal_after_redeal(state)
+            # Create a hand row for the newly dealt hand
+            if state.current_hand is not None:
+                _ensure_hand_row(
+                    session,
+                    match_row,
+                    state.current_hand,
+                    state.current_hand.deal_id,
+                )
         else:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
-        hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
+        # Ensure hand row exists for the current hand (may have changed
+        # after redeal or resume).
+        current_hand = state.current_hand
+        if current_hand is not None:
+            hand_row = _ensure_hand_row(
+                session, match_row, current_hand, current_hand.deal_id
+            )
+        else:
+            hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
 
-        # Log AI decisions captured during exchange-reveal auto-advance
+        # Log AI decisions captured during auto-advance
         _log_ai_decisions_after_advance(
             session,
             match_row,
@@ -1248,7 +1263,13 @@ async def next_step(
             state,
         )
 
-        hand_row.hand_state_json = json.dumps(hand.to_dict())
+        # Persist hand state
+        if current_hand is not None and current_hand.phase == "complete":
+            _update_hand_row(hand_row, current_hand)
+        elif current_hand is not None:
+            hand_row.hand_state_json = json.dumps(current_hand.to_dict())
+        else:
+            hand_row.hand_state_json = json.dumps(hand.to_dict())
         _update_match_row(match_row, state)
         session.commit()
 

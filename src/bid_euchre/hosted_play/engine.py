@@ -248,14 +248,32 @@ class MatchEngine:
         return state
 
     def submit_human_card(self, state: MatchState, card_index: int) -> MatchState:
-        """Process the human's card play, then auto-advance AI."""
+        """Process the human's card play, then auto-advance AI.
+
+        If the human's card completes a trick, pauses **before** AI
+        auto-advance so the UI can show the trick result.  Otherwise
+        auto-advances AI until the next trick completion or the human's
+        next turn.
+        """
         self.last_ai_events = []
         hand = state.current_hand
         assert hand is not None
         assert hand.phase == "trick_play"
         assert hand.current_seat == HUMAN_SEAT
 
+        pre_tricks = len(hand.completed_tricks)
         state = self._process_card_play(state, HUMAN_SEAT, card_index)
+
+        hand_after = state.current_hand
+        if hand_after is not None and len(hand_after.completed_tricks) > pre_tricks:
+            # Human's card completed a trick — pause to show the result
+            # before any further AI play.
+            if hand_after.phase == "trick_play":
+                hand_after.paused_after_trick = True
+            return state
+
+        # Trick not yet complete — auto-advance AI to finish the trick
+        # (and pause once that trick completes).
         state = self._advance_ai(state)
         return state
 
@@ -500,14 +518,31 @@ class MatchEngine:
     # Internal — AI auto-advance
     # ------------------------------------------------------------------
 
+    def resume_ai(self, state: MatchState) -> MatchState:
+        """Continue AI advancement after a trick-result pause.
+
+        Clears the ``paused_after_trick`` flag and re-enters the auto-play
+        loop.  Called by route handlers when the user clicks **Next** to
+        dismiss a trick-result interstitial.
+        """
+        hand = state.current_hand
+        if hand is not None:
+            hand.paused_after_trick = False
+        self.last_ai_events = []
+        return self._advance_ai(state)
+
     def _advance_ai(self, state: MatchState) -> MatchState:
-        """Auto-play all AI turns until the human's turn or hand/match end.
+        """Auto-play AI turns, pausing at every natural stopping point.
+
+        Stopping points (returns immediately when reached):
+        * The human's turn to bid or play (unless sitting out).
+        * A trick just completed — ``paused_after_trick`` is set so the UI
+          can show the result before continuing.
+        * The hand ended (phase ``"complete"`` or ``"redeal"``).
+        * The match ended (``status == "complete"``).
 
         Populates ``self.last_ai_events`` with exact decision data for every
         AI action taken during this advance cycle.
-
-        For moon/loner hands where the human is sitting out (partner bid
-        moon or loner), auto-advances through all trick play without pausing.
         """
         while True:
             # Match finished — nothing to advance
@@ -583,6 +618,8 @@ class MatchEngine:
                 assert hand.current_trick is not None
                 assert hand.contract_type is not None
 
+                pre_tricks = len(hand.completed_tricks)
+
                 card_idx = self.play_strategy.choose_card(
                     hand.hands[seat],
                     hand.current_trick.plays,
@@ -620,6 +657,17 @@ class MatchEngine:
                 )
 
                 state = self._process_card_play(state, seat, card_idx)
+
+                # After an AI card play, check if a trick just completed.
+                # If so, pause to let the UI show the result.
+                hand_after = state.current_hand
+                if (
+                    hand_after is not None
+                    and len(hand_after.completed_tricks) > pre_tricks
+                ):
+                    if hand_after.phase == "trick_play":
+                        hand_after.paused_after_trick = True
+                    return state
             else:
                 # Unexpected phase — bail to avoid infinite loop
                 return state  # pragma: no cover
