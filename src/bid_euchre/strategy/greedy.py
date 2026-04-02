@@ -439,6 +439,13 @@ class GluttonStrategy(Strategy):
         This gives Glutton a consistent edge by saving cards when partner
         has the trick locked, while still being aggressive when needed.
         """
+        # Defense-in-depth: sync contract context on every call so that
+        # _choose_lead, _choose_discard, and helpers always use the
+        # current hand's contract_type/trump_suit even if on_hand_start
+        # was never called.
+        self._contract_type = contract_type
+        self._trump_suit = trump_suit
+
         # Fallback reset if on_hand_start wasn't called (backward compatibility)
         if len(hand) == 10 and not plays_so_far:
             self._seen_counts = {}
@@ -923,6 +930,12 @@ class GluttonIsolatedStrategy(Strategy):
         player_index: int,
     ) -> int:
         """Choose card with configurable feature flags."""
+        # Defense-in-depth: sync contract context on every call so that
+        # helpers always use the current hand's contract_type/trump_suit
+        # even if on_hand_start was never called.
+        self._contract_type = contract_type
+        self._trump_suit = trump_suit
+
         # Fallback reset if on_hand_start wasn't called
         if len(hand) == 10 and not plays_so_far:
             self._seen_counts = {}

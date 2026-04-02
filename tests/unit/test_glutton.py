@@ -10,7 +10,7 @@ tracking, though the simplified version doesn't use them for decision-making.
 """
 
 from bid_euchre.core.cards import Card
-from bid_euchre.strategy import GluttonStrategy, GreedyStrategy
+from bid_euchre.strategy import GluttonIsolatedStrategy, GluttonStrategy, GreedyStrategy
 
 
 class TestPartnerAwareness:
@@ -926,3 +926,181 @@ class TestLowContractBehavior:
         assert (
             hand[choice].rank == "J"
         ), f"Low should use cheapest winner (J), got {hand[choice]}"
+
+
+class TestContractSyncDefenseInDepth:
+    """Tests for defense-in-depth contract sync (#2133 Bug B).
+
+    These tests verify that choose_card() correctly handles Low/Suit
+    contracts even when on_hand_start() was never called. Before the fix,
+    the stale default _contract_type="high" would cause incorrect card
+    ranking in _choose_discard and _choose_lead.
+    """
+
+    def test_low_discard_without_on_hand_start(self):
+        """Low discard should dump weakest (A) without on_hand_start.
+
+        Before the fix, _contract_type stayed "high" and the discard
+        logic used high-contract ranking, dumping T (strongest in low)
+        instead of A (weakest in low).
+        """
+        glutton = GluttonStrategy(debug=True)
+        # Do NOT call on_hand_start — simulating the bug scenario
+
+        hand = [
+            Card("H", "T"),  # idx 0 - strongest in low
+            Card("H", "K"),  # idx 1
+            Card("H", "A"),  # idx 2 - weakest in low
+        ]
+
+        # Opponent leads T (strongest in low), partner plays Q
+        # We follow suit but can't beat T — must discard
+        plays = [
+            (0, Card("H", "T")),
+            (1, Card("H", "Q")),
+        ]
+
+        choice = glutton.choose_card(hand, plays, "low", None, 2)
+
+        assert (
+            hand[choice].rank == "A"
+        ), f"Low discard without on_hand_start should dump A (weakest), got {hand[choice]}"
+
+    def test_low_lead_without_on_hand_start(self):
+        """Low lead should play weakest card (A) without on_hand_start.
+
+        Before the fix, _contract_type stayed "high" and _choose_lead
+        used high-contract logic, leading with A (strongest in high)
+        — which is correct by accident for the first card but wrong
+        for the overall strategy ranking.
+        """
+        glutton = GluttonStrategy(debug=True)
+        # Do NOT call on_hand_start
+
+        hand = [
+            Card("S", "T"),  # idx 0 - strongest in low
+            Card("S", "K"),  # idx 1
+            Card("S", "A"),  # idx 2 - weakest in low
+            Card("H", "T"),  # idx 3
+            Card("H", "K"),  # idx 4
+            Card("H", "A"),  # idx 5
+        ]
+
+        # Leading with 6-card hand (not 10, so the old fallback wouldn't fire)
+        choice = glutton.choose_card(hand, [], "low", None, 0)
+
+        assert (
+            hand[choice].rank == "A"
+        ), f"Low lead without on_hand_start should play A (weakest), got {hand[choice]}"
+
+    def test_contract_type_synced_on_every_call(self):
+        """_contract_type should reflect the most recent choose_card() call.
+
+        This ensures helpers like _choose_discard and _choose_lead always
+        use the current call's contract_type, not stale state from a
+        previous hand.
+        """
+        glutton = GluttonStrategy()
+
+        # First call with "high"
+        hand_high = [Card("S", "A"), Card("S", "T")]
+        glutton.choose_card(hand_high, [], "high", None, 0)
+        assert glutton._contract_type == "high"
+
+        # Second call with "low" — _contract_type must update
+        hand_low = [Card("S", "A"), Card("S", "T")]
+        glutton.choose_card(hand_low, [], "low", None, 0)
+        assert (
+            glutton._contract_type == "low"
+        ), f"Expected _contract_type='low' after low call, got '{glutton._contract_type}'"
+
+        # Third call with "suit" — _contract_type must update again
+        hand_suit = [Card("H", "J"), Card("C", "T")]
+        glutton.choose_card(hand_suit, [], "suit", "H", 0)
+        assert (
+            glutton._contract_type == "suit"
+        ), f"Expected _contract_type='suit', got '{glutton._contract_type}'"
+        assert (
+            glutton._trump_suit == "H"
+        ), f"Expected _trump_suit='H', got '{glutton._trump_suit}'"
+
+    def test_following_trick1_no_fallback(self):
+        """Following on trick 1 (10-card hand) should sync contract.
+
+        The old fallback only fired on 10-card hand when leading
+        (not plays_so_far). Following on trick 1 with 10 cards would
+        NOT trigger the fallback, leaving _contract_type stale.
+        """
+        glutton = GluttonStrategy(debug=True)
+        # Do NOT call on_hand_start
+
+        # 10-card hand, following (not leading) on trick 1
+        hand = [
+            Card("H", "T"),  # idx 0 - strongest in low
+            Card("H", "J"),  # idx 1
+            Card("H", "Q"),  # idx 2
+            Card("H", "K"),  # idx 3
+            Card("H", "A"),  # idx 4 - weakest in low
+            Card("S", "T"),  # idx 5
+            Card("S", "J"),  # idx 6
+            Card("S", "Q"),  # idx 7
+            Card("S", "K"),  # idx 8
+            Card("S", "A"),  # idx 9
+        ]
+
+        # Opponent leads — we're following on trick 1 with all 10 cards
+        plays = [(0, Card("H", "T"))]
+
+        glutton.choose_card(hand, plays, "low", None, 1)
+
+        # In low contract, T is the trick winner rank (strongest).
+        # Opponent led H-T. We must follow hearts. Our H-T ties,
+        # but everything else in hearts loses. The correct discard
+        # under low ranking: dump the weakest (H-A).
+        # Verify contract was synced (the key invariant):
+        assert glutton._contract_type == "low", (
+            f"Expected _contract_type='low' on 10-card follow, "
+            f"got '{glutton._contract_type}'"
+        )
+
+    def test_isolated_low_discard_without_on_hand_start(self):
+        """GluttonIsolatedStrategy low discard without on_hand_start.
+
+        Same defense-in-depth test for the isolated variant.
+        """
+        glutton = GluttonIsolatedStrategy(
+            debug=True,
+            smart_discards=True,
+            partner_awareness=True,
+        )
+        # Do NOT call on_hand_start
+
+        hand = [
+            Card("H", "T"),  # idx 0 - strongest in low
+            Card("H", "K"),  # idx 1
+            Card("H", "A"),  # idx 2 - weakest in low
+        ]
+
+        plays = [
+            (0, Card("H", "T")),
+            (1, Card("H", "Q")),
+        ]
+
+        choice = glutton.choose_card(hand, plays, "low", None, 2)
+
+        assert (
+            hand[choice].rank == "A"
+        ), f"Isolated low discard without on_hand_start should dump A, got {hand[choice]}"
+
+    def test_isolated_contract_type_synced(self):
+        """GluttonIsolatedStrategy syncs _contract_type on every call."""
+        glutton = GluttonIsolatedStrategy()
+
+        hand = [Card("S", "A"), Card("S", "T")]
+        glutton.choose_card(hand, [], "low", None, 0)
+        assert glutton._contract_type == "low"
+        assert glutton._trump_suit is None
+
+        glutton.choose_card(hand, [], "suit", "H", 0)
+        assert glutton._contract_type == "suit"
+        assert glutton._trump_suit == "H"
