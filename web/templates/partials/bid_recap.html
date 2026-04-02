@@ -8,7 +8,7 @@
      - bid_type: str — "regular", "moon", or "loner"
      - contract_type: str | None — "suit", "high", or "low"
      - trump: str | None — trump suit letter if contract_type == "suit"
-     - sitting_out_seat: int | None — seat sitting out (loner bids)
+     - sitting_out_seat: int | None — seat sitting out (moon and loner bids)
 #}
 {% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
 {% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
@@ -42,6 +42,7 @@
             <span class="bid-recap__no-trump">Low</span>
         {% endif %}
     </span>
+    {# Use "is not none" (not truthy) — seat 0 is the human and is valid. #}
     {% if sitting_out_seat is not none %}
     <span class="bid-recap__sitting-out" aria-label="Sitting out: {{ seat_labels.get(sitting_out_seat, 'Seat ' ~ sitting_out_seat) }}">
         ({{ seat_labels.get(sitting_out_seat, "Seat " ~ sitting_out_seat) }} sits out)
