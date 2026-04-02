@@ -197,9 +197,8 @@ def generate_report(run_dir: Path) -> str:
     lines.append("### Repro Command")
     lines.append("```bash")
     lines.append(
-        "uv run python experiments/run_experiment.py "
-        "--config experiments/configs/glutton_bower_validation.yaml --seed 42"
-    )
+        "uv run python experiments/run_experiment.py --config experiments/configs/glutton_bower_validation.yaml --seed 42"
+    )  # noqa: E501
     lines.append("```")
     lines.append("")
     lines.append("## Results: Glutton vs Greedy Head-to-Head")
