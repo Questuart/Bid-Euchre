@@ -11,6 +11,7 @@ from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.ai_manager import AIManager
 from web.app import create_app
 from web.config import HostedPlayConfig
+from web.db import InviteCode
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -115,6 +116,41 @@ class TestLifespan:
             pool.checkedout() == 0
         ), f"Expected 0 checked-out, got {pool.checkedout()}"
         assert pool.checkedin() == 0, f"Expected 0 checked-in, got {pool.checkedin()}"
+
+    def test_auto_seeds_invite_code_on_fresh_db(self, tmp_path):
+        """Fresh database should get one auto-seeded invite code."""
+        app = _make_app(tmp_path)
+        with TestClient(app):
+            session = app.state.session_factory()
+            try:
+                codes = session.query(InviteCode).all()
+                assert len(codes) == 1
+                assert codes[0].status == "active"
+                assert codes[0].label == "auto-seed"
+                assert len(codes[0].code) > 0
+            finally:
+                session.close()
+
+    def test_auto_seed_is_idempotent(self, tmp_path):
+        """If invite codes already exist, no new ones are seeded."""
+        app = _make_app(tmp_path)
+        # First startup: creates the seed code
+        with TestClient(app):
+            session = app.state.session_factory()
+            try:
+                count_after_first = session.query(InviteCode).count()
+                assert count_after_first == 1
+            finally:
+                session.close()
+        # Second startup on same DB: should not add another code
+        app2 = create_app(config=make_hosted_play_test_config(tmp_path))
+        with TestClient(app2):
+            session2 = app2.state.session_factory()
+            try:
+                count_after_second = session2.query(InviteCode).count()
+                assert count_after_second == 1
+            finally:
+                session2.close()
 
 
 # ---------------------------------------------------------------------------
