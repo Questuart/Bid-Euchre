@@ -26,7 +26,7 @@ from bid_euchre.strategy.bidding import BidAction
 
 from .ai_manager import AIManager
 from .db import Decision, Hand, InviteCode, Match, Player
-from .leaderboard import get_leaderboard
+from .leaderboard import METRIC_DEFINITIONS, format_metric, get_leaderboard
 from .middleware import check_match_limit
 
 router = APIRouter()
@@ -1262,6 +1262,8 @@ async def leaderboard(request: Request, link_uuid: str):
                 "link_uuid": link_uuid,
                 "nickname": player.nickname,
                 "rankings": rankings,
+                "metric_defs": METRIC_DEFINITIONS,
+                "format_metric": format_metric,
             },
         )
     finally:

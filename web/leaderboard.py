@@ -14,6 +14,7 @@ explicitly out of scope.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -25,6 +26,144 @@ HUMAN_TEAM = 0
 
 # Match statuses that contribute hands to leaderboard stats.
 _LEADERBOARD_MATCH_STATUSES = ("active", "complete")
+
+
+# ---------------------------------------------------------------------------
+# Metric definitions — display metadata for the leaderboard UI
+# ---------------------------------------------------------------------------
+
+
+class MetricDef(NamedTuple):
+    """Display metadata for a single leaderboard metric."""
+
+    label: str  # Short column header
+    tooltip: str  # Plain-English explanation
+    format: str  # "pct" | "int" | "float1" | "float3" | "signed_float1"
+    category: str  # "primary" | "default" | "secondary"
+
+
+#: Metric definitions keyed by PlayerStats field name.
+#: The template iterates these to build headers, tooltips, and formatting.
+METRIC_DEFINITIONS: dict[str, MetricDef] = {
+    "net_eppd": MetricDef(
+        label="Net EPPD",
+        tooltip=(
+            "Net Expected Points Per Deal — your average point advantage "
+            "per hand. Positive means you're outscoring opponents."
+        ),
+        format="signed_float3",
+        category="primary",
+    ),
+    "games_won": MetricDef(
+        label="Won",
+        tooltip="Total games (matches) won.",
+        format="int_games",
+        category="default",
+    ),
+    "win_rate": MetricDef(
+        label="Win %",
+        tooltip="Percentage of completed games you won.",
+        format="pct",
+        category="default",
+    ),
+    "avg_margin_victory": MetricDef(
+        label="Avg Margin",
+        tooltip="Average score margin in games you won (points).",
+        format="float1",
+        category="default",
+    ),
+    "matches_played": MetricDef(
+        label="Matches",
+        tooltip="Total completed matches played.",
+        format="int",
+        category="default",
+    ),
+    "hands_played": MetricDef(
+        label="Hands",
+        tooltip="Total hands played across all matches (including in-progress).",
+        format="int",
+        category="secondary",
+    ),
+    "avg_match_margin": MetricDef(
+        label="Match Margin",
+        tooltip="Average score margin across all completed matches (positive = winning).",
+        format="signed_float1",
+        category="secondary",
+    ),
+    "bid_rate": MetricDef(
+        label="Bid %",
+        tooltip="Percentage of hands where your team won the auction and declared.",
+        format="pct",
+        category="secondary",
+    ),
+    "make_rate": MetricDef(
+        label="Make %",
+        tooltip="Percentage of your contracts that made (took enough tricks).",
+        format="pct",
+        category="secondary",
+    ),
+    "avg_bid_level": MetricDef(
+        label="Avg Bid",
+        tooltip="Average number of tricks bid when your team declares.",
+        format="float1",
+        category="secondary",
+    ),
+    "moon_call_rate": MetricDef(
+        label="Moon %",
+        tooltip="Percentage of hands where your team called a moon (bid all 10 tricks).",
+        format="pct",
+        category="secondary",
+    ),
+    "moon_make_rate": MetricDef(
+        label="Moon Make",
+        tooltip="Percentage of your moon bids that were successfully made.",
+        format="pct",
+        category="secondary",
+    ),
+    "loner_call_rate": MetricDef(
+        label="Loner %",
+        tooltip="Percentage of hands where your team called a loner (solo play).",
+        format="pct",
+        category="secondary",
+    ),
+    "loner_make_rate": MetricDef(
+        label="Loner Make",
+        tooltip="Percentage of your loner bids that were successfully made.",
+        format="pct",
+        category="secondary",
+    ),
+}
+
+
+def format_metric(value: int | float, fmt: str) -> str:
+    """Format a metric value for display using its format specifier.
+
+    Format codes:
+    - ``"pct"`` — fraction (0.0–1.0) → ``"65%"``
+    - ``"int"`` — integer count → ``"5"``
+    - ``"int_games"`` — integer game count → ``"5 games"`` / ``"1 game"``
+    - ``"float1"`` — one decimal → ``"3.2"``
+    - ``"float3"`` — three decimals → ``"1.234"``
+    - ``"signed_float1"`` — one decimal with +/- sign → ``"+3.2"``
+    - ``"signed_float3"`` — three decimals with +/- sign → ``"+1.234"``
+    """
+    if fmt == "pct":
+        return f"{value * 100:.0f}%"
+    elif fmt == "int":
+        return str(int(value))
+    elif fmt == "int_games":
+        n = int(value)
+        return f"{n} game" if n == 1 else f"{n} games"
+    elif fmt == "float1":
+        return f"{value:.1f}"
+    elif fmt == "float3":
+        return f"{value:.3f}"
+    elif fmt == "signed_float1":
+        return f"{value:+.1f}" if value != 0 else "0.0"
+    elif fmt == "signed_float3":
+        return f"{value:+.3f}" if value != 0 else "0.000"
+    else:
+        return str(value)
 
 
 @dataclass(frozen=True)

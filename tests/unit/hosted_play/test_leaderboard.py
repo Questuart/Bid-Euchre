@@ -5,6 +5,7 @@ Covers:
 - In-progress match hand inclusion (live updates)
 - Leaderboard ranking (sorted by net_eppd descending)
 - Default and secondary column partitioning
+- Metric definitions and formatting helpers
 - Access gating (404 for unknown UUIDs)
 - Route integration via the FastAPI test client
 """
@@ -17,7 +18,13 @@ from datetime import datetime, timezone
 import pytest
 
 from web.db import Hand, Match, Player
-from web.leaderboard import compute_player_stats, get_leaderboard
+from web.leaderboard import (
+    METRIC_DEFINITIONS,
+    PlayerStats,
+    compute_player_stats,
+    format_metric,
+    get_leaderboard,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -585,3 +592,176 @@ class TestLeaderboardRoute:
             assert 'hx-trigger="every 30s"' in resp.text
         finally:
             session.close()
+
+    def test_leaderboard_shows_ranking_explanation(self, app_and_client):
+        """Leaderboard page shows ranking explanation text."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player = _make_player(session, nickname="RankExplain")
+            session.commit()
+
+            resp = client.get(f"/leaderboard/{player.link_uuid}")
+            assert resp.status_code == 200
+            assert "Ranked by Net EPPD" in resp.text
+        finally:
+            session.close()
+
+    def test_leaderboard_shows_help_button(self, app_and_client):
+        """Leaderboard with data includes the help toggle button."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player = _make_player(session, nickname="HelpBtn")
+            match = _make_match(session, player)
+            _make_hand(session, match, points_team0=5, points_team1=2)
+            session.commit()
+
+            resp = client.get(f"/leaderboard/{player.link_uuid}")
+            assert resp.status_code == 200
+            assert "What do these stats mean?" in resp.text
+            assert "Metric Definitions" in resp.text
+        finally:
+            session.close()
+
+    def test_leaderboard_shows_tooltips(self, app_and_client):
+        """Column headers include tooltip text from metric definitions."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player = _make_player(session, nickname="Tooltips")
+            match = _make_match(session, player)
+            _make_hand(session, match, points_team0=5, points_team1=2)
+            session.commit()
+
+            resp = client.get(f"/leaderboard/{player.link_uuid}")
+            assert resp.status_code == 200
+            # Spot check key tooltips
+            assert "average point advantage" in resp.text.lower()
+            assert "Percentage of completed games" in resp.text
+        finally:
+            session.close()
+
+    def test_leaderboard_formats_percentages(self, app_and_client):
+        """Win rate and other rates render as percentages, not decimals."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player = _make_player(session, nickname="FmtTest")
+            match = _make_match(session, player, score_human=52, score_ai=20)
+            _make_hand(
+                session,
+                match,
+                bidder_seat=0,
+                winning_bid_n=6,
+                tricks_team0=7,
+                tricks_team1=3,
+                points_team0=6,
+                points_team1=3,
+            )
+            session.commit()
+
+            resp = client.get(f"/leaderboard/{player.link_uuid}")
+            assert resp.status_code == 200
+            # Win rate should be 100% not 1.0 or 1.000
+            assert "100%" in resp.text
+            # games_won should show "1 game"
+            assert "1 game" in resp.text
+        finally:
+            session.close()
+
+
+# ---------------------------------------------------------------------------
+# format_metric tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormatMetric:
+    """Unit tests for the format_metric helper."""
+
+    def test_pct_formats_fraction_as_percentage(self):
+        assert format_metric(0.65, "pct") == "65%"
+        assert format_metric(1.0, "pct") == "100%"
+        assert format_metric(0.0, "pct") == "0%"
+
+    def test_pct_rounds_to_nearest(self):
+        assert format_metric(0.666, "pct") == "67%"
+        assert format_metric(0.334, "pct") == "33%"
+
+    def test_int_formats_as_integer(self):
+        assert format_metric(5, "int") == "5"
+        assert format_metric(0, "int") == "0"
+
+    def test_int_games_singular(self):
+        assert format_metric(1, "int_games") == "1 game"
+
+    def test_int_games_plural(self):
+        assert format_metric(0, "int_games") == "0 games"
+        assert format_metric(5, "int_games") == "5 games"
+
+    def test_float1(self):
+        assert format_metric(3.14, "float1") == "3.1"
+        assert format_metric(0.0, "float1") == "0.0"
+
+    def test_float3(self):
+        assert format_metric(1.2345, "float3") == "1.234"
+
+    def test_signed_float1_positive(self):
+        assert format_metric(3.2, "signed_float1") == "+3.2"
+
+    def test_signed_float1_negative(self):
+        assert format_metric(-2.5, "signed_float1") == "-2.5"
+
+    def test_signed_float1_zero(self):
+        assert format_metric(0.0, "signed_float1") == "0.0"
+
+    def test_signed_float3_positive(self):
+        assert format_metric(1.234, "signed_float3") == "+1.234"
+
+    def test_signed_float3_negative(self):
+        assert format_metric(-0.5, "signed_float3") == "-0.500"
+
+    def test_signed_float3_zero(self):
+        assert format_metric(0.0, "signed_float3") == "0.000"
+
+    def test_unknown_format_falls_back_to_str(self):
+        assert format_metric(42, "unknown") == "42"
+
+
+# ---------------------------------------------------------------------------
+# METRIC_DEFINITIONS tests
+# ---------------------------------------------------------------------------
+
+
+class TestMetricDefinitions:
+    """Tests for the METRIC_DEFINITIONS registry."""
+
+    def test_every_player_stats_field_has_definition(self):
+        """Every numeric field on PlayerStats has a matching metric def."""
+        skip = {"player_id", "nickname"}
+        stat_fields = {
+            f.name
+            for f in PlayerStats.__dataclass_fields__.values()
+            if f.name not in skip
+        }
+        assert stat_fields == set(METRIC_DEFINITIONS.keys())
+
+    def test_categories_are_valid(self):
+        valid = {"primary", "default", "secondary"}
+        for key, m in METRIC_DEFINITIONS.items():
+            assert m.category in valid, f"{key} has invalid category {m.category}"
+
+    def test_exactly_one_primary(self):
+        primaries = [
+            k for k, m in METRIC_DEFINITIONS.items() if m.category == "primary"
+        ]
+        assert len(primaries) == 1
+        assert primaries[0] == "net_eppd"
+
+    def test_all_have_nonempty_tooltip(self):
+        for key, m in METRIC_DEFINITIONS.items():
+            assert len(m.tooltip) > 10, f"{key} tooltip too short: {m.tooltip!r}"
+
+    def test_all_have_nonempty_label(self):
+        for key, m in METRIC_DEFINITIONS.items():
+            assert len(m.label) > 0, f"{key} has empty label"
