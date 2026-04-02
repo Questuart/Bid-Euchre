@@ -1031,6 +1031,34 @@ main {
     }
 }
 
+/* Compact on-board icon legend — quick-glance badge reference */
+.icon-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.4rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    opacity: 0.75;
+}
+
+.icon-legend__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    white-space: nowrap;
+}
+
+.icon-legend__item .seat-marker {
+    font-size: 0.7rem;
+}
+
+.icon-legend__sep {
+    color: rgba(255, 255, 255, 0.25);
+}
+
 /* --------------------------------------------------------------------------
    8. Bid Panel
    -------------------------------------------------------------------------- */
@@ -1891,6 +1919,13 @@ main {
         font-size: 0.8rem;
     }
 
+    /* Icon legend — compact on iPhone Plus */
+    .icon-legend {
+        font-size: 0.65rem;
+        gap: 0.1rem 0.3rem;
+        padding: 0.15rem 0.25rem;
+    }
+
     /* Score bar — compact single-column */
     .score-bar {
         padding: 0.5rem 0.75rem;
@@ -2115,6 +2150,11 @@ main {
 
     .contract-bar__suit {
         font-size: 0.95rem;
+    }
+
+    /* Icon legend — hide on small phones (vertical space critical) */
+    .icon-legend {
+        display: none;
     }
 
     /* Score bar — ultra-compact */
