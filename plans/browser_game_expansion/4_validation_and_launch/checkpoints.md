@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/browser_game_expansion/governing_plan.md`
 **Phase/Rung:** `4_validation_and_launch`
-**Last updated:** 2026-03-27 by author-c (Phase 2 blocker cleared, #1827 resolved, test scaffolds shipped)
+**Last updated:** 2026-04-02 by brws-author-d (post-fix re-prove: all browser tests green after 8 fix PRs #1996-#2008)
 
 ---
 
@@ -14,7 +14,7 @@
 | Step 1: Add repo-owned browser E2E suite | COMPLETE | `uv run python -m pytest tests/e2e/hosted_play -q` passes on at least the happy-path match flow | 2026-03-25 | brws-author-c | PR #1821 merged. Playwright smoke suite with 7 tests. `SP-4-01` |
 | Step 2: Add Claude-direct browser testing config/runbook | COMPLETE | project-scoped MCP/browser-testing docs exist and a Claude-driven local browser smoke can be executed | 2026-03-25 | brws-author-c | Included in PR #1821. `SP-4-01` |
 | Step 3: Upgrade smoke scripts and full regression commands | COMPLETE | local/Docker/Postgres/browser smoke commands are documented and pass on the expanded product | 2026-03-25 | brws-author-d | PR #1822 merged. Pilot launch hardening: rate limiting, error pages, session cleanup, enhanced health. `SP-4-01` |
-| Step 4: Execute full automated proving matrix | COMPLETE | unit + integration + E2E + smoke suite all pass together with no known launch-blocking gap | 2026-04-01 | brws-author-a | **ALL GREEN.** Unit: 2789 passed, 6 skipped. Integration (hosted): 22 passed, 6 skipped. E2E: 21 passed. Browser (Playwright): 7 skipped (no browser binaries — by design). 3 failures in ops domain (token_economy, telegram_filter) — pre-existing, not browser-related. `SP-4-01` |
+| Step 4: Execute full automated proving matrix | COMPLETE | unit + integration + E2E + smoke suite all pass together with no known launch-blocking gap | 2026-04-02 | brws-author-d | **ALL GREEN (re-prove).** Unit: 2814 passed, 5 skipped. Integration (hosted): 22 passed, 6 skipped. E2E: 21 passed. Browser (Playwright): 7 skipped (no browser binaries — by design). `make check-quiet`: 10409 passed, 57 skipped, 3 failed (all ops domain — pre-existing). Re-proved after 8 post-merge fix PRs (#1996-#2008). `SP-4-01` |
 | Step 5: Execute minimal required user proving | PENDING | iPhone Safari smoke, production authorization, and any final invite-redemption proving are recorded | -- | -- | Requires operator. `SP-4-01` |
 
 ## Active Sub-Plans
@@ -58,3 +58,23 @@
 - 3 non-browser failures: `test_ops_token_economy` (2), `test_telegram_filter` (1) — pre-existing on main, ops domain.
 - No launch-blocking gaps in browser game test coverage.
 - Step 5 still PENDING — operator at device required for iPhone Safari smoke + invite proving.
+
+### 2026-04-02 -- post-fix re-prove (brws-author-d)
+- **Step 4 re-proved** after 8 additional browser PRs merged (#1996-#2008):
+  - #1996: leaderboard route with player stats ranking
+  - #1997: Bud Bot default AI, OLSa labeled Easy
+  - #1998: hide trick-play state during auction bid reveal
+  - #1999: _advance_ai after moon exchange to prevent game stuck (#1910)
+  - #2001: moon/loner gameplay mechanics in RULES.md
+  - #2003: mobile card tap plays immediately (no select-confirm)
+  - #2005: moon bids use 3-player trick play (partner sits out)
+  - #2007: prevent card jumping on AI turn re-render
+  - #2008: leaderboard live updates with active match hands, auto-refresh
+- Results (all browser tests green):
+  - Unit (hosted_play): **2814 passed**, 5 skipped (+25 tests from new features)
+  - Integration (hosted): 22 passed, 6 skipped
+  - E2E (hosted_play): 21 passed
+  - `make check-quiet`: 10,409 passed, 57 skipped, 3 failed (ops domain — unchanged)
+- 3 non-browser failures remain pre-existing: `test_ops_token_economy` (2), `test_telegram_filter` (1).
+- **All user-reported browser bugs from #1910 are confirmed fixed by test coverage.**
+- Step 5 still PENDING — operator at device required.
