@@ -204,7 +204,7 @@ def _play_full_hand(
     # Handle interactive moon exchange
     state = _auto_exchange(engine, state)
 
-    # Handle trick play phase (skip if human is sitting out)
+    # Handle trick play phase (skip if human is sitting out for moon/loner)
     while (
         state.status == "active"
         and state.current_hand is not None
@@ -248,7 +248,7 @@ def _play_until_match_end(engine: MatchEngine, state: MatchState) -> MatchState:
                 legal = engine.get_legal_plays(state)
                 state = engine.submit_human_card(state, legal[0])
             else:
-                # In normal rounds, only human may sit out during loner hands.
+                # In normal rounds, only human may sit out during moon/loner hands.
                 state = engine._advance_ai(state)
         elif hand.phase == "complete":
             state = engine.advance_to_next_hand(state)
@@ -1360,9 +1360,22 @@ class TestInteractiveMoonExchange:
                 state = engine.submit_exchange_selection(state, [0, 1])
                 hand = state.current_hand
                 assert hand is not None
+                # Human sits out — AI advancement is deferred for the
+                # exchange-reveal interstitial
                 assert hand.phase == "trick_play"
+                assert hand.sitting_out_seat == HUMAN_SEAT
                 assert hand.exchange_given is not None
                 assert hand.exchange_received is not None
+
+                # Simulate the exchange reveal step (route layer)
+                hand.exchange_revealed = True
+                state = engine.advance_after_exchange_reveal(state)
+                hand = state.current_hand
+                assert hand is not None
+                # Now AI auto-plays all 10 tricks → hand complete
+                assert (
+                    hand.phase == "complete"
+                ), f"Expected 'complete' after reveal, got '{hand.phase}'"
                 return  # Test passed
 
         pytest.skip("No seed found where AI Partner bids moon first")
@@ -1533,29 +1546,33 @@ class TestMoonExchangeAIAdvance:
                 hand = state.current_hand
                 assert hand is not None
 
-                # After exchange + AI advance, the game must be playable:
-                # sitting_out_seat is None (moon, not loner)
-                assert hand.sitting_out_seat is None
+                # Moon partner sits out (3-player trick play).
+                # Seat 2 bids moon → partner is seat 0 (HUMAN_SEAT).
+                # AI advancement is deferred for the exchange interstitial.
+                partner_seat = (hand.bidder_seat + 2) % 4
+                assert hand.sitting_out_seat == partner_seat
+                assert partner_seat == HUMAN_SEAT
+                assert hand.phase == "trick_play"
 
-                # If trick play: current_seat should be HUMAN_SEAT
-                # (the AI leader and subsequent AI seats should have
-                # already played via _advance_ai)
-                if hand.phase == "trick_play":
-                    assert hand.current_seat == HUMAN_SEAT, (
-                        f"Game stuck on AI seat {hand.current_seat}; "
-                        f"_advance_ai did not run after exchange"
-                    )
-                    # AI should have played cards already
-                    assert hand.current_trick is not None
-                    assert len(hand.current_trick.plays) > 0
+                # Simulate exchange reveal (route layer)
+                hand.exchange_revealed = True
+                state = engine.advance_after_exchange_reveal(state)
+                hand = state.current_hand
+                assert hand is not None
+
+                # Human sits out → AI auto-plays everything → hand complete
+                assert (
+                    hand.phase == "complete"
+                ), f"Expected 'complete' after reveal, got '{hand.phase}'"
                 return
 
         pytest.skip("No seed found where AI Partner (seat 2) bids moon")
 
-    def test_moon_no_sitting_out_after_exchange(self) -> None:
-        """Moon bids must never set sitting_out_seat — all 4 players play.
+    def test_moon_sets_sitting_out_after_exchange(self) -> None:
+        """Moon bids set sitting_out_seat — partner sits out, 3-player tricks.
 
-        This is the core invariant that distinguishes moon from loner.
+        Moon = exchange THEN partner sits out.  Same 3-player trick play as
+        loner; the difference is moon has a card exchange first.
         """
         engine = MatchEngine(
             bidding_policy=MoonBidder(contract="S"),
@@ -1582,9 +1599,10 @@ class TestMoonExchangeAIAdvance:
                 assert hand is not None
 
             if hand.bid_type == "moon":
-                assert hand.sitting_out_seat is None, (
-                    f"Moon bid should never set sitting_out_seat, "
-                    f"got {hand.sitting_out_seat}"
+                expected_sitting_out = (hand.bidder_seat + 2) % 4
+                assert hand.sitting_out_seat == expected_sitting_out, (
+                    f"Moon bid should set sitting_out_seat to partner "
+                    f"(seat {expected_sitting_out}), got {hand.sitting_out_seat}"
                 )
                 found = True
 
@@ -1611,10 +1629,11 @@ class TestMoonExchangeAIAdvance:
                 assert hand is not None
 
                 # Human bid moon → human leads → current_seat is HUMAN_SEAT
+                # Partner (seat 2) sits out — 3-player trick play
                 if hand.phase == "trick_play":
                     assert hand.current_seat == HUMAN_SEAT
                     assert hand.bidder_seat == HUMAN_SEAT
-                    assert hand.sitting_out_seat is None
+                    assert hand.sitting_out_seat == 2  # Human's partner
                     # No AI plays yet — human leads
                     assert hand.current_trick is not None
                     assert len(hand.current_trick.plays) == 0

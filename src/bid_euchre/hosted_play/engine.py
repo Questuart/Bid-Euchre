@@ -201,9 +201,12 @@ class MatchEngine:
     turn to act (bid or play) and auto-advances through all AI turns.
 
     Moon/loner support:
-    - Moon bids trigger a 2-card exchange with the partner before trick play.
+    - Moon bids trigger a 2-card exchange with the partner, then the partner
+      sits out during trick play (3-player tricks).
     - Loner bids cause the declarer's partner to sit out during trick play
-      (3-player tricks).
+      (3-player tricks), with no exchange.
+    - Both moon and loner use 3-player trick play; the difference is the
+      exchange step.
     - Overcall hierarchy: regular 1-10 < moon < loner.
     """
 
@@ -333,6 +336,10 @@ class MatchEngine:
         hand.exchange_received = [[c.suit, c.rank] for c in cards_received]
         hand.exchange_phase = None
 
+        # Moon: partner sits out during trick play (3-player tricks),
+        # just like loner, but exchange happens first.
+        hand.sitting_out_seat = (hand.bidder_seat + 2) % _NUM_PLAYERS
+
         # Transition to trick play with exchange-reveal interstitial
         hand.phase = "trick_play"
         leader = hand.bidder_seat
@@ -345,8 +352,27 @@ class MatchEngine:
         # Auto-advance AI just like submit_human_bid/submit_human_card.
         # Without this, the game is stuck when the leader (bidder) is an AI
         # seat because no mechanism triggers AI card play after exchange.
-        state = self._advance_ai(state)
+        # However, when the human is sitting out (partner bid moon), defer
+        # AI advancement until after the exchange-reveal interstitial —
+        # otherwise _advance_ai plays all 10 tricks and the interstitial
+        # never shows.  The route layer calls advance_after_exchange_reveal()
+        # to trigger the deferred advancement.
+        if hand.sitting_out_seat != HUMAN_SEAT:
+            state = self._advance_ai(state)
 
+        return state
+
+    def advance_after_exchange_reveal(self, state: MatchState) -> MatchState:
+        """Trigger AI advancement after the exchange-reveal interstitial.
+
+        Called by the route layer when ``exchange_revealed`` is set to True.
+        For moon hands where the human is sitting out (partner of the mooner),
+        AI advancement was deferred from ``submit_exchange_selection`` to allow
+        the exchange interstitial to display first.  This method completes the
+        deferred advancement.
+        """
+        self.last_ai_events = []
+        state = self._advance_ai(state)
         return state
 
     def get_legal_bids(self, state: MatchState) -> list[BidAction]:
@@ -477,8 +503,8 @@ class MatchEngine:
         Populates ``self.last_ai_events`` with exact decision data for every
         AI action taken during this advance cycle.
 
-        For loner hands where the human is sitting out (partner bid loner),
-        auto-advances through all trick play without pausing.
+        For moon/loner hands where the human is sitting out (partner bid
+        moon or loner), auto-advances through all trick play without pausing.
         """
         while True:
             # Match finished — nothing to advance
@@ -493,7 +519,7 @@ class MatchEngine:
             if hand.current_seat == HUMAN_SEAT:
                 if hand.sitting_out_seat != HUMAN_SEAT:
                     return state
-                # Human is sitting out (partner bid loner) — skip is handled
+                # Human is sitting out (partner bid moon/loner) — skip is handled
                 # by _next_active_seat in trick play.  If we reach here during
                 # auction, it's the human's normal turn.
                 if hand.phase == "auction":
@@ -700,8 +726,9 @@ class MatchEngine:
             hand.exchange_given = [[c.suit, c.rank] for c in cards_given]
             hand.exchange_received = [[c.suit, c.rank] for c in cards_received]
 
-        # Loner: partner sits out during trick play
-        if hand.bid_type == "loner":
+        # Moon and loner: partner sits out during trick play (3-player tricks).
+        # For moon, this happens AFTER the exchange above.
+        if hand.bid_type in ("moon", "loner"):
             hand.sitting_out_seat = (hand.bidder_seat + 2) % _NUM_PLAYERS
 
         # Contract set — transition to trick play
@@ -733,7 +760,7 @@ class MatchEngine:
         hand.current_trick.plays.append((seat, card))
         hand.turn_number += 1
 
-        # Check if trick is complete (3 plays for loner, 4 otherwise)
+        # Check if trick is complete (3 plays for moon/loner, 4 otherwise)
         ppt = _players_per_trick(hand.sitting_out_seat)
         if len(hand.current_trick.plays) >= ppt:
             state = self._process_trick_end(state)
