@@ -5,7 +5,6 @@
      - tricks_team1: int — tricks won by AI team
 #}
 {% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
-{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
 {% if completed_tricks %}
@@ -38,7 +37,7 @@
                                 {% if seat in ns.cards %}
                                     {% set card = ns.cards[seat] %}
                                     {% set suit = card[0] %}
-                                    <span class="card--inline card--{{ suit_classes.get(suit, 'spades') }}">{{ card[1] }}{{ suit_symbols.get(suit, suit) }}</span>
+                                    <span class="card--inline">{{ card[1] }}{{ suit_symbols.get(suit, suit) }}</span>
                                 {% else %}
                                     <span class="trick-history__absent" aria-label="Sitting out">&mdash;</span>
                                 {% endif %}
