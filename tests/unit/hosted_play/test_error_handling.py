@@ -83,34 +83,38 @@ class TestHTMXErrorResponses:
         assert "Hand Not Found" in resp.text
 
     def test_404_partial_for_htmx(self, client):
-        """HTMX 404 returns inline error partial (no DOCTYPE)."""
+        """HTMX 404 returns inline error partial with 200 status.
+
+        HTMX 1.x ignores non-2xx responses by default, so error partials
+        are returned with 200 to ensure the swap occurs.
+        """
         resp = client.get(
             "/nonexistent-page",
             headers={"HX-Request": "true"},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
         assert "<!DOCTYPE html>" not in resp.text
         assert "htmx-error" in resp.text
         assert "Back to Table" in resp.text
 
     def test_404_htmx_game_not_found(self, client):
-        """HTMX request for invalid game link returns inline error."""
+        """HTMX request for invalid game link returns inline error (200)."""
         fake_uuid = str(uuid.uuid4())
         resp = client.get(
             f"/play/{fake_uuid}",
             headers={"HX-Request": "true"},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
         assert "htmx-error" in resp.text
 
     def test_404_htmx_includes_detail(self, client):
-        """HTMX 404 includes the error detail message."""
+        """HTMX 404 includes the error detail message (200 for swap)."""
         fake_uuid = str(uuid.uuid4())
         resp = client.get(
             f"/play/{fake_uuid}",
             headers={"HX-Request": "true"},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
         assert "Game not found" in resp.text or "Not found" in resp.text
 
     def test_htmx_error_has_aria_alert(self, client):

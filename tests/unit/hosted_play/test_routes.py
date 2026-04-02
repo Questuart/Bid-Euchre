@@ -1108,6 +1108,19 @@ class TestXSSPrevention:
         assert '<img src=x onerror="alert(1)">' not in resp.text
         assert "&lt;img" in resp.text
 
+    def test_game_page_backfills_player_cookie(self, client):
+        """Visiting /play/{link_uuid} directly should set the session cookie
+        so reconnect works on subsequent landing-page visits."""
+        from web.middleware import PLAYER_COOKIE_NAME
+
+        link_uuid = _create_game(client)
+        # Clear cookies to simulate a direct visit (bookmark/shared link)
+        client.cookies.clear()
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # The response should set the player cookie
+        assert PLAYER_COOKIE_NAME in resp.cookies
+
     def test_game_page_includes_ai_hand_counts_for_accessibility(self, client):
         """Initial GET render should expose AI hand-count labels to screen readers."""
         link_uuid = _setup_game(client)
