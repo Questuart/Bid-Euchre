@@ -14,8 +14,8 @@
     <li class="comments__item">
         <div class="comments__meta">
             <span class="comments__author">{{ comment.nickname or "Anonymous" }}</span>
-            <time class="comments__time" datetime="{{ comment.created_at.isoformat() }}">
-                {{ comment.created_at.strftime('%b %d, %Y %I:%M %p') }}
+            <time class="comments__time" datetime="{{ comment.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+                {{ comment.created_at.strftime('%b %d, %Y %I:%M %p') }} UTC
             </time>
         </div>
         <div class="comments__content">{{ comment.content }}</div>

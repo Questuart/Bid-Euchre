@@ -174,4 +174,44 @@
         {% include "partials/comments_list.html" %}
     </div>
 </div>
+
+<script>
+    /**
+     * Convert comment timestamps from UTC to the user's local timezone.
+     *
+     * The server renders times with a "UTC" suffix as a no-JS fallback.
+     * This script replaces that text with a locale-formatted local time.
+     */
+    (function () {
+        var FORMAT_OPTIONS = {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        };
+
+        function localizeCommentTimestamps() {
+            var times = document.querySelectorAll('.comments__time');
+            Array.prototype.forEach.call(times, function (el) {
+                var dt = el.getAttribute('datetime');
+                if (!dt) { return; }
+                var date = new Date(dt);
+                if (isNaN(date.getTime())) { return; }
+                el.textContent = date.toLocaleString(undefined, FORMAT_OPTIONS);
+            });
+        }
+
+        // Run on initial page load
+        localizeCommentTimestamps();
+
+        // Re-run after HTMX swaps the comments list (polling or post-submit)
+        document.body.addEventListener('htmx:afterSwap', function (event) {
+            var target = event.target;
+            if (target && target.id === 'comments-list') {
+                localizeCommentTimestamps();
+            }
+        });
+    })();
+</script>
 {% endblock %}
