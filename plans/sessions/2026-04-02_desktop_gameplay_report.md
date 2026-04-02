@@ -218,9 +218,9 @@ Please include <meta name="mobile-web-app-capable" content="yes"> instead.
 
 ---
 
-#### P3-003: No per-game nickname or opponent selection on first entry
+#### ~~P3-003: No per-game nickname or opponent selection on first entry~~ (FALSE POSITIVE)
 
-**Severity:** P3
+**Severity:** ~~P3~~ False positive
 **Frequency:** Every first entry via invite code
 **Details:** The first time entering via invite code, the game starts directly
 without showing the opponent selection screen. The "Welcome, Meeks!" opponent
@@ -233,6 +233,11 @@ opponent. The opponent selection screen only appears on the welcome/rematch
 page, not during initial invite code entry.
 First-entry flow is: invite code → player created → default opponent → play
 (opponent selection is skipped).
+
+**False positive rationale:** This is intentional design, not a bug. The
+first-entry flow deliberately starts the player with the default opponent to
+minimize friction. The nickname is auto-generated from the invite code as a
+feature, not a defect. Opponent selection is available on subsequent games.
 
 ---
 

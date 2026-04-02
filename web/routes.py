@@ -1506,9 +1506,14 @@ async def match_history(request: Request, link_uuid: str):
             # naive score comparison — tied scores (e.g. 55-55) are decided
             # by the declaring-team rule and the engine records the correct
             # winner in match_state_json.  Fall back to score comparison for
-            # legacy rows missing the winner field.
-            match_data = json.loads(m.match_state_json)
-            winner = match_data.get("winner")
+            # legacy rows missing the winner field or malformed JSON.
+            try:
+                match_data = (
+                    json.loads(m.match_state_json) if m.match_state_json else {}
+                )
+            except (json.JSONDecodeError, TypeError):
+                match_data = {}
+            winner = match_data.get("winner") if isinstance(match_data, dict) else None
             if winner is not None:
                 won = winner == "human"
             else:
