@@ -753,8 +753,15 @@ async def game_page(request: Request, link_uuid: str):
         # Backfill the reconnect cookie so returning visitors see the
         # reconnect prompt on the landing page even if they arrived here
         # via a direct link or bookmark (not the invite-code flow).
+        # Only set the cookie when no existing cookie is present — avoid
+        # clobbering a different player's session if someone follows a
+        # shared /play/ link.  (Fixes #2069)
+        existing_cookie = get_player_link_from_cookie(request)
+        should_set_cookie = existing_cookie is None or existing_cookie == link_uuid
+
         def _with_cookie(resp: HTMLResponse) -> HTMLResponse:
-            set_player_cookie(resp, link_uuid)
+            if should_set_cookie:
+                set_player_cookie(resp, link_uuid)
             return resp
 
         # No nickname yet — show nickname prompt

@@ -280,3 +280,78 @@ class TestCookieOnLegacyNew:
         assert resp.status_code == 302
         cookie_header = resp.headers.get("set-cookie", "")
         assert PLAYER_COOKIE_NAME in cookie_header
+
+
+# ===================================================================
+# 5. Cookie Clobber Protection (Fixes #2069)
+# ===================================================================
+
+
+class TestCookieClobberProtection:
+    """Visiting /play/{link_uuid} should not clobber an existing cookie
+    belonging to a different player.
+
+    Uses players with nicknames but no matches — the cookie logic fires
+    before match rendering, so model_select is sufficient to test the
+    cookie behavior.
+    """
+
+    def test_no_clobber_when_different_cookie_exists(self, client):
+        """Existing cookie for player A is NOT overwritten when visiting player B's game page."""
+        session = _get_session_factory(client)()
+        try:
+            player_a = create_test_player(session, nickname="Alice")
+            player_b = create_test_player(session, nickname="Bob")
+            session.commit()
+            link_a = player_a.link_uuid
+            link_b = player_b.link_uuid
+        finally:
+            session.close()
+
+        # Alice has her cookie set
+        client.cookies.set(PLAYER_COOKIE_NAME, link_a)
+
+        # Alice visits Bob's game page (e.g. shared link)
+        resp = client.get(f"/play/{link_b}", follow_redirects=False)
+        assert resp.status_code == 200
+
+        # The response should NOT set a cookie (no clobbering)
+        cookie_header = resp.headers.get("set-cookie", "")
+        assert (
+            link_b not in cookie_header
+        ), "Cookie should not be clobbered with a different player's link"
+
+    def test_cookie_set_when_no_existing_cookie(self, client):
+        """Cookie IS set when visiting /play/ with no existing cookie."""
+        session = _get_session_factory(client)()
+        try:
+            player = create_test_player(session, nickname="Charlie")
+            session.commit()
+            link = player.link_uuid
+        finally:
+            session.close()
+
+        # No cookie set — visiting the game page should backfill it
+        resp = client.get(f"/play/{link}", follow_redirects=False)
+        assert resp.status_code == 200
+        cookie_header = resp.headers.get("set-cookie", "")
+        assert link in cookie_header, "Cookie should be set for first-time visitors"
+
+    def test_cookie_preserved_when_same_player(self, client):
+        """Cookie IS refreshed when visiting own game page."""
+        session = _get_session_factory(client)()
+        try:
+            player = create_test_player(session, nickname="Diana")
+            session.commit()
+            link = player.link_uuid
+        finally:
+            session.close()
+
+        # Diana has her own cookie and visits her own game
+        client.cookies.set(PLAYER_COOKIE_NAME, link)
+        resp = client.get(f"/play/{link}", follow_redirects=False)
+        assert resp.status_code == 200
+        cookie_header = resp.headers.get("set-cookie", "")
+        assert (
+            link in cookie_header
+        ), "Cookie should be refreshed for same-player visits"
