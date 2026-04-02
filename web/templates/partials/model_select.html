@@ -8,6 +8,7 @@
 <div id="model-select" role="region" aria-label="Choose AI opponent">
     <h2>Welcome, {{ nickname }}!</h2>
     <p>Choose your AI opponent:</p>
+    <p class="match-target">First to &plusmn;52 wins</p>
     <form method="post"
           action="/play/{{ link_uuid }}/select-ai"
           hx-post="/play/{{ link_uuid }}/select-ai"
