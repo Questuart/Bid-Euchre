@@ -27,6 +27,7 @@ RUN uv sync --frozen --no-dev --extra hosted --no-install-project
 # --- Copy application source ---
 COPY src/ src/
 COPY web/ web/
+COPY web/models/ /app/models/
 
 # Install the project itself (editable not needed in production)
 RUN uv sync --frozen --no-dev --extra hosted
