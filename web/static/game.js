@@ -199,6 +199,56 @@
     }
 
     /* ---------------------------------------------------------------
+     * Text size toggle — default (100%) and large (125%).
+     * Persisted in localStorage. The inline <script> in base.html
+     * applies the attribute before first paint to avoid FOUC.
+     * --------------------------------------------------------------- */
+
+    var TEXT_SIZE_KEY = 'textSize';
+
+    function getTextSize() {
+        try {
+            return localStorage.getItem(TEXT_SIZE_KEY) || 'default';
+        } catch (_) {
+            return 'default';
+        }
+    }
+
+    function setTextSize(size) {
+        try {
+            if (size === 'large') {
+                localStorage.setItem(TEXT_SIZE_KEY, 'large');
+                document.documentElement.setAttribute('data-text-size', 'large');
+            } else {
+                localStorage.removeItem(TEXT_SIZE_KEY);
+                document.documentElement.removeAttribute('data-text-size');
+            }
+        } catch (_) {
+            // localStorage unavailable — still apply the attribute for this session
+            if (size === 'large') {
+                document.documentElement.setAttribute('data-text-size', 'large');
+            } else {
+                document.documentElement.removeAttribute('data-text-size');
+            }
+        }
+    }
+
+    function toggleTextSize() {
+        var current = getTextSize();
+        setTextSize(current === 'large' ? 'default' : 'large');
+    }
+
+    function attachTextSizeToggle() {
+        document.addEventListener('click', function (event) {
+            var btn = event.target.closest('#text-size-toggle');
+            if (btn) {
+                event.preventDefault();
+                toggleTextSize();
+            }
+        });
+    }
+
+    /* ---------------------------------------------------------------
      * Error handling — show user-friendly toast when HTMX requests
      * fail (network error, server error, timeout).
      * --------------------------------------------------------------- */
@@ -332,6 +382,7 @@
     function initialize() {
         attachDelegatedHandlers();
         attachTrickHistoryToggle();
+        attachTextSizeToggle();
         attachErrorHandlers();
         var form = getCardPlayForm();
         clearCardSelection(form);
