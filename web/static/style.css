@@ -1079,6 +1079,11 @@ main {
     font-size: 0.7rem;
 }
 
+.icon-legend__item .bid-tag {
+    font-size: 0.6rem;
+    padding: 0.08rem 0.25rem;
+}
+
 .icon-legend__sep {
     color: rgba(255, 255, 255, 0.25);
 }
