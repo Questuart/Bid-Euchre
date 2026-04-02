@@ -431,7 +431,7 @@ def simulate_moon_counterfactual(
     contract_type: str,
     trump_suit: str | None,
 ) -> tuple[float, float]:
-    """Simulate a moon bid: exchange cards with partner, play 4-player tricks.
+    """Simulate a moon bid: exchange cards with partner, play 3-player tricks.
 
     Moon scoring: +20 if declaring team wins all 10 tricks, -20 otherwise.
     Defending team gets their tricks won.
@@ -454,8 +454,10 @@ def simulate_moon_counterfactual(
     exchanged_hands[focal_seat] = mooner_hand
     exchanged_hands[partner_seat] = partner_hand
 
-    # Play tricks with mooner leading (auction winner leads)
-    t0, t1 = _play_tricks(exchanged_hands, focal_seat, contract_type, trump_suit)
+    # Play 3-player tricks (partner sits out, mooner leads)
+    t0, t1 = _play_tricks_loner(
+        exchanged_hands, focal_seat, partner_seat, contract_type, trump_suit
+    )
 
     # Compute points with moon scoring
     # focal_seat is the bidder

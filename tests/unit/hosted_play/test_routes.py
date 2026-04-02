@@ -2313,7 +2313,7 @@ class TestMoonExchangeRoute:
         hand.bid_type = "moon"
         hand.contract_type = "suit"
         hand.trump = "S"
-        hand.sitting_out_seat = None  # Moon = no sit-out
+        hand.sitting_out_seat = None  # Not set yet — exchange sets it
         hand.revealed_auction_count = len(hand.auction)
         hand.exchange_given = None
         hand.exchange_received = None
