@@ -216,6 +216,12 @@ main {
     font-size: 0.95rem;
 }
 
+/* Highlight the currently winning card in an active trick */
+.card--winning {
+    box-shadow: 0 0 8px 2px rgba(255, 215, 0, 0.7);
+    border-color: #ffd700;
+}
+
 /* --------------------------------------------------------------------------
    4. Card Fan (Human Hand)
    -------------------------------------------------------------------------- */

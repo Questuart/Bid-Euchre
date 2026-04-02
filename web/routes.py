@@ -24,6 +24,7 @@ from starlette.templating import Jinja2Templates
 
 logger = logging.getLogger(__name__)
 
+from bid_euchre.core.rules import trick_winner
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
 from bid_euchre.strategy.bidding import BidAction
 
@@ -414,6 +415,19 @@ def _build_game_context(
         else:
             ctx["legal_plays"] = None
 
+        # Currently winning seat in the active trick (for highlight).
+        trick = hand.current_trick if hand.current_trick is not None else None
+        if (
+            trick is not None
+            and len(trick.plays) >= 1
+            and hand.contract_type is not None
+        ):
+            ctx["trick_winning_seat"] = trick_winner(
+                trick.plays, hand.contract_type, hand.trump
+            )
+        else:
+            ctx["trick_winning_seat"] = None
+
         # Moon exchange selection context
         if phase == "moon_exchange_select":
             mooner_seat = hand.bidder_seat
@@ -443,6 +457,7 @@ def _build_game_context(
         ctx["points_team0"] = 0
         ctx["points_team1"] = 0
         ctx["legal_plays"] = None
+        ctx["trick_winning_seat"] = None
         ctx["opp_left_count"] = 0
         ctx["partner_count"] = 0
         ctx["opp_right_count"] = 0
