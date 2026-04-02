@@ -252,7 +252,7 @@ def _game_phase(state) -> str:
 
 
 def _format_auction_event(seat: int | None, action: dict[str, Any]) -> str:
-    """Format a single auction event for the action rail."""
+    """Format a single auction event for the auction log."""
     seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"}
     seat_label = seat_labels.get(int(seat), f"Seat {seat}")
 
@@ -314,7 +314,7 @@ def _build_seat_bids(auction: list[dict[str, Any]]) -> dict[int, str]:
 
 
 def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
-    """Build an event feed from auction/trick/redeal transitions.
+    """Build the auction-log event feed from auction/trick/redeal transitions.
 
     The list is capped to the most recent 12 entries for compact rendering.
     """
@@ -334,18 +334,18 @@ def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
             }
         )
 
-    # Completed tricks so the user can inspect a simple event log.
+    # Completed tricks — use team-based language to avoid confusion with
+    # auction events (e.g. "You won trick #1" reads like "won the auction").
     for idx, trick in enumerate(visible.get("completed_tricks", []), start=1):
         winner = trick.get("winner")
         if winner is None:
             continue
-        winner_label = seat_labels.get(int(winner), f"Seat {winner}")
-        events.append(
-            {
-                "kind": "trick",
-                "text": f"{winner_label} won trick #{idx}",
-            }
-        )
+        winner_int = int(winner)
+        if winner_int in (0, 2):
+            text = f"Your team won Trick {idx}"
+        else:
+            text = f"Opponents won Trick {idx}"
+        events.append({"kind": "trick", "text": text})
 
     # Redeal transition.
     if hand.phase == "redeal":

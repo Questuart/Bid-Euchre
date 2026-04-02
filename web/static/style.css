@@ -1154,7 +1154,7 @@ main {
     min-width: 120px;
 }
 
-/* Action rail */
+/* Auction log (CSS classes retain "action-rail" prefix for compatibility) */
 .action-rail {
     margin-top: 0.5rem;
     border: 1px solid #455a64;
@@ -1743,7 +1743,7 @@ main {
         display: none;
     }
 
-    /* Hide action rail on mobile — deprecated, reclaim vertical space */
+    /* Hide auction log on mobile — reclaim vertical space */
     .action-rail {
         display: none;
     }
