@@ -19,7 +19,7 @@
     --color-positive: #2e7d32;
     --color-negative: #c62828;
     --color-text: #fafafa;
-    --color-text-muted: #d0d0d0;
+    --color-text-muted: #dadada;
     --color-surface: #263238;
     --color-surface-light: #37474f;
     --card-width: 60px;
@@ -1245,6 +1245,10 @@ main {
 .points--negative {
     color: var(--color-negative);
     font-weight: 700;
+    /* Redundant encoding for colorblind users (3d) */
+    text-decoration: underline;
+    text-decoration-color: var(--color-negative);
+    text-underline-offset: 0.15em;
 }
 
 .result-match-score {
@@ -2374,6 +2378,22 @@ main {
 .result--loner-made .result-title,
 .result--loner-set .result-title {
     color: var(--color-loner);
+}
+
+/* Contextual title overrides — ensure human-perspective coloring takes
+   precedence over moon/loner defaults (2c).  Placed after the theme-color
+   rules so equal-specificity source-order wins. */
+.hand-result .result-title--positive {
+    color: var(--color-positive);
+    text-shadow: 0 0 12px rgba(46, 125, 50, 0.5);
+}
+
+.hand-result .result-title--negative {
+    color: var(--color-negative);
+    text-shadow: 0 0 12px rgba(198, 40, 40, 0.5);
+    text-decoration: underline;
+    text-decoration-color: var(--color-negative);
+    text-underline-offset: 0.15em;
 }
 
 /* Score delta emphasis in result banner */

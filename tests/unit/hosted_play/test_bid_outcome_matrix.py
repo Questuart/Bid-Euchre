@@ -345,6 +345,19 @@ class TestCSSClasses:
         elif p0 < 0:
             assert "points--negative" in html
 
+    @pytest.mark.parametrize("case", MATRIX, ids=MATRIX_IDS)
+    def test_title_mood_class(self, case: Case, jinja_env: jinja2.Environment) -> None:
+        """Result title has contextual positive/negative class (2c)."""
+        html, _, _ = _render(jinja_env, case)
+        human_declared = case.bidder_seat in (0, 2)
+        is_good_for_human = (case.outcome.made and human_declared) or (
+            not case.outcome.made and not human_declared
+        )
+        expected = (
+            "result-title--positive" if is_good_for_human else "result-title--negative"
+        )
+        assert expected in html, f"Title mood class '{expected}' not in HTML"
+
 
 # ---------------------------------------------------------------------------
 # 4. Moon/loner score-delta emphasis
