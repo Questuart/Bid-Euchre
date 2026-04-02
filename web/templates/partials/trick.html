@@ -37,10 +37,10 @@
             <span class="seat-marker seat-marker--leader" title="Lead">L</span>
         {% endif %}
         {% if dealer_seat == seat %}
-            <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
+            <span class="seat-marker seat-marker--dealer" title="Dealer"><span class="seat-marker__chip" aria-hidden="true"></span>D</span>
         {% endif %}
         {% if bidder_seat == seat %}
-            <span class="seat-marker seat-marker--declarer" title="Declarer">X</span>
+            <span class="seat-marker seat-marker--declarer" title="Declarer">★</span>
         {% endif %}
         {% if current_seat == seat %}
             <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
@@ -88,13 +88,13 @@
         {% endif %}
     </h3>
     <div class="trick-table" role="group" aria-label="Cards played this trick, score {{ tricks_team0 }} to {{ tricks_team1 }}">
-        <div class="trick-slot trick-slot--top">
+        <div class="trick-slot trick-slot--top{% if display_winner is not none and display_winner == 2 %} trick-slot--winner{% endif %}">
             {{ seat_markers(2, display_leader) }}
             {{ card_slot(2) }}
         </div>
 
         <div class="trick-row-middle">
-            <div class="trick-slot trick-slot--left">
+            <div class="trick-slot trick-slot--left{% if display_winner is not none and display_winner == 1 %} trick-slot--winner{% endif %}">
                 {{ seat_markers(1, display_leader) }}
                 {{ card_slot(1) }}
             </div>
@@ -103,13 +103,13 @@
                 <span class="trick-count" aria-hidden="true">{{ tricks_team0 }}&ndash;{{ tricks_team1 }}</span>
             </div>
 
-            <div class="trick-slot trick-slot--right">
+            <div class="trick-slot trick-slot--right{% if display_winner is not none and display_winner == 3 %} trick-slot--winner{% endif %}">
                 {{ seat_markers(3, display_leader) }}
                 {{ card_slot(3) }}
             </div>
         </div>
 
-        <div class="trick-slot trick-slot--bottom">
+        <div class="trick-slot trick-slot--bottom{% if display_winner is not none and display_winner == 0 %} trick-slot--winner{% endif %}">
             {{ seat_markers(0, display_leader) }}
             {{ card_slot(0) }}
         </div>
