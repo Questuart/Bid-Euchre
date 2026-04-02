@@ -1535,7 +1535,10 @@ main {
     }
 
     .score-bar .match-target {
-        display: none;
+        font-size: 0.6rem;
+        margin: 0;
+        padding: 0;
+        line-height: 1;
     }
 
     main {
