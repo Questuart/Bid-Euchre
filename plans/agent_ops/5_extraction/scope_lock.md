@@ -1,6 +1,6 @@
 # Platform-13: Second-Project Extraction Proof — Scope Lock
 
-**Status:** SCOPE-LOCKED
+**Status:** POSTPONED INDEFINITELY (2026-04-01 operator decision — platform work postponed to focus on browser game product)
 **Author:** analyst lane, revised with operator feedback
 **Date:** 2026-03-25
 **Parent:** `plans/agent_ops/governing_plan.md` — Phase 6, Platform-13
