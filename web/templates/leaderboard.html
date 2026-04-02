@@ -14,7 +14,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 1rem;
+        margin-bottom: 0.25rem;
         flex-wrap: wrap;
         gap: 0.5rem;
     }
@@ -33,6 +33,12 @@
     .leaderboard__back:hover {
         color: var(--color-text);
         text-decoration: underline;
+    }
+
+    .leaderboard__ranking-info {
+        font-size: 0.8rem;
+        color: var(--color-text-muted);
+        margin: 0 0 1rem 0;
     }
 
     .leaderboard__empty {
@@ -80,6 +86,13 @@
         z-index: 1;
     }
 
+    .leaderboard__table thead th[title] {
+        cursor: help;
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-underline-offset: 3px;
+    }
+
     .leaderboard__table tbody tr:hover {
         background: var(--color-surface-light);
     }
@@ -94,12 +107,16 @@
     .leaderboard__table .positive { color: var(--color-positive); }
     .leaderboard__table .negative { color: var(--color-negative); }
 
-    .leaderboard__toggle {
+    .leaderboard__controls {
         margin-top: 0.75rem;
-        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
     }
 
-    .leaderboard__toggle button {
+    .leaderboard__controls button {
         background: var(--color-surface);
         color: var(--color-text-muted);
         border: 1px solid var(--color-surface-light);
@@ -109,7 +126,7 @@
         font-size: 0.8rem;
     }
 
-    .leaderboard__toggle button:hover {
+    .leaderboard__controls button:hover {
         background: var(--color-surface-light);
         color: var(--color-text);
     }
@@ -118,10 +135,60 @@
     .secondary-col { display: none; }
     .leaderboard__table.show-secondary .secondary-col { display: table-cell; }
 
+    /* Help panel */
+    .leaderboard__help {
+        display: none;
+        margin-top: 1rem;
+        padding: 1rem;
+        background: var(--color-surface);
+        border-radius: 6px;
+        font-size: 0.8rem;
+        line-height: 1.5;
+    }
+
+    .leaderboard__help.show { display: block; }
+
+    .leaderboard__help h3 {
+        margin: 0 0 0.75rem 0;
+        font-size: 0.9rem;
+        color: var(--color-text);
+    }
+
+    .leaderboard__help dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.3rem 1rem;
+    }
+
+    .leaderboard__help dt {
+        font-weight: 600;
+        color: var(--color-text);
+        white-space: nowrap;
+    }
+
+    .leaderboard__help dd {
+        margin: 0;
+        color: var(--color-text-muted);
+    }
+
+    .leaderboard__help-divider {
+        grid-column: 1 / -1;
+        border: 0;
+        border-top: 1px solid var(--color-surface-light);
+        margin: 0.5rem 0;
+    }
+
     @media (max-width: 600px) {
         .leaderboard__table { font-size: 0.75rem; }
         .leaderboard__table th,
         .leaderboard__table td { padding: 0.35rem 0.4rem; }
+        .leaderboard__help dl {
+            grid-template-columns: 1fr;
+        }
+        .leaderboard__help dt {
+            margin-top: 0.3rem;
+        }
     }
 </style>
 {% endblock %}
@@ -134,6 +201,9 @@
         <h2 class="leaderboard__title">Leaderboard</h2>
         <a href="/play/{{ link_uuid }}" class="leaderboard__back">Back to Game</a>
     </div>
+    <p class="leaderboard__ranking-info">
+        Ranked by Net EPPD — your average point advantage per hand.
+    </p>
 
     {% if rankings|length == 0 %}
     <div class="leaderboard__empty">
@@ -147,21 +217,10 @@
                 <tr>
                     <th class="rank-col" scope="col">#</th>
                     <th class="name-col" scope="col">Player</th>
-                    <th class="primary-col" scope="col" title="Net expected points per deal">Net EPPD</th>
-                    <th scope="col">Won</th>
-                    <th scope="col" title="Win percentage">Win %</th>
-                    <th scope="col" title="Average margin when winning">Avg Margin</th>
-                    <th scope="col">Matches</th>
-                    {# Secondary columns — toggled via JS #}
-                    <th class="secondary-col" scope="col">Hands</th>
-                    <th class="secondary-col" scope="col" title="Average match score margin">Match Margin</th>
-                    <th class="secondary-col" scope="col" title="Fraction of hands declaring">Bid %</th>
-                    <th class="secondary-col" scope="col" title="Fraction of contracts made">Make %</th>
-                    <th class="secondary-col" scope="col" title="Average bid level">Avg Bid</th>
-                    <th class="secondary-col" scope="col" title="Moon call rate">Moon %</th>
-                    <th class="secondary-col" scope="col" title="Moon make rate">Moon Make</th>
-                    <th class="secondary-col" scope="col" title="Loner call rate">Loner %</th>
-                    <th class="secondary-col" scope="col" title="Loner make rate">Loner Make</th>
+                    {% for key, m in metric_defs.items() %}
+                    <th{% if m.category == "secondary" %} class="secondary-col"{% endif %}{% if m.category == "primary" %} class="primary-col"{% endif %}
+                        scope="col" title="{{ m.tooltip }}">{{ m.label }}</th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
@@ -169,36 +228,43 @@
                 <tr>
                     <td class="rank-col">{{ loop.index }}</td>
                     <td class="name-col">{{ entry.nickname or "Anonymous" }}</td>
-                    <td class="primary-col {% if entry.net_eppd > 0 %}positive{% elif entry.net_eppd < 0 %}negative{% endif %}">
-                        {{ "%.3f"|format(entry.net_eppd) }}
+                    {% for key, m in metric_defs.items() %}
+                    {% set val = entry[key] %}
+                    {% set formatted = format_metric(val, m.format) %}
+                    <td{% if m.category == "secondary" %} class="secondary-col{% if m.format.startswith("signed") %}{% if val > 0 %} positive{% elif val < 0 %} negative{% endif %}{% endif %}"{% elif m.category == "primary" %} class="primary-col{% if val > 0 %} positive{% elif val < 0 %} negative{% endif %}"{% elif m.format.startswith("signed") %} class="{% if val > 0 %}positive{% elif val < 0 %}negative{% endif %}"{% endif %}>
+                        {{ formatted }}
                     </td>
-                    <td>{{ entry.games_won }}</td>
-                    <td>{{ "%.1f"|format(entry.win_rate * 100) }}%</td>
-                    <td>{{ "%.1f"|format(entry.avg_margin_victory) }}</td>
-                    <td>{{ entry.matches_played }}</td>
-                    {# Secondary columns #}
-                    <td class="secondary-col">{{ entry.hands_played }}</td>
-                    <td class="secondary-col {% if entry.avg_match_margin > 0 %}positive{% elif entry.avg_match_margin < 0 %}negative{% endif %}">
-                        {{ "%.1f"|format(entry.avg_match_margin) }}
-                    </td>
-                    <td class="secondary-col">{{ "%.1f"|format(entry.bid_rate * 100) }}%</td>
-                    <td class="secondary-col">{{ "%.1f"|format(entry.make_rate * 100) }}%</td>
-                    <td class="secondary-col">{{ "%.1f"|format(entry.avg_bid_level) }}</td>
-                    <td class="secondary-col">{{ "%.1f"|format(entry.moon_call_rate * 100) }}%</td>
-                    <td class="secondary-col">{{ "%.1f"|format(entry.moon_make_rate * 100) }}%</td>
-                    <td class="secondary-col">{{ "%.1f"|format(entry.loner_call_rate * 100) }}%</td>
-                    <td class="secondary-col">{{ "%.1f"|format(entry.loner_make_rate * 100) }}%</td>
+                    {% endfor %}
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
-    <div class="leaderboard__toggle">
+    <div class="leaderboard__controls">
         <button type="button" id="toggle-secondary"
                 onclick="document.getElementById('leaderboard-table').classList.toggle('show-secondary'); this.textContent = this.textContent === 'Show More Stats' ? 'Show Less' : 'Show More Stats'">
             Show More Stats
         </button>
+        <button type="button" id="toggle-help"
+                onclick="var h=document.getElementById('help-panel'); h.classList.toggle('show'); this.textContent = h.classList.contains('show') ? 'Hide Help' : 'What do these stats mean?'">
+            What do these stats mean?
+        </button>
+    </div>
+
+    <div class="leaderboard__help" id="help-panel" role="note" aria-label="Metric definitions">
+        <h3>Metric Definitions</h3>
+        <dl>
+            {% set ns = namespace(prev_cat="") %}
+            {% for key, m in metric_defs.items() %}
+            {% if ns.prev_cat and ns.prev_cat != m.category %}
+            <hr class="leaderboard__help-divider">
+            {% endif %}
+            <dt>{{ m.label }}</dt>
+            <dd>{{ m.tooltip }}</dd>
+            {% set ns.prev_cat = m.category %}
+            {% endfor %}
+        </dl>
     </div>
     {% endif %}
 </div>
