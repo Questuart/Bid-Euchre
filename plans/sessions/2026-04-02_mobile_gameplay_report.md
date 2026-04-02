@@ -40,7 +40,7 @@ found card-play 400 errors via HTMX).
 
 **Severity:** P2 (usable with scrolling, but confusing)
 **Frequency:** Every auction where player must bid
-**Screenshots:** `gameplay_screenshots/19_bid_form_mobile.png`, `gameplay_screenshots/20_bid_form_fullpage.png`
+**Screenshots:** 19\_bid\_form\_mobile, 20\_bid\_form\_fullpage
 
 **Description:** When the auction panel shows the bidding history table
 plus the Type/Bid/Contract dropdowns, the Submit Bid button and Pass
@@ -65,8 +65,8 @@ the horizontal Type/Bid/Contract row.
 
 **Severity:** P2 (playable but strains readability)
 **Frequency:** Every hand
-**Screenshots:** `gameplay_screenshots/02_game1_auction_mobile.png`, `gameplay_screenshots/18_auction_start_mobile.png`,
-`gameplay_screenshots/21_trick_play_mobile.png`
+**Screenshots:** 02\_game1\_auction\_mobile, 18\_auction\_start\_mobile,
+21\_trick\_play\_mobile
 
 **Description:** With 10 cards displayed horizontally at 375px viewport
 width, each card is approximately 30-35px wide. Card ranks are readable
@@ -89,7 +89,7 @@ use a horizontally scrollable card tray with larger card faces.
 
 **Severity:** P3 (cosmetic)
 **Frequency:** Every game board view
-**Screenshots:** `gameplay_screenshots/02_game1_auction_mobile.png`, `gameplay_screenshots/19_bid_form_mobile.png`
+**Screenshots:** 02\_game1\_auction\_mobile, 19\_bid\_form\_mobile
 
 **Description:** The AI Left and AI Right labels with card counts (e.g.,
 "AI Left (10)") are rendered as rotated vertical text along the left and
@@ -106,7 +106,7 @@ with the green table area and is difficult to read. The compact badges
 
 **Severity:** P3 (cosmetic)
 **Frequency:** Leaderboard page
-**Screenshots:** `gameplay_screenshots/07_leaderboard_mobile.png`, `gameplay_screenshots/16_leaderboard_final_mobile.png`
+**Screenshots:** 07\_leaderboard\_mobile, 16\_leaderboard\_final\_mobile
 
 **Description:** The leaderboard table shows #, Player, Net EPPD, Won,
 Win %, and the "Avg Margin" / "Matches" columns (when expanded) push
