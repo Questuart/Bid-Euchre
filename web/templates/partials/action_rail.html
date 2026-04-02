@@ -1,5 +1,9 @@
-{# Action rail / event feed.
-   Context variables:
+{# DEPRECATED: Action rail removed in favour of inline bid tags next to seat labels.
+   Bids now display directly beside each player's name on the game board,
+   reclaiming vertical space on mobile. This file is retained for reference
+   but is no longer included by game_board.html.
+
+   Original context variables:
      - action_rail: list[dict] — ordered event objects:
          {"kind": "auction"|"trick"|"system", "text": str}
      - action_rail_label (optional): heading override
