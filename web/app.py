@@ -2,7 +2,7 @@
 
 Handles startup/shutdown lifecycle:
 1. Load configuration from environment
-2. Initialize database (create tables if needed)
+2. Initialize database (create tables if needed, auto-seed invite code)
 3. Preload approved V1 AI models via :class:`AIManager`
 4. Store manager and session factory in ``app.state``
 
@@ -27,7 +27,14 @@ from starlette.templating import Jinja2Templates
 from .ai_manager import AIManager
 from .cleanup import expire_stale_matches
 from .config import HostedPlayConfig, get_config, override_config
-from .db import Base, create_tables, init_engine, make_session_factory
+from .db import (
+    Base,
+    InviteCode,
+    create_tables,
+    generate_invite_code,
+    init_engine,
+    make_session_factory,
+)
 from .routes import router as game_router
 
 logger = logging.getLogger(__name__)
@@ -102,9 +109,23 @@ async def lifespan(app: FastAPI):
     # 1. Database
     engine = init_engine(config.database_url)
     create_tables(engine)
-
-    # 2. Cleanup stale matches from previous runs
     session_factory = make_session_factory(engine)
+
+    # 2. Auto-seed invite code on fresh database
+    seed_session = session_factory()
+    try:
+        if seed_session.query(InviteCode).count() == 0:
+            code = generate_invite_code()
+            seed_session.add(InviteCode(code=code, status="active", label="auto-seed"))
+            seed_session.commit()
+            logger.info("Auto-seeded invite code: %s", code)
+    except Exception:
+        seed_session.rollback()
+        logger.warning("Invite code auto-seed failed — continuing", exc_info=True)
+    finally:
+        seed_session.close()
+
+    # 3. Cleanup stale matches from previous runs
     cleanup_session = session_factory()
     try:
         expired = expire_stale_matches(cleanup_session)
@@ -117,19 +138,19 @@ async def lifespan(app: FastAPI):
     finally:
         cleanup_session.close()
 
-    # 3. Startup self-test — fail fast on broken deployment
+    # 4. Startup self-test — fail fast on broken deployment
     _run_self_test(engine, _TEMPLATES_DIR, _STATIC_DIR)
 
-    # 4. AI models
+    # 5. AI models
     ai_manager = AIManager(config)
 
-    # 5. Templates
+    # 6. Templates
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     # Expose app_url as a Jinja2 global so templates can build absolute
     # URLs (required for og:image and other meta tags that crawlers fetch).
     templates.env.globals["app_url"] = config.app_url.rstrip("/")
 
-    # 6. Stash on app.state for route access
+    # 7. Stash on app.state for route access
     app.state.config = config
     app.state.engine = engine
     app.state.session_factory = session_factory
