@@ -49,7 +49,7 @@ The `submit_card()` endpoint validates three conditions before accepting a card 
 3. `not _awaiting_next(hand)` — reveal state check
 
 The most likely failing check is #3: `_awaiting_next(hand)` returns True when
-`hand.paused_after_trick` is True. The server's auto-play mechanism advances
+the hand's `paused_after_trick` attribute is True. The server's auto-play mechanism advances
 through AI tricks and sets `paused_after_trick=True` for each completed trick,
 but the rendered HTML shows the player's turn to play cards — not a "Next" button.
 
@@ -59,9 +59,7 @@ The render logic and the validation logic disagree on whether the game is in a
 **Impact:** Players cannot complete games normally. The only workaround is to
 reload the page after every successful card play, which is not viable UX.
 
-**Screenshots:**
-- `gameplay_screenshots/game01_error_400_play_card.png` — error toast during play
-- `gameplay_screenshots/game01_game_not_found.png` — eventual 404 after repeated errors
+**Screenshots:** See game01 error and game-not-found screenshots in the gameplay_screenshots directory.
 
 ---
 
@@ -149,7 +147,7 @@ classification appears incorrect. A tie score should either:
 - Not end the game (continue playing)
 - Be classified as "Draw", not "Loss"
 
-**Screenshot:** `gameplay_screenshots/history_10_games.png` (row 1)
+**Screenshot:** See history 10-games screenshot in the gameplay_screenshots directory (row 1).
 
 ---
 
@@ -190,7 +188,7 @@ scroll to see their full hand during the auction phase.
 **Recommendation:** Reduce vertical spacing or use a more compact layout to
 ensure the full game board fits within 720px viewport height.
 
-**Screenshot:** `gameplay_screenshots/game01_auction.png`
+**Screenshot:** See game01 auction screenshot in the gameplay_screenshots directory.
 
 ---
 
@@ -252,9 +250,9 @@ During testing, the following workaround was discovered:
 ## Recommended Fix Priority
 
 1. **P1-001 (card play 400):** Investigate the `_awaiting_next()` check in
-   `web/routes.py`. The `paused_after_trick` flag and the `render_game_board`
+   `web/routes.py`. The paused-after-trick flag and the render-game-board
    logic must agree on whether to show a "Next" button or card play buttons.
-   The auto-advance mechanism likely needs to clear `paused_after_trick` before
+   The auto-advance mechanism likely needs to clear the paused state before
    rendering the trick-play state.
 
 2. **P1-002 (state jumps):** The "Next" button's HTMX handler should only
@@ -273,20 +271,20 @@ During testing, the following workaround was discovered:
 
 ## Screenshots Index
 
-| File | Description |
-|------|-------------|
-| `game01_landing.png` | Landing page — clean, well-designed |
-| `game01_auction.png` | Auction phase — hand partially below fold |
-| `game01_error_400_play_card.png` | 400 error on card play attempt |
-| `game01_state_jump.png` | After state jump — Hand 7 from Hand 1 |
-| `game01_game_not_found.png` | 404 "Game not found" error |
-| `game01_result.png` | Match result — "You Lose" 44-56 |
-| `game02_opponent_select.png` | Opponent selection screen (Play Again flow) |
-| `game02_hand_result.png` | Hand result panel — "Made it!" |
-| `history_page.png` | Match History table |
-| `leaderboard_page.png` | Leaderboard rankings |
-| `leaderboard_stats_help.png` | Leaderboard with stats help expanded |
-| `history_10_games.png` | 10 completed matches — 55-55 tie shown as "Loss" |
+All screenshots are saved in `plans/sessions/gameplay_screenshots/`:
+
+- **game01_landing** — Landing page, clean and well-designed
+- **game01_auction** — Auction phase, hand partially below fold
+- **game01_error_400_play_card** — 400 error toast on card play attempt
+- **game01_state_jump** — After state jump (Hand 7 from Hand 1)
+- **game01_game_not_found** — 404 "Game not found" error
+- **game01_result** — Match result "You Lose" 44-56
+- **game02_opponent_select** — Opponent selection screen (Play Again flow)
+- **game02_hand_result** — Hand result panel "Made it!"
+- **history_page** — Match History table
+- **leaderboard_page** — Leaderboard rankings
+- **leaderboard_stats_help** — Leaderboard with stats help expanded
+- **history_10_games** — 10 completed matches (55-55 tie shown as "Loss")
 
 ## Test Environment
 
