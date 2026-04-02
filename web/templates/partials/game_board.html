@@ -111,6 +111,11 @@
         </div>
     </div>
 
+    {# Bid recap bar — persistent auction result summary during trick play #}
+    {% if phase == "trick_play" %}
+        {% include "partials/bid_recap.html" %}
+    {% endif %}
+
     {# Trick area — always shown during active play #}
     {% include "partials/trick.html" %}
 

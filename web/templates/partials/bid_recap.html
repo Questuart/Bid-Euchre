@@ -1,0 +1,51 @@
+{# Bid recap bar — persistent summary of the auction result during trick play.
+   Displayed between the AI hands and the trick area so players always know
+   who won the bid and what was bid.
+
+   Context variables (all already provided by _build_game_context):
+     - winning_bid: int | None — winning bid amount
+     - bidder_seat: int | None — seat of the declarer
+     - bid_type: str — "regular", "moon", or "loner"
+     - contract_type: str | None — "suit", "high", or "low"
+     - trump: str | None — trump suit letter if contract_type == "suit"
+     - sitting_out_seat: int | None — seat sitting out (loner bids)
+#}
+{% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+
+{% if winning_bid is not none and bidder_seat is not none %}
+<div class="bid-recap" role="status" aria-label="Auction result">
+    <span class="bid-recap__declarer">
+        {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}
+    </span>
+    <span class="bid-recap__separator" aria-hidden="true">bid</span>
+    <span class="bid-recap__contract">
+        {% set recap_bid_type = bid_type | default("regular") %}
+        {% if recap_bid_type == "moon" %}
+            <span class="bid-recap__type bid-recap__type--moon" aria-label="Moon bid">
+                <span aria-hidden="true">&#127769;</span> Moon
+            </span>
+        {% elif recap_bid_type == "loner" %}
+            <span class="bid-recap__type bid-recap__type--loner" aria-label="Loner bid">
+                <span aria-hidden="true">&#127183;</span> Loner
+            </span>
+        {% else %}
+            <span class="bid-recap__level">{{ winning_bid }}</span>
+        {% endif %}
+        {% if contract_type == "suit" and trump %}
+            <span class="bid-recap__suit bid-recap__suit--{{ trump | lower }}">
+                {{ suit_symbols.get(trump, trump) }}
+            </span>
+        {% elif contract_type == "high" %}
+            <span class="bid-recap__no-trump">High</span>
+        {% elif contract_type == "low" %}
+            <span class="bid-recap__no-trump">Low</span>
+        {% endif %}
+    </span>
+    {% if sitting_out_seat is not none %}
+    <span class="bid-recap__sitting-out" aria-label="Sitting out: {{ seat_labels.get(sitting_out_seat, 'Seat ' ~ sitting_out_seat) }}">
+        ({{ seat_labels.get(sitting_out_seat, "Seat " ~ sitting_out_seat) }} sits out)
+    </span>
+    {% endif %}
+</div>
+{% endif %}
