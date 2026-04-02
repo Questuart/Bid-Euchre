@@ -108,7 +108,7 @@ decomposition (use `/executing-plans` for that).
    implementation window:
    ```bash
    git fetch origin main && git rebase origin/main
-   make check-quiet   # Re-validate after rebase
+   make check-gated   # Re-validate after rebase (concurrency-safe)
    gh pr create ...
    ```
 

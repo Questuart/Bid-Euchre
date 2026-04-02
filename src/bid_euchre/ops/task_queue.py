@@ -78,6 +78,7 @@ KNOWN_AUTHOR_LANES = frozenset(
         "flex-a",
         "flex-b",
         "flex-c",
+        "flex-d",
     }
 )
 

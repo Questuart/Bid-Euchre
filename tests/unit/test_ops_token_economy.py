@@ -560,6 +560,7 @@ class TestInferLaneFromPath:
             "flex-a",
             "flex-b",
             "flex-c",
+            "flex-d",
             "review",
             "ops",
             # Legacy (retired but still in mapping for attribution)

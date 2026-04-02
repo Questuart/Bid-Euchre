@@ -160,7 +160,7 @@ class TestConstants:
         assert "analyst-a" in lanes
         assert "brws-author-a" in lanes
         assert "flex-a" in lanes
-        assert len(lanes) == 15
+        assert len(lanes) == 16
 
 
 class TestResolveAgentName:
@@ -865,6 +865,7 @@ class TestLaneExpansion:
         # Flex pool
         assert "flex-a" in KNOWN_AUTHOR_LANES
         assert "flex-c" in KNOWN_AUTHOR_LANES
+        assert "flex-d" in KNOWN_AUTHOR_LANES
         # Platform pool
         assert "author-a" in KNOWN_AUTHOR_LANES
         assert "author-d" in KNOWN_AUTHOR_LANES
@@ -885,6 +886,7 @@ class TestLaneExpansion:
         assert get_lane_domain("flex-a") is None
         assert get_lane_domain("flex-b") is None
         assert get_lane_domain("flex-c") is None
+        assert get_lane_domain("flex-d") is None
 
     def test_persistent_lanes_include_new_pools(self) -> None:
         from bid_euchre.ops.recovery import PERSISTENT_LANES

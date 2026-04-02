@@ -30,6 +30,7 @@ These worktrees are permanent and must not be deleted:
 - `Bid-Euchre-steward-flex-b`
 - `Bid-Euchre-steward-flex-c`
 - `Bid-Euchre-steward-flex-d`
+- `Bid-Euchre-steward-flex-d`
 
 **Control plane:**
 - `Bid-Euchre-steward-review`
