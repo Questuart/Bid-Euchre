@@ -45,6 +45,7 @@ from bid_euchre.hosted_play.state import MatchState
 from bid_euchre.scoring import compute_points
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
+from bid_euchre.strategy.greedy import GluttonStrategy
 
 # ---------------------------------------------------------------------------
 # Test helpers — deterministic AI stubs
@@ -2230,3 +2231,120 @@ class TestSortHandForDisplay:
                 seen_suits.append(card.suit)
         # No suit should appear more than once in the seen list
         assert len(seen_suits) == len(set(seen_suits))
+
+
+# ---------------------------------------------------------------------------
+# Glutton bower-sorting fix (#2113)
+# ---------------------------------------------------------------------------
+
+
+class TestGluttonBowerFix:
+    """Regression tests for #2113: engine must call on_hand_start so
+    GluttonStrategy knows the contract type and trump suit."""
+
+    def test_on_hand_start_called_after_auction(self) -> None:
+        """After auction ends, GluttonStrategy._contract_type and
+        _trump_suit must reflect the won contract — not the defaults."""
+        glutton = GluttonStrategy()
+        engine = MatchEngine(
+            bidding_policy=FixedBidder(n=5, contract="S"),
+            play_strategy=glutton,
+        )
+        state = engine.start_match(42, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Submit human bid (pass) so AI wins auction
+        state = engine.submit_human_bid(state, BidAction.pass_bid())
+
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "trick_play"
+        # The engine should have called on_hand_start, setting trump info
+        assert glutton._contract_type == hand.contract_type
+        assert glutton._trump_suit == hand.trump
+
+    def test_on_hand_start_called_after_moon_exchange(self) -> None:
+        """Moon exchange path must also call on_hand_start."""
+        glutton = GluttonStrategy()
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=glutton,
+        )
+        state = engine.start_match(42, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Submit human bid (pass) so AI wins with moon
+        state = engine.submit_human_bid(state, BidAction.pass_bid())
+
+        hand = state.current_hand
+        assert hand is not None
+        # Moon goes through exchange phase first
+        if hand.phase == "moon_exchange":
+            state = engine.submit_exchange_selection(state, [0, 1])
+            hand = state.current_hand
+            assert hand is not None
+
+        assert hand.phase == "trick_play"
+        assert glutton._contract_type == hand.contract_type
+        assert glutton._trump_suit == hand.trump
+
+    def test_observe_play_fires_on_card_play(self) -> None:
+        """Each card play must notify the strategy via observe_play.
+
+        After the auction, AI auto-advances and plays cards, which populates
+        _seen_counts. Then the human plays, adding more observations.
+        We verify the total observation count increases after the human play.
+        """
+        glutton = GluttonStrategy()
+        engine = MatchEngine(
+            bidding_policy=FixedBidder(n=5, contract="S"),
+            play_strategy=glutton,
+        )
+        state = engine.start_match(42, "heuristic")
+        # Submit human pass so AI wins
+        state = engine.submit_human_bid(state, BidAction.pass_bid())
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "trick_play"
+
+        # AI auto-advance may have already tracked some plays
+        initial_total = sum(glutton._seen_counts.values())
+
+        # Play the human card
+        if hand.current_seat == HUMAN_SEAT:
+            legal = get_legal_indices(
+                hand.hands[HUMAN_SEAT],
+                list(hand.current_trick.plays) if hand.current_trick else [],
+                hand.contract_type or "high",
+                hand.trump,
+            )
+            state = engine.submit_human_card(state, legal[0])
+
+        # Total observation count must have increased
+        final_total = sum(glutton._seen_counts.values())
+        assert final_total > initial_total
+
+    def test_bower_values_correct_with_fix(self) -> None:
+        """With on_hand_start called, right bower is valued higher than ace."""
+        from bid_euchre.strategy.base import card_value_for_dump
+
+        # Without the fix, _contract_type="high" and _trump_suit=None
+        # would make J♥ value < A♥.  With the fix, J♥ (right bower) > A♥.
+        right_bower = Card("H", "J")
+        ace_of_trump = Card("H", "A")
+
+        # Correct values with bower awareness
+        rb_val = card_value_for_dump(right_bower, "suit", "H")
+        ace_val = card_value_for_dump(ace_of_trump, "suit", "H")
+        assert (
+            rb_val > ace_val
+        ), f"Right bower ({rb_val}) must be valued higher than ace ({ace_val})"
+
+        # Bug scenario: without trump info, J is low
+        rb_no_trump = card_value_for_dump(right_bower, "high", None)
+        ace_no_trump = card_value_for_dump(ace_of_trump, "high", None)
+        assert (
+            rb_no_trump < ace_no_trump
+        ), "Without trump info, J should be valued lower than A (the bug)"

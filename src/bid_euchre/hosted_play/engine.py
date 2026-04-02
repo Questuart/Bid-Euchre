@@ -370,6 +370,10 @@ class MatchEngine:
         # Re-sort human hand with bower awareness
         sort_hand_for_display(hand.hands[HUMAN_SEAT], hand.contract_type, hand.trump)
 
+        # Fire on_hand_start hook (same as _process_auction_end; moon exchange
+        # reaches trick play through a different path).
+        self._fire_on_hand_start(hand)
+
         # Auto-advance AI just like submit_human_bid/submit_human_card.
         # Without this, the game is stuck when the leader (bidder) is an AI
         # seat because no mechanism triggers AI card play after exchange.
@@ -811,7 +815,54 @@ class MatchEngine:
         # Re-sort human hand with bower awareness now that trump is known
         sort_hand_for_display(hand.hands[HUMAN_SEAT], hand.contract_type, hand.trump)
 
+        # Fire on_hand_start hook so the strategy knows the contract type and
+        # trump suit.  Without this, GluttonStrategy's internal helpers use
+        # stale defaults and mis-rank bowers (see #2113).
+        self._fire_on_hand_start(hand)
+
         return state
+
+    # ------------------------------------------------------------------
+    # Internal — strategy lifecycle hooks
+    # ------------------------------------------------------------------
+
+    def _fire_on_hand_start(self, hand: HandState) -> None:
+        """Notify the play strategy of a new hand's contract info.
+
+        Called once at the start of trick play (after auction ends or after
+        moon exchange completes) so that GluttonStrategy resets its per-hand
+        tracking and sets ``_contract_type`` / ``_trump_suit`` correctly.
+        Without this, bowers are mis-ranked in card-value calculations (#2113).
+        """
+        if type(self.play_strategy).on_hand_start is not Strategy.on_hand_start:
+            # Pick any active AI seat (not human seat 0, not sitting out).
+            ai_seat = 1
+            for s in (1, 2, 3):
+                if s != hand.sitting_out_seat:
+                    ai_seat = s
+                    break
+            self.play_strategy.on_hand_start(
+                starting_hand=list(hand.hands[ai_seat]),
+                contract_type=hand.contract_type or "high",
+                trump_suit=hand.trump,
+                player_index=ai_seat,
+            )
+
+    def _fire_observe_play(self, hand: HandState, seat: int, card: Card) -> None:
+        """Notify the play strategy that a card was played.
+
+        Called after every card play (human and AI) so that the strategy can
+        track seen cards and infer voids for informed decisions.
+        """
+        if type(self.play_strategy).observe_play is not Strategy.observe_play:
+            assert hand.current_trick is not None
+            self.play_strategy.observe_play(
+                player_index=seat,
+                card=card,
+                trick_plays=list(hand.current_trick.plays),
+                contract_type=hand.contract_type or "high",
+                trump_suit=hand.trump,
+            )
 
     # ------------------------------------------------------------------
     # Internal — card play
@@ -829,6 +880,9 @@ class MatchEngine:
         card = hand.hands[seat].pop(card_index)
         hand.current_trick.plays.append((seat, card))
         hand.turn_number += 1
+
+        # Notify strategy of the play (card tracking, void inference)
+        self._fire_observe_play(hand, seat, card)
 
         # Check if trick is complete (3 plays for moon/loner, 4 otherwise)
         ppt = _players_per_trick(hand.sitting_out_seat)
