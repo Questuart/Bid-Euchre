@@ -66,10 +66,10 @@ METRIC_DEFINITIONS: dict[str, MetricDef] = {
         format="pct",
         category="default",
     ),
-    "avg_margin_victory": MetricDef(
+    "avg_match_margin": MetricDef(
         label="Avg Margin",
-        tooltip="Average score margin in games you won (points).",
-        format="float1",
+        tooltip="Average score margin across all completed matches (positive = winning).",
+        format="signed_float1",
         category="default",
     ),
     "matches_played": MetricDef(
@@ -84,10 +84,10 @@ METRIC_DEFINITIONS: dict[str, MetricDef] = {
         format="int",
         category="secondary",
     ),
-    "avg_match_margin": MetricDef(
-        label="Match Margin",
-        tooltip="Average score margin across all completed matches (positive = winning).",
-        format="signed_float1",
+    "avg_margin_victory": MetricDef(
+        label="Win Margin",
+        tooltip="Average score margin in games you won (points).",
+        format="float1",
         category="secondary",
     ),
     "bid_rate": MetricDef(
