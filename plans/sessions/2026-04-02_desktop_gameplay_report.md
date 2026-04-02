@@ -152,11 +152,14 @@ depends on the stored `Match.won` boolean. The history template renders
 stored as `won=False` (the declaring team that pushed the score over
 threshold is the winner, so the human's team lost).
 
-**Root cause:** This is a data-model limitation, not a display bug. The
-`Match.won` boolean does not distinguish between a loss and a tie. Per
-the game rules (RULES.md §6.6), when both teams cross ±52 in the same
-hand, the declaring team wins — so 55-55 can be a legitimate loss for
-the non-declaring team.
+**Root cause:** The `Match.won` boolean and history template lack nuance
+for close finishes. While RULES.md §6.6 says the declaring team wins when
+both teams cross ±52 in the same hand, the display is misleading: a 55-55
+result shown as plain "Loss" gives the player no indication that it was a
+near-tie decided by the declaring-team rule. The history template should
+either show the final score alongside the outcome or add a qualifier
+(e.g., "Loss — declaring team wins at 55-55") so the result is not
+confusing.
 
 **Screenshot:** `gameplay_screenshots/history_10_games.png` (row 1)
 
@@ -215,18 +218,21 @@ Please include <meta name="mobile-web-app-capable" content="yes"> instead.
 
 ---
 
-#### P3-003: ~~No per-game nickname or opponent selection on first entry~~ (FALSE POSITIVE)
+#### P3-003: No per-game nickname or opponent selection on first entry
 
-**Severity:** Not a bug — working as designed.
+**Severity:** P3
+**Frequency:** Every first entry via invite code
 **Details:** The first time entering via invite code, the game starts directly
 without showing the opponent selection screen. The "Welcome, Meeks!" opponent
 selection dialog only appears after clicking "Play Again" at the end of a match.
 The nickname ("Meeks") is derived from the invite code, not player input.
 
-**Resolution:** This is by design. The invite code flow creates the player
-record with a nickname derived from the code. The opponent selection screen
-appears on the welcome/rematch page, not during initial invite code entry.
-First-entry flow is: invite code → player created → opponent select → play.
+**Root cause:** The invite code flow creates the player record with a nickname
+derived from the code, then redirects straight to a new match with the default
+opponent. The opponent selection screen only appears on the welcome/rematch
+page, not during initial invite code entry.
+First-entry flow is: invite code → player created → default opponent → play
+(opponent selection is skipped).
 
 ---
 
