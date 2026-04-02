@@ -1690,6 +1690,88 @@ class TestGameBoardSeatZeroRegression:
         # The human (seat 0) should show the dealer marker
         assert "seat-marker--dealer" in html
 
+    def test_compact_ai_badges_rendered(self, env):
+        """Compact mobile badge row renders with correct counts and markers."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="trick_play",
+            link_uuid="test-uuid",
+            dealer_seat=1,
+            bidder_seat=2,
+            current_seat=3,
+            sitting_out_seat=None,
+            current_trick={"leader": 1, "plays": [[1, ["H", "K"]]]},
+            completed_tricks=[],
+            human_hand=[["S", "A"], ["H", "Q"]],
+            auction=[],
+            contract_type="suit",
+            trump="H",
+            bid_type="regular",
+            winning_bid=5,
+            current_high_bid=5,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=8,
+            partner_count=7,
+            opp_right_count=9,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=False,
+            action_rail=[],
+        )
+        # Compact badge container present
+        assert 'class="ai-hands-compact"' in html
+        # Badges with correct card counts
+        assert "L:8" in html
+        assert "P:7" in html
+        assert "R:9" in html
+        # Seat markers present inside compact badges
+        # dealer at seat 1 → L badge; declarer at seat 2 → P badge; turn at seat 3 → R badge
+        assert "ai-badge" in html
+
+    def test_compact_badges_auction_phase(self, env):
+        """Compact badges also render during auction phase."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="auction",
+            link_uuid="test-uuid",
+            dealer_seat=3,
+            bidder_seat=-1,
+            current_seat=0,
+            sitting_out_seat=None,
+            current_trick={"leader": 0, "plays": []},
+            completed_tricks=[],
+            human_hand=[["S", "A"]],
+            auction=[],
+            contract_type=None,
+            trump=None,
+            bid_type=None,
+            winning_bid=0,
+            current_high_bid=0,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=True,
+            turn_number=0,
+            action_rail=[],
+        )
+        assert 'class="ai-hands-compact"' in html
+        assert "L:10" in html
+        assert "P:10" in html
+        assert "R:10" in html
+
 
 # ---------------------------------------------------------------------------
 # contract_bar.html — sticky contract info bar during trick play

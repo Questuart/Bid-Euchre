@@ -362,6 +362,31 @@ main {
     margin: -1px 0;
 }
 
+/* Compact AI hands — mobile badge row (hidden on desktop) */
+.ai-hands-compact {
+    display: none;
+}
+
+.ai-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.2rem 0.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+.ai-badge .seat-marker {
+    font-size: 0.55rem;
+    padding: 0 0.15rem;
+    min-width: unset;
+}
+
 /* --------------------------------------------------------------------------
    5b. Bid Recap Bar
    -------------------------------------------------------------------------- */
@@ -1750,6 +1775,19 @@ main {
         margin: 0 -3px;
     }
 
+    /* Collapse desktop AI hands row to compact badges on phones */
+    .ai-hands-row {
+        display: none;
+    }
+
+    .ai-hands-compact {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.25rem 0;
+    }
+
     main {
         padding: 0.5rem;
     }
@@ -1940,6 +1978,14 @@ main {
 
     .ai-card-count {
         font-size: 0.65rem;
+        padding: 0.15rem 0.35rem;
+        line-height: 1;
+    }
+
+    /* Compact badges — tighter on smallest screens */
+    .ai-badge {
+        font-size: 0.65rem;
+        padding: 0.15rem 0.35rem;
         line-height: 1;
     }
 

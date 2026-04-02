@@ -33,6 +33,31 @@
 {# ---- Active game phases: auction and trick play ---- #}
 {% elif phase in ("auction", "trick_play", "redeal") %}
 
+    {# AI hands — compact badges (mobile only, hidden on desktop via CSS) #}
+    <div class="ai-hands-compact" role="region" aria-label="AI opponent hands">
+        <span class="ai-badge" aria-label="AI Left: {{ opp_left_count | default(0) }} cards">
+            L:{{ opp_left_count | default(0) }}
+            {%- if dealer_seat == 1 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
+            {%- if bidder_seat == 1 %}<span class="seat-marker seat-marker--declarer" title="Declarer">X</span>{% endif -%}
+            {%- if current_seat == 1 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
+            {%- if sitting_out_seat == 1 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
+        </span>
+        <span class="ai-badge" aria-label="Partner: {{ partner_count | default(0) }} cards">
+            P:{{ partner_count | default(0) }}
+            {%- if dealer_seat == 2 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
+            {%- if bidder_seat == 2 %}<span class="seat-marker seat-marker--declarer" title="Declarer">X</span>{% endif -%}
+            {%- if current_seat == 2 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
+            {%- if sitting_out_seat == 2 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
+        </span>
+        <span class="ai-badge" aria-label="AI Right: {{ opp_right_count | default(0) }} cards">
+            R:{{ opp_right_count | default(0) }}
+            {%- if dealer_seat == 3 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
+            {%- if bidder_seat == 3 %}<span class="seat-marker seat-marker--declarer" title="Declarer">X</span>{% endif -%}
+            {%- if current_seat == 3 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
+            {%- if sitting_out_seat == 3 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
+        </span>
+    </div>
+
     {# Compass-rose grid: Partner top, AI Left left, AI Right right, Human bottom #}
     <div class="compass-layout" role="region" aria-label="Game table">
 
