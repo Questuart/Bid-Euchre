@@ -24,8 +24,8 @@
             {% if phase == "trick_play" and legal_plays is not none and idx in legal_plays %}
                 <button type="button"
                         class="card card--{{ suit_class }} card--legal"
-                        title="{{ rank }}{{ suit_sym }} (tap to select)"
-                        aria-label="Select {{ rank }} of {{ suit_name }}"
+                        title="{{ rank }}{{ suit_sym }} (tap to play)"
+                        aria-label="Play {{ rank }} of {{ suit_name }}"
                         data-card-index="{{ idx }}">
                     <span class="card__rank" aria-hidden="true">{{ rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
@@ -59,7 +59,7 @@
                     disabled
                     aria-label="Play selected card">Play card</button>
             <p id="card-play-help" class="card-play-help" aria-live="polite">
-                Tap a card to select it, then tap Play card.
+                Tap a card to play it.
             </p>
         </form>
     {% endif %}
