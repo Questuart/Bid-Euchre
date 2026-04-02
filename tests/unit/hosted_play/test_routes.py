@@ -977,7 +977,8 @@ class TestRedealPersistence:
         )
         assert resp.status_code == 200
 
-        # Verify the hand row for the redealt hand
+        # Verify the redeal hand is persisted but NOT auto-advanced.
+        # The user must click "Next" to deal the new hand.
         session = app.state.session_factory()
         try:
             redeal_hand = (
@@ -987,8 +988,28 @@ class TestRedealPersistence:
             assert redeal_hand.status == "redeal"
             assert redeal_hand.deal_id == original_deal_id
             assert redeal_hand.dealer_seat == original_dealer
+        finally:
+            session.close()
 
-            # Verify a new hand row exists for the next deal
+        # Click "Next" to reveal remaining hidden auction bids, then
+        # advance past the redeal interstitial.  After submit_bid the
+        # first bid is revealed; 3 more AI bids need revealing, then
+        # one final click to trigger the redeal.
+        for _ in range(10):  # enough to cover all reveals + redeal
+            resp2 = client.post(f"/play/{link_uuid}/next")
+            assert resp2.status_code == 200
+            # Stop once we're past the redeal (new hand)
+            result_check = get_match_state(app, link_uuid)
+            if result_check is not None:
+                check_state, _, check_session = result_check
+                check_hand = check_state.current_hand
+                check_session.close()
+                if check_hand is not None and check_hand.deal_id > original_deal_id:
+                    break
+
+        # Now verify a new hand row exists for the next deal
+        session = app.state.session_factory()
+        try:
             next_hand = (
                 session.query(Hand)
                 .filter_by(match_id=match_id)
@@ -1008,16 +1029,18 @@ class TestRedealPersistence:
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
         _select_ai(client, link_uuid)
+        advance_pending_reveals(client, app, link_uuid)
 
         result = get_match_state(app, link_uuid)
         assert result is not None
         state, _, session = result
         hand = state.current_hand
         assert hand is not None
+        original_deal_id = hand.deal_id
         session.close()
 
-        # Human passes → all-pass redeal
-        client.post(
+        # Human passes → all-pass redeal (pauses at redeal interstitial)
+        resp = client.post(
             f"/play/{link_uuid}/bid",
             data={
                 "turn_number": hand.turn_number,
@@ -1025,8 +1048,20 @@ class TestRedealPersistence:
                 "bid_contract": "",
             },
         )
+        assert resp.status_code == 200
 
-        # Load the match state after redeal
+        # Click "Next" through remaining auction reveals + redeal interstitial
+        for _ in range(10):
+            result_check = get_match_state(app, link_uuid)
+            if result_check is not None:
+                st, _, sess = result_check
+                h = st.current_hand
+                sess.close()
+                if h is not None and h.deal_id > original_deal_id:
+                    break
+            client.post(f"/play/{link_uuid}/next")
+
+        # Load the match state after advancing past redeal
         result2 = get_match_state(app, link_uuid)
         assert result2 is not None
         state2, _, session2 = result2
@@ -2359,13 +2394,24 @@ class TestMoonExchangeRoute:
         assert "Start Trick Play" in resp.text
 
         # Step 4: Click "Start Trick Play" to reveal the exchange.
-        # Human is the partner (seat 0) and sits out for moon — after
-        # the reveal, _advance_ai auto-plays all 10 tricks, completing
-        # the hand.  The response shows the hand result.
+        # Human is the partner (seat 0) and sits out for moon — AI
+        # auto-plays with trick-by-trick pauses until the hand completes.
         resp = client.post(f"/play/{link_uuid}/next")
         assert resp.status_code == 200
 
-        # Step 5: Verify the hand completed (human sat out)
+        # Step 5: Advance through trick pauses until hand completes.
+        for _ in range(20):  # 10 tricks max + safety
+            result_check = get_match_state(app, link_uuid)
+            assert result_check is not None
+            st, _, sess = result_check
+            h = st.current_hand
+            sess.close()
+            if h is not None and h.phase == "complete":
+                break
+            # Click "Next" to advance past each trick pause
+            client.post(f"/play/{link_uuid}/next")
+
+        # Step 6: Verify the hand completed (human sat out)
         result_after = get_match_state(app, link_uuid)
         assert result_after is not None
         state_after, _, session_after = result_after
