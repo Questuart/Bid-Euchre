@@ -434,6 +434,80 @@ main {
 }
 
 /* --------------------------------------------------------------------------
+   5c. Contract Bar — Sticky info bar (always visible during trick play)
+   -------------------------------------------------------------------------- */
+
+.contract-bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: var(--color-surface);
+    border-bottom: 2px solid var(--color-felt);
+    padding: 0.35rem 0.75rem;
+    font-size: 0.9rem;
+    text-align: center;
+    flex-wrap: wrap;
+}
+
+.contract-bar__contract {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 700;
+}
+
+.contract-bar__level {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--color-text);
+}
+
+.contract-bar__type {
+    font-weight: 700;
+}
+
+.contract-bar__type--moon {
+    color: var(--color-moon);
+}
+
+.contract-bar__type--loner {
+    color: var(--color-loner);
+}
+
+.contract-bar__suit {
+    font-size: 1.15rem;
+}
+
+.contract-bar__suit--h,
+.contract-bar__suit--d {
+    color: #ef5350;
+}
+
+.contract-bar__suit--s,
+.contract-bar__suit--c {
+    color: var(--color-text);
+}
+
+.contract-bar__no-trump {
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+.contract-bar__separator {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
+.contract-bar__declarer {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+}
+
+/* --------------------------------------------------------------------------
    6. Trick Area
    -------------------------------------------------------------------------- */
 
@@ -1916,6 +1990,21 @@ main {
 
     .bid-recap__suit {
         font-size: 0.85rem;
+    }
+
+    /* Contract bar — compact for small screens */
+    .contract-bar {
+        font-size: 0.78rem;
+        padding: 0.25rem 0.5rem;
+        gap: 0.35rem;
+    }
+
+    .contract-bar__level {
+        font-size: 0.95rem;
+    }
+
+    .contract-bar__suit {
+        font-size: 0.95rem;
     }
 
     /* Score bar — ultra-compact */

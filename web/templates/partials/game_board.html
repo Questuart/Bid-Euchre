@@ -92,9 +92,9 @@
 
         {# Center — trick area, controls, bid panel #}
         <div class="compass-center">
-            {# Bid recap bar — persistent auction result summary during trick play #}
+            {# Contract bar — sticky, always-visible contract info during trick play #}
             {% if phase == "trick_play" %}
-                {% include "partials/bid_recap.html" %}
+                {% include "partials/contract_bar.html" %}
             {% endif %}
 
             {# Trick area — always shown during active play #}

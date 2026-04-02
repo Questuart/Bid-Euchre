@@ -1692,6 +1692,114 @@ class TestGameBoardSeatZeroRegression:
 
 
 # ---------------------------------------------------------------------------
+# contract_bar.html — sticky contract info bar during trick play
+# ---------------------------------------------------------------------------
+
+
+class TestContractBar:
+    """Verify the contract bar partial renders correctly for all contract types."""
+
+    def test_suit_contract_shows_trump_symbol(self, env):
+        """Suit contract shows bid level and trump suit symbol."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=6,
+            bidder_seat=1,
+            bid_type="regular",
+            contract_type="suit",
+            trump="H",
+        )
+        assert "contract-bar" in html
+        assert "6" in html
+        assert "\u2665" in html  # Heart symbol
+        assert "AI Left" in html
+
+    def test_high_contract(self, env):
+        """High (no-trump) contract displays 'High' label."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=7,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="high",
+            trump=None,
+        )
+        assert "7" in html
+        assert "High" in html
+        assert "You" in html
+
+    def test_low_contract(self, env):
+        """Low (no-trump) contract displays 'Low' label."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=7,
+            bidder_seat=2,
+            bid_type="regular",
+            contract_type="low",
+            trump=None,
+        )
+        assert "7" in html
+        assert "Low" in html
+        assert "AI Partner" in html
+
+    def test_moon_contract(self, env):
+        """Moon bid shows moon emoji and label."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=10,
+            bidder_seat=3,
+            bid_type="moon",
+            contract_type="suit",
+            trump="S",
+        )
+        assert "Moon" in html
+        assert "contract-bar__type--moon" in html
+        assert "\u2660" in html  # Spade symbol
+        assert "AI Right" in html
+
+    def test_loner_contract(self, env):
+        """Loner bid shows loner emoji and label."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=10,
+            bidder_seat=0,
+            bid_type="loner",
+            contract_type="suit",
+            trump="D",
+        )
+        assert "Loner" in html
+        assert "contract-bar__type--loner" in html
+        assert "\u2666" in html  # Diamond symbol
+        assert "You" in html
+
+    def test_hidden_when_no_bid(self, env):
+        """No output when winning_bid is None (auction not resolved)."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=None,
+            bidder_seat=None,
+            bid_type="regular",
+            contract_type=None,
+            trump=None,
+        )
+        assert "contract-bar" not in html
+
+    def test_bidder_seat_zero_not_coerced(self, env):
+        """bidder_seat=0 (human) must not be treated as falsy."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=5,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="suit",
+            trump="C",
+        )
+        assert "contract-bar" in html
+        assert "You" in html
+        assert "\u2663" in html  # Club symbol
+
+
+# ---------------------------------------------------------------------------
 # match_result.html
 # ---------------------------------------------------------------------------
 

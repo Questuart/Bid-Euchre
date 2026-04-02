@@ -1,0 +1,50 @@
+{# Contract bar — persistent, sticky display of the current contract during
+   trick play.  Always visible at the top of the game board so the player
+   never has to scroll to see what was bid.
+
+   Context variables (already provided by _build_game_context):
+     - winning_bid: int | None — winning bid amount
+     - bidder_seat: int | None — seat of the declarer
+     - bid_type: str — "regular", "moon", or "loner"
+     - contract_type: str | None — "suit", "high", or "low"
+     - trump: str | None — trump suit letter if contract_type == "suit"
+#}
+{% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
+{% set seat_labels = {0: "You", 1: "AI Left", 2: "AI Partner", 3: "AI Right"} %}
+
+{% if winning_bid is not none and bidder_seat is not none %}
+<div class="contract-bar" role="status" aria-label="Current contract">
+    {# Trump / contract type indicator #}
+    <span class="contract-bar__contract">
+        {% set bar_bid_type = bid_type | default("regular") %}
+        {% if bar_bid_type == "moon" %}
+            <span class="contract-bar__type contract-bar__type--moon" aria-label="Moon">
+                <span aria-hidden="true">&#127769;</span> Moon
+            </span>
+        {% elif bar_bid_type == "loner" %}
+            <span class="contract-bar__type contract-bar__type--loner" aria-label="Loner">
+                <span aria-hidden="true">&#127183;</span> Loner
+            </span>
+        {% else %}
+            <span class="contract-bar__level">{{ winning_bid }}</span>
+        {% endif %}
+        {% if contract_type == "suit" and trump %}
+            <span class="contract-bar__suit contract-bar__suit--{{ trump | lower }}"
+                  aria-label="{{ trump }} trump">
+                {{ suit_symbols.get(trump, trump) }}
+            </span>
+        {% elif contract_type == "high" %}
+            <span class="contract-bar__no-trump">High</span>
+        {% elif contract_type == "low" %}
+            <span class="contract-bar__no-trump">Low</span>
+        {% endif %}
+    </span>
+
+    <span class="contract-bar__separator" aria-hidden="true">&middot;</span>
+
+    {# Declarer name #}
+    <span class="contract-bar__declarer">
+        {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}
+    </span>
+</div>
+{% endif %}
