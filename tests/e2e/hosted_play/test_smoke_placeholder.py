@@ -623,8 +623,8 @@ class TestCrossFeatureIntegration:
         assert "human-hand" in html, "Expected human hand in game board"
         # Score bar renders
         assert "score-bar" in html, "Expected score bar in game board"
-        # AI hands render
-        assert "ai-hands-row" in html, "Expected AI hands row in game board"
+        # Compass-rose layout renders
+        assert "compass-layout" in html, "Expected compass layout in game board"
 
     @pytest.mark.e2e
     def test_game_board_after_one_trick(
