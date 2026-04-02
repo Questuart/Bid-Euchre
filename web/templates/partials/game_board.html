@@ -197,6 +197,17 @@
     {# Score bar — outside compass grid, always at bottom #}
     {% include "partials/score.html" %}
 
+    {# Compact icon legend — quick-glance badge reference (detailed docs in Help drawer) #}
+    <div class="icon-legend" role="note" aria-label="Badge legend">
+        <span class="icon-legend__item"><span class="seat-marker seat-marker--dealer" aria-hidden="true">D</span> Dealer</span>
+        <span class="icon-legend__sep" aria-hidden="true">&middot;</span>
+        <span class="icon-legend__item"><span class="seat-marker seat-marker--declarer" aria-hidden="true">★</span> Declarer</span>
+        <span class="icon-legend__sep" aria-hidden="true">&middot;</span>
+        <span class="icon-legend__item"><span class="seat-marker seat-marker--leader" aria-hidden="true">L</span> Lead</span>
+        <span class="icon-legend__sep" aria-hidden="true">&middot;</span>
+        <span class="icon-legend__item"><span class="seat-marker seat-marker--turn" aria-hidden="true">▶</span> Turn</span>
+    </div>
+
     {% include "partials/action_rail.html" %}
 
 {% endif %}
