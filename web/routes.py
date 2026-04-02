@@ -1080,6 +1080,10 @@ async def next_step(
             hand.revealed_auction_count += 1
         elif _has_pending_exchange(hand):
             hand.exchange_revealed = True
+            # Moon: trigger deferred AI advancement.  When the human is
+            # sitting out (partner of the mooner), submit_exchange_selection
+            # deferred _advance_ai so the interstitial could display first.
+            state = engine.advance_after_exchange_reveal(state)
         elif hand.phase == "trick_play" and hand.paused_after_trick:
             hand.paused_after_trick = False
         else:

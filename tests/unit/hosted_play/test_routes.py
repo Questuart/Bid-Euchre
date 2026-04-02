@@ -2345,29 +2345,25 @@ class TestMoonExchangeRoute:
         assert "Moon Exchange" in resp.text
         assert "Start Trick Play" in resp.text
 
-        # Step 4: Click "Start Trick Play" to reveal the exchange
+        # Step 4: Click "Start Trick Play" to reveal the exchange.
+        # Human is the partner (seat 0) and sits out for moon — after
+        # the reveal, _advance_ai auto-plays all 10 tricks, completing
+        # the hand.  The response shows the hand result.
         resp = client.post(f"/play/{link_uuid}/next")
         assert resp.status_code == 200
-        # After reveal, exchange interstitial should be gone
-        assert "Moon Exchange" not in resp.text
 
-        # Step 5: Verify the game state is playable (not stuck)
+        # Step 5: Verify the hand completed (human sat out)
         result_after = get_match_state(app, link_uuid)
         assert result_after is not None
         state_after, _, session_after = result_after
         hand_after = state_after.current_hand
         assert hand_after is not None
-        assert hand_after.phase == "trick_play"
         assert hand_after.exchange_revealed is True
         assert (
-            hand_after.sitting_out_seat is None
-        ), "Moon bid must not set sitting_out_seat"
-        # AI should have advanced — current_seat must be HUMAN_SEAT
-        # (or the hand might have completed if AI played through).
-        # The key assertion: the game is NOT stuck on an AI seat.
-        if hand_after.phase == "trick_play":
-            assert hand_after.current_seat == HUMAN_SEAT, (
-                f"Game stuck on AI seat {hand_after.current_seat} "
-                f"after moon exchange — _advance_ai not called"
-            )
+            hand_after.sitting_out_seat == HUMAN_SEAT
+        ), "Moon partner (human) should sit out"
+        # Human sat out → AI auto-played all tricks → hand complete
+        assert (
+            hand_after.phase == "complete"
+        ), f"Expected 'complete' (human sits out), got '{hand_after.phase}'"
         session_after.close()
