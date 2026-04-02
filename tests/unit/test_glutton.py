@@ -41,7 +41,9 @@ class TestPartnerAwareness:
         choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
         # Should dump cheapest card - C-T has lowest value
-        assert choice == 2, f"Expected to dump C-T (cheapest), got {choice} ({hand[choice]})"
+        assert (
+            choice == 2
+        ), f"Expected to dump C-T (cheapest), got {choice} ({hand[choice]})"
         # Scenario should indicate partner-related behavior
         assert glutton.decision_log[-1]["scenario"] == "partner_winning"
 
@@ -213,7 +215,9 @@ class TestPositionAwareness:
 
         # Partner is winning, our trump King has high threats (Ace, bowers out)
         # Should dump D-T instead of overkilling with trump
-        assert choice == 1, f"Should dump when partner winning with high threats, got {choice}"
+        assert (
+            choice == 1
+        ), f"Should dump when partner winning with high threats, got {choice}"
         assert glutton.decision_log[-1]["scenario"] == "partner_winning"
 
     def test_partner_cover_with_sure_winner(self):
@@ -267,8 +271,12 @@ class TestPositionAwareness:
         # because partner is winning. Should use partner_vulnerable_cover or partner_winning
         assert choice == 0, f"Should cover partner with Ace, got {choice}"
         scenario = glutton.decision_log[-1]["scenario"]
-        assert scenario != "3rd_seat_aggression", f"Should NOT use 3rd_seat_aggression when partner winning, got {scenario}"
-        assert scenario == "partner_vulnerable_cover", f"Expected partner_vulnerable_cover, got {scenario}"
+        assert (
+            scenario != "3rd_seat_aggression"
+        ), f"Should NOT use 3rd_seat_aggression when partner winning, got {scenario}"
+        assert (
+            scenario == "partner_vulnerable_cover"
+        ), f"Expected partner_vulnerable_cover, got {scenario}"
 
     def test_3rd_seat_aggression_when_opponent_winning(self):
         """3rd seat aggression SHOULD trigger when opponent is winning."""
@@ -291,7 +299,9 @@ class TestPositionAwareness:
         choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
 
         # Opponent winning, low threats, should trigger 3rd_seat_aggression
-        assert choice == 0, f"Should take with Ace via 3rd_seat_aggression, got {choice}"
+        assert (
+            choice == 0
+        ), f"Should take with Ace via 3rd_seat_aggression, got {choice}"
         assert glutton.decision_log[-1]["scenario"] == "3rd_seat_aggression"
 
     def test_4th_seat_no_aggression_logic(self):
@@ -421,9 +431,9 @@ class TestTrumpGating:
         # 7 cards > 6, only 1 trump < 3, gating should BLOCK trump-in
         # Falls through to can_win path instead
         assert choice == 0, f"Should still trump in via can_win path, got {choice}"
-        assert glutton.decision_log[-1]["scenario"] == "can_win", (
-            f"Should skip 3rd_seat_aggression due to trump gating, got {glutton.decision_log[-1]['scenario']}"
-        )
+        assert (
+            glutton.decision_log[-1]["scenario"] == "can_win"
+        ), f"Should skip 3rd_seat_aggression due to trump gating, got {glutton.decision_log[-1]['scenario']}"
 
     def test_non_trump_winner_no_gating(self):
         """Non-trump winners are not affected by trump gating (use high contract)."""
@@ -757,3 +767,162 @@ class TestProbabilisticTrumpIn:
         # In 2nd seat, 4th seat protection doesn't apply
         # Player 0 is opponent for player 1 - so we try to win
         assert glutton.decision_log[-1]["scenario"] != "probabilistic_trump_cover"
+
+
+class TestLowContractBehavior:
+    """Tests for correct card ranking on low contracts (#2098).
+
+    In low contracts (10 high, A low), the Glutton should:
+    - Lead with WEAK cards (aces) to conserve strong cards (tens)
+    - Discard weak cards when following and can't win
+    - Use the cheapest winner when following and can win
+    """
+
+    def test_low_lead_plays_weakest_card(self):
+        """On low contracts, lead with weakest card (A) not strongest (T)."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("S", "T"),  # idx 0 - strongest in low (value 4)
+            Card("S", "K"),  # idx 1 - (value 1 in low)
+            Card("S", "Q"),  # idx 2 - (value 2 in low)
+            Card("S", "J"),  # idx 3 - (value 3 in low)
+            Card("S", "A"),  # idx 4 - weakest in low (value 0)
+            Card("H", "T"),  # idx 5
+            Card("H", "K"),  # idx 6
+            Card("H", "Q"),  # idx 7
+            Card("H", "J"),  # idx 8
+            Card("H", "A"),  # idx 9
+        ]
+
+        glutton.on_hand_start(hand, "low", None, player_index=0)
+        choice = glutton.choose_card(hand, [], "low", None, 0)
+
+        # Should lead with weakest card from longest suit (both suits equal,
+        # picks first = spades; weakest in spades = A at idx 4)
+        assert (
+            hand[choice].rank == "A"
+        ), f"Low lead should play A (weakest), got {hand[choice]}"
+
+    def test_low_lead_order_weak_to_strong(self):
+        """On low contracts, successive leads go weak-to-strong (A, K, Q, J, T)."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("S", "T"),
+            Card("S", "J"),
+            Card("S", "Q"),
+            Card("S", "K"),
+            Card("S", "A"),
+            Card("H", "T"),
+            Card("H", "J"),
+            Card("H", "Q"),
+            Card("H", "K"),
+            Card("H", "A"),
+        ]
+
+        glutton.on_hand_start(hand[:], "low", None, player_index=0)
+
+        # Simulate 5 leads, tracking which cards are chosen
+        remaining = list(range(len(hand)))
+        lead_ranks = []
+        for _ in range(5):
+            sub_hand = [hand[i] for i in remaining]
+            choice = glutton.choose_card(sub_hand, [], "low", None, 0)
+            lead_ranks.append(sub_hand[choice].rank)
+            remaining.pop(choice)
+
+        # Should lead weak-to-strong: A, A, K, K, Q (not T, T, J, J, Q)
+        assert lead_ranks == [
+            "A",
+            "A",
+            "K",
+            "K",
+            "Q",
+        ], f"Low leads should go weak-to-strong, got {lead_ranks}"
+
+    def test_high_lead_order_strong_to_weak(self):
+        """On high contracts, successive leads go strong-to-weak (unchanged)."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("S", "T"),
+            Card("S", "J"),
+            Card("S", "Q"),
+            Card("S", "K"),
+            Card("S", "A"),
+            Card("H", "T"),
+            Card("H", "J"),
+            Card("H", "Q"),
+            Card("H", "K"),
+            Card("H", "A"),
+        ]
+
+        glutton.on_hand_start(hand[:], "high", None, player_index=0)
+
+        remaining = list(range(len(hand)))
+        lead_ranks = []
+        for _ in range(5):
+            sub_hand = [hand[i] for i in remaining]
+            choice = glutton.choose_card(sub_hand, [], "high", None, 0)
+            lead_ranks.append(sub_hand[choice].rank)
+            remaining.pop(choice)
+
+        # Should lead strong-to-weak: A, A, K, K, Q
+        assert lead_ranks == [
+            "A",
+            "A",
+            "K",
+            "K",
+            "Q",
+        ], f"High leads should go strong-to-weak, got {lead_ranks}"
+
+    def test_low_discard_dumps_weakest(self):
+        """On low, discard should dump weakest card (A), saving strong (T)."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("H", "T"),  # idx 0 - strongest in low
+            Card("H", "K"),  # idx 1
+            Card("H", "A"),  # idx 2 - weakest in low
+        ]
+
+        glutton.on_hand_start(hand, "low", None, player_index=2)
+
+        # Opponent leads T (strongest in low), can't beat it
+        plays = [
+            (0, Card("H", "T")),
+            (1, Card("H", "Q")),
+        ]
+
+        choice = glutton.choose_card(hand, plays, "low", None, 2)
+
+        assert (
+            hand[choice].rank == "A"
+        ), f"Low discard should dump A (weakest), got {hand[choice]}"
+
+    def test_low_cheapest_winner(self):
+        """On low, use cheapest winner when following (save expensive cards)."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("H", "T"),  # idx 0 - strongest (value 4 in low)
+            Card("H", "J"),  # idx 1 - second strongest (value 3 in low)
+            Card("H", "A"),  # idx 2 - can't win
+        ]
+
+        glutton.on_hand_start(hand, "low", None, player_index=3)
+
+        # Opponent (player 2) is winning with Q (value 2 in low)
+        # Both T (4) and J (3) can beat Q. Should use J (cheaper).
+        plays = [
+            (1, Card("H", "K")),  # Partner leads K (value 1)
+            (2, Card("H", "Q")),  # Opponent plays Q (value 2) - winning
+            (0, Card("H", "A")),  # Other opponent plays A (value 0)
+        ]
+
+        choice = glutton.choose_card(hand, plays, "low", None, 3)
+
+        assert (
+            hand[choice].rank == "J"
+        ), f"Low should use cheapest winner (J), got {hand[choice]}"

@@ -111,7 +111,12 @@ class GluttonStrategy(Strategy):
         # Double-deck aware tracking (each card exists 0-2 times)
         self._seen_counts: Dict[Card, int] = {}
         # Void inference: which seats are void in which effective suits
-        self._void_suits_by_seat: Dict[int, Set[str]] = {0: set(), 1: set(), 2: set(), 3: set()}
+        self._void_suits_by_seat: Dict[int, Set[str]] = {
+            0: set(),
+            1: set(),
+            2: set(),
+            3: set(),
+        }
         # Contract context (set by on_hand_start)
         self._contract_type: str = "high"
         self._trump_suit: Optional[str] = None
@@ -183,12 +188,16 @@ class GluttonStrategy(Strategy):
         """
         # Determine led suit
         if plays_so_far:
-            led_suit = effective_suit(plays_so_far[0][1], self._trump_suit, self._contract_type)
+            led_suit = effective_suit(
+                plays_so_far[0][1], self._trump_suit, self._contract_type
+            )
         else:
             led_suit = effective_suit(candidate, self._trump_suit, self._contract_type)
 
         # Get all cards that could beat our candidate
-        beating_cards = cards_that_beat(candidate, led_suit, self._trump_suit, self._contract_type)
+        beating_cards = cards_that_beat(
+            candidate, led_suit, self._trump_suit, self._contract_type
+        )
 
         # For each threat, check if all copies are accounted for
         hand_counter = Counter(hand)
@@ -204,7 +213,8 @@ class GluttonStrategy(Strategy):
     def _count_effective_suit(self, hand: List[Card], suit: str) -> int:
         """Count cards in hand that belong to the given effective suit."""
         return sum(
-            1 for c in hand
+            1
+            for c in hand
             if effective_suit(c, self._trump_suit, self._contract_type) == suit
         )
 
@@ -233,28 +243,40 @@ class GluttonStrategy(Strategy):
 
             # 1. Look for non-trump Aces
             non_trump_aces = [
-                idx for idx in legal_indices
+                idx
+                for idx in legal_indices
                 if hand[idx].rank == "A"
-                and effective_suit(hand[idx], self._trump_suit, self._contract_type) != self._trump_suit
+                and effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                != self._trump_suit
             ]
             if non_trump_aces:
                 # Prefer Ace from shortest non-trump suit (to create void potential)
                 def ace_priority(idx: int) -> Tuple[int, int]:
-                    eff = effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    eff = effective_suit(
+                        hand[idx], self._trump_suit, self._contract_type
+                    )
                     return (suit_counts.get(eff, 0), -card_value(idx))
+
                 return min(non_trump_aces, key=ace_priority)
 
             # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
             trump_count = self._count_effective_suit(hand, self._trump_suit)
             trump_indices = [
-                idx for idx in legal_indices
-                if effective_suit(hand[idx], self._trump_suit, self._contract_type) == self._trump_suit
+                idx
+                for idx in legal_indices
+                if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                == self._trump_suit
             ]
             if trump_count >= 4 and trump_indices:
                 # Check for both bowers
                 from ..core.cards import is_left_bower, is_right_bower
-                has_right = any(is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices)
-                has_left = any(is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices)
+
+                has_right = any(
+                    is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices
+                )
+                has_left = any(
+                    is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices
+                )
                 if not (has_right and has_left):
                     # Lead lowest trump to draw trump without burning top cards
                     return min(trump_indices, key=card_value)
@@ -264,8 +286,10 @@ class GluttonStrategy(Strategy):
             if non_trump_suits:
                 longest_suit = max(non_trump_suits, key=lambda s: suit_counts.get(s, 0))
                 longest_suit_indices = [
-                    idx for idx in legal_indices
-                    if effective_suit(hand[idx], self._trump_suit, self._contract_type) == longest_suit
+                    idx
+                    for idx in legal_indices
+                    if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    == longest_suit
                 ]
                 if longest_suit_indices:
                     return max(longest_suit_indices, key=card_value)
@@ -275,18 +299,23 @@ class GluttonStrategy(Strategy):
 
         else:
             # HIGH / LOW CONTRACT LEADS
-            # Lead from longest suit, strongest card in that suit
+            #
+            # HIGH: lead strongest card to establish dominance (A first)
+            # LOW:  lead weakest card to conserve strong cards (T, J)
+            #       for following plays where they win tricks efficiently
+            select = min if self._contract_type == "low" else max
             if suit_counts:
-                longest_suit = max(suit_counts.keys(), key=lambda s: suit_counts.get(s, 0))
+                longest_suit = max(
+                    suit_counts.keys(), key=lambda s: suit_counts.get(s, 0)
+                )
                 longest_suit_indices = [
-                    idx for idx in legal_indices
-                    if hand[idx].suit == longest_suit
+                    idx for idx in legal_indices if hand[idx].suit == longest_suit
                 ]
                 if longest_suit_indices:
-                    return max(longest_suit_indices, key=card_value)
+                    return select(longest_suit_indices, key=card_value)
 
-            # Fallback: highest value card
-            return max(legal_indices, key=card_value)
+            # Fallback
+            return select(legal_indices, key=card_value)
 
     def _choose_discard(
         self,
@@ -304,14 +333,18 @@ class GluttonStrategy(Strategy):
         if self._contract_type == "suit" and self._trump_suit is not None:
             # Prefer non-trump cards
             non_trump_indices = [
-                idx for idx in legal_indices
-                if effective_suit(hand[idx], self._trump_suit, self._contract_type) != self._trump_suit
+                idx
+                for idx in legal_indices
+                if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                != self._trump_suit
             ]
 
             if non_trump_indices:
                 # Prefer shortest non-trump suit (to create/strengthen voids)
                 def discard_priority(idx: int) -> Tuple[int, int]:
-                    eff = effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    eff = effective_suit(
+                        hand[idx], self._trump_suit, self._contract_type
+                    )
                     # Lower suit count = better (creating void)
                     # Lower card value = better (save strong cards)
                     return (suit_counts.get(eff, 0), card_value(idx))
@@ -354,7 +387,9 @@ class GluttonStrategy(Strategy):
             return False
 
         # Get led suit
-        led_suit = effective_suit(plays_so_far[0][1], self._trump_suit, self._contract_type)
+        led_suit = effective_suit(
+            plays_so_far[0][1], self._trump_suit, self._contract_type
+        )
 
         # Check if we're void in led suit (can't follow)
         can_follow = any(
@@ -380,7 +415,9 @@ class GluttonStrategy(Strategy):
         # Check 4th seat's void status
         fourth_seat = (player_index + 1) % 4
         fourth_void_in_led = led_suit in self._void_suits_by_seat[fourth_seat]
-        fourth_might_have_trump = self._trump_suit not in self._void_suits_by_seat[fourth_seat]
+        fourth_might_have_trump = (
+            self._trump_suit not in self._void_suits_by_seat[fourth_seat]
+        )
 
         # If 4th seat is void in led suit and might have trump, we should trump in
         return fourth_void_in_led and fourth_might_have_trump
@@ -419,11 +456,13 @@ class GluttonStrategy(Strategy):
         if not plays_so_far:
             choice = self._choose_lead(hand, legal_indices)
             if self.debug:
-                self.decision_log.append({
-                    "scenario": "leading",
-                    "action": "smart_lead",
-                    "card": str(hand[choice]),
-                })
+                self.decision_log.append(
+                    {
+                        "scenario": "leading",
+                        "action": "smart_lead",
+                        "card": str(hand[choice]),
+                    }
+                )
             return choice
 
         # FOLLOWING: For each legal card, check if it currently wins the trick
@@ -446,7 +485,7 @@ class GluttonStrategy(Strategy):
             contract_type=contract_type,
             trump_suit=trump_suit,
         )
-        partner_winning = (current_winner == partner_index)
+        partner_winning = current_winner == partner_index
 
         # POSITION-AWARE AGGRESSION: In 3rd seat with low threat count, take the trick
         # Only when partner is NOT winning (otherwise defer to partner awareness)
@@ -460,21 +499,27 @@ class GluttonStrategy(Strategy):
 
             # Trump gating: only aggressive trump-in if hand is small or trump-heavy
             is_trump_winner = (
-                contract_type == "suit" and trump_suit is not None
+                contract_type == "suit"
+                and trump_suit is not None
                 and effective_suit(best_winner, trump_suit, contract_type) == trump_suit
             )
-            can_gate = len(hand) <= 6 or self._count_effective_suit(hand, trump_suit or "") >= 3
+            can_gate = (
+                len(hand) <= 6
+                or self._count_effective_suit(hand, trump_suit or "") >= 3
+            )
 
             if threats <= 1:
                 # Only take if not a trump play, or if gating conditions allow
                 if not is_trump_winner or can_gate:
                     if self.debug:
-                        self.decision_log.append({
-                            "scenario": "3rd_seat_aggression",
-                            "action": "take_likely_win",
-                            "card": str(best_winner),
-                            "threats": threats,
-                        })
+                        self.decision_log.append(
+                            {
+                                "scenario": "3rd_seat_aggression",
+                                "action": "take_likely_win",
+                                "card": str(best_winner),
+                                "threats": threats,
+                            }
+                        )
                     return best_winner_idx
 
         # PARTNER AWARENESS: Don't overkill partner's winning card
@@ -484,66 +529,79 @@ class GluttonStrategy(Strategy):
             if pos == 2:  # We're 3rd seat, 4th seat opponent plays after
                 # Find sure winners among our winning candidates
                 sure_winners = [
-                    idx for idx in winning_candidates
+                    idx
+                    for idx in winning_candidates
                     if self._is_sure_winner(hand[idx], plays_so_far, hand)
                 ]
                 if sure_winners:
                     # Cover partner with cheapest sure winner
                     choice = min(sure_winners, key=card_value)
                     if self.debug:
-                        self.decision_log.append({
-                            "scenario": "partner_vulnerable_cover",
-                            "action": "play_sure_winner",
-                            "card": str(hand[choice]),
-                        })
+                        self.decision_log.append(
+                            {
+                                "scenario": "partner_vulnerable_cover",
+                                "action": "play_sure_winner",
+                                "card": str(hand[choice]),
+                            }
+                        )
                     return choice
 
                 # Probabilistic trump-in: protect partner from 4th seat trump
                 if self._should_trump_in(hand, plays_so_far, player_index):
                     # Find cheapest trump winner
                     trump_winners = [
-                        idx for idx in winning_candidates
-                        if effective_suit(hand[idx], trump_suit, contract_type) == trump_suit
+                        idx
+                        for idx in winning_candidates
+                        if effective_suit(hand[idx], trump_suit, contract_type)
+                        == trump_suit
                     ]
                     if trump_winners:
                         choice = min(trump_winners, key=card_value)
                         if self.debug:
-                            self.decision_log.append({
-                                "scenario": "probabilistic_trump_cover",
-                                "action": "trump_to_protect_partner",
-                                "card": str(hand[choice]),
-                            })
+                            self.decision_log.append(
+                                {
+                                    "scenario": "probabilistic_trump_cover",
+                                    "action": "trump_to_protect_partner",
+                                    "card": str(hand[choice]),
+                                }
+                            )
                         return choice
 
             # Partner safe or no sure winner — smart discard
             choice = self._choose_discard(hand, legal_indices)
             if self.debug:
-                self.decision_log.append({
-                    "scenario": "partner_winning",
-                    "action": "smart_discard",
-                    "card": str(hand[choice]),
-                })
+                self.decision_log.append(
+                    {
+                        "scenario": "partner_winning",
+                        "action": "smart_discard",
+                        "card": str(hand[choice]),
+                    }
+                )
             return choice
 
         # If we have any card that is currently winning, play the cheapest winner
         if winning_candidates:
             choice = min(winning_candidates, key=card_value)
             if self.debug:
-                self.decision_log.append({
-                    "scenario": "can_win",
-                    "action": "play_cheap_winner",
-                    "card": str(hand[choice]),
-                })
+                self.decision_log.append(
+                    {
+                        "scenario": "can_win",
+                        "action": "play_cheap_winner",
+                        "card": str(hand[choice]),
+                    }
+                )
             return choice
 
         # Otherwise, smart discard (prefer shortest suit for voids)
         choice = self._choose_discard(hand, legal_indices)
         if self.debug:
-            self.decision_log.append({
-                "scenario": "cant_win",
-                "action": "smart_discard",
-                "card": str(hand[choice]),
-            })
+            self.decision_log.append(
+                {
+                    "scenario": "cant_win",
+                    "action": "smart_discard",
+                    "card": str(hand[choice]),
+                }
+            )
         return choice
 
 
@@ -595,7 +653,12 @@ class GluttonIsolatedStrategy(Strategy):
         # Double-deck aware tracking (each card exists 0-2 times)
         self._seen_counts: Dict[Card, int] = {}
         # Void inference: which seats are void in which effective suits
-        self._void_suits_by_seat: Dict[int, Set[str]] = {0: set(), 1: set(), 2: set(), 3: set()}
+        self._void_suits_by_seat: Dict[int, Set[str]] = {
+            0: set(),
+            1: set(),
+            2: set(),
+            3: set(),
+        }
         # Contract context (set by on_hand_start)
         self._contract_type: str = "high"
         self._trump_suit: Optional[str] = None
@@ -661,11 +724,15 @@ class GluttonIsolatedStrategy(Strategy):
     ) -> bool:
         """Returns True if candidate cannot be beaten by any remaining card."""
         if plays_so_far:
-            led_suit = effective_suit(plays_so_far[0][1], self._trump_suit, self._contract_type)
+            led_suit = effective_suit(
+                plays_so_far[0][1], self._trump_suit, self._contract_type
+            )
         else:
             led_suit = effective_suit(candidate, self._trump_suit, self._contract_type)
 
-        beating_cards = cards_that_beat(candidate, led_suit, self._trump_suit, self._contract_type)
+        beating_cards = cards_that_beat(
+            candidate, led_suit, self._trump_suit, self._contract_type
+        )
         hand_counter = Counter(hand)
         for threat in beating_cards:
             seen = self._seen_counts.get(threat, 0)
@@ -678,7 +745,8 @@ class GluttonIsolatedStrategy(Strategy):
     def _count_effective_suit(self, hand: List[Card], suit: str) -> int:
         """Count cards in hand that belong to the given effective suit."""
         return sum(
-            1 for c in hand
+            1
+            for c in hand
             if effective_suit(c, self._trump_suit, self._contract_type) == suit
         )
 
@@ -705,26 +773,39 @@ class GluttonIsolatedStrategy(Strategy):
         if self._contract_type == "suit" and self._trump_suit is not None:
             # 1. Look for non-trump Aces
             non_trump_aces = [
-                idx for idx in legal_indices
+                idx
+                for idx in legal_indices
                 if hand[idx].rank == "A"
-                and effective_suit(hand[idx], self._trump_suit, self._contract_type) != self._trump_suit
+                and effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                != self._trump_suit
             ]
             if non_trump_aces:
+
                 def ace_priority(idx: int) -> Tuple[int, int]:
-                    eff = effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    eff = effective_suit(
+                        hand[idx], self._trump_suit, self._contract_type
+                    )
                     return (suit_counts.get(eff, 0), -card_value(idx))
+
                 return min(non_trump_aces, key=ace_priority)
 
             # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
             trump_count = self._count_effective_suit(hand, self._trump_suit)
             trump_indices = [
-                idx for idx in legal_indices
-                if effective_suit(hand[idx], self._trump_suit, self._contract_type) == self._trump_suit
+                idx
+                for idx in legal_indices
+                if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                == self._trump_suit
             ]
             if trump_count >= 4 and trump_indices:
                 from ..core.cards import is_left_bower, is_right_bower
-                has_right = any(is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices)
-                has_left = any(is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices)
+
+                has_right = any(
+                    is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices
+                )
+                has_left = any(
+                    is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices
+                )
                 if not (has_right and has_left):
                     return min(trump_indices, key=card_value)
 
@@ -733,8 +814,10 @@ class GluttonIsolatedStrategy(Strategy):
             if non_trump_suits:
                 longest_suit = max(non_trump_suits, key=lambda s: suit_counts.get(s, 0))
                 longest_suit_indices = [
-                    idx for idx in legal_indices
-                    if effective_suit(hand[idx], self._trump_suit, self._contract_type) == longest_suit
+                    idx
+                    for idx in legal_indices
+                    if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    == longest_suit
                 ]
                 if longest_suit_indices:
                     return max(longest_suit_indices, key=card_value)
@@ -744,10 +827,11 @@ class GluttonIsolatedStrategy(Strategy):
         else:
             # HIGH / LOW CONTRACT LEADS
             if suit_counts:
-                longest_suit = max(suit_counts.keys(), key=lambda s: suit_counts.get(s, 0))
+                longest_suit = max(
+                    suit_counts.keys(), key=lambda s: suit_counts.get(s, 0)
+                )
                 longest_suit_indices = [
-                    idx for idx in legal_indices
-                    if hand[idx].suit == longest_suit
+                    idx for idx in legal_indices if hand[idx].suit == longest_suit
                 ]
                 if longest_suit_indices:
                     return max(longest_suit_indices, key=card_value)
@@ -767,14 +851,20 @@ class GluttonIsolatedStrategy(Strategy):
 
         if self._contract_type == "suit" and self._trump_suit is not None:
             non_trump_indices = [
-                idx for idx in legal_indices
-                if effective_suit(hand[idx], self._trump_suit, self._contract_type) != self._trump_suit
+                idx
+                for idx in legal_indices
+                if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                != self._trump_suit
             ]
 
             if non_trump_indices:
+
                 def discard_priority(idx: int) -> Tuple[int, int]:
-                    eff = effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    eff = effective_suit(
+                        hand[idx], self._trump_suit, self._contract_type
+                    )
                     return (suit_counts.get(eff, 0), card_value(idx))
+
                 return min(non_trump_indices, key=discard_priority)
 
             return min(legal_indices, key=card_value)
@@ -794,7 +884,9 @@ class GluttonIsolatedStrategy(Strategy):
         if not plays_so_far:
             return False
 
-        led_suit = effective_suit(plays_so_far[0][1], self._trump_suit, self._contract_type)
+        led_suit = effective_suit(
+            plays_so_far[0][1], self._trump_suit, self._contract_type
+        )
 
         can_follow = any(
             effective_suit(hand[idx], self._trump_suit, self._contract_type) == led_suit
@@ -816,7 +908,9 @@ class GluttonIsolatedStrategy(Strategy):
 
         fourth_seat = (player_index + 1) % 4
         fourth_void_in_led = led_suit in self._void_suits_by_seat[fourth_seat]
-        fourth_might_have_trump = self._trump_suit not in self._void_suits_by_seat[fourth_seat]
+        fourth_might_have_trump = (
+            self._trump_suit not in self._void_suits_by_seat[fourth_seat]
+        )
 
         return fourth_void_in_led and fourth_might_have_trump
 
@@ -870,7 +964,7 @@ class GluttonIsolatedStrategy(Strategy):
             contract_type=contract_type,
             trump_suit=trump_suit,
         )
-        partner_winning = (current_winner == partner_index)
+        partner_winning = current_winner == partner_index
 
         pos = len(plays_so_far)  # 0=lead, 1=2nd, 2=3rd, 3=4th
 
@@ -889,10 +983,15 @@ class GluttonIsolatedStrategy(Strategy):
                     # Trump gating check (PR#227)
                     if self._trump_gating:
                         is_trump_winner = (
-                            contract_type == "suit" and trump_suit is not None
-                            and effective_suit(best_winner, trump_suit, contract_type) == trump_suit
+                            contract_type == "suit"
+                            and trump_suit is not None
+                            and effective_suit(best_winner, trump_suit, contract_type)
+                            == trump_suit
                         )
-                        can_gate = len(hand) <= 6 or self._count_effective_suit(hand, trump_suit or "") >= 3
+                        can_gate = (
+                            len(hand) <= 6
+                            or self._count_effective_suit(hand, trump_suit or "") >= 3
+                        )
                         if is_trump_winner and not can_gate:
                             pass  # Skip this aggression
                         else:
@@ -905,17 +1004,22 @@ class GluttonIsolatedStrategy(Strategy):
             # Sure winner cover
             if self._sure_winner_cover and pos == 2:
                 sure_winners = [
-                    idx for idx in winning_candidates
+                    idx
+                    for idx in winning_candidates
                     if self._is_sure_winner(hand[idx], plays_so_far, hand)
                 ]
                 if sure_winners:
                     return min(sure_winners, key=card_value)
 
                 # Probabilistic trump-in (PR#228)
-                if self._probabilistic_trump_in and self._should_trump_in(hand, plays_so_far, player_index):
+                if self._probabilistic_trump_in and self._should_trump_in(
+                    hand, plays_so_far, player_index
+                ):
                     trump_winners = [
-                        idx for idx in winning_candidates
-                        if effective_suit(hand[idx], trump_suit, contract_type) == trump_suit
+                        idx
+                        for idx in winning_candidates
+                        if effective_suit(hand[idx], trump_suit, contract_type)
+                        == trump_suit
                     ]
                     if trump_winners:
                         return min(trump_winners, key=card_value)
@@ -950,7 +1054,10 @@ def choose_card_basic(
     Kept for backwards compatibility.
     """
     from .baselines import BasicStrategy
-    return BasicStrategy().choose_card(hand, plays_so_far, contract_type, trump_suit, player_index)
+
+    return BasicStrategy().choose_card(
+        hand, plays_so_far, contract_type, trump_suit, player_index
+    )
 
 
 def choose_card_greedy(
@@ -964,4 +1071,6 @@ def choose_card_greedy(
     Legacy function interface for greedy strategy.
     Kept for backwards compatibility.
     """
-    return GreedyStrategy().choose_card(hand, plays_so_far, contract_type, trump_suit, player_index)
+    return GreedyStrategy().choose_card(
+        hand, plays_so_far, contract_type, trump_suit, player_index
+    )
