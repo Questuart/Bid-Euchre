@@ -2,8 +2,7 @@
  * Browser game interactions.
  *
  * Responsibilities:
- * - tap/select a legal card and submit as a single confirm form
- * - auto-submit card plays on non-touch devices
+ * - tap a legal card to play it immediately (all devices)
  * - keep card selection state in sync across HTMX swaps
  */
 (function () {
@@ -24,14 +23,6 @@
             return null;
         }
         return form.querySelector('#selected-card-index');
-    }
-
-    function isLikelyTouchDevice() {
-        return (
-            window.matchMedia('(hover: none), (pointer: coarse)').matches ||
-            ('ontouchstart' in window) ||
-            (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0)
-        );
     }
 
     function clearCardSelection(form) {
@@ -56,7 +47,7 @@
         }
 
         if (help !== null) {
-            help.textContent = 'Tap a card to select it, then tap Play card.';
+            help.textContent = 'Tap a card to play it.';
         }
     }
 
@@ -105,11 +96,7 @@
 
         var help = form.querySelector('#card-play-help');
         if (help !== null) {
-            if (isLikelyTouchDevice()) {
-                help.textContent = 'Card selected. Tap Play card to submit.';
-            } else {
-                help.textContent = 'Card selected. Submitting...';
-            }
+            help.textContent = 'Playing card...';
         }
     }
 
@@ -158,10 +145,7 @@
             }
 
             selectCard(handForm, card);
-
-            if (!isLikelyTouchDevice()) {
-                submitForm(handForm);
-            }
+            submitForm(handForm);
         });
 
         document.body.addEventListener('htmx:afterSwap', function (event) {

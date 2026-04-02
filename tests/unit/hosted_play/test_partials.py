@@ -1562,7 +1562,7 @@ class TestAccessibilityHand:
             legal_plays=[0],
             phase="trick_play",
         )
-        assert 'aria-label="Select A of Spades"' in html
+        assert 'aria-label="Play A of Spades"' in html
 
     def test_illegal_card_has_aria_label(self, env):
         tmpl = env.get_template("partials/hand.html")
