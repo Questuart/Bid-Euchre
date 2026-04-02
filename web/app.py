@@ -180,14 +180,19 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
 
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc: HTTPException) -> HTMLResponse:
-        """Render game-themed 404 page (partial for HTMX, full for browser)."""
+        """Render game-themed 404 page (partial for HTMX, full for browser).
+
+        HTMX 1.x ignores non-2xx responses by default, so HTMX partials
+        are returned with status 200 to ensure the swap occurs.  The error
+        content itself conveys the problem to the user.
+        """
         if _is_htmx(request):
             detail = getattr(exc, "detail", "Not found")
             return HTMLResponse(
                 _error_templates.get_template("errors/htmx_error.html").render(
                     {"request": request, "status_code": 404, "message": str(detail)}
                 ),
-                status_code=404,
+                status_code=200,
             )
         return HTMLResponse(
             _error_templates.get_template("errors/404.html").render(
@@ -198,7 +203,11 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
 
     @app.exception_handler(500)
     async def server_error_handler(request: Request, exc: Exception) -> HTMLResponse:
-        """Render game-themed 500 page (partial for HTMX, full for browser)."""
+        """Render game-themed 500 page (partial for HTMX, full for browser).
+
+        HTMX 1.x ignores non-2xx responses by default, so HTMX partials
+        are returned with status 200 to ensure the swap occurs.
+        """
         logger.exception("Unhandled server error on %s %s", request.method, request.url)
         if _is_htmx(request):
             return HTMLResponse(
@@ -209,7 +218,7 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
                         "message": "Something went wrong. Please try again.",
                     }
                 ),
-                status_code=500,
+                status_code=200,
             )
         return HTMLResponse(
             _error_templates.get_template("errors/500.html").render(

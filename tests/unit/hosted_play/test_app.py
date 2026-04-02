@@ -142,3 +142,11 @@ class TestRouterInclusion:
         with TestClient(app) as client:
             resp = client.get("/nonexistent")
             assert resp.status_code == 404
+
+    def test_htmx_404_returns_200_for_swap(self, tmp_path):
+        """HTMX 1.x ignores non-2xx; error partials must return 200."""
+        app = _make_app(tmp_path)
+        with TestClient(app) as client:
+            resp = client.get("/nonexistent", headers={"HX-Request": "true"})
+            assert resp.status_code == 200
+            assert "htmx-error" in resp.text

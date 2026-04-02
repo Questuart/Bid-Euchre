@@ -148,7 +148,18 @@ def format_metric(value: int | float, fmt: str) -> str:
     - ``"signed_float3"`` — three decimals with +/- sign → ``"+1.234"``
     """
     if fmt == "pct":
-        return f"{value * 100:.0f}%"
+        # Avoid displaying non-perfect rates as 0% or 100%.
+        # Only exact 0.0 should show "0%" and exact 1.0 should show "100%".
+        if value == 0.0:
+            return "0%"
+        if value == 1.0:
+            return "100%"
+        pct = value * 100
+        if pct < 1:
+            return "<1%"
+        if pct > 99:
+            return ">99%"
+        return f"{pct:.0f}%"
     elif fmt == "int":
         return str(int(value))
     elif fmt == "int_games":

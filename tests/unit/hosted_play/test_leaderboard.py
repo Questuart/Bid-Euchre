@@ -688,6 +688,23 @@ class TestFormatMetric:
         assert format_metric(0.666, "pct") == "67%"
         assert format_metric(0.334, "pct") == "33%"
 
+    def test_pct_avoids_false_zero(self):
+        """Non-zero rates should never display as '0%'."""
+        assert format_metric(0.004, "pct") == "<1%"
+        assert format_metric(0.001, "pct") == "<1%"
+        assert format_metric(0.009, "pct") == "<1%"
+
+    def test_pct_avoids_false_hundred(self):
+        """Non-perfect rates should never display as '100%'."""
+        assert format_metric(0.996, "pct") == ">99%"
+        assert format_metric(0.999, "pct") == ">99%"
+        assert format_metric(0.995, "pct") == ">99%"
+
+    def test_pct_boundary_values(self):
+        """Values at exactly 1% and 99% use normal rounding."""
+        assert format_metric(0.01, "pct") == "1%"
+        assert format_metric(0.99, "pct") == "99%"
+
     def test_int_formats_as_integer(self):
         assert format_metric(5, "int") == "5"
         assert format_metric(0, "int") == "0"

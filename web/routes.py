@@ -750,15 +750,24 @@ async def game_page(request: Request, link_uuid: str):
         if player is None:
             raise HTTPException(status_code=404, detail="Game not found")
 
+        # Backfill the reconnect cookie so returning visitors see the
+        # reconnect prompt on the landing page even if they arrived here
+        # via a direct link or bookmark (not the invite-code flow).
+        def _with_cookie(resp: HTMLResponse) -> HTMLResponse:
+            set_player_cookie(resp, link_uuid)
+            return resp
+
         # No nickname yet — show nickname prompt
         if not player.nickname:
-            return templates.TemplateResponse(
-                "game.html",
-                {
-                    "request": request,
-                    "phase": "nickname",
-                    "link_uuid": link_uuid,
-                },
+            return _with_cookie(
+                templates.TemplateResponse(
+                    "game.html",
+                    {
+                        "request": request,
+                        "phase": "nickname",
+                        "link_uuid": link_uuid,
+                    },
+                )
             )
 
         # Show the latest match for this player, including completed matches.
@@ -773,16 +782,18 @@ async def game_page(request: Request, link_uuid: str):
             # No usable match — show model selection
             ai_manager = _get_ai_manager(request)
             models = ai_manager.list_available()
-            return templates.TemplateResponse(
-                "game.html",
-                {
-                    "request": request,
-                    "phase": "model_select",
-                    "link_uuid": link_uuid,
-                    "nickname": player.nickname,
-                    "models": models,
-                    "default_model_id": ai_manager.default_model_id,
-                },
+            return _with_cookie(
+                templates.TemplateResponse(
+                    "game.html",
+                    {
+                        "request": request,
+                        "phase": "model_select",
+                        "link_uuid": link_uuid,
+                        "nickname": player.nickname,
+                        "models": models,
+                        "default_model_id": ai_manager.default_model_id,
+                    },
+                )
             )
 
         # Active or completed match — restore current state
@@ -801,21 +812,23 @@ async def game_page(request: Request, link_uuid: str):
             match_row.completed_at = datetime.now(timezone.utc)
             session.commit()
             models = ai_manager.list_available()
-            return templates.TemplateResponse(
-                "game.html",
-                {
-                    "request": request,
-                    "phase": "model_select",
-                    "link_uuid": link_uuid,
-                    "nickname": player.nickname,
-                    "models": models,
-                    "default_model_id": ai_manager.default_model_id,
-                },
+            return _with_cookie(
+                templates.TemplateResponse(
+                    "game.html",
+                    {
+                        "request": request,
+                        "phase": "model_select",
+                        "link_uuid": link_uuid,
+                        "nickname": player.nickname,
+                        "models": models,
+                        "default_model_id": ai_manager.default_model_id,
+                    },
+                )
             )
         ctx = _build_game_context(engine, state, link_uuid)
         ctx["request"] = request
         ctx["nickname"] = player.nickname
-        return templates.TemplateResponse("game.html", ctx)
+        return _with_cookie(templates.TemplateResponse("game.html", ctx))
     finally:
         session.close()
 
