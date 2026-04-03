@@ -673,3 +673,124 @@ class TestCrossFeatureIntegration:
         assert "result-table" in html, "Expected scoring table"
         assert "result-match-score" in html, "Expected match score display"
         assert "Next Hand" in html, "Expected 'Next Hand' button"
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Current high play indicator
+# ---------------------------------------------------------------------------
+
+
+class TestCurrentHighPlayIndicator:
+    """Verify card--winning class and trick-current-winner text render mid-trick.
+
+    The engine auto-advances AI after human plays, which may complete the
+    trick.  To test mid-trick rendering we look for states where AIs have
+    already played (AI-led trick) before the human's turn — giving us an
+    active trick with plays but not yet complete.  If the human leads,
+    we play the human card first to establish a lead, then check whether
+    the trick still has plays (it may auto-complete via AI).
+    """
+
+    @staticmethod
+    def _get_mid_trick_ctx(
+        engine: MatchEngine,
+    ) -> dict | None:
+        """Try multiple tricks to find a mid-trick state with plays.
+
+        Returns a (ctx, state) tuple or None if no mid-trick found.
+        """
+        state = engine.start_match(SEED, "test")
+        state = advance_to_trick_play(engine, state)
+
+        # Try up to 10 tricks to find a mid-trick state
+        for _ in range(10):
+            hand = state.current_hand
+            if hand is None or hand.phase != "trick_play":
+                return None
+
+            trick = hand.current_trick
+            if trick is not None and len(trick.plays) >= 1:
+                # AI has already played — we have mid-trick state
+                return build_visible_context(engine, state)
+
+            # Human is the leader with 0 plays — play our card
+            if hand.current_seat == HUMAN_SEAT:
+                legal = engine.get_legal_plays(state)
+                state = engine.submit_human_card(state, legal[0])
+
+                hand = state.current_hand
+                if hand is None:
+                    return None
+
+                # Check if we now have a mid-trick (human played but
+                # AI hasn't finished the trick yet)
+                trick = hand.current_trick
+                if trick is not None and len(trick.plays) >= 1:
+                    return build_visible_context(engine, state)
+
+                # Trick completed — try next trick
+                continue
+
+        return None
+
+    @pytest.mark.e2e
+    def test_winning_card_highlight_mid_trick(
+        self, engine: MatchEngine, jinja_env: jinja2.Environment
+    ) -> None:
+        """card--winning class appears on the currently winning card during active trick."""
+        ctx = self._get_mid_trick_ctx(engine)
+        if ctx is None:
+            pytest.skip("Could not reach mid-trick state with this seed")
+
+        tmpl = jinja_env.get_template("partials/trick.html")
+        html = tmpl.render(**ctx)
+
+        assert (
+            "card--winning" in html
+        ), "Expected card--winning class on the currently winning card"
+
+    @pytest.mark.e2e
+    def test_winning_text_label_mid_trick(
+        self, engine: MatchEngine, jinja_env: jinja2.Environment
+    ) -> None:
+        """trick-current-winner text appears during active trick."""
+        ctx = self._get_mid_trick_ctx(engine)
+        if ctx is None:
+            pytest.skip("Could not reach mid-trick state with this seed")
+
+        tmpl = jinja_env.get_template("partials/trick.html")
+        html = tmpl.render(**ctx)
+
+        assert (
+            "trick-current-winner" in html
+        ), "Expected trick-current-winner element in trick HTML"
+        assert (
+            "is winning" in html
+        ), "Expected 'is winning' text in current high play indicator"
+
+    @pytest.mark.e2e
+    def test_no_winning_indicator_on_completed_trick(
+        self, engine: MatchEngine, jinja_env: jinja2.Environment
+    ) -> None:
+        """Winning indicator does not appear on completed tricks."""
+        state = engine.start_match(SEED, "test")
+        state = advance_to_trick_play(engine, state)
+
+        hand = state.current_hand
+        if hand is None or hand.phase != "trick_play":
+            pytest.skip("Seed produced no trick play")
+
+        # Complete one trick
+        state = play_one_trick(engine, state)
+
+        ctx = build_visible_context(engine, state)
+
+        # Render with current_trick=None (showing completed trick)
+        render_ctx = dict(ctx)
+        render_ctx["current_trick"] = None
+        tmpl = jinja_env.get_template("partials/trick.html")
+        html = tmpl.render(**render_ctx)
+
+        assert (
+            "trick-current-winner" not in html
+        ), "trick-current-winner should not appear on completed tricks"

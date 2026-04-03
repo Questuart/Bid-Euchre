@@ -116,6 +116,11 @@
             {{ card_slot(0) }}
         </div>
     </div>
+    {% if current_trick and trick_winning_seat is defined and trick_winning_seat is not none %}
+        <p class="trick-current-winner" aria-live="polite">
+            {% if trick_winning_seat == 0 %}You are{% else %}{{ seat_labels[trick_winning_seat] }} is{% endif %} winning
+        </p>
+    {% endif %}
     {% if display_winner is not none %}
         {% set winning_card = None %}
         {% if completed_tricks %}
