@@ -557,15 +557,26 @@ def _render_game_board(
     engine: MatchEngine,
     state,
     link_uuid: str,
+    *,
+    error_message: str | None = None,
 ) -> str:
     """Render the game board composite partial as an HTML string.
 
     Returns the inner HTML for the ``#game-board`` div — used by HTMX
     partial POST responses.
+
+    Parameters
+    ----------
+    error_message:
+        Optional transient error string displayed as an inline alert
+        above the board (e.g. "Illegal bid").  Cleared on the next
+        normal render.
     """
     templates = _get_templates(request)
     ctx = _build_game_context(engine, state, link_uuid)
     ctx["request"] = request
+    if error_message is not None:
+        ctx["board_error"] = error_message
     return templates.get_template("partials/game_board.html").render(ctx)
 
 
@@ -1075,8 +1086,14 @@ async def submit_bid(
             bid = BidAction.pass_bid()
         else:
             if bid_contract is None:
-                raise HTTPException(
-                    status_code=400, detail="bid_contract required for non-pass bids"
+                return HTMLResponse(
+                    _render_game_board(
+                        request,
+                        engine,
+                        state,
+                        link_uuid,
+                        error_message="Please select a contract type for your bid.",
+                    )
                 )
             if bid_type == "moon":
                 bid = BidAction.moon(bid_contract)
@@ -1091,7 +1108,15 @@ async def submit_bid(
             b.n == bid.n and b.contract == bid.contract and b.bid_type == bid.bid_type
             for b in legal_bids
         ):
-            raise HTTPException(status_code=400, detail="Illegal bid")
+            return HTMLResponse(
+                _render_game_board(
+                    request,
+                    engine,
+                    state,
+                    link_uuid,
+                    error_message="Illegal bid — please choose a valid bid.",
+                )
+            )
 
         # Record pre-action state for decision logging
         pre_turn = hand.turn_number
@@ -1228,7 +1253,15 @@ async def submit_card(
         # Validate legality
         legal_plays = engine.get_legal_plays(state)
         if card_index not in legal_plays:
-            raise HTTPException(status_code=400, detail="Illegal card play")
+            return HTMLResponse(
+                _render_game_board(
+                    request,
+                    engine,
+                    state,
+                    link_uuid,
+                    error_message="Illegal card play — please choose a valid card.",
+                )
+            )
 
         # Record pre-action state for decision logging
         pre_turn = hand.turn_number

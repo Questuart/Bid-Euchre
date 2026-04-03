@@ -636,7 +636,10 @@ class TestInvalidMove:
                         "card_index": 99,  # invalid index
                     },
                 )
-                assert resp.status_code == 400
+                # Returns 200 with the game board + inline error message
+                # instead of a JSON 400 (see #2217).
+                assert resp.status_code == 200
+                assert "Illegal card play" in resp.text
                 return
 
         pytest.fail("Never reached human's trick play turn for invalid move test")

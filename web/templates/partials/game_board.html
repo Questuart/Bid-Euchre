@@ -6,7 +6,16 @@
        - phase: str — "auction", "trick_play", "hand_result", "match_result", "redeal"
        - link_uuid: str — player's game link UUID
        - opp_left_count, partner_count, opp_right_count: int — AI hand card counts
+       - board_error: str (optional) — transient error message to display
 #}
+
+{# ---- Transient error banner (illegal bid / illegal play) ---- #}
+{% if board_error is defined and board_error %}
+<div class="board-error" role="alert" aria-live="assertive">
+    {{ board_error }}
+</div>
+{% endif %}
+
 {% set dealer_seat = dealer_seat if (dealer_seat is defined and dealer_seat is not none) else -1 %}
 {% set bidder_seat = bidder_seat if (bidder_seat is defined and bidder_seat is not none) else -1 %}
 {% set current_seat = current_seat if (current_seat is defined and current_seat is not none) else -1 %}
