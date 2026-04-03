@@ -96,7 +96,7 @@
 
         var help = form.querySelector('#card-play-help');
         if (help !== null) {
-            help.textContent = 'Playing card...';
+            help.textContent = 'Playing card\u2026';
         }
     }
 
@@ -349,7 +349,81 @@
         }
     }
 
+    /* ---------------------------------------------------------------
+     * Card-play request lifecycle — manage in-flight state and
+     * recovery so that stalled requests don't leave the player stuck.
+     * --------------------------------------------------------------- */
+
+    function isCardPlayRequest(event) {
+        var elt = event.detail && event.detail.elt;
+        return elt && (elt.id === 'card-play-form' || (elt.closest && elt.closest('#card-play-form')));
+    }
+
+    function setCardPlayInFlight(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+        form.classList.add('card-play-form--in-flight');
+
+        var submitButton = form.querySelector('#card-play-submit');
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = 'Playing card\u2026';
+        }
+
+        var help = form.querySelector('#card-play-help');
+        if (help) {
+            help.textContent = 'Playing card\u2026';
+        }
+    }
+
+    function resetCardPlayForm() {
+        var form = getCardPlayForm();
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+        form.classList.remove('card-play-form--in-flight');
+
+        var submitButton = form.querySelector('#card-play-submit');
+        if (submitButton) {
+            submitButton.textContent = 'Play card';
+        }
+
+        // Re-enable the button if a card is still selected
+        var input = getSelectedCardInput(form);
+        var hasSelection = input !== null && input.value !== '';
+        if (submitButton) {
+            submitButton.disabled = !hasSelection;
+        }
+
+        var help = form.querySelector('#card-play-help');
+        if (help) {
+            help.textContent = hasSelection
+                ? 'Tap Play card to retry.'
+                : 'Tap a card to play it.';
+        }
+    }
+
     function attachErrorHandlers() {
+        // Card-play request starts — lock the form UI
+        document.body.addEventListener('htmx:beforeRequest', function (event) {
+            if (isCardPlayRequest(event)) {
+                setCardPlayInFlight(getCardPlayForm());
+            }
+        });
+
+        // Card-play request completed (any status) — reset form if error
+        document.body.addEventListener('htmx:afterRequest', function (event) {
+            if (!isCardPlayRequest(event)) {
+                return;
+            }
+            // On success the board swaps (htmx:afterSwap handles cleanup).
+            // On failure, reset the form so the player can retry.
+            if (event.detail.failed || event.detail.successful === false) {
+                resetCardPlayForm();
+            }
+        });
+
         // HTMX response errors (server returned 4xx/5xx)
         document.body.addEventListener('htmx:responseError', function (event) {
             var status = event.detail.xhr ? event.detail.xhr.status : 0;
@@ -373,7 +447,10 @@
         });
 
         // HTMX send errors (network failure, DNS, CORS, etc.)
-        document.body.addEventListener('htmx:sendError', function () {
+        document.body.addEventListener('htmx:sendError', function (event) {
+            if (isCardPlayRequest(event)) {
+                resetCardPlayForm();
+            }
             if (!navigator.onLine) {
                 showOfflineBanner();
             } else {
@@ -381,8 +458,11 @@
             }
         });
 
-        // HTMX timeout
-        document.body.addEventListener('htmx:timeout', function () {
+        // HTMX timeout — reset card-play form for retry
+        document.body.addEventListener('htmx:timeout', function (event) {
+            if (isCardPlayRequest(event)) {
+                resetCardPlayForm();
+            }
             showErrorToast('Request timed out. Please try again.', false);
         });
 

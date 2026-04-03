@@ -265,6 +265,25 @@ class TestGameJSErrorHandling:
         assert "showOfflineBanner" in content
         assert "hideOfflineBanner" in content
 
+    def test_game_js_has_card_play_retry(self):
+        """game.js contains card-play timeout retry functions."""
+        from pathlib import Path
+
+        js_path = (
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "web"
+            / "static"
+            / "game.js"
+        )
+        content = js_path.read_text()
+        assert "isCardPlayRequest" in content
+        assert "setCardPlayInFlight" in content
+        assert "resetCardPlayForm" in content
+        assert "card-play-form--in-flight" in content
+        assert "htmx:beforeRequest" in content
+        assert "htmx:afterRequest" in content
+        assert "Tap Play card to retry." in content
+
     def test_game_js_has_online_offline_handlers(self):
         """game.js registers online/offline event listeners."""
         from pathlib import Path
