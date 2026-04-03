@@ -688,6 +688,70 @@ class TestCheckWorktreeHealth:
         healthy, msg = _check_worktree_health(tmp_path)
         assert healthy is True
 
+    @patch("review_lane_runner.subprocess.run")
+    def test_pull_fails_clean_tree_resets(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """When ff-only pull fails and tree is clean, reset --hard succeeds."""
+        mock_run.side_effect = [
+            # symbolic-ref → on a branch
+            MagicMock(returncode=0, stdout="main\n"),
+            # fetch
+            MagicMock(returncode=0),
+            # rev-list count → 3 behind
+            MagicMock(returncode=0, stdout="3\n"),
+            # pull --ff-only → fails (diverged)
+            MagicMock(returncode=1, stderr="fatal: Not possible to fast-forward"),
+            # git status --porcelain → clean
+            MagicMock(returncode=0, stdout=""),
+            # git reset --hard → success
+            MagicMock(returncode=0),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is True
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_pull_fails_dirty_tree_refuses_reset(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """When ff-only pull fails and tree is dirty, refuse to reset (#2181)."""
+        mock_run.side_effect = [
+            # symbolic-ref → on a branch
+            MagicMock(returncode=0, stdout="main\n"),
+            # fetch
+            MagicMock(returncode=0),
+            # rev-list count → 2 behind
+            MagicMock(returncode=0, stdout="2\n"),
+            # pull --ff-only → fails
+            MagicMock(returncode=1, stderr="fatal: Not possible to fast-forward"),
+            # git status --porcelain → dirty
+            MagicMock(returncode=0, stdout=" M some_file.py\n"),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is False
+        assert "uncommitted" in msg.lower()
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_pull_fails_reset_fails(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """When ff-only pull fails and reset also fails, report error."""
+        mock_run.side_effect = [
+            # symbolic-ref → on a branch
+            MagicMock(returncode=0, stdout="main\n"),
+            # fetch
+            MagicMock(returncode=0),
+            # rev-list count → 1 behind
+            MagicMock(returncode=0, stdout="1\n"),
+            # pull --ff-only → fails
+            MagicMock(returncode=1, stderr="fatal: Not possible to fast-forward"),
+            # git status --porcelain → clean
+            MagicMock(returncode=0, stdout=""),
+            # git reset --hard → fails
+            MagicMock(returncode=1, stderr="error: could not reset"),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is False
+        assert "could not sync" in msg.lower() or "reset" in msg.lower()
+
 
 class TestCleanupStaleLocks:
     """Tests for _cleanup_stale_locks()."""
