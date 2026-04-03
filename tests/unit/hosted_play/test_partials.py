@@ -2407,7 +2407,7 @@ class TestAccessibilityHand:
             phase="auction",
         )
         assert 'role="group"' in html
-        assert "Cards in your hand (2)" in html
+        assert "2 cards in your hand" in html
 
 
 class TestAccessibilityBidPanel:
