@@ -430,6 +430,15 @@ fi
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
     "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $ORCH_CHANNEL_FLAGS
 
+# ---------------------------------------------------------------------------
+# Auto-compact window for non-orchestrator lanes (token economy optimization).
+# Set AFTER the orchestrator pane is created so the orchestrator retains
+# unlimited context.  All panes spawned after this call (ops, review,
+# analysts, authors, browser, flex) inherit the 200K window.
+# See: #2169, Anthropic recommendation for auto-compact.
+# ---------------------------------------------------------------------------
+tmux set-environment -t "$SESSION" CLAUDE_CODE_AUTO_COMPACT_WINDOW "200000"
+
 # Propagate channel config into the tmux session environment so all panes
 # can read it.  Shell `export` only affects the launcher process; tmux panes
 # are spawned by the tmux server and need `set-environment` instead.
