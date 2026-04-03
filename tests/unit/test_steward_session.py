@@ -1000,11 +1000,21 @@ class TestAutoCompactWindow:
 
     def test_auto_compact_window_set_via_tmux_env(self) -> None:
         """CLAUDE_CODE_AUTO_COMPACT_WINDOW must be propagated via tmux set-environment."""
-        content = STEWARD_SCRIPT.read_text()
+        import hashlib
+
+        path = STEWARD_SCRIPT
+        content = path.read_text()
+        content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
         assert (
             'tmux set-environment -t "$SESSION" CLAUDE_CODE_AUTO_COMPACT_WINDOW'
             in content
-        ), "CLAUDE_CODE_AUTO_COMPACT_WINDOW must be set via tmux set-environment"
+        ), (
+            f"CLAUDE_CODE_AUTO_COMPACT_WINDOW must be set via tmux set-environment. "
+            f"Path={path}, exists={path.exists()}, size={len(content)}, "
+            f"hash={content_hash}, "
+            f"REPO_ROOT={REPO_ROOT}, "
+            f"__file__={__file__}"
+        )
 
     def test_auto_compact_window_value_is_200k(self) -> None:
         """Auto-compact window must be set to 200000 tokens."""
