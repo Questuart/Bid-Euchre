@@ -11,7 +11,7 @@ import os
 import jinja2
 import pytest
 
-from web.template_filters import display_rank, effective_suit
+from web.template_filters import display_rank, effective_suit, is_bower
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -37,6 +37,7 @@ def env():
     )
     environment.filters["display_rank"] = display_rank
     environment.filters["effective_suit"] = effective_suit
+    environment.filters["is_bower"] = is_bower
     return environment
 
 
@@ -3185,6 +3186,250 @@ class TestTrickHistory:
         )
         assert 'role="region"' in html
         assert 'aria-label="Cards played history"' in html
+
+
+# ---------------------------------------------------------------------------
+# Bower suit display — left bower shows effective trump suit (#2204)
+# ---------------------------------------------------------------------------
+
+
+class TestBowerDisplay:
+    """Verify bower cards show effective trump suit + badge across all partials.
+
+    The left bower (J of same-colour off-suit) must display the trump suit,
+    not its physical suit.  A bower badge ("B") must be present.
+    Refs: #2204, #2158, #2180.
+    """
+
+    # -- trick.html: played card in trick area --
+
+    def test_left_bower_played_card_shows_trump_suit(self, env):
+        """Left bower in trick card_slot shows trump suit (effective), not physical."""
+        tmpl = env.get_template("partials/trick.html")
+        # J♠ played in a clubs contract — left bower of clubs
+        html = tmpl.render(
+            current_trick={
+                "leader": 1,
+                "plays": [[1, ["H", "A"]], [0, ["S", "J"]]],
+            },
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=2,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            contract_type="suit",
+            trump="C",
+        )
+        # The played card should show clubs (♣), not spades (♠)
+        assert "card--clubs" in html
+        assert "card--bower" in html
+        assert "bower-badge" in html.lower() or "bower" in html.lower()
+
+    def test_right_bower_played_card_shows_trump_suit(self, env):
+        """Right bower in trick card_slot shows trump suit (trivially correct)."""
+        tmpl = env.get_template("partials/trick.html")
+        # J♣ played in a clubs contract — right bower
+        html = tmpl.render(
+            current_trick={
+                "leader": 0,
+                "plays": [[0, ["C", "J"]]],
+            },
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=1,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            contract_type="suit",
+            trump="C",
+        )
+        assert "card--clubs" in html
+        assert "card--bower" in html
+
+    def test_non_bower_jack_no_badge(self, env):
+        """Non-bower J does not get a bower badge."""
+        tmpl = env.get_template("partials/trick.html")
+        # J♦ played in a clubs contract — not a bower (different color)
+        html = tmpl.render(
+            current_trick={
+                "leader": 0,
+                "plays": [[0, ["D", "J"]]],
+            },
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=1,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            contract_type="suit",
+            trump="C",
+        )
+        assert "card--diamonds" in html
+        assert "card--bower" not in html
+
+    # -- hand.html: card in player's hand --
+
+    def test_left_bower_in_hand_shows_trump_suit(self, env):
+        """Left bower in the hand shows trump suit and bower badge."""
+        tmpl = env.get_template("partials/hand.html")
+        # J♦ in a hearts contract — left bower of hearts
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            turn_number=0,
+            human_hand=[["D", "J"], ["H", "A"]],
+            legal_plays=None,
+            phase="trick_play",
+            contract_type="suit",
+            trump="H",
+        )
+        # The J♦ card should show hearts (♥), not diamonds (♦)
+        assert "card--hearts" in html
+        assert "card--bower" in html
+        assert "bower" in html.lower()
+
+    def test_left_bower_legal_card_shows_trump_suit(self, env):
+        """Left bower as a legal play button shows trump suit."""
+        tmpl = env.get_template("partials/hand.html")
+        # J♠ legal in a clubs contract — left bower
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            turn_number=5,
+            human_hand=[["S", "J"]],
+            legal_plays=[0],
+            phase="trick_play",
+            contract_type="suit",
+            trump="C",
+        )
+        # Should show clubs suit, with bower badge
+        assert "card--clubs" in html
+        assert "card--bower" in html
+        assert "(left bower)" in html
+
+    def test_hand_no_bower_without_trump(self, env):
+        """No bower badge when trump is not set (e.g. auction phase)."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            turn_number=0,
+            human_hand=[["S", "J"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert "card--bower" not in html
+
+    # -- trick_history.html: card in history table --
+
+    def test_left_bower_in_history_shows_trump_suit(self, env):
+        """Left bower in trick history shows trump suit."""
+        tmpl = env.get_template("partials/trick_history.html")
+        # J♠ in a clubs contract — left bower
+        html = tmpl.render(
+            completed_tricks=[
+                {
+                    "leader": 0,
+                    "plays": [
+                        [0, ["S", "J"]],  # left bower of clubs
+                        [1, ["C", "A"]],
+                        [2, ["C", "K"]],
+                        [3, ["C", "Q"]],
+                    ],
+                    "winner": 0,
+                },
+            ],
+            tricks_team0=1,
+            tricks_team1=0,
+            contract_type="suit",
+            trump="C",
+        )
+        # Should show ♣ for the left bower, not ♠
+        assert "\u2663" in html  # ♣
+        assert "bower-sup" in html
+
+    # -- moon_exchange.html: exchanged cards --
+
+    def test_left_bower_in_exchange_shows_trump_suit(self, env):
+        """Left bower in moon exchange given cards shows trump suit."""
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            bidder_seat=0,
+            exchange_given=[["S", "J"]],  # left bower of clubs
+            exchange_received=[["C", "A"]],
+            contract_type="suit",
+            trump="C",
+            link_uuid="test-uuid",
+            human_hand=[["C", "K"], ["C", "Q"]],
+        )
+        assert "card--clubs" in html
+        assert "card--bower" in html
+
+    # -- moon_exchange_select.html: selectable cards --
+
+    def test_left_bower_in_exchange_select_shows_trump_suit(self, env):
+        """Left bower in moon exchange selection shows trump suit."""
+        tmpl = env.get_template("partials/moon_exchange_select.html")
+        html = tmpl.render(
+            bidder_seat=0,
+            contract_type="suit",
+            trump="C",
+            link_uuid="test-uuid",
+            human_hand=[["S", "J"], ["C", "A"]],  # left bower + A♣
+            exchange_prompt="Choose 2 cards",
+            is_mooner=True,
+        )
+        assert "card--clubs" in html
+        assert "card--bower" in html
+
+
+class TestIsBowerFilter:
+    """Unit tests for the is_bower template filter."""
+
+    def test_left_bower(self):
+        assert is_bower(["S", "J"], "C", "suit") == "left"
+
+    def test_right_bower(self):
+        assert is_bower(["C", "J"], "C", "suit") == "right"
+
+    def test_non_bower_jack(self):
+        assert is_bower(["D", "J"], "C", "suit") == ""
+
+    def test_non_jack(self):
+        assert is_bower(["C", "A"], "C", "suit") == ""
+
+    def test_no_trump(self):
+        assert is_bower(["S", "J"], None, "suit") == ""
+
+    def test_high_contract(self):
+        assert is_bower(["S", "J"], "C", "high") == ""
+
+    def test_low_contract(self):
+        assert is_bower(["S", "J"], "C", "low") == ""
+
+
+# ---------------------------------------------------------------------------
+# Moon exchange morph — bid panel uses innerHTML swap (#2214)
+# ---------------------------------------------------------------------------
+
+
+class TestBidPanelSwapMode:
+    """Verify bid_panel uses innerHTML swap (not morph) to avoid TypeError (#2214)."""
+
+    def test_bid_panel_uses_innerhtml_swap(self, env):
+        """The bid panel form uses hx-swap='innerHTML' not 'morph:innerHTML'."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=3,
+            bid_type="regular",
+        )
+        assert 'hx-swap="innerHTML"' in html
+        assert "morph" not in html
 
 
 # ---------------------------------------------------------------------------
