@@ -3559,3 +3559,73 @@ class TestDisplayRankFilter:
         assert ">Q<" in html
         assert ">K<" in html
         assert ">A<" in html
+
+
+# ---------------------------------------------------------------------------
+# Score display consistency (#2212)
+# ---------------------------------------------------------------------------
+
+
+class TestScoreDisplayConsistency:
+    """Verify score-value spans appear on hand-result and match-result pages."""
+
+    def test_hand_result_match_score_has_score_value_spans(self, env):
+        """Hand result match score line uses structured score-value spans."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert "score-value" in html
+        assert "score--positive" in html
+
+    def test_hand_result_negative_score_has_negative_class(self, env):
+        """Negative match score renders with score--negative class."""
+        tmpl = env.get_template("partials/hand_result.html")
+        html = tmpl.render(
+            winning_bid=8,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="H",
+            tricks_team0=5,
+            tricks_team1=5,
+            points_team0=-8,
+            points_team1=5,
+            score_human=-8,
+            score_ai=5,
+            hands_played=1,
+        )
+        assert "score--negative" in html
+
+    def test_match_result_score_has_positive_class(self, env):
+        """Match result final score uses score--positive for winning score."""
+        tmpl = env.get_template("partials/match_result.html")
+        html = tmpl.render(
+            link_uuid="x",
+            winner="human",
+            score_human=55,
+            score_ai=30,
+            hands_played=12,
+        )
+        assert "score--positive" in html
+
+    def test_match_result_negative_score_has_negative_class(self, env):
+        """Match result renders score--negative for negative final score."""
+        tmpl = env.get_template("partials/match_result.html")
+        html = tmpl.render(
+            link_uuid="x",
+            winner="ai",
+            score_human=-5,
+            score_ai=52,
+            hands_played=10,
+        )
+        assert "score--negative" in html

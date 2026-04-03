@@ -1652,6 +1652,7 @@ async def leaderboard(request: Request, link_uuid: str):
                 "link_uuid": link_uuid,
                 "current_page": "leaderboard",
                 "nickname": player.nickname,
+                "current_player_id": player.id,
                 "rankings": rankings,
                 "metric_defs": METRIC_DEFINITIONS,
                 "format_metric": format_metric,
