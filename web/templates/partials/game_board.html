@@ -9,6 +9,11 @@
        - board_error: str (optional) — transient error message to display
 #}
 
+{# Hidden data carrier — keeps #game-board data-match-status in sync
+   after innerHTML HTMX swaps (the outer div's attributes are not touched
+   by morph:innerHTML).  game.js reads this on htmx:afterSwap.  #2248 #}
+<span id="match-status-carrier" data-match-status="{{ match_status | default('setup') }}" hidden></span>
+
 {# ---- Transient error banner (illegal bid / illegal play) ---- #}
 {% if board_error is defined and board_error %}
 <div class="board-error" role="alert" aria-live="assertive">

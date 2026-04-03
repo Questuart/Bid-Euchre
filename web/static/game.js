@@ -107,6 +107,21 @@
         htmx.trigger(form, 'submit');
     }
 
+    /**
+     * Sync the outer #game-board data-match-status attribute from the hidden
+     * carrier element inside the swapped innerHTML.  Without this, the
+     * attribute goes stale after HTMX morph:innerHTML swaps (#2248).
+     */
+    function syncMatchStatus(gameBoard) {
+        var carrier = document.getElementById('match-status-carrier');
+        if (carrier) {
+            var status = carrier.getAttribute('data-match-status');
+            if (status) {
+                gameBoard.setAttribute('data-match-status', status);
+            }
+        }
+    }
+
     function attachDelegatedHandlers() {
         document.addEventListener('click', function (event) {
             var target = event.target;
@@ -153,6 +168,7 @@
             if (!(target instanceof Element) || target.id !== 'game-board') {
                 return;
             }
+            syncMatchStatus(target);
             clearCardSelection(getCardPlayForm());
             syncCardPlayFormControls(getCardPlayForm());
             restoreTrickHistoryState();

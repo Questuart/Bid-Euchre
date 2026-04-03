@@ -498,6 +498,10 @@ def _build_game_context(
         visible["completed_tricks"] = []
         visible["tricks_team0"] = 0
         visible["tricks_team1"] = 0
+        # Suppress the turn indicator — current_seat may reflect the first
+        # trick-play turn after auto-advance, which is misleading during the
+        # auction-settle interstitial (#2237).
+        visible["current_seat"] = None
     if hand is not None and hand.phase == "trick_play" and hand.paused_after_trick:
         visible["current_trick"] = None
 
