@@ -75,6 +75,7 @@ TOTAL_HANDS_BUDGETS = {
     "canonical_bidless_dataset_mixed_play": 1_000_000,  # 50k × 6 scenarios × 3 strategies = 900k
     "canonical_bidless_outcomes_matrix_shallow": 500_000,  # 2k × 6 scenarios × 25 matchups = 300k
     "canonical_bidless_outcomes_zoom": 4_000_000,  # 50k × 6 scenarios × 11 matchups = 3.3M
+    "glutton_bower_validation": 50_000,  # 2k × 6 scenarios × 4 matchups = 48k
 }
 
 
