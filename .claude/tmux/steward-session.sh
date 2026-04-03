@@ -439,6 +439,31 @@ tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
 # ---------------------------------------------------------------------------
 tmux set-environment -t "$SESSION" CLAUDE_CODE_AUTO_COMPACT_WINDOW "200000"
 
+# ---------------------------------------------------------------------------
+# Fleet environment flags (#2255, per #2244 + #2249 research).
+# Set via tmux set-environment so all panes inherit them.  Placed after the
+# orchestrator pane so the orchestrator is already running, but before all
+# other panes so every non-orchestrator lane inherits these flags.
+# ---------------------------------------------------------------------------
+
+# Fleet UX: suppress terminal title changes in 19-pane layout
+tmux set-environment -t "$SESSION" CLAUDE_CODE_DISABLE_TERMINAL_TITLE "1"
+
+# Fleet stability: prevent auto-updates during active sessions
+tmux set-environment -t "$SESSION" DISABLE_AUTOUPDATER "1"
+
+# Fleet autonomy: suppress interactive feedback surveys
+tmux set-environment -t "$SESSION" CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY "1"
+
+# Fleet autonomy: suppress cost warning messages
+tmux set-environment -t "$SESSION" DISABLE_COST_WARNINGS "1"
+
+# Fleet resilience: auto-resume interrupted turns
+tmux set-environment -t "$SESSION" CLAUDE_CODE_RESUME_INTERRUPTED_TURN "1"
+
+# Fleet resilience: non-blocking MCP connections for headless startup
+tmux set-environment -t "$SESSION" MCP_CONNECTION_NONBLOCKING "true"
+
 # Propagate channel config into the tmux session environment so all panes
 # can read it.  Shell `export` only affects the launcher process; tmux panes
 # are spawned by the tmux server and need `set-environment` instead.

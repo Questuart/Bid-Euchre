@@ -1079,6 +1079,61 @@ class TestAutoCompactWindow:
         )
 
 
+class TestFleetEnvFlags:
+    """Tests for fleet environment flags in steward-session.sh (#2255)."""
+
+    # The six fleet flags and their expected values.
+    FLEET_FLAGS = {
+        "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1",
+        "DISABLE_AUTOUPDATER": "1",
+        "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+        "DISABLE_COST_WARNINGS": "1",
+        "CLAUDE_CODE_RESUME_INTERRUPTED_TURN": "1",
+        "MCP_CONNECTION_NONBLOCKING": "true",
+    }
+
+    @pytest.mark.parametrize("flag,value", FLEET_FLAGS.items())
+    def test_flag_set_via_tmux_env(self, flag: str, value: str) -> None:
+        """Each fleet flag must be propagated via tmux set-environment."""
+        content = _read_steward_script()
+        expected = f'tmux set-environment -t "$SESSION" {flag} "{value}"'
+        assert (
+            expected in content
+        ), f"{flag} must be set via tmux set-environment with value {value!r}"
+
+    @pytest.mark.parametrize("flag", FLEET_FLAGS)
+    def test_flag_set_after_orchestrator_pane(self, flag: str) -> None:
+        """Fleet flags must appear AFTER the orchestrator pane is created."""
+        content = _read_steward_script()
+        orch_pos = content.find("--agent steward-orchestrator")
+        flag_pos = content.find(flag)
+        assert orch_pos > 0, "Orchestrator pane launch must exist"
+        assert flag_pos > 0, f"{flag} must exist in the script"
+        assert (
+            flag_pos > orch_pos
+        ), f"{flag} must appear AFTER orchestrator pane creation"
+
+    @pytest.mark.parametrize("flag", FLEET_FLAGS)
+    def test_flag_set_before_non_orch_panes(self, flag: str) -> None:
+        """Fleet flags must appear BEFORE the first non-orchestrator pane (ops)."""
+        content = _read_steward_script()
+        flag_pos = content.find(flag)
+        ops_pos = content.find("--name ops")
+        assert flag_pos > 0, f"{flag} must exist in the script"
+        assert ops_pos > 0, "Ops pane launch must exist"
+        assert (
+            flag_pos < ops_pos
+        ), f"{flag} must appear BEFORE the first non-orch pane (ops)"
+
+    @pytest.mark.parametrize("flag", FLEET_FLAGS)
+    def test_flag_not_shell_export(self, flag: str) -> None:
+        """Must use tmux set-environment, not shell export."""
+        content = _read_steward_script()
+        assert (
+            f"export {flag}" not in content
+        ), f"{flag} must not use shell export (tmux panes don't inherit it)"
+
+
 class TestBoundaryValidation:
     """Tests for validate_worktree_path() in steward-session.sh."""
 
