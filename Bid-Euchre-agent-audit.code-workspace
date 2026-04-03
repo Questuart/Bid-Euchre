@@ -5,60 +5,76 @@
       "path": "."
     },
     {
-      "name": "analyst-a",
-      "path": "../Bid-Euchre-steward-analyst"
-    },
-    {
-      "name": "author-a",
-      "path": "../Bid-Euchre-steward-author"
-    },
-    {
-      "name": "author-b",
-      "path": "../Bid-Euchre-steward-author-b"
-    },
-    {
-      "name": "author-c",
-      "path": "../Bid-Euchre-steward-author-c"
-    },
-    {
-      "name": "author-d",
-      "path": "../Bid-Euchre-steward-author-d"
-    },
-    {
-      "name": "browser-a",
-      "path": "../Bid-Euchre-steward-brws-author-a"
-    },
-    {
-      "name": "browser-b",
-      "path": "../Bid-Euchre-steward-brws-author-b"
-    },
-    {
-      "name": "browser-c",
-      "path": "../Bid-Euchre-steward-brws-author-c"
-    },
-    {
-      "name": "browser-d",
-      "path": "../Bid-Euchre-steward-brws-author-d"
-    },
-    {
-      "name": "flex-a",
-      "path": "../Bid-Euchre-steward-flex-a"
-    },
-    {
-      "name": "flex-b",
-      "path": "../Bid-Euchre-steward-flex-b"
-    },
-    {
-      "name": "flex-c",
-      "path": "../Bid-Euchre-steward-flex-c"
-    },
-    {
-      "name": "ops",
+      "name": "orchestrator/ops [control]",
       "path": "../Bid-Euchre-steward-ops"
     },
     {
-      "name": "review",
+      "name": "review [control]",
       "path": "../Bid-Euchre-steward-review"
+    },
+    {
+      "name": "author-a [platform]",
+      "path": "../Bid-Euchre-steward-author"
+    },
+    {
+      "name": "author-b [platform]",
+      "path": "../Bid-Euchre-steward-author-b"
+    },
+    {
+      "name": "author-c [platform]",
+      "path": "../Bid-Euchre-steward-author-c"
+    },
+    {
+      "name": "author-d [platform]",
+      "path": "../Bid-Euchre-steward-author-d"
+    },
+    {
+      "name": "brws-author-a [browser]",
+      "path": "../Bid-Euchre-steward-brws-author-a"
+    },
+    {
+      "name": "brws-author-b [browser]",
+      "path": "../Bid-Euchre-steward-brws-author-b"
+    },
+    {
+      "name": "brws-author-c [browser]",
+      "path": "../Bid-Euchre-steward-brws-author-c"
+    },
+    {
+      "name": "brws-author-d [browser]",
+      "path": "../Bid-Euchre-steward-brws-author-d"
+    },
+    {
+      "name": "analyst-a [analyst]",
+      "path": "../Bid-Euchre-steward-analyst"
+    },
+    {
+      "name": "analyst-b [analyst]",
+      "path": "../Bid-Euchre-steward-analyst-b"
+    },
+    {
+      "name": "analyst-c [analyst]",
+      "path": "../Bid-Euchre-steward-analyst-c"
+    },
+    {
+      "name": "analyst-d [analyst]",
+      "path": "../Bid-Euchre-steward-analyst-d"
+    },
+    {
+      "name": "flex-a [flex]",
+      "path": "../Bid-Euchre-steward-flex-a"
+    },
+    {
+      "name": "flex-b [flex]",
+      "path": "../Bid-Euchre-steward-flex-b"
+    },
+    {
+      "name": "flex-c [flex]",
+      "path": "../Bid-Euchre-steward-flex-c"
+    },
+    {
+      "name": "flex-d [flex]",
+      "path": "../Bid-Euchre-steward-flex-d"
     }
   ],
   "settings": {
@@ -120,9 +136,11 @@
       "charliermarsh.ruff",
       "ms-python.python",
       "eamodio.gitlens",
+      "mhutchie.git-graph",
       "redhat.vscode-yaml",
       "tamasfe.even-better-toml",
-      "samuelcolvin.jinjahtml"
+      "samuelcolvin.jinjahtml",
+      "alexcvzz.vscode-sqlite"
     ]
   }
 }
