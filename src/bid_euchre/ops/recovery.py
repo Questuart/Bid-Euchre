@@ -108,6 +108,37 @@ RECOVERY_TEMPLATES: dict[str, RecoveryTemplate] = {
         ],
         auto_remediable=False,
     ),
+    "auth_failure": RecoveryTemplate(
+        name="Auth Failure",
+        description="Codex CLI or review tool authentication expired or invalid",
+        steps=[
+            "Run `codex login status` to check current auth state",
+            "If expired, run `codex login` interactively to refresh tokens",
+            "Verify with `codex login status` after re-authentication",
+            "Re-trigger the review: `python scripts/internal/review_driver.py "
+            "--pr <N> --trigger manual`",
+        ],
+        auto_remediable=False,
+    ),
+    "review_lane_stall": RecoveryTemplate(
+        name="Review Lane Stall",
+        description="The review lane agent is stuck (detached HEAD, stale lock, "
+        "or permission prompt)",
+        steps=[
+            "Check review lane worktree state: "
+            "`git -C ../Bid-Euchre-steward-review status`",
+            "If detached HEAD: "
+            "`git -C ../Bid-Euchre-steward-review checkout main && "
+            "git -C ../Bid-Euchre-steward-review pull`",
+            "Remove stale lock files: "
+            "`rm -f ../Bid-Euchre-steward-review/.claude/scheduled_tasks.lock`",
+            "Clear the review lane session: "
+            "`tmux send-keys -t steward:review '/clear' Enter`",
+            "Re-nudge the review lane or restart the runner: "
+            "`python scripts/internal/review_lane_runner.py --once`",
+        ],
+        auto_remediable=True,
+    ),
 }
 
 # Map event types to failure severity defaults
@@ -118,6 +149,8 @@ _SEVERITY_MAP: dict[str, str] = {
     "heartbeat_stale": "critical",
     "worktree_quarantined": "warning",
     "escalation": "critical",
+    "auth_failure": "warning",
+    "review_lane_stall": "warning",
 }
 
 # Event types that represent active failures needing attention
@@ -129,6 +162,8 @@ _FAILURE_EVENT_TYPES = frozenset(
         "heartbeat_stale",
         "worktree_quarantined",
         "escalation",
+        "auth_failure",
+        "review_lane_stall",
     }
 )
 
@@ -140,6 +175,8 @@ _RESOLUTION_MAP: dict[str, frozenset[str]] = {
     "heartbeat_ok": frozenset({"heartbeat_stale"}),
     "worktree_archived": frozenset({"worktree_quarantined"}),
     "recovery_action": frozenset({"escalation"}),
+    "auth_recovered": frozenset({"auth_failure"}),
+    "review_lane_recovered": frozenset({"review_lane_stall"}),
 }
 
 

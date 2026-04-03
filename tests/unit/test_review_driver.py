@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "intern
 
 from review_driver import (
     _create_follow_up_issues,
+    _ensure_branch_checkout,
     _format_review_comment,
     _parse_plan_files,
     _should_timeout,
@@ -1675,3 +1676,71 @@ class TestAuthFailureEarlyTermination:
         assert (
             result.current_state != ReviewState.STOPPED_REVIEW_FAILURE
         ), "Normal errors with budget remaining should not stop"
+
+
+# ---------------------------------------------------------------------------
+# _ensure_branch_checkout (#2075)
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureBranchCheckout:
+    """Tests for _ensure_branch_checkout()."""
+
+    @patch("review_driver.subprocess.run")
+    def test_already_on_correct_branch(self, mock_run: MagicMock) -> None:
+        """Returns True immediately when already on the target branch."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="feat/foo\n")
+        result = _ensure_branch_checkout("feat/foo")
+        assert result is True
+        # Only one call (symbolic-ref check)
+        assert mock_run.call_count == 1
+
+    @patch("review_driver.subprocess.run")
+    def test_detached_head_recovery(self, mock_run: MagicMock) -> None:
+        """Detached HEAD triggers fetch + checkout of target branch."""
+        mock_run.side_effect = [
+            # symbolic-ref → detached HEAD
+            MagicMock(returncode=128, stdout="", stderr="fatal"),
+            # fetch origin branch
+            MagicMock(returncode=0),
+            # checkout branch
+            MagicMock(returncode=0),
+        ]
+        result = _ensure_branch_checkout("fix/review-stall")
+        assert result is True
+        assert mock_run.call_count == 3
+
+    @patch("review_driver.subprocess.run")
+    def test_checkout_failure(self, mock_run: MagicMock) -> None:
+        """Returns False when checkout fails."""
+        mock_run.side_effect = [
+            # symbolic-ref → detached HEAD
+            MagicMock(returncode=128, stdout="", stderr="fatal"),
+            # fetch
+            MagicMock(returncode=0),
+            # checkout → fail
+            MagicMock(returncode=1, stderr="error"),
+        ]
+        result = _ensure_branch_checkout("nonexistent-branch")
+        assert result is False
+
+    @patch("review_driver.subprocess.run")
+    def test_wrong_branch_switches(self, mock_run: MagicMock) -> None:
+        """When on a different branch, checks out the target."""
+        mock_run.side_effect = [
+            # symbolic-ref → on "main"
+            MagicMock(returncode=0, stdout="main\n"),
+            # fetch
+            MagicMock(returncode=0),
+            # checkout
+            MagicMock(returncode=0),
+        ]
+        result = _ensure_branch_checkout("feat/new-feature")
+        assert result is True
+
+    @patch("review_driver.subprocess.run")
+    def test_exception_returns_false(self, mock_run: MagicMock) -> None:
+        """Unexpected exceptions return False (non-fatal)."""
+        mock_run.side_effect = OSError("git not found")
+        result = _ensure_branch_checkout("main")
+        assert result is False

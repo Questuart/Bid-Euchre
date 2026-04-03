@@ -17,9 +17,12 @@ if str(_SCRIPTS_DIR) not in sys.path:
 # Import the runner under test (after path setup)
 from review_lane_runner import (
     LANE_ID,
+    _check_worktree_health,
+    _cleanup_stale_locks,
     _parse_review_output,
     _write_error_verdict,
     find_pending_requests,
+    preflight_health_check,
     process_request,
     run_once,
 )
@@ -607,3 +610,194 @@ class TestStuckRunningReclaim:
 
         pending = find_pending_requests(tmp_path)
         assert len(pending) == 0
+
+
+# ---------------------------------------------------------------------------
+# Pre-flight health checks (#2075)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckWorktreeHealth:
+    """Tests for _check_worktree_health()."""
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_healthy_worktree_on_branch(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """Normal branch (not detached) with no commits behind."""
+        mock_run.side_effect = [
+            # symbolic-ref → on a branch
+            MagicMock(returncode=0, stdout="main\n"),
+            # fetch origin main
+            MagicMock(returncode=0),
+            # rev-list count behind
+            MagicMock(returncode=0, stdout="0\n"),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is True
+        assert "healthy" in msg.lower() or "up to date" in msg.lower()
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_detached_head_recovers(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """Detached HEAD with successful checkout main recovery."""
+        mock_run.side_effect = [
+            # symbolic-ref → detached HEAD
+            MagicMock(
+                returncode=128,
+                stdout="",
+                stderr="fatal: ref HEAD is not a symbolic ref",
+            ),
+            # checkout main → success
+            MagicMock(returncode=0),
+            # fetch origin main
+            MagicMock(returncode=0),
+            # rev-list count
+            MagicMock(returncode=0, stdout="0\n"),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is True
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_detached_head_checkout_fails(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """Detached HEAD with failed checkout reports unhealthy."""
+        mock_run.side_effect = [
+            # symbolic-ref → detached HEAD
+            MagicMock(returncode=128, stdout="", stderr="fatal"),
+            # checkout main → fail
+            MagicMock(returncode=1, stderr="error: pathspec 'main' not found"),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is False
+        assert "detached" in msg.lower() or "checkout" in msg.lower()
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_behind_main_pulls(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """Worktree behind main triggers a pull."""
+        mock_run.side_effect = [
+            # symbolic-ref
+            MagicMock(returncode=0, stdout="main\n"),
+            # fetch
+            MagicMock(returncode=0),
+            # rev-list count → 5 behind
+            MagicMock(returncode=0, stdout="5\n"),
+            # pull --ff-only → success
+            MagicMock(returncode=0),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is True
+
+
+class TestCleanupStaleLocks:
+    """Tests for _cleanup_stale_locks()."""
+
+    def test_no_lock_files(self, tmp_path: Path) -> None:
+        removed = _cleanup_stale_locks(tmp_path)
+        assert removed == 0
+
+    def test_stale_lock_removed(self, tmp_path: Path) -> None:
+        """Lock file older than threshold is removed."""
+        import os
+
+        lock_dir = tmp_path / ".claude"
+        lock_dir.mkdir()
+        lock_path = lock_dir / "scheduled_tasks.lock"
+        lock_path.touch()
+        # Age the file to be clearly stale
+        old_time = os.path.getmtime(str(lock_path)) - 600
+        os.utime(str(lock_path), (old_time, old_time))
+
+        removed = _cleanup_stale_locks(tmp_path)
+        assert removed == 1
+        assert not lock_path.exists()
+
+    def test_fresh_lock_kept(self, tmp_path: Path) -> None:
+        """Lock file newer than threshold is preserved."""
+        lock_dir = tmp_path / ".claude"
+        lock_dir.mkdir()
+        lock_path = lock_dir / "scheduled_tasks.lock"
+        lock_path.touch()
+        # File is just created — should be fresh
+
+        removed = _cleanup_stale_locks(tmp_path)
+        assert removed == 0
+        assert lock_path.exists()
+
+
+class TestPreflightHealthCheck:
+    """Tests for preflight_health_check()."""
+
+    @patch("review_lane_runner._check_codex_auth")
+    @patch("review_lane_runner._check_worktree_health")
+    def test_all_checks_pass(
+        self,
+        mock_wt: MagicMock,
+        mock_auth: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_wt.return_value = (True, "Worktree healthy and up to date")
+        mock_auth.return_value = (True, "Logged in")
+
+        results = preflight_health_check(tmp_path)
+        assert len(results) == 3  # worktree, locks, auth
+        assert all(passed for _, passed, _ in results)
+
+    @patch("review_lane_runner._check_codex_auth")
+    @patch("review_lane_runner._check_worktree_health")
+    def test_auth_failure_is_non_fatal(
+        self,
+        mock_wt: MagicMock,
+        mock_auth: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Auth failure is logged but doesn't block processing."""
+        mock_wt.return_value = (True, "OK")
+        mock_auth.return_value = (False, "Not logged in")
+
+        results = preflight_health_check(tmp_path)
+        auth_results = [r for r in results if r[0] == "codex_auth"]
+        assert len(auth_results) == 1
+        assert auth_results[0][1] is False
+
+    @patch("review_lane_runner._check_worktree_health")
+    def test_skip_auth(
+        self,
+        mock_wt: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """skip_auth=True omits the Codex auth check."""
+        mock_wt.return_value = (True, "OK")
+
+        results = preflight_health_check(tmp_path, skip_auth=True)
+        check_names = {name for name, _, _ in results}
+        assert "codex_auth" not in check_names
+
+
+class TestRunOnceWithPreflight:
+    """Verify run_once integrates pre-flight checks."""
+
+    @patch("review_lane_runner.preflight_health_check")
+    def test_run_once_calls_preflight(
+        self,
+        mock_preflight: MagicMock,
+        queue_dir: Path,
+    ) -> None:
+        """run_once calls preflight_health_check by default."""
+        mock_preflight.return_value = [
+            ("worktree_health", True, "OK"),
+            ("lock_cleanup", True, "0 locks"),
+            ("codex_auth", True, "OK"),
+        ]
+        run_once(queue_dir, dry_run=True)
+        mock_preflight.assert_called_once()
+
+    @patch("review_lane_runner.preflight_health_check")
+    def test_run_once_skips_preflight(
+        self,
+        mock_preflight: MagicMock,
+        queue_dir: Path,
+    ) -> None:
+        """run_once with skip_preflight=True does not call preflight."""
+        run_once(queue_dir, dry_run=True, skip_preflight=True)
+        mock_preflight.assert_not_called()
