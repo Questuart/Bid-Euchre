@@ -224,6 +224,7 @@ Hooks are registered across two files:
 - `PostToolUse` (Write|Edit) → `post-write-check.sh`
 - `PostToolUse` (Bash) → `post-bash-dispatch.sh` (consolidated dispatcher)
 - `PostToolUse` (MCP Telegram tools) → `post-telegram-audit.sh` (audit trail)
+- `PermissionDenied` (all) → `permission-denied-log.sh` (denial observability)
 - `UserPromptSubmit` (all) → `alert-inject.sh` (fleet alert injection)
 - `UserPromptSubmit` (all) → `inbound-channel-audit.sh` (inbound Telegram audit)
 
@@ -329,6 +330,34 @@ Since hooks can't change directories, the workflow is:
 4. User restarts Claude in new location
 
 This reduces friction from "manual branch creation + worktree creation + cd" to just "cd + restart".
+
+### `permission-denied-log.sh` (PermissionDenied)
+
+**Trigger:** When the auto-mode classifier denies a tool call (Claude Code v2.1.89+)
+
+**Purpose:** Logs permission denials for ops observability — identifies allowlist
+gaps and monitors for unexpected denials.
+
+**Behavior:**
+1. Reads PermissionDenied JSON payload from stdin (tool_name, reason, tool_input, session_id)
+2. Constructs a JSONL record with timestamp, lane, tool_name, reason, session_id, tool_input
+3. Appends to `.claude/runtime/permission_denials.jsonl` (gitignored)
+4. Returns `retry: false` (lets the denial stand — never overrides safety)
+5. Always exits 0 — never blocks, never crashes
+
+**Limitations:**
+- Only fires in **auto mode** (Team/Enterprise plan). Does NOT fire for:
+  - Manual user denial of permission dialogs
+  - PreToolUse hook blocks (exit 2)
+  - `dontAsk` mode allowlist misses
+  - `permissions.deny` rule matches
+- Forward-looking: useful when the fleet adopts auto mode
+
+**Speed:** ~50ms (bash + jq only, no Python)
+
+**Registration:** `.claude/settings.json` → `PermissionDenied` (timeout: 5s)
+
+**Related:** #2256
 
 ### `alert-inject.sh` / `alert-inject.py` (UserPromptSubmit)
 
