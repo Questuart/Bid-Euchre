@@ -927,11 +927,20 @@ main {
 }
 
 /* Inline card rendering (for trick history table) —
-   all cards white; suit symbols provide identification.
+   suit-colored text for red/black readability (#2235).
    Leader underline and winner highlight remain via cell classes. */
 .card--inline {
     font-weight: 700;
     white-space: nowrap;
+}
+
+.card--inline-hearts,
+.card--inline-diamonds {
+    color: var(--color-red);
+}
+
+.card--inline-spades,
+.card--inline-clubs {
     color: var(--color-text);
 }
 
@@ -1554,6 +1563,30 @@ main {
 .btn--next-hand:hover,
 .btn--next-step:hover {
     background: var(--color-legal-glow);
+}
+
+/* "See Match Results" CTA on the final hand result (#2239) */
+.btn--see-results {
+    background: linear-gradient(135deg, var(--color-felt), #1565c0);
+    color: #fff;
+    font-size: 1.1rem;
+    padding: 0.75rem 2rem;
+}
+
+.btn--see-results:hover {
+    background: linear-gradient(135deg, var(--color-legal-glow), #42a5f5);
+}
+
+/* Match-ending notice shown above the CTA on the final hand result (#2239) */
+.match-ending-notice {
+    text-align: center;
+    margin: 0.5rem 0;
+}
+
+.match-ending-notice__text {
+    font-size: 1.05rem;
+    color: var(--color-text);
+    margin: 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -2776,6 +2809,23 @@ main {
 
 .card-text--spades,
 .card-text--clubs {
+    color: var(--color-text);
+}
+
+/* Reusable suit-icon utility — applies red/black to any inline suit symbol.
+   Use `suit-icon suit-icon--hearts` (or diamonds/spades/clubs) on a <span>
+   wrapping a suit symbol like ♠ ♥ ♦ ♣.  (#2235) */
+.suit-icon {
+    white-space: nowrap;
+}
+
+.suit-icon--hearts,
+.suit-icon--diamonds {
+    color: var(--color-red);
+}
+
+.suit-icon--spades,
+.suit-icon--clubs {
     color: var(--color-text);
 }
 

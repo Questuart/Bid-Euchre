@@ -5,6 +5,7 @@
      - tricks_team1: int — tricks won by AI team
 #}
 {% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
 {% if completed_tricks %}
@@ -38,7 +39,7 @@
                                     {% set card = ns.cards[seat] %}
                                     {% set disp_suit = card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
                                     {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
-                                    <span class="card--inline{% if bower %} card--inline-bower{% endif %}">{{ card[1]|display_rank }}{{ suit_symbols.get(disp_suit, disp_suit) }}{% if bower %}<sup class="bower-sup" title="{{ bower|capitalize }} bower">B</sup>{% endif %}</span>
+                                    <span class="card--inline card--inline-{{ suit_classes.get(disp_suit, 'spades') }}{% if bower %} card--inline-bower{% endif %}">{{ card[1]|display_rank }}{{ suit_symbols.get(disp_suit, disp_suit) }}{% if bower %}<sup class="bower-sup" title="{{ bower|capitalize }} bower">B</sup>{% endif %}</span>
                                 {% else %}
                                     <span class="trick-history__absent" aria-label="Sitting out">&mdash;</span>
                                 {% endif %}

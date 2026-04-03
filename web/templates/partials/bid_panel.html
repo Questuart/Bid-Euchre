@@ -9,6 +9,7 @@
      - bid_type: str — current winning bid type ("regular", "moon", or "loner")
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 {% set bid_type_labels = {"regular": "", "moon": " Moon", "loner": " Loner"} %}
 
@@ -44,7 +45,7 @@
                                 {{ entry.n }}
                             {% endif %}
                             {% if entry.contract in suit_symbols %}
-                                {{ suit_symbols[entry.contract] }}
+                                <span class="suit-icon suit-icon--{{ suit_classes.get(entry.contract, 'spades') }}">{{ suit_symbols[entry.contract] }}</span>
                             {% elif entry.contract == "HIGH" %}
                                 High
                             {% elif entry.contract == "LOW" %}
