@@ -46,7 +46,7 @@
                 </h3>
                 <div class="moon-exchange__card-list" role="list">
                     {% for card in exchange_given_cards %}
-                        {% set disp_suit = card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
+                        {% set disp_suit = card[0] %}
                         {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
                         <div class="card card--{{ suit_classes.get(disp_suit, 'spades') }} card--exchange{% if bower %} card--bower{% endif %}"
                              role="listitem"
@@ -54,7 +54,7 @@
                             <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
                             <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(disp_suit, disp_suit) }}</span>
                             {% if bower %}
-                                <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">B</span>
+                                <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">{{ "RB" if bower == "right" else "LB" }}</span>
                             {% endif %}
                         </div>
                     {% endfor %}
@@ -69,7 +69,7 @@
                 </h3>
                 <div class="moon-exchange__card-list" role="list">
                     {% for card in exchange_received_cards %}
-                        {% set disp_suit = card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
+                        {% set disp_suit = card[0] %}
                         {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
                         <div class="card card--{{ suit_classes.get(disp_suit, 'spades') }} card--exchange card--exchange-received{% if bower %} card--bower{% endif %}"
                              role="listitem"
@@ -77,7 +77,7 @@
                             <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
                             <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(disp_suit, disp_suit) }}</span>
                             {% if bower %}
-                                <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">B</span>
+                                <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">{{ "RB" if bower == "right" else "LB" }}</span>
                             {% endif %}
                         </div>
                     {% endfor %}
@@ -92,7 +92,7 @@
             <h3 class="moon-exchange__group-title">Your Hand</h3>
             <div class="moon-exchange__card-list" role="list">
                 {% for card in human_hand %}
-                    {% set disp_suit = card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
+                    {% set disp_suit = card[0] %}
                     {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
                     <div class="card card--{{ suit_classes.get(disp_suit, 'spades') }} card--hand{% if bower %} card--bower{% endif %}"
                          role="listitem"
@@ -100,7 +100,7 @@
                         <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
                         <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(disp_suit, disp_suit) }}</span>
                         {% if bower %}
-                            <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">B</span>
+                            <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">{{ "RB" if bower == "right" else "LB" }}</span>
                         {% endif %}
                     </div>
                 {% endfor %}
