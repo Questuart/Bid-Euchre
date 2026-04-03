@@ -921,6 +921,20 @@ async def game_page(request: Request, link_uuid: str):
                 )
             )
 
+        # Onboarding not yet complete — show welcome letter
+        if not player.onboarding_complete:
+            return _with_cookie(
+                _render_game(
+                    {
+                        "request": request,
+                        "phase": "onboarding_welcome",
+                        "link_uuid": link_uuid,
+                        "nickname": player.nickname,
+                        "current_page": "game",
+                    },
+                )
+            )
+
         # Prefer the most recent *active* match so the reconnect prompt
         # on the landing page and the game page agree.  Fall back to any
         # match (e.g. completed) when no active match exists.  (#2056)
@@ -1009,7 +1023,19 @@ async def set_nickname(
         player.nickname = nickname
         session.commit()
 
-        # Return model selection form (HTMX partial)
+        # New player → show onboarding welcome letter
+        if not player.onboarding_complete:
+            return HTMLResponse(
+                templates.get_template("partials/onboarding_welcome.html").render(
+                    {
+                        "request": request,
+                        "link_uuid": link_uuid,
+                        "nickname": nickname,
+                    }
+                )
+            )
+
+        # Returning player (onboarding already complete) → model selection
         ai_manager = _get_ai_manager(request)
         models = ai_manager.list_available()
         return HTMLResponse(
@@ -1018,6 +1044,99 @@ async def set_nickname(
                     "request": request,
                     "link_uuid": link_uuid,
                     "nickname": nickname,
+                    "models": models,
+                    "default_model_id": ai_manager.default_model_id,
+                }
+            )
+        )
+    finally:
+        session.close()
+
+
+# Total number of onboarding guide steps (0-indexed pages within the guide).
+_ONBOARDING_GUIDE_STEPS = 3
+
+
+@router.post("/play/{link_uuid}/onboarding/next", response_class=HTMLResponse)
+async def onboarding_next(
+    request: Request,
+    link_uuid: str,
+    step: int = Form(0),
+):
+    """Advance through onboarding steps.
+
+    Step 0 = welcome letter (already shown) → returns guide step 1.
+    Steps 1..N = guide walkthrough pages.
+    After the last guide step, marks onboarding complete and returns model
+    selection.
+    """
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        next_step = step + 1
+
+        # Past the last guide step → complete onboarding
+        if next_step > _ONBOARDING_GUIDE_STEPS:
+            player.onboarding_complete = 1
+            session.commit()
+            ai_manager = _get_ai_manager(request)
+            models = ai_manager.list_available()
+            return HTMLResponse(
+                templates.get_template("partials/model_select.html").render(
+                    {
+                        "request": request,
+                        "link_uuid": link_uuid,
+                        "nickname": player.nickname,
+                        "models": models,
+                        "default_model_id": ai_manager.default_model_id,
+                    }
+                )
+            )
+
+        # Show the next guide step
+        return HTMLResponse(
+            templates.get_template("partials/onboarding_guide.html").render(
+                {
+                    "request": request,
+                    "link_uuid": link_uuid,
+                    "nickname": player.nickname,
+                    "step": next_step,
+                    "total_steps": _ONBOARDING_GUIDE_STEPS,
+                }
+            )
+        )
+    finally:
+        session.close()
+
+
+@router.post("/play/{link_uuid}/onboarding/skip", response_class=HTMLResponse)
+async def onboarding_skip(
+    request: Request,
+    link_uuid: str,
+):
+    """Skip remaining onboarding and go directly to model selection."""
+    templates = _get_templates(request)
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        player.onboarding_complete = 1
+        session.commit()
+
+        ai_manager = _get_ai_manager(request)
+        models = ai_manager.list_available()
+        return HTMLResponse(
+            templates.get_template("partials/model_select.html").render(
+                {
+                    "request": request,
+                    "link_uuid": link_uuid,
+                    "nickname": player.nickname,
                     "models": models,
                     "default_model_id": ai_manager.default_model_id,
                 }

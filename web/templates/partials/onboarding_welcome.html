@@ -1,0 +1,51 @@
+{# Onboarding welcome letter partial — first-time player greeting.
+   Shown after nickname is set for new players (onboarding_complete == 0).
+
+   Context variables:
+     - link_uuid: str — player's game link UUID
+     - nickname: str — player's display nickname
+#}
+<div id="onboarding" class="onboarding" role="region" aria-label="Welcome">
+    <div class="onboarding__card">
+        <h2 class="onboarding__title">Welcome, {{ nickname }}!</h2>
+
+        <div class="onboarding__letter">
+            <p>Thanks for joining the Bid Euchre pilot!</p>
+            <p>
+                You're about to play a classic Midwestern card game against
+                AI opponents. Your partner is an AI too &mdash; together
+                you'll bid, play tricks, and race to 52 points.
+            </p>
+            <p>
+                This is an early version of the game, so your feedback
+                matters. If something feels off or confusing, let us know
+                in the comments section.
+            </p>
+            <p>
+                Before your first game, we'll walk you through the basics.
+                It only takes a minute &mdash; or you can skip ahead if you
+                already know how to play.
+            </p>
+        </div>
+
+        <div class="onboarding__actions">
+            <button type="button"
+                    class="onboarding__btn onboarding__btn--primary"
+                    hx-post="/play/{{ link_uuid }}/onboarding/next"
+                    hx-vals='{"step": 0}'
+                    hx-target="#game-board"
+                    hx-swap="morph:innerHTML"
+                    aria-label="Continue to game guide">
+                Show Me How to Play
+            </button>
+            <button type="button"
+                    class="onboarding__btn onboarding__btn--skip"
+                    hx-post="/play/{{ link_uuid }}/onboarding/skip"
+                    hx-target="#game-board"
+                    hx-swap="morph:innerHTML"
+                    aria-label="Skip guide and start playing">
+                I Know How to Play &mdash; Skip
+            </button>
+        </div>
+    </div>
+</div>

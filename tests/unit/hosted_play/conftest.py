@@ -219,10 +219,13 @@ def create_test_player(session: Session, **overrides: Any) -> Player:
     """Insert a Player with sensible defaults.
 
     Override any column by passing keyword arguments.
+    Default ``onboarding_complete=1`` so tests bypass onboarding unless
+    explicitly testing it.
     """
     defaults: dict[str, Any] = {
         "link_uuid": str(uuid.uuid4()),
         "nickname": "TestPlayer",
+        "onboarding_complete": 1,
     }
     defaults.update(overrides)
     player = Player(**defaults)

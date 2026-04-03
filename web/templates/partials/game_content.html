@@ -14,9 +14,15 @@
 <div id="game-board" role="region" aria-label="Game board" aria-live="polite"
      data-match-status="{{ match_status | default('setup') }}">
 
-    {# ---- Setup phases: nickname & model selection ---- #}
+    {# ---- Setup phases: nickname, onboarding & model selection ---- #}
     {% if phase == "nickname" %}
         {% include "partials/nickname_form.html" %}
+
+    {% elif phase == "onboarding_welcome" %}
+        {% include "partials/onboarding_welcome.html" %}
+
+    {% elif phase == "onboarding_guide" %}
+        {% include "partials/onboarding_guide.html" %}
 
     {% elif phase == "model_select" %}
         {% include "partials/model_select.html" %}

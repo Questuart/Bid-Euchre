@@ -58,8 +58,12 @@ def client(app):
 
 
 def _create_player(session, nickname="TestPlayer") -> Player:
-    """Insert a Player row."""
-    player = Player(link_uuid=str(uuid.uuid4()), nickname=nickname)
+    """Insert a Player row (onboarding already complete)."""
+    player = Player(
+        link_uuid=str(uuid.uuid4()),
+        nickname=nickname,
+        onboarding_complete=1,
+    )
     session.add(player)
     session.flush()
     return player
