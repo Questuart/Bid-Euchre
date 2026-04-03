@@ -960,6 +960,22 @@ main {
     color: rgba(255, 255, 255, 0.2);
 }
 
+/* Bower abbreviation legend (RB/LB) — shown in suit contracts only */
+.trick-history__legend {
+    margin: 0.4rem 0 0;
+    font-size: 0.68rem;
+    color: var(--color-text-muted);
+    text-align: right;
+}
+
+.trick-history__legend abbr {
+    font-weight: 700;
+    color: var(--color-trump, #ffd700);
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    cursor: help;
+}
+
 /* Inline card rendering (for trick history table) —
    rank text stays default (white); suit icon colored via .suit-icon utility
    (#2235, #2289).  Leader underline and winner highlight remain via cell

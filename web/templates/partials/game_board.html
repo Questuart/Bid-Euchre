@@ -28,7 +28,7 @@
 {% set show_next = show_next | default(false, true) %}
 {% set show_bid_panel = show_bid_panel | default(false, true) %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
-{# Trick leader for phase-dependent "Lead Trick" labels on compass seats #}
+{# Trick leader for phase-dependent "Leader" labels on compass seats #}
 {% set trick_leader = None %}
 {% if current_trick is defined and current_trick %}
     {% set trick_leader = current_trick.get("leader") if current_trick is mapping else current_trick.leader %}
@@ -68,7 +68,7 @@
                     {% if phase == "auction" and dealer_seat == 2 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
                     {% elif phase == "trick_play" and trick_leader == 2 %}
-                        <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
+                        <span class="seat-marker seat-marker--leader" title="Leader">Leader</span>
                     {% endif %}
                     {% if sitting_out_seat == 2 %}
                         <span class="seat-marker seat-marker--sitting-out" title="Sitting out">Sitting Out</span>
@@ -91,7 +91,7 @@
                     {% if phase == "auction" and dealer_seat == 1 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
                     {% elif phase == "trick_play" and trick_leader == 1 %}
-                        <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
+                        <span class="seat-marker seat-marker--leader" title="Leader">Leader</span>
                     {% endif %}
                     {% if sitting_out_seat == 1 %}
                         <span class="seat-marker seat-marker--sitting-out" title="Sitting out">Sitting Out</span>
@@ -137,7 +137,7 @@
                     {% if phase == "auction" and dealer_seat == 3 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
                     {% elif phase == "trick_play" and trick_leader == 3 %}
-                        <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
+                        <span class="seat-marker seat-marker--leader" title="Leader">Leader</span>
                     {% endif %}
                     {% if sitting_out_seat == 3 %}
                         <span class="seat-marker seat-marker--sitting-out" title="Sitting out">Sitting Out</span>
@@ -162,7 +162,7 @@
             {% elif phase == "trick_play" and trick_leader == 0 %}
                 <div class="human-seat-label" role="status" aria-label="You lead this trick">
                     You
-                    <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
+                    <span class="seat-marker seat-marker--leader" title="Leader">Leader</span>
                 </div>
             {% endif %}
             {# Human hand — always shown during active play #}

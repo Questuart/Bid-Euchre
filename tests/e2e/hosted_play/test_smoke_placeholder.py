@@ -94,7 +94,7 @@ class TestLeadIndicator:
     def test_leader_seat_marker_present(
         self, engine: MatchEngine, jinja_env: jinja2.Environment
     ) -> None:
-        """The 'Lead Trick' marker renders next to the trick leader's seat."""
+        """The 'Leader' marker renders next to the trick leader's seat."""
         state = engine.start_match(SEED, "test")
         state = advance_to_trick_play(engine, state)
 
@@ -107,9 +107,7 @@ class TestLeadIndicator:
         html = tmpl.render(**ctx)
 
         assert "seat-marker--leader" in html, "Expected leader marker in trick HTML"
-        assert (
-            'title="Lead Trick"' in html
-        ), "Expected 'Lead Trick' title attribute on marker"
+        assert 'title="Leader"' in html, "Expected 'Leader' title attribute on marker"
 
     @pytest.mark.e2e
     def test_lead_suit_matches_first_card_suit(
