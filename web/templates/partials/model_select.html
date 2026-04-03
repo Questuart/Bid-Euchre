@@ -8,7 +8,7 @@
 <div id="model-select" role="region" aria-label="Choose AI opponent">
     <h2>Welcome, {{ nickname }}!</h2>
     <p>Choose your AI opponent:</p>
-    <p class="match-target">First to &plusmn;52 wins</p>
+    <p class="match-target">First to 52 wins &middot; &minus;52 = loss</p>
     <form method="post"
           action="/play/{{ link_uuid }}/select-ai"
           hx-post="/play/{{ link_uuid }}/select-ai"
@@ -41,7 +41,7 @@
         <p>&#x1F0A1; You and your AI partner vs two AI opponents.</p>
         <p>&#x270B; Bid how many tricks your team can win, or pass.</p>
         <p>&#x1F3B4; Play cards by clicking them &mdash; <strong>green border</strong> = legal plays.</p>
-        <p>&#x1F3C6; First team to &plusmn;52 points wins the match.</p>
+        <p>&#x1F3C6; First team to 52 points wins. Reaching &minus;52 means you lose!</p>
         <p class="quick-start-guide__link">
             <a href="/guide/{{ link_uuid }}">Read the full guide &rarr;</a>
         </p>
