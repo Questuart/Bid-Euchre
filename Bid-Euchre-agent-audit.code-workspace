@@ -90,7 +90,7 @@
         "request": "launch",
         "module": "uvicorn",
         "args": [
-          "bid_euchre.web.app:create_app",
+          "web.app:create_app",
           "--factory",
           "--reload",
           "--host", "127.0.0.1",
@@ -130,9 +130,8 @@
         "name": "Run Experiment (quick_test, seed 42)",
         "type": "debugpy",
         "request": "launch",
-        "module": "bid_euchre",
+        "program": "${workspaceFolder:main}/experiments/run_experiment.py",
         "args": [
-          "experiments/run_experiment.py",
           "--config", "experiments/configs/quick_test.yaml",
           "--seed", "42"
         ],
