@@ -1519,6 +1519,25 @@ main {
     min-width: 120px;
 }
 
+.btn--skip {
+    min-width: 80px;
+    background: var(--color-text-muted);
+    color: #fff;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+}
+
+.btn--skip:hover {
+    background: var(--color-felt);
+}
+
+.next-controls__buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    align-items: center;
+}
+
 .hands-count {
     font-size: 0.8rem;
     color: var(--color-text-muted);

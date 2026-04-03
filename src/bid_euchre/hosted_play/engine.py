@@ -535,6 +535,46 @@ class MatchEngine:
         self.last_ai_events = []
         return self._advance_ai(state)
 
+    def resume_after_play(self, state: MatchState) -> MatchState:
+        """Continue AI advancement after a per-card reveal pause.
+
+        Clears the ``paused_after_play`` flag and re-enters the auto-play
+        loop.  The loop will play one more AI card and pause again, or
+        return immediately if the next turn is the human's.
+        """
+        hand = state.current_hand
+        if hand is not None:
+            hand.paused_after_play = False
+        self.last_ai_events = []
+        return self._advance_ai(state)
+
+    def skip_to_next_decision(self, state: MatchState) -> MatchState:
+        """Skip all per-card reveal pauses and advance to the next decision.
+
+        Clears both ``paused_after_play`` and ``paused_after_trick`` flags
+        and advances AI until the next human turn, trick completion, or
+        hand/match end.  Used by the "Skip" button for experienced players.
+        """
+        self.last_ai_events = []
+        while True:
+            hand = state.current_hand
+            if hand is None:
+                return state
+            if state.status == "complete":
+                return state
+            if hand.phase != "trick_play":
+                return state
+            if hand.paused_after_play:
+                hand.paused_after_play = False
+                state = self._advance_ai(state)
+                continue
+            if hand.paused_after_trick:
+                # Reached a trick completion — pause here for the player
+                # to see which trick was won.
+                return state
+            # Not paused — either human's turn or hand ended
+            return state
+
     def _advance_ai(self, state: MatchState) -> MatchState:
         """Auto-play AI turns, pausing at every natural stopping point.
 
@@ -662,8 +702,9 @@ class MatchEngine:
 
                 state = self._process_card_play(state, seat, card_idx)
 
-                # After an AI card play, check if a trick just completed.
-                # If so, pause to let the UI show the result.
+                # After an AI card play, always pause for per-card reveal.
+                # If the trick just completed, use paused_after_trick; otherwise
+                # use paused_after_play so the UI reveals one card at a time.
                 hand_after = state.current_hand
                 if (
                     hand_after is not None
@@ -671,6 +712,11 @@ class MatchEngine:
                 ):
                     if hand_after.phase == "trick_play":
                         hand_after.paused_after_trick = True
+                    return state
+
+                # Trick still in progress — pause for per-card reveal.
+                if hand_after is not None and hand_after.phase == "trick_play":
+                    hand_after.paused_after_play = True
                     return state
             else:
                 # Unexpected phase — bail to avoid infinite loop

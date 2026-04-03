@@ -96,6 +96,7 @@ class HandState:
     current_trick: TrickState | None = None
     completed_tricks: list[TrickResult] = field(default_factory=list)
     paused_after_trick: bool = False
+    paused_after_play: bool = False  # True when paused after a single AI card play
     bid_type: str = "regular"  # "regular" | "moon" | "loner"
     sitting_out_seat: int | None = None  # loner: partner sits out
     exchange_given: list[list[str]] | None = None  # moon: cards given to partner
@@ -137,6 +138,7 @@ class HandState:
             ),
             "completed_tricks": [trick.to_dict() for trick in self.completed_tricks],
             "paused_after_trick": self.paused_after_trick,
+            "paused_after_play": self.paused_after_play,
             "tricks_team0": self.tricks_team0,
             "tricks_team1": self.tricks_team1,
             "points_team0": self.points_team0,
@@ -187,6 +189,7 @@ class HandState:
                 for trick in data.get("completed_tricks", [])
             ],
             paused_after_trick=bool(data.get("paused_after_trick", False)),
+            paused_after_play=bool(data.get("paused_after_play", False)),
             tricks_team0=int(data.get("tricks_team0", 0)),
             tricks_team1=int(data.get("tricks_team1", 0)),
             points_team0=int(data.get("points_team0", 0)),
