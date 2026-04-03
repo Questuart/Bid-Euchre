@@ -30,6 +30,7 @@ from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine, sort_hand_for
 from bid_euchre.strategy.bidding import BidAction
 
 from .ai_manager import AIManager
+from .cleanup import expire_player_stale_matches
 from .db import Comment, Decision, Hand, InviteCode, Match, Player
 from .leaderboard import METRIC_DEFINITIONS, format_metric, get_leaderboard
 from .middleware import (
@@ -350,6 +351,12 @@ def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
     """Build the auction-log event feed from auction/trick/redeal transitions.
 
     The list is capped to the most recent 12 entries for compact rendering.
+
+    Auction entries are sourced from ``state.current_hand.auction`` (the full
+    persisted transcript) rather than ``visible["auction"]`` which may be
+    sliced during the hidden-auction reveal phase.  The *visible* dict
+    continues to be used for tricks and other fields.  This ensures a page
+    refresh never loses already-revealed auction entries (#2207).
     """
     hand = state.current_hand
     if hand is None:
@@ -358,7 +365,11 @@ def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
     events: list[dict[str, str]] = []
 
     # Auction activity (in order).
-    for entry in visible.get("auction", []):
+    # Use the full persisted auction from the hand state, sliced to the
+    # revealed count, so a page refresh cannot drop entries (#2207).
+    full_auction = list(hand.auction)
+    revealed = full_auction[: hand.revealed_auction_count]
+    for entry in revealed:
         events.append(
             {
                 "kind": "auction",
@@ -436,6 +447,15 @@ def _build_game_context(
     visible = engine.get_visible_state(state)
     hand = state.current_hand
     phase = _game_phase(state)
+
+    # Defensive normalization: when the auction is settled (or we're past
+    # auction), ensure revealed_auction_count covers the full auction.
+    # Without this a stale revealed_auction_count could cause _build_action_rail
+    # to omit entries that were already shown before a page refresh (#2207).
+    if hand is not None and hand.auction_settled and not _has_hidden_auction(hand):
+        hand.revealed_auction_count = max(
+            hand.revealed_auction_count, len(hand.auction)
+        )
 
     if hand is not None and _has_hidden_auction(hand):
         visible["auction"] = visible.get("auction", [])[: hand.revealed_auction_count]
@@ -986,6 +1006,11 @@ async def select_ai(
         player = session.query(Player).filter_by(link_uuid=link_uuid).first()
         if player is None:
             raise HTTPException(status_code=404, detail="Game not found")
+
+        # Clean up stale matches before the rate-limit check so orphaned
+        # matches from previous sessions don't permanently block the player
+        # from starting new games (#2211).
+        expire_player_stale_matches(session, player.id)
 
         # Rate limit — max active matches per player
         if not check_match_limit(session, player_id=player.id):

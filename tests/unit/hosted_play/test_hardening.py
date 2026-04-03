@@ -18,7 +18,12 @@ from starlette.testclient import TestClient
 
 from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.app import _run_self_test, create_app
-from web.cleanup import DEFAULT_MAX_MATCH_AGE, expire_stale_matches
+from web.cleanup import (
+    DEFAULT_MAX_MATCH_AGE,
+    PLAYER_STALE_MATCH_AGE,
+    expire_player_stale_matches,
+    expire_stale_matches,
+)
 from web.db import (
     Match,
     Player,
@@ -449,3 +454,100 @@ class TestStartupCleanup:
                 assert match.status == "abandoned"
             finally:
                 session.close()
+
+
+# ===================================================================
+# 4. Per-Player Stale Match Cleanup (#2211)
+# ===================================================================
+
+
+class TestPlayerStaleMatchCleanup:
+    """Per-player stale match cleanup on match creation."""
+
+    def test_expire_player_stale_matches_basic(self):
+        """Stale matches for a specific player are abandoned."""
+        engine = init_engine("sqlite:///:memory:")
+        create_tables(engine)
+        sf = make_session_factory(engine)
+        session = sf()
+
+        player = _create_player(session)
+        # Create a stale match (3 hours old — exceeds 2h threshold)
+        stale = _create_match(session, player.id)
+        stale.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+        # Create a fresh match (30 min old — within threshold)
+        fresh = _create_match(session, player.id)
+        fresh.created_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+        session.commit()
+
+        count = expire_player_stale_matches(session, player.id)
+        session.commit()
+
+        assert count == 1
+        session.refresh(stale)
+        session.refresh(fresh)
+        assert stale.status == "abandoned"
+        assert fresh.status == "active"
+        session.close()
+
+    def test_expire_player_stale_only_affects_own_matches(self):
+        """Cleanup only affects the target player's matches."""
+        engine = init_engine("sqlite:///:memory:")
+        create_tables(engine)
+        sf = make_session_factory(engine)
+        session = sf()
+
+        player_a = _create_player(session)
+        player_b = _create_player(session)
+        # Both have stale matches
+        stale_a = _create_match(session, player_a.id)
+        stale_a.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+        stale_b = _create_match(session, player_b.id)
+        stale_b.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+        session.commit()
+
+        # Expire only player_a's matches
+        count = expire_player_stale_matches(session, player_a.id)
+        session.commit()
+
+        assert count == 1
+        session.refresh(stale_a)
+        session.refresh(stale_b)
+        assert stale_a.status == "abandoned"
+        assert stale_b.status == "active"  # Untouched
+        session.close()
+
+    def test_player_cleanup_default_threshold(self):
+        """Default threshold is 2 hours."""
+        assert PLAYER_STALE_MATCH_AGE == timedelta(hours=2)
+
+    def test_cleanup_runs_before_rate_limit_on_select_ai(self, tmp_path):
+        """Stale matches are cleaned up before rate limit check in select_ai (#2211)."""
+        db_path = tmp_path / "test.db"
+        db_url = f"sqlite:///{db_path}"
+
+        # Pre-populate: create a player with MAX active matches, all stale
+        db_engine = init_engine(db_url)
+        create_tables(db_engine)
+        sf = make_session_factory(db_engine)
+        session = sf()
+        player = _create_player(session)
+        for _ in range(MAX_ACTIVE_MATCHES_PER_PLAYER):
+            m = _create_match(session, player.id)
+            m.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+        session.commit()
+        link_uuid = player.link_uuid
+        session.close()
+        db_engine.dispose()
+
+        # Start the app and try to select AI — should succeed because stale
+        # matches are cleaned up before the rate limit check.
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with TestClient(app) as client:
+            resp = client.post(
+                f"/play/{link_uuid}/select-ai",
+                data={"model_id": "bud_bot"},
+            )
+            # Should succeed (200), not be rate-limited (429)
+            assert resp.status_code == 200
