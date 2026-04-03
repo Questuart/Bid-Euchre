@@ -259,6 +259,34 @@ main {
     animation: winning-card-pulse 2s ease-in-out infinite;
 }
 
+/* Bower badge — small "B" indicator on bower cards (#2204) */
+.card--bower {
+    position: relative;
+}
+
+.card__bower-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    font-size: 0.55rem;
+    font-weight: 700;
+    line-height: 1;
+    background: var(--color-trump, #ffd700);
+    color: #000;
+    border-radius: 3px;
+    padding: 1px 3px;
+    pointer-events: none;
+    opacity: 0.9;
+}
+
+/* Inline bower superscript in trick history */
+.bower-sup {
+    font-size: 0.65em;
+    font-weight: 700;
+    color: var(--color-trump, #ffd700);
+    margin-left: 1px;
+}
+
 /* "X is winning" text below the trick center during active tricks */
 .trick-current-winner {
     font-size: 0.85rem;

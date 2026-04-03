@@ -36,8 +36,9 @@
                             <td class="trick-history__cell{% if seat == trick.winner %} trick-history__cell--winner{% endif %}{% if seat == trick.leader %} trick-history__cell--leader{% endif %}">
                                 {% if seat in ns.cards %}
                                     {% set card = ns.cards[seat] %}
-                                    {% set suit = card[0] %}
-                                    <span class="card--inline">{{ card[1]|display_rank }}{{ suit_symbols.get(suit, suit) }}</span>
+                                    {% set disp_suit = card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
+                                    {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
+                                    <span class="card--inline{% if bower %} card--inline-bower{% endif %}">{{ card[1]|display_rank }}{{ suit_symbols.get(disp_suit, disp_suit) }}{% if bower %}<sup class="bower-sup" title="{{ bower|capitalize }} bower">B</sup>{% endif %}</span>
                                 {% else %}
                                     <span class="trick-history__absent" aria-label="Sitting out">&mdash;</span>
                                 {% endif %}

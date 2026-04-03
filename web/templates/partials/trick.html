@@ -55,13 +55,17 @@
 {% macro card_slot(seat, fallback_class="card-slot--empty", show_label=true) %}
     {% if seat in ns.cards %}
         {% set card = ns.cards[seat] %}
-        {% set suit = card[0] %}
+        {% set disp_suit = card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
+        {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
         {% set is_winning = (current_trick is not none and trick_winning_seat is defined and trick_winning_seat == seat) %}
-        <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played{% if is_winning %} card--winning{% endif %}"
+        <div class="card card--{{ suit_classes.get(disp_suit, 'spades') }} card--played{% if is_winning %} card--winning{% endif %}{% if bower %} card--bower{% endif %}"
              role="img"
-             aria-label="{{ seat_labels[seat] }} played {{ card[1]|display_rank }} of {{ suit_names.get(suit, suit) }}{% if is_winning %} (currently winning){% endif %}">
+             aria-label="{{ seat_labels[seat] }} played {{ card[1]|display_rank }} of {{ suit_names.get(disp_suit, disp_suit) }}{% if bower %} ({{ bower }} bower){% endif %}{% if is_winning %} (currently winning){% endif %}">
             <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
-            <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
+            <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(disp_suit, disp_suit) }}</span>
+            {% if bower %}
+                <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">B</span>
+            {% endif %}
         </div>
     {% else %}
         <div class="{{ fallback_class }}" aria-label="{{ seat_labels[seat] }} waiting to play">
@@ -136,8 +140,9 @@
                 {{ seat_labels[display_winner] if display_winner in seat_labels else ("Seat " ~ display_winner) }}
             {% endif %}
             won{% if winning_card %} with
-                <span class="card-text card-text--{{ suit_classes.get(winning_card[0], 'spades') }}"
-                      aria-label="{{ winning_card[1]|display_rank }} of {{ suit_names.get(winning_card[0], winning_card[0]) }}">{{ suit_symbols.get(winning_card[0], winning_card[0]) }}{{ winning_card[1]|display_rank }}</span>{% endif %}
+                {% set wc_suit = winning_card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
+                <span class="card-text card-text--{{ suit_classes.get(wc_suit, 'spades') }}"
+                      aria-label="{{ winning_card[1]|display_rank }} of {{ suit_names.get(wc_suit, wc_suit) }}">{{ suit_symbols.get(wc_suit, wc_suit) }}{{ winning_card[1]|display_rank }}</span>{% endif %}
         </p>
     {% endif %}
 </div>

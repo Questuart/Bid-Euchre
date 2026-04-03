@@ -45,16 +45,21 @@
                 {% set suit = card[0] %}
                 {% set rank = card[1] %}
                 {% set idx = loop.index0 %}
-                {% set suit_class = suit_classes.get(suit, "spades") %}
-                {% set suit_sym = suit_symbols.get(suit, suit) %}
-                {% set suit_name = suit_names.get(suit, suit) %}
+                {% set disp_suit = card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
+                {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
+                {% set suit_class = suit_classes.get(disp_suit, "spades") %}
+                {% set suit_sym = suit_symbols.get(disp_suit, disp_suit) %}
+                {% set suit_name = suit_names.get(disp_suit, disp_suit) %}
                 <button type="button"
-                        class="card card--{{ suit_class }} card--exchange-selectable"
-                        title="{{ rank|display_rank }}{{ suit_sym }} (tap to select)"
-                        aria-label="Select {{ rank|display_rank }} of {{ suit_name }}"
+                        class="card card--{{ suit_class }} card--exchange-selectable{% if bower %} card--bower{% endif %}"
+                        title="{{ rank|display_rank }}{{ suit_sym }}{% if bower %} ({{ bower }} bower){% endif %} (tap to select)"
+                        aria-label="Select {{ rank|display_rank }} of {{ suit_name }}{% if bower %} ({{ bower }} bower){% endif %}"
                         data-exchange-index="{{ idx }}">
                     <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
+                    {% if bower %}
+                        <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">B</span>
+                    {% endif %}
                 </button>
             {% endfor %}
         </div>

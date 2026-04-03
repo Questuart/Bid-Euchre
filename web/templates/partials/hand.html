@@ -17,29 +17,37 @@
             {% set suit = card[0] %}
             {% set rank = card[1] %}
             {% set idx = loop.index0 %}
-            {% set suit_class = suit_classes.get(suit, "spades") %}
-            {% set suit_sym = suit_symbols.get(suit, suit) %}
-            {% set suit_name = suit_names.get(suit, suit) %}
+            {% set disp_suit = card|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
+            {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
+            {% set suit_class = suit_classes.get(disp_suit, "spades") %}
+            {% set suit_sym = suit_symbols.get(disp_suit, disp_suit) %}
+            {% set suit_name = suit_names.get(disp_suit, disp_suit) %}
 
             {% if phase == "trick_play" and legal_plays is not none and idx in legal_plays %}
                 <button type="button"
                         id="hand-card-{{ idx }}"
-                        class="card card--{{ suit_class }} card--legal"
-                        title="{{ rank|display_rank }}{{ suit_sym }} (tap to play)"
-                        aria-label="Play {{ rank|display_rank }} of {{ suit_name }}"
+                        class="card card--{{ suit_class }} card--legal{% if bower %} card--bower{% endif %}"
+                        title="{{ rank|display_rank }}{{ suit_sym }}{% if bower %} ({{ bower }} bower){% endif %} (tap to play)"
+                        aria-label="Play {{ rank|display_rank }} of {{ suit_name }}{% if bower %} ({{ bower }} bower){% endif %}"
                         data-card-index="{{ idx }}">
                     <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
+                    {% if bower %}
+                        <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">B</span>
+                    {% endif %}
                 </button>
             {% else %}
                 {# Illegal or non-play-phase card — plain div #}
                 <div id="hand-card-{{ idx }}"
-                     class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}"
-                     title="{{ rank|display_rank }}{{ suit_sym }}"
+                     class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}{% if bower %} card--bower{% endif %}"
+                     title="{{ rank|display_rank }}{{ suit_sym }}{% if bower %} ({{ bower }} bower){% endif %}"
                      role="img"
-                     aria-label="{{ rank|display_rank }} of {{ suit_name }}{% if phase == 'trick_play' %} (cannot play){% endif %}">
+                     aria-label="{{ rank|display_rank }} of {{ suit_name }}{% if bower %} ({{ bower }} bower){% endif %}{% if phase == 'trick_play' %} (cannot play){% endif %}">
                     <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
+                    {% if bower %}
+                        <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">B</span>
+                    {% endif %}
                 </div>
             {% endif %}
         {% endfor %}

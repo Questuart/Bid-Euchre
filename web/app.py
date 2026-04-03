@@ -37,7 +37,7 @@ from .db import (
     make_session_factory,
 )
 from .routes import router as game_router
-from .template_filters import display_rank, effective_suit
+from .template_filters import display_rank, effective_suit, is_bower
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +164,8 @@ async def lifespan(app: FastAPI):
     templates.env.filters["display_rank"] = display_rank
     # Custom filter: effective_suit resolves bower suits in suit contracts
     templates.env.filters["effective_suit"] = effective_suit
+    # Custom filter: is_bower returns 'left', 'right', or '' for bower status
+    templates.env.filters["is_bower"] = is_bower
 
     # 7. Stash on app.state for route access
     app.state.config = config
