@@ -161,6 +161,83 @@ class TestGreedyLikeBehavior:
         # Glutton leads from longest non-trump suit (C-T)
         assert glutton_choice == 1
 
+    def test_lead_right_bower_when_both_bowers_and_strong_trump(self):
+        """With both bowers + 5+ trump, Glutton should lead the right bower.
+
+        This is the highest-priority lead tier for suit contracts.
+        Leading the right bower draws out opponent trump and establishes
+        total trump control when holding overwhelming trump strength.
+        """
+        glutton = GluttonStrategy()
+
+        # 5 trump (including both bowers) + non-trump Ace
+        hand = [
+            Card("H", "J"),  # idx 0 - Right bower
+            Card("D", "J"),  # idx 1 - Left bower (hearts trump → diamonds J is left)
+            Card("H", "A"),  # idx 2 - Trump Ace
+            Card("H", "K"),  # idx 3 - Trump King
+            Card("H", "Q"),  # idx 4 - Trump Queen
+            Card("C", "A"),  # idx 5 - Non-trump Ace (would be Step 1 lead otherwise)
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=0)
+        choice = glutton.choose_card(hand, [], "suit", "H", 0)
+
+        # Should lead right bower (idx 0), NOT the non-trump Ace (idx 5)
+        assert (
+            choice == 0
+        ), f"Expected right bower (idx 0), got idx {choice} ({hand[choice]})"
+
+    def test_no_right_bower_lead_with_only_4_trump(self):
+        """With both bowers but only 4 trump, should NOT trigger the new tier.
+
+        Falls through to Step 1 (non-trump Aces) or Step 2 (draw trump).
+        """
+        glutton = GluttonStrategy()
+
+        # 4 trump (including both bowers) + non-trump Ace
+        hand = [
+            Card("H", "J"),  # idx 0 - Right bower
+            Card("D", "J"),  # idx 1 - Left bower
+            Card("H", "A"),  # idx 2 - Trump Ace
+            Card("H", "K"),  # idx 3 - Trump King
+            Card("C", "A"),  # idx 4 - Non-trump Ace
+            Card("S", "T"),  # idx 5 - Offsuit
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=0)
+        choice = glutton.choose_card(hand, [], "suit", "H", 0)
+
+        # Should NOT lead right bower — should lead non-trump Ace (Step 1)
+        assert (
+            choice == 4
+        ), f"Expected non-trump Ace (idx 4), got idx {choice} ({hand[choice]})"
+
+    def test_no_right_bower_lead_with_only_one_bower(self):
+        """With only right bower (no left) + 5 trump, should NOT trigger new tier.
+
+        Falls through to Step 2 (draw trump with lowest).
+        """
+        glutton = GluttonStrategy()
+
+        # 5 trump (right bower only, no left) + offsuit
+        hand = [
+            Card("H", "J"),  # idx 0 - Right bower
+            Card("H", "A"),  # idx 1 - Trump Ace
+            Card("H", "K"),  # idx 2 - Trump King
+            Card("H", "Q"),  # idx 3 - Trump Queen
+            Card("H", "T"),  # idx 4 - Trump Ten
+            Card("C", "A"),  # idx 5 - Non-trump Ace
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=0)
+        choice = glutton.choose_card(hand, [], "suit", "H", 0)
+
+        # Should lead non-trump Ace (Step 1), not right bower
+        assert (
+            choice == 5
+        ), f"Expected non-trump Ace (idx 5), got idx {choice} ({hand[choice]})"
+
 
 class TestPositionAwareness:
     """Tests for position-aware aggression (Step 4) and partner covering (Step 5)."""
