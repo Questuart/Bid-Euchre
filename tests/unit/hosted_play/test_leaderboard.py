@@ -408,6 +408,36 @@ class TestComputePlayerStats:
         # bid_rate = 1 declaring / 2 total
         assert stats.bid_rate == 0.5
 
+    def test_includes_hands_from_abandoned_match(self, db_session):
+        """Hands from an abandoned match are retained in leaderboard stats."""
+        player = _make_player(db_session, nickname="AbandonedPlayer")
+        match = _make_match(
+            db_session, player, status="abandoned", score_human=10, score_ai=5
+        )
+
+        _make_hand(
+            db_session,
+            match,
+            hand_number=0,
+            bidder_seat=0,
+            winning_bid_n=6,
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=6,
+            points_team1=3,
+        )
+
+        db_session.flush()
+        stats = compute_player_stats(db_session, player.id)
+
+        assert stats is not None
+        assert stats.nickname == "AbandonedPlayer"
+        assert stats.hands_played == 1
+        # Abandoned matches don't count as completed for matches_played
+        assert stats.matches_played == 0
+        # Hand-level stats are computed from the abandoned match's hands
+        assert stats.net_eppd == 3.0  # (6 - 3) / 1
+
     def test_mixes_active_and_completed_match_hands(self, db_session):
         """Hands from both active and completed matches combine in stats."""
         player = _make_player(db_session, nickname="MixedPlayer")
