@@ -25,20 +25,20 @@
                 <button type="button"
                         id="hand-card-{{ idx }}"
                         class="card card--{{ suit_class }} card--legal"
-                        title="{{ rank }}{{ suit_sym }} (tap to play)"
-                        aria-label="Play {{ rank }} of {{ suit_name }}"
+                        title="{{ rank|display_rank }}{{ suit_sym }} (tap to play)"
+                        aria-label="Play {{ rank|display_rank }} of {{ suit_name }}"
                         data-card-index="{{ idx }}">
-                    <span class="card__rank" aria-hidden="true">{{ rank }}</span>
+                    <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
                 </button>
             {% else %}
                 {# Illegal or non-play-phase card — plain div #}
                 <div id="hand-card-{{ idx }}"
                      class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}"
-                     title="{{ rank }}{{ suit_sym }}"
+                     title="{{ rank|display_rank }}{{ suit_sym }}"
                      role="img"
-                     aria-label="{{ rank }} of {{ suit_name }}{% if phase == 'trick_play' %} (cannot play){% endif %}">
-                    <span class="card__rank" aria-hidden="true">{{ rank }}</span>
+                     aria-label="{{ rank|display_rank }} of {{ suit_name }}{% if phase == 'trick_play' %} (cannot play){% endif %}">
+                    <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
                 </div>
             {% endif %}

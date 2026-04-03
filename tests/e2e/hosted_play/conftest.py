@@ -23,6 +23,7 @@ from bid_euchre.hosted_play.state import MatchState
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
 from web.routes import _build_seat_bids
+from web.template_filters import display_rank
 
 # ---------------------------------------------------------------------------
 # Deterministic AI stubs
@@ -101,11 +102,13 @@ def base_url() -> str:
 @pytest.fixture()
 def jinja_env() -> jinja2.Environment:
     """Jinja2 environment loading from web/templates/."""
-    return jinja2.Environment(
+    environment = jinja2.Environment(
         loader=jinja2.FileSystemLoader(TEMPLATES_DIR),
         autoescape=True,
         undefined=jinja2.StrictUndefined,
     )
+    environment.filters["display_rank"] = display_rank
+    return environment
 
 
 @pytest.fixture()

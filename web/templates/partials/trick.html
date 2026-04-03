@@ -59,8 +59,8 @@
         {% set is_winning = (current_trick is not none and trick_winning_seat is defined and trick_winning_seat == seat) %}
         <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--played{% if is_winning %} card--winning{% endif %}"
              role="img"
-             aria-label="{{ seat_labels[seat] }} played {{ card[1] }} of {{ suit_names.get(suit, suit) }}{% if is_winning %} (currently winning){% endif %}">
-            <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
+             aria-label="{{ seat_labels[seat] }} played {{ card[1]|display_rank }} of {{ suit_names.get(suit, suit) }}{% if is_winning %} (currently winning){% endif %}">
+            <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
             <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
         </div>
     {% else %}
@@ -132,7 +132,7 @@
             {% endif %}
             won{% if winning_card %} with
                 <span class="card-text card-text--{{ suit_classes.get(winning_card[0], 'spades') }}"
-                      aria-label="{{ winning_card[1] }} of {{ suit_names.get(winning_card[0], winning_card[0]) }}">{{ suit_symbols.get(winning_card[0], winning_card[0]) }}{{ winning_card[1] }}</span>{% endif %}
+                      aria-label="{{ winning_card[1]|display_rank }} of {{ suit_names.get(winning_card[0], winning_card[0]) }}">{{ suit_symbols.get(winning_card[0], winning_card[0]) }}{{ winning_card[1]|display_rank }}</span>{% endif %}
         </p>
     {% endif %}
 </div>
