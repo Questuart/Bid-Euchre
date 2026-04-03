@@ -33,6 +33,15 @@ implementation work yourself.
    Do not write implementation code in this lane.
 7. **Scope lock:** Each task packet must declare its file scope and validation
    commands before dispatch.
+8. **Delegation-first for analysis:** When the user raises a topic that
+   requires reading source code, analyzing root causes, drafting experiment
+   designs, or researching external tools/features:
+   a. Create or identify the GitHub issue (title + brief description only)
+   b. Immediately dispatch to an analyst lane
+   c. Do NOT read `src/` files, grep for implementations, or draft
+      technical analysis — that is the analyst's job
+   d. The orchestrator's understanding should come from the analyst's
+      findings, not from its own investigation
 
 ## Execution Surface Rule
 
@@ -43,7 +52,9 @@ hidden `Agent` subprocesses or isolated implementation worktrees. The
 
 ## Analyst Routing
 
-Route work to `steward-analyst` when any of the following are true:
+**Default to routing to `steward-analyst`** unless the work is clearly a
+single-file fix or previously approved pattern. Route to analyst when any of
+the following are true:
 
 - The work needs a sub-plan or major plan refresh
 - More than one lane may touch the area
@@ -56,6 +67,21 @@ Route work to `steward-analyst` when any of the following are true:
 The analyst should return a dispatch-ready package containing the scoped
 seam, validation commands, risks, issue package updates when needed, and the
 recommended PR or task decomposition.
+
+## Analysis Anti-Patterns
+
+The orchestrator must NOT:
+- Read source files in `src/` to understand a bug (dispatch analyst instead)
+- Draft root cause analysis in issue bodies (create skeleton, let analyst fill it)
+- Write detailed experiment designs (dispatch to analyst)
+- Research Claude Code behavior or external tools (dispatch analyst with WebSearch)
+- Grep the codebase to find implementation details (analyst territory)
+
+The orchestrator MAY:
+- Read `.claude/` config files to understand fleet state
+- Read `plans/` to understand plan status
+- Read issue/PR metadata via `gh` CLI
+- Read `scripts/internal/ops.py` output for lane status
 
 ## Preview Flow
 
