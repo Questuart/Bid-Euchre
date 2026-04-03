@@ -48,21 +48,21 @@
         <span class="ai-badge" aria-label="{{ seat_labels[1] }}: {{ opp_left_count | default(0) }} cards">
             {{ seat_labels[1][0] }}:{{ opp_left_count | default(0) }}
             {%- if dealer_seat == 1 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
-            {%- if bidder_seat == 1 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
+            {%- if phase != "auction" and bidder_seat == 1 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
             {%- if current_seat == 1 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
             {%- if sitting_out_seat == 1 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
         </span>
         <span class="ai-badge" aria-label="{{ seat_labels[2] }}: {{ partner_count | default(0) }} cards">
             {{ seat_labels[2][0] }}:{{ partner_count | default(0) }}
             {%- if dealer_seat == 2 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
-            {%- if bidder_seat == 2 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
+            {%- if phase != "auction" and bidder_seat == 2 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
             {%- if current_seat == 2 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
             {%- if sitting_out_seat == 2 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
         </span>
         <span class="ai-badge" aria-label="{{ seat_labels[3] }}: {{ opp_right_count | default(0) }} cards">
             {{ seat_labels[3][0] }}:{{ opp_right_count | default(0) }}
             {%- if dealer_seat == 3 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
-            {%- if bidder_seat == 3 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
+            {%- if phase != "auction" and bidder_seat == 3 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
             {%- if current_seat == 3 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
             {%- if sitting_out_seat == 3 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
         </span>
@@ -79,7 +79,7 @@
                     {% if dealer_seat == 2 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
                     {% endif %}
-                    {% if bidder_seat == 2 %}
+                    {% if phase != "auction" and bidder_seat == 2 %}
                         <span class="seat-marker seat-marker--declarer" title="Declarer">★</span>
                     {% endif %}
                     {% if current_seat == 2 %}
@@ -109,7 +109,7 @@
                     {% if dealer_seat == 1 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
                     {% endif %}
-                    {% if bidder_seat == 1 %}
+                    {% if phase != "auction" and bidder_seat == 1 %}
                         <span class="seat-marker seat-marker--declarer" title="Declarer">★</span>
                     {% endif %}
                     {% if current_seat == 1 %}
@@ -138,11 +138,13 @@
                 {% include "partials/contract_bar.html" %}
             {% endif %}
 
-            {# Trick area — always shown during active play #}
-            {% include "partials/trick.html" %}
+            {# Trick area — shown during trick play only (not during auction) #}
+            {% if phase != "auction" %}
+                {% include "partials/trick.html" %}
 
-            {# Collapsible trick history — shows cards played in completed tricks #}
-            {% include "partials/trick_history.html" %}
+                {# Collapsible trick history — shows cards played in completed tricks #}
+                {% include "partials/trick_history.html" %}
+            {% endif %}
 
             {% if show_next %}
                 {% include "partials/next_controls.html" %}
@@ -162,7 +164,7 @@
                     {% if dealer_seat == 3 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
                     {% endif %}
-                    {% if bidder_seat == 3 %}
+                    {% if phase != "auction" and bidder_seat == 3 %}
                         <span class="seat-marker seat-marker--declarer" title="Declarer">★</span>
                     {% endif %}
                     {% if current_seat == 3 %}
