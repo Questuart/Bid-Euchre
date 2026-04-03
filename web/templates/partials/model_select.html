@@ -14,6 +14,7 @@
           hx-post="/play/{{ link_uuid }}/select-ai"
           hx-target="#game-board"
           hx-swap="morph:innerHTML"
+          hx-timeout="15000"
           aria-label="Select AI model and start match">
         <fieldset class="model-cards" role="radiogroup" aria-label="AI opponent model">
             <legend class="sr-only">AI opponent model</legend>

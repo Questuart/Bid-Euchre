@@ -542,7 +542,7 @@ class TestHand:
             legal_plays=[0, 1],
             phase="trick_play",
         )
-        assert 'hx-timeout="10000"' in html
+        assert 'hx-timeout="15000"' in html
 
     def test_illegal_cards_are_divs(self, env):
         """During trick play, illegal cards are plain divs."""

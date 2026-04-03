@@ -7,7 +7,8 @@
           action="/play/{{ link_uuid }}/next"
           hx-post="/play/{{ link_uuid }}/next"
           hx-target="#game-board"
-          hx-swap="morph:innerHTML">
+          hx-swap="morph:innerHTML"
+          hx-timeout="15000">
         <button type="submit" class="btn btn--next-step" aria-label="Advance to the next step">
             Next
         </button>

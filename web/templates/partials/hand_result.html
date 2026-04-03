@@ -162,6 +162,7 @@
           hx-post="/play/{{ link_uuid | default("") }}/new-match"
           hx-target="#game-board"
           hx-swap="morph:innerHTML"
+          hx-timeout="15000"
           class="hand-result-controls"
           aria-label="Start a new match">
         <button type="submit" class="btn btn--play-again">Play Again</button>
@@ -172,6 +173,7 @@
           hx-post="/play/{{ link_uuid | default("") }}/next-hand"
           hx-target="#game-board"
           hx-swap="morph:innerHTML"
+          hx-timeout="15000"
           class="hand-result-controls"
           aria-label="Start next hand">
         <button type="submit" class="btn btn--next-hand">Next Hand</button>

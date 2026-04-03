@@ -158,6 +158,7 @@
           hx-post="/play/{{ link_uuid }}/comment"
           hx-target="#comments-list"
           hx-swap="innerHTML"
+          hx-timeout="15000"
           hx-on::after-request="if(event.detail.successful) this.reset()">
         <textarea class="comments__input" name="content"
                   placeholder="Share a thought about the game..."
