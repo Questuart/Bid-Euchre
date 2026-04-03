@@ -127,6 +127,8 @@
       "Write(.claude/hooks/**)",
       "Edit(.claude/runtime/**)",
       "Write(.claude/runtime/**)",
+      "Edit(.claude/runtime/review_state/**)",
+      "Write(.claude/runtime/review_state/**)",
       "Edit(MEMORY.md)",
       "Write(MEMORY.md)",
       "Edit(plans/**)",
