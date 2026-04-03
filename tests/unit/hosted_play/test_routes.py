@@ -2465,8 +2465,10 @@ class TestMoonExchangeRoute:
         resp = client.post(f"/play/{link_uuid}/next")
         assert resp.status_code == 200
 
-        # Step 5: Advance through trick pauses until hand completes.
-        for _ in range(20):  # 10 tricks max + safety
+        # Step 5: Advance through per-card and trick pauses until hand
+        # completes.  With per-card pacing, each AI card play is a separate
+        # "Next" step (10 tricks × 3 AI cards = ~30 pauses for 3-player).
+        for _ in range(100):  # safety valve
             result_check = get_match_state(app, link_uuid)
             assert result_check is not None
             st, _, sess = result_check
@@ -2474,7 +2476,7 @@ class TestMoonExchangeRoute:
             sess.close()
             if h is not None and h.phase == "complete":
                 break
-            # Click "Next" to advance past each trick pause
+            # Click "Next" to advance past each reveal/trick pause
             client.post(f"/play/{link_uuid}/next")
 
         # Step 6: Verify the hand completed (human sat out)
@@ -3748,7 +3750,9 @@ class TestAuctionLogPersistence:
 
         auction_count = len(hand.auction)
         if auction_count == 0:
-            pytest.skip("No auction entries after reveal advance (AI timing)")
+            # With a random seed, the human may be first to bid (no AI
+            # bids yet).  Skip because the test needs auction entries.
+            pytest.skip("Human is first to bid — no auction entries to verify")
 
         # Simulate a full page refresh (GET)
         resp = client.get(f"/play/{link_uuid}")

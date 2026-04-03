@@ -206,14 +206,17 @@ def _play_full_hand(
     state = _auto_exchange(engine, state)
 
     # Handle trick play phase (skip if human is sitting out for moon/loner).
-    # The engine now pauses after each trick completion, so we must resume
-    # AI advancement between human plays.
+    # The engine now pauses after each AI card play (per-card reveal) and
+    # after each trick completion, so we must resume between human plays.
     while (
         state.status == "active"
         and state.current_hand is not None
         and state.current_hand.phase == "trick_play"
     ):
         hand = state.current_hand
+        if hand.paused_after_play:
+            state = engine.resume_after_play(state)
+            continue
         if hand.paused_after_trick:
             state = engine.resume_ai(state)
             continue
@@ -243,6 +246,9 @@ def _play_until_match_end(engine: MatchEngine, state: MatchState) -> MatchState:
             continue
         if hand.phase == "redeal":
             state = engine.deal_after_redeal(state)
+            continue
+        if hand.phase == "trick_play" and hand.paused_after_play:
+            state = engine.resume_after_play(state)
             continue
         if hand.phase == "trick_play" and hand.paused_after_trick:
             state = engine.resume_ai(state)
@@ -329,6 +335,138 @@ class TestFullHandFlow:
             assert state.dealer_seat == initial_dealer
         else:
             assert state.status == "complete"
+
+
+# ---------------------------------------------------------------------------
+# Test 1b: Per-card pacing
+# ---------------------------------------------------------------------------
+
+
+class TestPerCardPacing:
+    """AI cards appear one at a time via paused_after_play flag (#2231)."""
+
+    def test_submit_human_card_pauses_after_first_ai(self, engine: MatchEngine) -> None:
+        """After human plays, the engine pauses after one AI card play."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Advance through auction
+        while hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            if 5 > hand.current_high_bid:
+                state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
+            else:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+            hand = state.current_hand
+            if hand is None:
+                pytest.skip("Match ended during auction")
+
+        # Advance through any per-card pauses to reach human's trick turn
+        for _ in range(50):
+            if hand.phase != "trick_play":
+                break
+            if hand.paused_after_play:
+                state = engine.resume_after_play(state)
+                hand = state.current_hand
+                assert hand is not None
+                continue
+            if hand.paused_after_trick:
+                state = engine.resume_ai(state)
+                hand = state.current_hand
+                assert hand is not None
+                continue
+            break
+
+        if hand.phase != "trick_play" or hand.current_seat != HUMAN_SEAT:
+            pytest.skip("Not in human trick play position")
+
+        pre_plays = len(hand.current_trick.plays) if hand.current_trick else 0
+        legal = engine.get_legal_plays(state)
+        state = engine.submit_human_card(state, legal[0])
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "trick_play" and not hand.paused_after_trick:
+            # If trick didn't complete, engine should have paused after
+            # exactly one AI card play.
+            assert hand.paused_after_play is True
+            post_plays = len(hand.current_trick.plays) if hand.current_trick else 0
+            # Human played +1, AI played +1 = +2 from before
+            assert post_plays == pre_plays + 2
+
+    def test_resume_after_play_advances_one_card(self, engine: MatchEngine) -> None:
+        """Each resume_after_play() call advances exactly one AI card."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Get to a paused_after_play state
+        state = _play_full_hand(engine, state)
+        # _play_full_hand handles all pauses internally, so let's take
+        # a more direct approach
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Bid through auction
+        while hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            if 5 > hand.current_high_bid:
+                state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
+            else:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+            hand = state.current_hand
+            if hand is None:
+                pytest.skip("Match ended during auction")
+
+        # Advance to first paused_after_play state
+        for _ in range(50):
+            hand = state.current_hand
+            if hand is None:
+                break
+            if hand.phase == "trick_play" and hand.paused_after_play:
+                break
+            if hand.paused_after_trick:
+                state = engine.resume_ai(state)
+                continue
+            if hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                legal = engine.get_legal_plays(state)
+                state = engine.submit_human_card(state, legal[0])
+                continue
+            break
+
+        hand = state.current_hand
+        if hand is None or hand.phase != "trick_play" or not hand.paused_after_play:
+            pytest.skip("Could not reach paused_after_play state")
+
+        pre_plays = len(hand.current_trick.plays) if hand.current_trick else 0
+        state = engine.resume_after_play(state)
+        hand = state.current_hand
+        assert hand is not None
+
+        if hand.phase == "trick_play" and hand.current_trick is not None:
+            post_plays = len(hand.current_trick.plays)
+            # Should have advanced by exactly 1 card (or trick completed)
+            assert post_plays == pre_plays + 1 or hand.paused_after_trick
+
+    def test_paused_after_play_serialization(self, engine: MatchEngine) -> None:
+        """paused_after_play survives serialization round-trip."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Set the flag manually
+        hand.paused_after_play = True
+        data = engine.serialize(state)
+        restored = engine.deserialize(data)
+        assert restored.current_hand is not None
+        assert restored.current_hand.paused_after_play is True
+
+        # And the default (False)
+        hand.paused_after_play = False
+        data = engine.serialize(state)
+        restored = engine.deserialize(data)
+        assert restored.current_hand is not None
+        assert restored.current_hand.paused_after_play is False
 
 
 # ---------------------------------------------------------------------------
@@ -483,10 +621,18 @@ class TestLegalPlaysMatchCore:
 
         checks = 0
         iterations = 0
-        while state.status == "active" and checks < 5 and iterations < 200:
+        while state.status == "active" and checks < 5 and iterations < 500:
             hand = state.current_hand
             assert hand is not None
             iterations += 1
+
+            # Advance past per-card and trick-completion pauses
+            if hand.phase == "trick_play" and hand.paused_after_play:
+                state = engine.resume_after_play(state)
+                continue
+            if hand.phase == "trick_play" and hand.paused_after_trick:
+                state = engine.resume_ai(state)
+                continue
 
             if hand.current_seat != HUMAN_SEAT:
                 break
@@ -794,10 +940,13 @@ class TestHumanLeadsAfterAuctionWin:
                 # The trick leader should be the declarer
                 assert hand.current_trick is not None
                 assert hand.current_trick.leader == hand.bidder_seat
-                # Engine auto-advanced AI plays; current_seat should be
-                # HUMAN_SEAT (waiting for human input) since the AI
-                # declarer already played.
-                assert hand.current_seat == HUMAN_SEAT
+                # Engine auto-advanced one AI card play; with per-card
+                # pacing it pauses after each AI card, so current_seat
+                # may be an AI seat with paused_after_play set.
+                if hand.paused_after_play:
+                    assert hand.current_seat != HUMAN_SEAT
+                else:
+                    assert hand.current_seat == HUMAN_SEAT
 
 
 # ---------------------------------------------------------------------------
@@ -1387,12 +1536,16 @@ class TestInteractiveMoonExchange:
                 state = engine.advance_after_exchange_reveal(state)
                 hand = state.current_hand
                 assert hand is not None
-                # AI auto-plays with trick-by-trick pauses.
+                # AI auto-plays with per-card and trick-by-trick pauses.
                 # Resume through all pauses until hand completes.
-                for _ in range(20):  # Safety valve
+                for _ in range(200):  # Safety valve (per-card pacing)
                     if hand.phase == "complete":
                         break
-                    if hand.paused_after_trick:
+                    if hand.paused_after_play:
+                        state = engine.resume_after_play(state)
+                        hand = state.current_hand
+                        assert hand is not None
+                    elif hand.paused_after_trick:
                         state = engine.resume_ai(state)
                         hand = state.current_hand
                         assert hand is not None
@@ -1585,11 +1738,15 @@ class TestMoonExchangeAIAdvance:
                 hand = state.current_hand
                 assert hand is not None
 
-                # Human sits out → AI auto-plays with trick pauses
-                for _ in range(20):
+                # Human sits out → AI auto-plays with per-card and trick pauses
+                for _ in range(200):  # Safety valve (per-card pacing)
                     if hand.phase == "complete":
                         break
-                    if hand.paused_after_trick:
+                    if hand.paused_after_play:
+                        state = engine.resume_after_play(state)
+                        hand = state.current_hand
+                        assert hand is not None
+                    elif hand.paused_after_trick:
                         state = engine.resume_ai(state)
                         hand = state.current_hand
                         assert hand is not None
@@ -1981,7 +2138,7 @@ class TestTrickWinnerDisplay:
                 continue
 
             # Auto-play through until we have at least one completed trick
-            for _ in range(200):  # max iterations to avoid infinite loop
+            for _ in range(500):  # max iterations to avoid infinite loop
                 hand = state.current_hand
                 if hand is None:
                     break
@@ -1991,6 +2148,12 @@ class TestTrickWinnerDisplay:
                     break
                 if hand.completed_tricks:
                     break
+                if hand.phase == "trick_play" and hand.paused_after_play:
+                    state = engine.resume_after_play(state)
+                    continue
+                if hand.phase == "trick_play" and hand.paused_after_trick:
+                    state = engine.resume_ai(state)
+                    continue
                 if hand.current_seat == HUMAN_SEAT:
                     if hand.phase == "auction":
                         state = engine.submit_human_bid(state, BidAction.pass_bid())
@@ -2305,6 +2468,23 @@ class TestGluttonBowerFix:
         state = engine.start_match(42, "heuristic")
         # Submit human pass so AI wins
         state = engine.submit_human_bid(state, BidAction.pass_bid())
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "trick_play"
+
+        # Advance through per-card pauses until it's the human's turn
+        for _ in range(50):
+            hand = state.current_hand
+            if hand is None:
+                break
+            if hand.paused_after_play:
+                state = engine.resume_after_play(state)
+                continue
+            if hand.paused_after_trick:
+                state = engine.resume_ai(state)
+                continue
+            break
+
         hand = state.current_hand
         assert hand is not None
         assert hand.phase == "trick_play"

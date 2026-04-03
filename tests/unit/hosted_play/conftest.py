@@ -435,9 +435,13 @@ def advance_pending_reveals(
     app,
     link_uuid: str,
     *,
-    max_steps: int = 12,
+    max_steps: int = 50,
 ):
-    """Advance hidden auction/trick reveals until the state is actionable."""
+    """Advance hidden auction/trick reveals until the state is actionable.
+
+    With per-card pacing, each AI card play requires a separate "Next" step,
+    so we may need many more steps than before.
+    """
     for _ in range(max_steps):
         result = get_match_state(app, link_uuid)
         assert result is not None, "Match disappeared unexpectedly"
@@ -450,7 +454,13 @@ def advance_pending_reveals(
 
         has_hidden_auction = hand.revealed_auction_count < len(hand.auction)
         auction_settled = getattr(hand, "auction_settled", True)
-        if not has_hidden_auction and auction_settled and not hand.paused_after_trick:
+        paused_after_play = getattr(hand, "paused_after_play", False)
+        if (
+            not has_hidden_auction
+            and auction_settled
+            and not hand.paused_after_trick
+            and not paused_after_play
+        ):
             return state
 
         resp = client.post(f"/play/{link_uuid}/next")

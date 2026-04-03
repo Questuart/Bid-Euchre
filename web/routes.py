@@ -243,6 +243,7 @@ def _awaiting_next(hand) -> bool:
     return (
         _auction_reveal_active(hand)
         or _has_pending_exchange(hand)
+        or (hand.phase == "trick_play" and hand.paused_after_play)
         or (hand.phase == "trick_play" and hand.paused_after_trick)
         or hand.phase == "redeal"
     )
@@ -256,6 +257,8 @@ def _next_reason(hand) -> str | None:
         return "Auction complete. Continue to play."
     if _has_pending_exchange(hand):
         return "Review the moon exchange."
+    if hand.phase == "trick_play" and hand.paused_after_play:
+        return "Reveal the next card."
     if hand.phase == "trick_play" and hand.paused_after_trick:
         return "Continue to the next trick."
     if hand.phase == "redeal":
@@ -519,6 +522,10 @@ def _build_game_context(
         show_next = _awaiting_next(hand)
         ctx["show_next"] = show_next
         ctx["next_reason"] = _next_reason(hand)
+        # Show "Skip" button when mid-trick per-card pacing is active
+        ctx["show_skip"] = hand.phase == "trick_play" and (
+            hand.paused_after_play or hand.paused_after_trick
+        )
         ctx["winning_bid"] = None if _has_hidden_auction(hand) else hand.winning_bid
         ctx["bidder_seat"] = None if _has_hidden_auction(hand) else hand.bidder_seat
         ctx["current_high_bid"] = (
@@ -1549,11 +1556,15 @@ async def next_step(
             # sitting out (partner of the mooner), submit_exchange_selection
             # deferred _advance_ai so the interstitial could display first.
             state = engine.advance_after_exchange_reveal(state)
+        elif hand.phase == "trick_play" and hand.paused_after_play:
+            # Resume AI advancement after per-card reveal pause.
+            # The engine will play one more AI card and pause again,
+            # or return immediately if the next turn is the human's.
+            state = engine.resume_after_play(state)
         elif hand.phase == "trick_play" and hand.paused_after_trick:
             # Resume AI advancement after trick-result interstitial.
-            # The engine will play AI turns until the next trick
-            # completion (setting paused_after_trick again), the
-            # human's turn, or hand/match end.
+            # The engine will play one AI card (with per-card pacing),
+            # reach the human's turn, or hit hand/match end.
             state = engine.resume_ai(state)
         elif hand.phase == "redeal":
             # All players passed — persist the terminal redeal hand,
@@ -1594,6 +1605,81 @@ async def next_step(
         # After exchange-reveal auto-advance (especially moon/loner where
         # human sits out), the hand may have completed and the match may
         # have ended.  Ensure hand row metadata is persisted (P2-005).
+        if current_hand is not None and current_hand.phase == "complete":
+            _update_hand_row(hand_row, current_hand)
+        elif current_hand is not None:
+            hand_row.hand_state_json = json.dumps(current_hand.to_dict())
+        else:
+            hand_row.hand_state_json = json.dumps(hand.to_dict())
+        _update_match_row(match_row, state)
+        session.commit()
+
+        return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+    finally:
+        session.close()
+
+
+@router.post("/play/{link_uuid}/skip", response_class=HTMLResponse)
+async def skip_pacing(
+    request: Request,
+    link_uuid: str,
+):
+    """Skip per-card reveal pauses and advance to the next decision point.
+
+    Clears paused_after_play flags and advances AI until the next trick
+    completion (paused_after_trick), human turn, or hand/match end.
+    """
+    session = _get_session(request)
+    try:
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        if player is None:
+            raise HTTPException(status_code=404, detail="Game not found")
+
+        match_row = (
+            session.query(Match)
+            .filter_by(player_id=player.id, status="active")
+            .order_by(Match.created_at.desc())
+            .first()
+        )
+        if match_row is None:
+            raise HTTPException(status_code=404, detail="No active match")
+
+        ai_manager = _get_ai_manager(request)
+        engine = _build_engine(ai_manager, match_row.ai_model)
+        try:
+            state = _deserialize_state(engine, match_row.match_state_json)
+        except Exception:
+            logger.warning(
+                "Failed to deserialize match %s on skip — marking abandoned",
+                match_row.match_uuid,
+                exc_info=True,
+            )
+            return _handle_corrupted_match(request, session, match_row, link_uuid)
+
+        hand = state.current_hand
+        if hand is None:
+            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+
+        state = engine.skip_to_next_decision(state)
+
+        # Ensure hand row exists for the current hand
+        current_hand = state.current_hand
+        if current_hand is not None:
+            hand_row = _ensure_hand_row(
+                session, match_row, current_hand, current_hand.deal_id
+            )
+        else:
+            hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
+
+        # Log AI decisions captured during skip advance
+        _log_ai_decisions_after_advance(
+            session,
+            match_row,
+            hand_row,
+            engine,
+            state,
+        )
+
         if current_hand is not None and current_hand.phase == "complete":
             _update_hand_row(hand_row, current_hand)
         elif current_hand is not None:
