@@ -442,11 +442,17 @@ class GluttonStrategy(Strategy):
         # Defense-in-depth: sync contract context on every call so that
         # _choose_lead, _choose_discard, and helpers always use the
         # current hand's contract_type/trump_suit even if on_hand_start
-        # was never called.
+        # was never called.  When the contract changes, per-hand inference
+        # (_seen_counts, _void_suits_by_seat) is stale — reset it.
+        if contract_type != self._contract_type or trump_suit != self._trump_suit:
+            self._seen_counts = {}
+            self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
         self._contract_type = contract_type
         self._trump_suit = trump_suit
 
-        # Fallback reset if on_hand_start wasn't called (backward compatibility)
+        # Fallback reset if on_hand_start wasn't called (backward compatibility).
+        # Catches the edge case where consecutive hands share the same contract
+        # so the change-detection above doesn't fire.
         if len(hand) == 10 and not plays_so_far:
             self._seen_counts = {}
             self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
@@ -932,11 +938,17 @@ class GluttonIsolatedStrategy(Strategy):
         """Choose card with configurable feature flags."""
         # Defense-in-depth: sync contract context on every call so that
         # helpers always use the current hand's contract_type/trump_suit
-        # even if on_hand_start was never called.
+        # even if on_hand_start was never called.  When the contract
+        # changes, per-hand inference is stale — reset it.
+        if contract_type != self._contract_type or trump_suit != self._trump_suit:
+            self._seen_counts = {}
+            self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
         self._contract_type = contract_type
         self._trump_suit = trump_suit
 
-        # Fallback reset if on_hand_start wasn't called
+        # Fallback reset if on_hand_start wasn't called.
+        # Catches the edge case where consecutive hands share the same
+        # contract so the change-detection above doesn't fire.
         if len(hand) == 10 and not plays_so_far:
             self._seen_counts = {}
             self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
