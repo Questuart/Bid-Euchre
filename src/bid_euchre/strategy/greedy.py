@@ -241,6 +241,31 @@ class GluttonStrategy(Strategy):
         if self._contract_type == "suit" and self._trump_suit is not None:
             # SUIT CONTRACT LEADS
 
+            from ..core.cards import is_left_bower, is_right_bower
+
+            # 0. Both bowers + 5+ trump → lead right bower to draw trump
+            trump_count = self._count_effective_suit(hand, self._trump_suit)
+            trump_indices = [
+                idx
+                for idx in legal_indices
+                if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                == self._trump_suit
+            ]
+            has_right = any(
+                is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices
+            )
+            has_left = any(
+                is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices
+            )
+            if has_right and has_left and trump_count >= 5:
+                # Lead the right bower to draw out opponent trump
+                right_bower_idx = next(
+                    idx
+                    for idx in trump_indices
+                    if is_right_bower(hand[idx], self._trump_suit)
+                )
+                return right_bower_idx
+
             # 1. Look for non-trump Aces
             non_trump_aces = [
                 idx
@@ -260,23 +285,8 @@ class GluttonStrategy(Strategy):
                 return min(non_trump_aces, key=ace_priority)
 
             # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
-            trump_count = self._count_effective_suit(hand, self._trump_suit)
-            trump_indices = [
-                idx
-                for idx in legal_indices
-                if effective_suit(hand[idx], self._trump_suit, self._contract_type)
-                == self._trump_suit
-            ]
+            # (trump_count, trump_indices, has_right, has_left computed in Step 0)
             if trump_count >= 4 and trump_indices:
-                # Check for both bowers
-                from ..core.cards import is_left_bower, is_right_bower
-
-                has_right = any(
-                    is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices
-                )
-                has_left = any(
-                    is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices
-                )
                 if not (has_right and has_left):
                     # Lead lowest trump to draw trump without burning top cards
                     return min(trump_indices, key=card_value)
@@ -784,6 +794,30 @@ class GluttonIsolatedStrategy(Strategy):
         suit_counts = self._get_suit_counts(hand)
 
         if self._contract_type == "suit" and self._trump_suit is not None:
+            from ..core.cards import is_left_bower, is_right_bower
+
+            # 0. Both bowers + 5+ trump → lead right bower to draw trump
+            trump_count = self._count_effective_suit(hand, self._trump_suit)
+            trump_indices = [
+                idx
+                for idx in legal_indices
+                if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                == self._trump_suit
+            ]
+            has_right = any(
+                is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices
+            )
+            has_left = any(
+                is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices
+            )
+            if has_right and has_left and trump_count >= 5:
+                right_bower_idx = next(
+                    idx
+                    for idx in trump_indices
+                    if is_right_bower(hand[idx], self._trump_suit)
+                )
+                return right_bower_idx
+
             # 1. Look for non-trump Aces
             non_trump_aces = [
                 idx
@@ -803,22 +837,8 @@ class GluttonIsolatedStrategy(Strategy):
                 return min(non_trump_aces, key=ace_priority)
 
             # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
-            trump_count = self._count_effective_suit(hand, self._trump_suit)
-            trump_indices = [
-                idx
-                for idx in legal_indices
-                if effective_suit(hand[idx], self._trump_suit, self._contract_type)
-                == self._trump_suit
-            ]
+            # (trump_count, trump_indices, has_right, has_left computed in Step 0)
             if trump_count >= 4 and trump_indices:
-                from ..core.cards import is_left_bower, is_right_bower
-
-                has_right = any(
-                    is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices
-                )
-                has_left = any(
-                    is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices
-                )
                 if not (has_right and has_left):
                     return min(trump_indices, key=card_value)
 
