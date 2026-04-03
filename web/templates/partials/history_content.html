@@ -1,0 +1,166 @@
+{#
+    History tab content partial — swapped via HTMX tab navigation.
+
+    Expected context variables:
+        link_uuid  — player's link UUID
+        matches    — list of completed match dicts
+#}
+<style>
+    .history {
+        max-width: 960px;
+        margin: 1rem auto;
+        padding: 0 1rem;
+    }
+
+    .history__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .history__title {
+        font-size: 1.5rem;
+        margin: 0;
+    }
+
+    .history__empty {
+        text-align: center;
+        padding: 3rem 1rem;
+        color: var(--color-text-muted);
+    }
+
+    .history__table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .history__table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+
+    .history__table th,
+    .history__table td {
+        padding: 0.5rem 0.75rem;
+        text-align: right;
+        white-space: nowrap;
+        border-bottom: 1px solid var(--color-surface-light);
+    }
+
+    .history__table th:first-child,
+    .history__table td:first-child {
+        text-align: left;
+    }
+
+    .history__table thead th {
+        background: var(--color-surface);
+        color: var(--color-text-muted);
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .history__table tbody tr:hover {
+        background: var(--color-surface-light);
+    }
+
+    .history__result--win {
+        color: var(--color-positive);
+        font-weight: 600;
+    }
+
+    .history__result--loss {
+        color: var(--color-negative);
+        font-weight: 600;
+    }
+
+    @media (max-width: 600px) {
+        .history__table { font-size: 0.75rem; }
+        .history__table th,
+        .history__table td { padding: 0.35rem 0.4rem; }
+    }
+</style>
+
+<div class="history" role="region" aria-label="Match history">
+    <div class="history__header">
+        <h2 class="history__title">Match History</h2>
+    </div>
+
+    {% if matches|length == 0 %}
+    <div class="history__empty">
+        <p>No completed matches yet. Finish a game to see it here!</p>
+    </div>
+    {% else %}
+    <div class="history__table-wrap">
+        <table class="history__table" role="table" aria-label="Completed matches">
+            <thead>
+                <tr>
+                    <th scope="col">Opponent</th>
+                    <th scope="col">Result</th>
+                    <th scope="col">Score</th>
+                    <th scope="col">Hands</th>
+                    <th scope="col">Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for match in matches %}
+                <tr>
+                    <td>{{ match.ai_name }}</td>
+                    <td class="{% if match.won %}history__result--win{% else %}history__result--loss{% endif %}">
+                        {{ "Win" if match.won else "Loss" }}
+                    </td>
+                    <td>{{ match.score_human }} &ndash; {{ match.score_ai }}</td>
+                    <td>{{ match.hands_played }}</td>
+                    <td>
+                        {% if match.completed_at %}
+                        <time class="history__time" datetime="{{ match.completed_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+                            {{ match.completed_at.strftime('%b %d, %Y %I:%M %p') }} UTC
+                        </time>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    /**
+     * Convert match-history timestamps from UTC to the user's local timezone.
+     *
+     * The server renders times with a "UTC" suffix as a no-JS fallback.
+     * This script replaces that text with a locale-formatted local time.
+     */
+    (function () {
+        var FORMAT_OPTIONS = {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        };
+
+        function localizeHistoryTimestamps() {
+            var times = document.querySelectorAll('.history__time');
+            Array.prototype.forEach.call(times, function (el) {
+                var dt = el.getAttribute('datetime');
+                if (!dt) { return; }
+                var date = new Date(dt);
+                if (isNaN(date.getTime())) { return; }
+                el.textContent = date.toLocaleString(undefined, FORMAT_OPTIONS);
+            });
+        }
+
+        // Run on initial page load
+        localizeHistoryTimestamps();
+    })();
+</script>

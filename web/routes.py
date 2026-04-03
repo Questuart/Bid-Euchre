@@ -898,11 +898,20 @@ async def game_page(request: Request, link_uuid: str):
                 set_player_cookie(resp, link_uuid)
             return resp
 
+        is_htmx_tab = bool(request.headers.get("HX-Request"))
+
+        def _render_game(ctx: dict) -> HTMLResponse:
+            """Render game page — partial for HTMX tab switch, full otherwise."""
+            if is_htmx_tab:
+                return HTMLResponse(
+                    templates.get_template("partials/game_content.html").render(ctx)
+                )
+            return templates.TemplateResponse("game.html", ctx)
+
         # No nickname yet — show nickname prompt
         if not player.nickname:
             return _with_cookie(
-                templates.TemplateResponse(
-                    "game.html",
+                _render_game(
                     {
                         "request": request,
                         "phase": "nickname",
@@ -934,8 +943,7 @@ async def game_page(request: Request, link_uuid: str):
             ai_manager = _get_ai_manager(request)
             models = ai_manager.list_available()
             return _with_cookie(
-                templates.TemplateResponse(
-                    "game.html",
+                _render_game(
                     {
                         "request": request,
                         "phase": "model_select",
@@ -965,8 +973,7 @@ async def game_page(request: Request, link_uuid: str):
             session.commit()
             models = ai_manager.list_available()
             return _with_cookie(
-                templates.TemplateResponse(
-                    "game.html",
+                _render_game(
                     {
                         "request": request,
                         "phase": "model_select",
@@ -980,7 +987,7 @@ async def game_page(request: Request, link_uuid: str):
         ctx = _build_game_context(engine, state, link_uuid)
         ctx["request"] = request
         ctx["nickname"] = player.nickname
-        return _with_cookie(templates.TemplateResponse("game.html", ctx))
+        return _with_cookie(_render_game(ctx))
     finally:
         session.close()
 
@@ -1701,19 +1708,23 @@ async def leaderboard(request: Request, link_uuid: str):
 
         rankings = get_leaderboard(session, ai_display_names=ai_display_names)
 
-        return templates.TemplateResponse(
-            "leaderboard.html",
-            {
-                "request": request,
-                "link_uuid": link_uuid,
-                "current_page": "leaderboard",
-                "nickname": player.nickname,
-                "current_player_id": player.id,
-                "rankings": rankings,
-                "metric_defs": METRIC_DEFINITIONS,
-                "format_metric": format_metric,
-            },
-        )
+        ctx = {
+            "request": request,
+            "link_uuid": link_uuid,
+            "current_page": "leaderboard",
+            "nickname": player.nickname,
+            "current_player_id": player.id,
+            "rankings": rankings,
+            "metric_defs": METRIC_DEFINITIONS,
+            "format_metric": format_metric,
+        }
+
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                templates.get_template("partials/leaderboard_content.html").render(ctx)
+            )
+
+        return templates.TemplateResponse("leaderboard.html", ctx)
     finally:
         session.close()
 
@@ -1776,16 +1787,20 @@ async def match_history(request: Request, link_uuid: str):
                 }
             )
 
-        return templates.TemplateResponse(
-            "history.html",
-            {
-                "request": request,
-                "link_uuid": link_uuid,
-                "current_page": "history",
-                "nickname": player.nickname,
-                "matches": history_entries,
-            },
-        )
+        ctx = {
+            "request": request,
+            "link_uuid": link_uuid,
+            "current_page": "history",
+            "nickname": player.nickname,
+            "matches": history_entries,
+        }
+
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                templates.get_template("partials/history_content.html").render(ctx)
+            )
+
+        return templates.TemplateResponse("history.html", ctx)
     finally:
         session.close()
 
@@ -1835,17 +1850,21 @@ async def comments_page(request: Request, link_uuid: str):
 
         comments = _fetch_comments(session)
 
-        return templates.TemplateResponse(
-            "comments.html",
-            {
-                "request": request,
-                "link_uuid": link_uuid,
-                "current_page": "comments",
-                "nickname": player.nickname,
-                "comments": comments,
-                "error": None,
-            },
-        )
+        ctx = {
+            "request": request,
+            "link_uuid": link_uuid,
+            "current_page": "comments",
+            "nickname": player.nickname,
+            "comments": comments,
+            "error": None,
+        }
+
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                templates.get_template("partials/comments_content.html").render(ctx)
+            )
+
+        return templates.TemplateResponse("comments.html", ctx)
     finally:
         session.close()
 
@@ -1961,15 +1980,19 @@ async def guide(request: Request, link_uuid: str):
         if player is None:
             raise HTTPException(status_code=404, detail="Player not found")
 
-        return templates.TemplateResponse(
-            "guide.html",
-            {
-                "request": request,
-                "link_uuid": link_uuid,
-                "current_page": "guide",
-                "nickname": player.nickname,
-            },
-        )
+        ctx = {
+            "request": request,
+            "link_uuid": link_uuid,
+            "current_page": "guide",
+            "nickname": player.nickname,
+        }
+
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                templates.get_template("partials/guide_content.html").render(ctx)
+            )
+
+        return templates.TemplateResponse("guide.html", ctx)
     finally:
         session.close()
 

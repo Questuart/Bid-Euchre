@@ -1,0 +1,46 @@
+{#
+    Game tab content partial — swapped via HTMX tab navigation.
+
+    This is the inner content of game.html, rendered without the base.html
+    wrapper for HTMX partial responses.  It reuses the same partials as the
+    full game page.
+
+    Top-level context variables are the same as game.html (see its header
+    comment for the full list).
+#}
+
+{% include "partials/game_controls.html" %}
+
+<div id="game-board" role="region" aria-label="Game board" aria-live="polite"
+     data-match-status="{{ match_status | default('setup') }}">
+
+    {# ---- Setup phases: nickname & model selection ---- #}
+    {% if phase == "nickname" %}
+        {% include "partials/nickname_form.html" %}
+
+    {% elif phase == "model_select" %}
+        {% include "partials/model_select.html" %}
+
+    {# ---- Match result (win/loss screen) ---- #}
+    {% elif phase == "match_result" %}
+        {% include "partials/match_result.html" %}
+
+    {# ---- Hand result (between hands) ---- #}
+    {% elif phase == "hand_result" %}
+        {% include "partials/hand_result.html" %}
+
+    {# ---- Moon exchange card selection (interactive) ---- #}
+    {% elif phase == "moon_exchange_select" %}
+        {% include "partials/game_board.html" %}
+
+    {# ---- Moon exchange interstitial (summary) ---- #}
+    {% elif phase == "moon_exchange" %}
+        {% include "partials/game_board.html" %}
+
+    {# ---- Active game phases: auction and trick play ---- #}
+    {% elif phase in ("auction", "trick_play", "redeal") %}
+        {% include "partials/game_board.html" %}
+
+    {% endif %}
+
+</div>

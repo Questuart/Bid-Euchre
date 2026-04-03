@@ -2782,6 +2782,122 @@ class TestTabNavigation:
         assert resp.status_code == 200
         assert 'role="tablist"' in resp.text
 
+    def test_tab_links_have_htmx_attributes(self, client):
+        """Tab links should have hx-get, hx-target, hx-push-url for HTMX swaps."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert 'hx-get="/history/' in resp.text
+        assert 'hx-target="#tab-content"' in resp.text
+        assert 'hx-push-url="true"' in resp.text
+        assert 'data-tab="history"' in resp.text
+        assert 'data-tab="game"' in resp.text
+
+    def test_tab_content_wrapper_present(self, client):
+        """The #tab-content wrapper div exists for HTMX target."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert 'id="tab-content"' in resp.text
+
+
+class TestHtmxTabPartials:
+    """HTMX partial responses for tab navigation — no full page reload."""
+
+    def test_history_htmx_returns_partial(self, client, app):
+        """GET /history with HX-Request returns partial content, not full page."""
+        link_uuid = _create_game(client)
+        resp = client.get(
+            f"/history/{link_uuid}",
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == 200
+        # Partial should NOT contain the full HTML skeleton
+        assert "<!DOCTYPE html>" not in resp.text
+        assert "<head>" not in resp.text
+        # But should contain the history content
+        assert "Match History" in resp.text
+        assert "history" in resp.text
+
+    def test_history_non_htmx_returns_full_page(self, client, app):
+        """GET /history without HX-Request returns full page with base.html."""
+        link_uuid = _create_game(client)
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        assert "<!DOCTYPE html>" in resp.text
+        assert "Match History" in resp.text
+
+    def test_leaderboard_htmx_returns_partial(self, client):
+        """GET /leaderboard with HX-Request returns partial content."""
+        link_uuid = _create_game(client)
+        resp = client.get(
+            f"/leaderboard/{link_uuid}",
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == 200
+        assert "<!DOCTYPE html>" not in resp.text
+        assert "Leaderboard" in resp.text
+
+    def test_comments_htmx_returns_partial(self, client):
+        """GET /comments with HX-Request returns partial content."""
+        link_uuid = _create_game(client)
+        resp = client.get(
+            f"/comments/{link_uuid}",
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == 200
+        assert "<!DOCTYPE html>" not in resp.text
+        assert "Comments" in resp.text
+
+    def test_guide_htmx_returns_partial(self, client):
+        """GET /guide with HX-Request returns partial content."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        resp = client.get(
+            f"/guide/{link_uuid}",
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == 200
+        assert "<!DOCTYPE html>" not in resp.text
+        assert "How to Play" in resp.text
+
+    def test_game_htmx_returns_partial(self, client):
+        """GET /play with HX-Request returns partial game content."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+        resp = client.get(
+            f"/play/{link_uuid}",
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == 200
+        assert "<!DOCTYPE html>" not in resp.text
+        assert "game-board" in resp.text
+
+    def test_htmx_partial_preserves_content(self, client):
+        """HTMX partial response contains the same data as full page."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+
+        full = client.get(f"/guide/{link_uuid}")
+        partial = client.get(
+            f"/guide/{link_uuid}",
+            headers={"HX-Request": "true"},
+        )
+        assert full.status_code == 200
+        assert partial.status_code == 200
+        # Both should contain guide content
+        assert "The Basics" in full.text
+        assert "The Basics" in partial.text
+        assert "Scoring" in full.text
+        assert "Scoring" in partial.text
+
 
 # ---------------------------------------------------------------------------
 # Test: Guide page
