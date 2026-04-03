@@ -36,7 +36,8 @@ _LEADERBOARD_MATCH_STATUSES = ("active", "complete")
 class MetricDef(NamedTuple):
     """Display metadata for a single leaderboard metric."""
 
-    label: str  # Short column header
+    label: str  # Abbreviated column header (e.g. "GP")
+    full_label: str  # Full name for glossary (e.g. "Games Played")
     tooltip: str  # Plain-English explanation
     format: str  # "pct" | "int" | "float1" | "float3" | "signed_float1"
     category: str  # "primary" | "default" | "secondary"
@@ -46,7 +47,8 @@ class MetricDef(NamedTuple):
 #: The template iterates these to build headers, tooltips, and formatting.
 METRIC_DEFINITIONS: dict[str, MetricDef] = {
     "net_eppd": MetricDef(
-        label="Net EPPD",
+        label="EPPD",
+        full_label="Net EPPD",
         tooltip=(
             "Net Expected Points Per Deal — your average point advantage "
             "per hand. Positive means you're outscoring opponents."
@@ -55,79 +57,92 @@ METRIC_DEFINITIONS: dict[str, MetricDef] = {
         category="primary",
     ),
     "matches_played": MetricDef(
-        label="Games Played",
+        label="GP",
+        full_label="Games Played",
         tooltip="Total completed games played.",
         format="int",
         category="default",
     ),
     "hands_played": MetricDef(
-        label="Hands",
+        label="HP",
+        full_label="Hands Played",
         tooltip="Total hands played across all matches (including in-progress).",
         format="int",
         category="default",
     ),
     "games_won": MetricDef(
-        label="Games Won",
+        label="GW",
+        full_label="Games Won",
         tooltip="Total games won.",
         format="int_games",
         category="default",
     ),
     "win_rate": MetricDef(
-        label="Win %",
+        label="W%",
+        full_label="Win %",
         tooltip="Percentage of completed games you won.",
         format="pct",
         category="default",
     ),
     "avg_match_margin": MetricDef(
-        label="Avg Margin",
+        label="Mgn",
+        full_label="Avg Margin",
         tooltip="Average score margin across all completed matches (positive = winning).",
         format="signed_float1",
         category="default",
     ),
     "avg_margin_victory": MetricDef(
-        label="Win Margin",
+        label="WMgn",
+        full_label="Win Margin",
         tooltip="Average score margin in games you won (points).",
         format="float1",
         category="secondary",
     ),
     "bid_rate": MetricDef(
-        label="Bid %",
+        label="Bid%",
+        full_label="Bid %",
         tooltip="Percentage of hands where your team won the auction and declared.",
         format="pct",
         category="secondary",
     ),
     "make_rate": MetricDef(
-        label="Make %",
+        label="Make%",
+        full_label="Make %",
         tooltip="Percentage of your contracts that made (took enough tricks).",
         format="pct",
         category="secondary",
     ),
     "avg_bid_level": MetricDef(
-        label="Avg Bid",
+        label="AvgB",
+        full_label="Avg Bid",
         tooltip="Average number of tricks bid when your team declares.",
         format="float1",
         category="secondary",
     ),
     "moon_call_rate": MetricDef(
-        label="Moon %",
+        label="Moon%",
+        full_label="Moon %",
         tooltip="Percentage of hands where you personally called a moon (bid all 10 tricks). AI partner moons are excluded.",
         format="pct",
         category="secondary",
     ),
     "moon_make_rate": MetricDef(
-        label="Moon Make",
+        label="M.Make",
+        full_label="Moon Make",
         tooltip="Percentage of your personal moon bids that were successfully made.",
         format="pct",
         category="secondary",
     ),
     "loner_call_rate": MetricDef(
-        label="Loner %",
+        label="Loner%",
+        full_label="Loner %",
         tooltip="Percentage of hands where you personally called a loner (solo play). AI partner loners are excluded.",
         format="pct",
         category="secondary",
     ),
     "loner_make_rate": MetricDef(
-        label="Loner Make",
+        label="L.Make",
+        full_label="Loner Make",
         tooltip="Percentage of your personal loner bids that were successfully made.",
         format="pct",
         category="secondary",

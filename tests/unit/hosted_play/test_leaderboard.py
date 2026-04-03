@@ -941,7 +941,7 @@ class TestLeaderboardRoute:
             resp = client.get(f"/leaderboard/{player.link_uuid}")
             assert resp.status_code == 200
             assert "RankedPlayer" in resp.text
-            assert "Net EPPD" in resp.text
+            assert "EPPD" in resp.text
         finally:
             session.close()
 
@@ -982,7 +982,7 @@ class TestLeaderboardRoute:
 
             resp = client.get(f"/leaderboard/{player.link_uuid}")
             assert resp.status_code == 200
-            assert "Ranked by Net EPPD" in resp.text
+            assert "Ranked by EPPD" in resp.text
         finally:
             session.close()
 
@@ -999,7 +999,6 @@ class TestLeaderboardRoute:
             resp = client.get(f"/leaderboard/{player.link_uuid}")
             assert resp.status_code == 200
             assert "What do these stats mean?" in resp.text
-            assert "Metric Definitions" in resp.text
         finally:
             session.close()
 
@@ -1210,3 +1209,21 @@ class TestMetricDefinitions:
     def test_all_have_nonempty_label(self):
         for key, m in METRIC_DEFINITIONS.items():
             assert len(m.label) > 0, f"{key} has empty label"
+
+    def test_all_have_nonempty_full_label(self):
+        for key, m in METRIC_DEFINITIONS.items():
+            assert len(m.full_label) > 0, f"{key} has empty full_label"
+
+    def test_labels_are_abbreviated(self):
+        """Column headers should be short abbreviations (≤6 chars)."""
+        for key, m in METRIC_DEFINITIONS.items():
+            assert (
+                len(m.label) <= 6
+            ), f"{key} label {m.label!r} too long for abbreviated header"
+
+    def test_full_labels_are_longer_than_labels(self):
+        """Full labels should be more descriptive than abbreviated labels."""
+        for key, m in METRIC_DEFINITIONS.items():
+            assert len(m.full_label) >= len(
+                m.label
+            ), f"{key}: full_label {m.full_label!r} shorter than label {m.label!r}"
