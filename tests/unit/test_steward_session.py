@@ -7,6 +7,7 @@ infrastructure without requiring tmux to be running.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,6 +20,32 @@ INSTALL_SCRIPT = REPO_ROOT / ".claude" / "launchd" / "install-launchd.sh"
 PLIST_TEMPLATE = REPO_ROOT / ".claude" / "launchd" / "ensure-steward-session.plist"
 
 STEWARD_SESSION = Path(".claude/tmux/steward-session.sh")
+
+
+def _read_steward_script() -> str:
+    """Read steward-session.sh, preferring the git-committed version in CI.
+
+    In CI, the ``setup-uv`` cache restoration can overwrite ``.git/HEAD``,
+    causing the working-tree copy of the script to revert to the base branch.
+    When ``GITHUB_SHA`` is set (GitHub Actions), we read from the merge-commit
+    blob to get the correct PR content. Locally we just read the file.
+    """
+    github_sha = os.environ.get("GITHUB_SHA")
+    if github_sha:
+        try:
+            return subprocess.check_output(
+                [
+                    "git",
+                    "show",
+                    f"{github_sha}:.claude/tmux/steward-session.sh",
+                ],
+                cwd=str(REPO_ROOT),
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            pass  # fall through to filesystem read
+    return STEWARD_SCRIPT.read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -1000,63 +1027,15 @@ class TestAutoCompactWindow:
 
     def test_auto_compact_window_set_via_tmux_env(self) -> None:
         """CLAUDE_CODE_AUTO_COMPACT_WINDOW must be propagated via tmux set-environment."""
-        import hashlib
-
-        path = STEWARD_SCRIPT
-        content = path.read_text()
-        content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
-
-        # Diagnostic: check git status of the file
-        diag = {}
-        try:
-            rel = str(path.relative_to(REPO_ROOT))
-            diag["head"] = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"],
-                cwd=str(REPO_ROOT),
-                text=True,
-                stderr=subprocess.STDOUT,
-            ).strip()[:12]
-            diag["diff"] = subprocess.check_output(
-                ["git", "diff", "--stat", "--", rel],
-                cwd=str(REPO_ROOT),
-                text=True,
-                stderr=subprocess.STDOUT,
-            ).strip()
-            diag["log"] = subprocess.check_output(
-                ["git", "log", "--oneline", "-3", "--", rel],
-                cwd=str(REPO_ROOT),
-                text=True,
-                stderr=subprocess.STDOUT,
-            ).strip()
-            diag["log_all"] = subprocess.check_output(
-                ["git", "log", "--oneline", "-3"],
-                cwd=str(REPO_ROOT),
-                text=True,
-                stderr=subprocess.STDOUT,
-            ).strip()
-            git_content = subprocess.check_output(
-                ["git", "show", f"HEAD:{rel}"],
-                cwd=str(REPO_ROOT),
-                text=True,
-                stderr=subprocess.STDOUT,
-            )
-            diag["git_hash"] = hashlib.sha256(git_content.encode()).hexdigest()[:16]
-            diag["git_has_compact"] = "CLAUDE_CODE_AUTO_COMPACT_WINDOW" in git_content
-        except Exception as exc:
-            diag["error"] = str(exc)
-
+        content = _read_steward_script()
         assert (
             'tmux set-environment -t "$SESSION" CLAUDE_CODE_AUTO_COMPACT_WINDOW'
             in content
-        ), (
-            f"CLAUDE_CODE_AUTO_COMPACT_WINDOW must be set via tmux set-environment. "
-            f"FS: size={len(content)}, hash={content_hash}. "
-            f"Diag: {diag}"
-        )
+        ), "CLAUDE_CODE_AUTO_COMPACT_WINDOW must be set via tmux set-environment"
 
     def test_auto_compact_window_value_is_200k(self) -> None:
         """Auto-compact window must be set to 200000 tokens."""
-        content = STEWARD_SCRIPT.read_text()
+        content = _read_steward_script()
         assert (
             'CLAUDE_CODE_AUTO_COMPACT_WINDOW "200000"' in content
         ), "CLAUDE_CODE_AUTO_COMPACT_WINDOW must be set to 200000"
@@ -1068,7 +1047,7 @@ class TestAutoCompactWindow:
         via tmux set-environment after the orchestrator pane is created, so
         only panes spawned after that point inherit the limit.
         """
-        content = STEWARD_SCRIPT.read_text()
+        content = _read_steward_script()
         orch_pos = content.find("--agent steward-orchestrator")
         compact_pos = content.find("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
         assert orch_pos > 0, "Orchestrator pane launch must exist"
@@ -1080,7 +1059,7 @@ class TestAutoCompactWindow:
 
     def test_auto_compact_set_before_non_orch_panes(self) -> None:
         """Auto-compact env var must be set BEFORE non-orchestrator panes are created."""
-        content = STEWARD_SCRIPT.read_text()
+        content = _read_steward_script()
         compact_pos = content.find("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
         # ops is the first non-orchestrator pane (split-window after orchestrator)
         ops_pos = content.find("--name ops")
@@ -1093,7 +1072,7 @@ class TestAutoCompactWindow:
 
     def test_auto_compact_not_shell_export(self) -> None:
         """Must use tmux set-environment, not shell export (panes don't inherit it)."""
-        content = STEWARD_SCRIPT.read_text()
+        content = _read_steward_script()
         assert "export CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in content, (
             "CLAUDE_CODE_AUTO_COMPACT_WINDOW must not use shell export "
             "(tmux panes don't inherit it)"
