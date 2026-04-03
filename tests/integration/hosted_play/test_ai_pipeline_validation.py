@@ -148,7 +148,12 @@ def _advance_pending_reveals(
             return state
 
         has_hidden_auction = hand.revealed_auction_count < len(hand.auction)
-        if not has_hidden_auction and not hand.paused_after_trick:
+        auction_settling = not getattr(hand, "auction_settled", True)
+        if (
+            not has_hidden_auction
+            and not auction_settling
+            and not hand.paused_after_trick
+        ):
             return state
 
         resp = client.post(f"/play/{link_uuid}/next")
