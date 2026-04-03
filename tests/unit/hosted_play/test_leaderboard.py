@@ -1227,3 +1227,64 @@ class TestMetricDefinitions:
             assert len(m.full_label) >= len(
                 m.label
             ), f"{key}: full_label {m.full_label!r} shorter than label {m.label!r}"
+
+
+# ---------------------------------------------------------------------------
+# Current player highlight (#2224)
+# ---------------------------------------------------------------------------
+
+
+class TestLeaderboardCurrentPlayerHighlight:
+    """Verify the current player's row is highlighted on the leaderboard."""
+
+    @pytest.fixture()
+    def app_and_client(self, tmp_path):
+        from starlette.testclient import TestClient
+
+        from tests.unit.hosted_play.conftest import make_hosted_play_test_config
+        from web.app import create_app
+
+        config = make_hosted_play_test_config(tmp_path)
+        app = create_app(config)
+        with TestClient(app) as client:
+            yield app, client
+
+    def test_current_player_row_has_highlight_class(self, app_and_client):
+        """The current player's row gets the leaderboard-row--current class."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player = _make_player(session, nickname="HighlightMe")
+            match = _make_match(session, player, score_human=52, score_ai=20)
+            _make_hand(session, match, points_team0=5, points_team1=2)
+            session.commit()
+
+            resp = client.get(f"/leaderboard/{player.link_uuid}")
+            assert resp.status_code == 200
+            assert "leaderboard-row--current" in resp.text
+            assert 'aria-current="true"' in resp.text
+        finally:
+            session.close()
+
+    def test_other_player_row_has_no_highlight(self, app_and_client):
+        """Other players' rows do not get the highlight class."""
+        app, client = app_and_client
+        session = app.state.session_factory()
+        try:
+            player1 = _make_player(session, nickname="Player1")
+            player2 = _make_player(session, nickname="Player2")
+            match1 = _make_match(session, player1, score_human=52, score_ai=20)
+            _make_hand(session, match1, points_team0=5, points_team1=2)
+            match2 = _make_match(session, player2, score_human=52, score_ai=30)
+            _make_hand(session, match2, points_team0=3, points_team1=4)
+            session.commit()
+
+            # View as player1 — only player1's row should be highlighted
+            resp = client.get(f"/leaderboard/{player1.link_uuid}")
+            assert resp.status_code == 200
+            # Exactly one <tr> should have the highlight class (CSS block also
+            # contains the string, so count on the attribute pattern instead)
+            assert resp.text.count('class="leaderboard-row--current"') == 1
+            assert resp.text.count('aria-current="true"') == 1
+        finally:
+            session.close()

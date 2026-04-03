@@ -86,6 +86,15 @@
         background: var(--color-surface-light);
     }
 
+    .leaderboard__table tbody tr.leaderboard-row--current {
+        background: rgba(255, 255, 255, 0.05);
+        border-left: 3px solid var(--color-moon);
+    }
+
+    .leaderboard__table tbody tr.leaderboard-row--current:hover {
+        background: rgba(255, 255, 255, 0.08);
+    }
+
     .leaderboard__table .rank-col { width: 2.5rem; }
     .leaderboard__table .name-col { min-width: 8rem; }
     .leaderboard__table .primary-col {
@@ -226,7 +235,7 @@
             </thead>
             <tbody>
                 {% for entry in rankings %}
-                <tr>
+                <tr{% if entry.player_id == current_player_id %} class="leaderboard-row--current" aria-current="true"{% endif %}>
                     <td class="rank-col">{{ loop.index }}</td>
                     <td class="name-col">{{ entry.nickname or "Anonymous" }}{% if entry.is_ai %}<span class="leaderboard__ai-badge" title="AI opponent">AI</span>{% endif %}</td>
                     {% for key, m in metric_defs.items() %}
