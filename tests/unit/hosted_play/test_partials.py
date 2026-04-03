@@ -3189,22 +3189,22 @@ class TestTrickHistory:
 
 
 # ---------------------------------------------------------------------------
-# Bower suit display — left bower shows effective trump suit (#2204)
+# Bower suit display — show printed suit + RB/LB labels (#2261)
 # ---------------------------------------------------------------------------
 
 
 class TestBowerDisplay:
-    """Verify bower cards show effective trump suit + badge across all partials.
+    """Verify bower cards show original printed suit + RB/LB badge.
 
-    The left bower (J of same-colour off-suit) must display the trump suit,
-    not its physical suit.  A bower badge ("B") must be present.
-    Refs: #2204, #2158, #2180.
+    Bowers must display their printed (physical) suit with an RB (right bower)
+    or LB (left bower) badge.  The effective suit should NOT be used for display.
+    Refs: #2261, #2204, #2158, #2180.
     """
 
     # -- trick.html: played card in trick area --
 
-    def test_left_bower_played_card_shows_trump_suit(self, env):
-        """Left bower in trick card_slot shows trump suit (effective), not physical."""
+    def test_left_bower_played_card_shows_printed_suit(self, env):
+        """Left bower in trick card_slot shows printed suit, not trump suit (#2261)."""
         tmpl = env.get_template("partials/trick.html")
         # J♠ played in a clubs contract — left bower of clubs
         html = tmpl.render(
@@ -3222,13 +3222,13 @@ class TestBowerDisplay:
             contract_type="suit",
             trump="C",
         )
-        # The played card should show clubs (♣), not spades (♠)
-        assert "card--clubs" in html
+        # The played card should show spades (♠) — its printed suit
+        assert "card--spades" in html
         assert "card--bower" in html
-        assert "bower-badge" in html.lower() or "bower" in html.lower()
+        assert ">LB<" in html  # left bower badge
 
-    def test_right_bower_played_card_shows_trump_suit(self, env):
-        """Right bower in trick card_slot shows trump suit (trivially correct)."""
+    def test_right_bower_played_card_shows_printed_suit(self, env):
+        """Right bower in trick card_slot shows printed suit (same as trump)."""
         tmpl = env.get_template("partials/trick.html")
         # J♣ played in a clubs contract — right bower
         html = tmpl.render(
@@ -3248,6 +3248,7 @@ class TestBowerDisplay:
         )
         assert "card--clubs" in html
         assert "card--bower" in html
+        assert ">RB<" in html  # right bower badge
 
     def test_non_bower_jack_no_badge(self, env):
         """Non-bower J does not get a bower badge."""
@@ -3273,8 +3274,8 @@ class TestBowerDisplay:
 
     # -- hand.html: card in player's hand --
 
-    def test_left_bower_in_hand_shows_trump_suit(self, env):
-        """Left bower in the hand shows trump suit and bower badge."""
+    def test_left_bower_in_hand_shows_printed_suit(self, env):
+        """Left bower in the hand shows printed suit and LB badge (#2261)."""
         tmpl = env.get_template("partials/hand.html")
         # J♦ in a hearts contract — left bower of hearts
         html = tmpl.render(
@@ -3286,13 +3287,13 @@ class TestBowerDisplay:
             contract_type="suit",
             trump="H",
         )
-        # The J♦ card should show hearts (♥), not diamonds (♦)
-        assert "card--hearts" in html
+        # The J♦ card should show diamonds (♦) — its printed suit
+        assert "card--diamonds" in html
         assert "card--bower" in html
-        assert "bower" in html.lower()
+        assert ">LB<" in html
 
-    def test_left_bower_legal_card_shows_trump_suit(self, env):
-        """Left bower as a legal play button shows trump suit."""
+    def test_left_bower_legal_card_shows_printed_suit(self, env):
+        """Left bower as a legal play button shows printed suit + LB badge."""
         tmpl = env.get_template("partials/hand.html")
         # J♠ legal in a clubs contract — left bower
         html = tmpl.render(
@@ -3304,10 +3305,11 @@ class TestBowerDisplay:
             contract_type="suit",
             trump="C",
         )
-        # Should show clubs suit, with bower badge
-        assert "card--clubs" in html
+        # Should show spades suit (printed), with LB bower badge
+        assert "card--spades" in html
         assert "card--bower" in html
         assert "(left bower)" in html
+        assert ">LB<" in html
 
     def test_hand_no_bower_without_trump(self, env):
         """No bower badge when trump is not set (e.g. auction phase)."""
@@ -3323,8 +3325,8 @@ class TestBowerDisplay:
 
     # -- trick_history.html: card in history table --
 
-    def test_left_bower_in_history_shows_trump_suit(self, env):
-        """Left bower in trick history shows trump suit."""
+    def test_left_bower_in_history_shows_printed_suit(self, env):
+        """Left bower in trick history shows printed suit + LB badge (#2261)."""
         tmpl = env.get_template("partials/trick_history.html")
         # J♠ in a clubs contract — left bower
         html = tmpl.render(
@@ -3345,14 +3347,15 @@ class TestBowerDisplay:
             contract_type="suit",
             trump="C",
         )
-        # Should show ♣ for the left bower, not ♠
-        assert "\u2663" in html  # ♣
+        # Should show ♠ for the left bower (printed suit), not ♣
+        assert "\u2660" in html  # ♠
         assert "bower-sup" in html
+        assert ">LB<" in html
 
     # -- moon_exchange.html: exchanged cards --
 
-    def test_left_bower_in_exchange_shows_trump_suit(self, env):
-        """Left bower in moon exchange given cards shows trump suit."""
+    def test_left_bower_in_exchange_shows_printed_suit(self, env):
+        """Left bower in moon exchange given cards shows printed suit (#2261)."""
         tmpl = env.get_template("partials/moon_exchange.html")
         html = tmpl.render(
             bidder_seat=0,
@@ -3363,13 +3366,15 @@ class TestBowerDisplay:
             link_uuid="test-uuid",
             human_hand=[["C", "K"], ["C", "Q"]],
         )
-        assert "card--clubs" in html
+        # Should show spades (♠) — printed suit of J♠
+        assert "card--spades" in html
         assert "card--bower" in html
+        assert ">LB<" in html
 
     # -- moon_exchange_select.html: selectable cards --
 
-    def test_left_bower_in_exchange_select_shows_trump_suit(self, env):
-        """Left bower in moon exchange selection shows trump suit."""
+    def test_left_bower_in_exchange_select_shows_printed_suit(self, env):
+        """Left bower in moon exchange selection shows printed suit (#2261)."""
         tmpl = env.get_template("partials/moon_exchange_select.html")
         html = tmpl.render(
             bidder_seat=0,
@@ -3380,8 +3385,10 @@ class TestBowerDisplay:
             exchange_prompt="Choose 2 cards",
             is_mooner=True,
         )
-        assert "card--clubs" in html
+        # Should show spades (♠) — printed suit of J♠
+        assert "card--spades" in html
         assert "card--bower" in html
+        assert ">LB<" in html
 
 
 class TestIsBowerFilter:
