@@ -37,7 +37,7 @@ from .db import (
     make_session_factory,
 )
 from .routes import router as game_router
-from .template_filters import display_rank
+from .template_filters import display_rank, effective_suit
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +162,8 @@ async def lifespan(app: FastAPI):
     templates.env.globals["app_url"] = config.app_url.rstrip("/")
     # Custom filter: display_rank converts internal 'T' to user-facing '10'
     templates.env.filters["display_rank"] = display_rank
+    # Custom filter: effective_suit resolves bower suits in suit contracts
+    templates.env.filters["effective_suit"] = effective_suit
 
     # 7. Stash on app.state for route access
     app.state.config = config

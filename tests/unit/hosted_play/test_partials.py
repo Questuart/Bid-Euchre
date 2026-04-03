@@ -11,7 +11,7 @@ import os
 import jinja2
 import pytest
 
-from web.template_filters import display_rank
+from web.template_filters import display_rank, effective_suit
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -36,6 +36,7 @@ def env():
         undefined=jinja2.StrictUndefined,
     )
     environment.filters["display_rank"] = display_rank
+    environment.filters["effective_suit"] = effective_suit
     return environment
 
 
@@ -751,6 +752,84 @@ class TestTrick:
         )
         assert "lead-suit" in html
         assert "\u2665" in html  # ♥
+
+    def test_left_bower_lead_shows_trump_suit(self, env):
+        """Left bower lead displays trump suit, not printed suit (#2158).
+
+        When the left bower (J of same-color off-suit) leads in a suit
+        contract, the lead-suit indicator must show the trump suit.
+        Example: clubs contract, J♠ (left bower) led → shows ♣ not ♠.
+        """
+        tmpl = env.get_template("partials/trick.html")
+        # J♠ led in a clubs contract — left bower of clubs
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": [[0, ["S", "J"]]]},
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=1,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            contract_type="suit",
+            trump="C",
+        )
+        assert "lead-suit" in html
+        # ♣ (clubs) should appear, not ♠ (spades)
+        assert "\u2663" in html  # ♣
+        assert "lead-suit--clubs" in html
+        assert "lead-suit--spades" not in html
+
+    def test_right_bower_lead_shows_trump_suit(self, env):
+        """Right bower lead displays trump suit (trivial — printed suit matches)."""
+        tmpl = env.get_template("partials/trick.html")
+        # J♣ led in a clubs contract — right bower
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": [[0, ["C", "J"]]]},
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=1,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            contract_type="suit",
+            trump="C",
+        )
+        assert "lead-suit--clubs" in html
+
+    def test_non_bower_jack_lead_shows_printed_suit(self, env):
+        """Non-bower J lead shows its printed suit, not trump."""
+        tmpl = env.get_template("partials/trick.html")
+        # J♦ led in a clubs contract — not a bower (different color)
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": [[0, ["D", "J"]]]},
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=1,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+            contract_type="suit",
+            trump="C",
+        )
+        assert "lead-suit--diamonds" in html
+
+    def test_lead_suit_no_contract_falls_back_to_printed(self, env):
+        """Without contract info, lead suit falls back to printed suit."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": [[0, ["S", "J"]]]},
+            completed_tricks=[],
+            dealer_seat=3,
+            bidder_seat=0,
+            current_seat=1,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert "lead-suit--spades" in html
 
     def test_lead_suit_not_shown_when_no_plays(self, env):
         """Lead suit indicator not present when trick has no plays yet."""

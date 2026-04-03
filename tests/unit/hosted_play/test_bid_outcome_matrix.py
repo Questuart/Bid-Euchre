@@ -22,7 +22,7 @@ import jinja2
 import pytest
 
 from bid_euchre.scoring import compute_points
-from web.template_filters import display_rank
+from web.template_filters import display_rank, effective_suit
 
 # ---------------------------------------------------------------------------
 # Template environment
@@ -47,6 +47,7 @@ def jinja_env():
         undefined=jinja2.StrictUndefined,
     )
     environment.filters["display_rank"] = display_rank
+    environment.filters["effective_suit"] = effective_suit
     return environment
 
 
