@@ -60,6 +60,12 @@ METRIC_DEFINITIONS: dict[str, MetricDef] = {
         format="int",
         category="default",
     ),
+    "hands_played": MetricDef(
+        label="Hands",
+        tooltip="Total hands played across all matches (including in-progress).",
+        format="int",
+        category="default",
+    ),
     "games_won": MetricDef(
         label="Games Won",
         tooltip="Total games won.",
@@ -77,12 +83,6 @@ METRIC_DEFINITIONS: dict[str, MetricDef] = {
         tooltip="Average score margin across all completed matches (positive = winning).",
         format="signed_float1",
         category="default",
-    ),
-    "hands_played": MetricDef(
-        label="Hands",
-        tooltip="Total hands played across all matches (including in-progress).",
-        format="int",
-        category="secondary",
     ),
     "avg_margin_victory": MetricDef(
         label="Win Margin",
