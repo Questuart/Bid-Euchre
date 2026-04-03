@@ -145,6 +145,19 @@ def _check_worktree_health(repo_root: Path) -> tuple[bool, str]:
                     timeout=30,
                 )
                 if pull.returncode != 0:
+                    # Before git reset --hard, check for dirty working tree
+                    # to avoid silently discarding uncommitted changes (#2181).
+                    dirty_check = subprocess.run(
+                        ["git", "status", "--porcelain"],
+                        capture_output=True,
+                        text=True,
+                        cwd=str(repo_root),
+                    )
+                    if dirty_check.returncode == 0 and dirty_check.stdout.strip():
+                        return False, (
+                            "Cannot reset to origin/main: working tree has "
+                            "uncommitted changes (ff-only pull also failed)"
+                        )
                     # Try reset instead of pull (handles diverged branches)
                     reset = subprocess.run(
                         ["git", "reset", "--hard", "origin/main"],
