@@ -10,6 +10,7 @@ no rule/scoring logic lives here.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import random
@@ -78,11 +79,17 @@ def _get_session(request: Request):
 
 
 def _build_engine(ai_manager: AIManager, model_id: str) -> MatchEngine:
-    """Instantiate a MatchEngine for the given *model_id*."""
+    """Instantiate a MatchEngine for the given *model_id*.
+
+    The play strategy is deep-copied so each match gets its own mutable
+    state (seen_counts, void_suits, contract context).  Without this,
+    concurrent matches sharing a single GluttonStrategy instance would
+    contaminate each other's tracking state.  See #2168.
+    """
     info = ai_manager.get_model_info(model_id)
     return MatchEngine(
         bidding_policy=info.bidding_policy,
-        play_strategy=info.play_strategy,
+        play_strategy=copy.deepcopy(info.play_strategy),
     )
 
 
