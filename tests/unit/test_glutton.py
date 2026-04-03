@@ -1104,3 +1104,165 @@ class TestContractSyncDefenseInDepth:
         glutton.choose_card(hand, [], "suit", "H", 0)
         assert glutton._contract_type == "suit"
         assert glutton._trump_suit == "H"
+
+
+class TestStaleInferenceReset:
+    """Tests for stale inference reset when contract changes (#2139).
+
+    When on_hand_start() is never called, the defense-in-depth sync in
+    choose_card() should reset _seen_counts and _void_suits_by_seat when
+    the contract changes — stale inference from a previous hand could
+    cause incorrect decisions.
+    """
+
+    def test_glutton_inference_cleared_on_contract_change(self):
+        """GluttonStrategy clears inference when contract changes mid-stream.
+
+        Simulate: hand 1 under "high" accumulates inference, then hand 2
+        switches to "low" without on_hand_start.  The stale inference from
+        hand 1 must not persist into hand 2.
+        """
+        glutton = GluttonStrategy(debug=True)
+
+        # Simulate hand 1 under "high" with some observed plays
+        hand1 = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "T"),
+            Card("S", "J"),
+        ]
+        glutton.on_hand_start(hand1, "high", None, 0)
+        # Observe some plays to populate inference
+        glutton.observe_play(1, Card("C", "A"), [(1, Card("C", "A"))], "high", None)
+        glutton.observe_play(
+            2, Card("D", "T"), [(1, Card("C", "A")), (2, Card("D", "T"))], "high", None
+        )
+        assert len(glutton._seen_counts) > 0, "Precondition: inference populated"
+        assert any(
+            len(v) > 0 for v in glutton._void_suits_by_seat.values()
+        ), "Precondition: void inference populated"
+
+        # Hand 2 starts with a different contract but NO on_hand_start
+        hand2 = [Card("H", "T"), Card("H", "K"), Card("H", "A")]
+        glutton.choose_card(hand2, [], "low", None, 0)
+
+        # Inference should have been cleared by the contract change
+        assert (
+            glutton._seen_counts == {}
+        ), f"Stale _seen_counts not cleared on contract change: {glutton._seen_counts}"
+        assert all(
+            len(v) == 0 for v in glutton._void_suits_by_seat.values()
+        ), f"Stale _void_suits_by_seat not cleared: {glutton._void_suits_by_seat}"
+
+    def test_glutton_inference_preserved_within_hand(self):
+        """Inference should NOT be cleared on subsequent calls within the same hand."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "T"),
+            Card("S", "J"),
+            Card("S", "Q"),
+            Card("D", "A"),
+            Card("D", "K"),
+            Card("D", "Q"),
+            Card("C", "T"),
+            Card("C", "J"),
+        ]
+        glutton.on_hand_start(hand, "high", None, 0)
+
+        # Observe a play to populate inference
+        glutton.observe_play(
+            1, Card("C", "A"), [(0, Card("H", "A")), (1, Card("C", "A"))], "high", None
+        )
+        assert len(glutton._seen_counts) > 0
+
+        # Call choose_card with SAME contract — inference must be preserved
+        remaining = hand[1:]  # 9 cards
+        plays = [(1, Card("S", "A"))]
+        glutton.choose_card(remaining, plays, "high", None, 0)
+
+        assert (
+            len(glutton._seen_counts) > 0
+        ), "Inference should be preserved within the same hand/contract"
+
+    def test_glutton_trump_change_clears_inference(self):
+        """Changing trump_suit (same contract_type) also clears inference."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand1 = [Card("H", "J"), Card("S", "T")]
+        glutton.on_hand_start(hand1, "suit", "H", 0)
+        glutton.observe_play(1, Card("D", "A"), [(1, Card("D", "A"))], "suit", "H")
+        assert len(glutton._seen_counts) > 0
+
+        # New hand with different trump, no on_hand_start
+        hand2 = [Card("S", "J"), Card("D", "T")]
+        glutton.choose_card(hand2, [], "suit", "S", 0)
+
+        assert (
+            glutton._seen_counts == {}
+        ), "Stale inference not cleared on trump_suit change"
+
+    def test_isolated_inference_cleared_on_contract_change(self):
+        """GluttonIsolatedStrategy clears inference when contract changes."""
+        glutton = GluttonIsolatedStrategy(
+            debug=True,
+            smart_leads=True,
+            partner_awareness=True,
+        )
+
+        # Hand 1 under "high" — accumulate inference
+        hand1 = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "T"),
+            Card("S", "J"),
+        ]
+        glutton.on_hand_start(hand1, "high", None, 0)
+        glutton.observe_play(1, Card("C", "A"), [(1, Card("C", "A"))], "high", None)
+        glutton.observe_play(
+            2, Card("D", "T"), [(1, Card("C", "A")), (2, Card("D", "T"))], "high", None
+        )
+        assert len(glutton._seen_counts) > 0
+
+        # Hand 2 with different contract, no on_hand_start
+        hand2 = [Card("H", "T"), Card("H", "K"), Card("H", "A")]
+        glutton.choose_card(hand2, [], "low", None, 0)
+
+        assert (
+            glutton._seen_counts == {}
+        ), f"Isolated: stale _seen_counts not cleared: {glutton._seen_counts}"
+        assert all(
+            len(v) == 0 for v in glutton._void_suits_by_seat.values()
+        ), f"Isolated: stale _void_suits_by_seat not cleared: {glutton._void_suits_by_seat}"
+
+    def test_isolated_inference_preserved_within_hand(self):
+        """Isolated variant preserves inference within the same hand."""
+        glutton = GluttonIsolatedStrategy(debug=True, partner_awareness=True)
+
+        hand = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "T"),
+            Card("S", "J"),
+            Card("S", "Q"),
+            Card("D", "A"),
+            Card("D", "K"),
+            Card("D", "Q"),
+            Card("C", "T"),
+            Card("C", "J"),
+        ]
+        glutton.on_hand_start(hand, "high", None, 0)
+        glutton.observe_play(
+            1, Card("C", "A"), [(0, Card("H", "A")), (1, Card("C", "A"))], "high", None
+        )
+        assert len(glutton._seen_counts) > 0
+
+        remaining = hand[1:]
+        plays = [(1, Card("S", "A"))]
+        glutton.choose_card(remaining, plays, "high", None, 0)
+
+        assert (
+            len(glutton._seen_counts) > 0
+        ), "Isolated: inference should be preserved within same hand/contract"
