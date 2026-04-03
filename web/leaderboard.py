@@ -291,9 +291,10 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
     ]
     avg_bid_level = sum(bid_levels) / len(bid_levels) if bid_levels else 0.0
 
-    # Moon stats — personal only (human = seat 0, excludes AI partner seat 2)
+    # Moon stats — team-level (human team = seats 0, 2) for comparability
+    # with AI stats which use (1, 3).  Matches bid_rate/make_rate scope.
     moon_hands = [h for h in completed_hands if h.winning_bid_type == "moon"]
-    moon_declaring = [h for h in moon_hands if h.bidder_seat == 0]
+    moon_declaring = [h for h in moon_hands if h.bidder_seat in (0, 2)]
     moon_call_rate = len(moon_declaring) / hands_played if hands_played > 0 else 0.0
     moon_made = [
         h
@@ -302,9 +303,9 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
     ]
     moon_make_rate = len(moon_made) / len(moon_declaring) if moon_declaring else 0.0
 
-    # Loner stats — personal only (human = seat 0, excludes AI partner seat 2)
+    # Loner stats — team-level (human team = seats 0, 2) for comparability
     loner_hands = [h for h in completed_hands if h.winning_bid_type == "loner"]
-    loner_declaring = [h for h in loner_hands if h.bidder_seat == 0]
+    loner_declaring = [h for h in loner_hands if h.bidder_seat in (0, 2)]
     loner_call_rate = len(loner_declaring) / hands_played if hands_played > 0 else 0.0
     loner_made = [
         h

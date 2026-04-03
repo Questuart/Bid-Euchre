@@ -439,20 +439,19 @@ class GluttonStrategy(Strategy):
         This gives Glutton a consistent edge by saving cards when partner
         has the trick locked, while still being aggressive when needed.
         """
-        # Defense-in-depth: sync contract context on every call so that
-        # _choose_lead, _choose_discard, and helpers always use the
-        # current hand's contract_type/trump_suit even if on_hand_start
-        # was never called.  When the contract changes, per-hand inference
-        # (_seen_counts, _void_suits_by_seat) is stale — reset it.
+        # Defense-in-depth: clear stale inference when contract changes.
+        # When on_hand_start() IS called, it already syncs these fields so
+        # this check is False and observe_play() data is preserved (#2175).
+        # Only fires in backward-compat path where on_hand_start was skipped.
         if contract_type != self._contract_type or trump_suit != self._trump_suit:
             self._seen_counts = {}
             self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
         self._contract_type = contract_type
         self._trump_suit = trump_suit
 
-        # Fallback reset if on_hand_start wasn't called (backward compatibility).
-        # Catches the edge case where consecutive hands share the same contract
-        # so the change-detection above doesn't fire.
+        # Fallback reset if on_hand_start wasn't called (backward compat).
+        # Catches consecutive same-contract hands where change-detection
+        # above doesn't fire.
         if len(hand) == 10 and not plays_so_far:
             self._seen_counts = {}
             self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
@@ -936,19 +935,18 @@ class GluttonIsolatedStrategy(Strategy):
         player_index: int,
     ) -> int:
         """Choose card with configurable feature flags."""
-        # Defense-in-depth: sync contract context on every call so that
-        # helpers always use the current hand's contract_type/trump_suit
-        # even if on_hand_start was never called.  When the contract
-        # changes, per-hand inference is stale — reset it.
+        # Defense-in-depth: clear stale inference when contract changes.
+        # When on_hand_start() IS called, it already syncs these fields so
+        # this check is False and observe_play() data is preserved (#2175).
         if contract_type != self._contract_type or trump_suit != self._trump_suit:
             self._seen_counts = {}
             self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
         self._contract_type = contract_type
         self._trump_suit = trump_suit
 
-        # Fallback reset if on_hand_start wasn't called.
-        # Catches the edge case where consecutive hands share the same
-        # contract so the change-detection above doesn't fire.
+        # Fallback reset if on_hand_start wasn't called (backward compat).
+        # Catches consecutive same-contract hands where change-detection
+        # above doesn't fire.
         if len(hand) == 10 and not plays_so_far:
             self._seen_counts = {}
             self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}

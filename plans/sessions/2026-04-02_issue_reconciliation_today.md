@@ -56,11 +56,10 @@
 | #2109 | Clarify bid badges next to player names in icon legend | #2111 | CORRECT |
 | #2116 | Remove red/black suit coloring from trick history table | #2122 | CORRECT |
 
-### Ops / Process Issues (2)
+### Ops / Process Issues (1)
 
 | Issue | Title | Closing PR(s) | Verdict |
 |-------|-------|--------------|---------|
-| #2024 | Add flex-d to lane registry | #2070 | CORRECT |
 | #2050 | Enable fullscreen rendering across steward fleet | No PR found | **PARTIAL** |
 
 **#2050 detail:** The closing comment says "Fixed in a merged PR this session" but
@@ -190,7 +189,7 @@ gh issue view 2076
 | Follow-up convention issues | 20 (45% of closures) |
 | Feature/enhancement issues | 8 (18%) |
 | Bug fix issues | 8 (18%) |
-| Ops/process issues | 2 (5%) |
+| Ops/process issues | 1 (2%) |
 | Convention/UI fixes | 7 (16%) |
 
 ### Throughput Note
