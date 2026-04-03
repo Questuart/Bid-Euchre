@@ -140,6 +140,7 @@ all orchestrator-created tasks should follow this convention.
 | Single-file bugfix | No | Any idle author in matching pool | Infer from scope |
 | Multi-file feature | Yes | author-a or author-b | platform |
 | Architectural change | Yes + analyst + plan review | author-a | platform |
+| Investigation / analysis | No | steward-analyst (see Analyst Routing) | (analyst) |
 | Exploratory analysis | No | author-scratch or flex-* | (flex) |
 | Overflow / parallel work | Yes | author-c, author-d, or flex-* | Match source |
 | Browser-game work | Yes | brws-author-a through brws-author-d | browser-game |

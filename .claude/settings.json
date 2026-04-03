@@ -116,7 +116,7 @@
     ]
   },
   "permissions": {
-    "defaultMode": "dontAsk",
+    "defaultMode": "acceptEdits",
     "allow": [
       "Edit(.claude/skills/**)",
       "Write(.claude/skills/**)",

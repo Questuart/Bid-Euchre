@@ -23,8 +23,12 @@
 
 {% if winning_bid is not none and bidder_seat is not none %}
 <div class="contract-bar {{ team_class }}" role="status" aria-label="Current contract">
-    {# Header label — spelled out per user direction #}
+    {# Header label — include "and Trump" only for suit contracts #}
+    {% if contract_type == "suit" %}
     <span class="contract-bar__header">Current Contract and Trump:</span>
+    {% else %}
+    <span class="contract-bar__header">Current Contract:</span>
+    {% endif %}
 
     {# Contract display #}
     <span class="contract-bar__contract">
@@ -55,7 +59,13 @@
 </div>
 {% elif phase is defined and phase == "auction" %}
 <div class="contract-bar" role="status" aria-label="Auction in progress">
-    <span class="contract-bar__header">Current Contract and Trump:</span>
-    <span class="contract-bar__auction-status">Auction in Progress</span>
+    <span class="contract-bar__header">Auction:</span>
+    <span class="contract-bar__auction-status">
+        {% if current_high_bid is defined and current_high_bid is not none and current_high_bid > 0 %}
+            High Bid: {{ current_high_bid }}
+        {% else %}
+            Auction in Progress
+        {% endif %}
+    </span>
 </div>
 {% endif %}

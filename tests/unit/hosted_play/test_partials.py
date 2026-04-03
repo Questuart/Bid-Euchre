@@ -2142,6 +2142,8 @@ class TestContractBar:
         assert "High" in html
         assert "by You" in html
         assert "contract-bar--my-team" in html
+        assert "Current Contract:" in html
+        assert "and Trump" not in html
 
     def test_low_contract(self, env):
         """Low (no-trump) contract by partner shows 'by Ace'."""
@@ -2202,8 +2204,22 @@ class TestContractBar:
             phase="auction",
         )
         assert "contract-bar" in html
-        assert "Current Contract and Trump:" in html
+        assert "Auction:" in html
         assert "Auction in Progress" in html
+
+    def test_auction_shows_high_bid(self, env):
+        """During auction with a current high bid, shows the bid amount."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=None,
+            bidder_seat=None,
+            bid_type="regular",
+            contract_type=None,
+            trump=None,
+            phase="auction",
+            current_high_bid=6,
+        )
+        assert "High Bid: 6" in html
 
     def test_hidden_when_no_bid_no_phase(self, env):
         """No output when winning_bid is None and phase is not auction."""
@@ -2271,8 +2287,8 @@ class TestContractBar:
         assert "by Deuce" in html
         assert "contract-bar--opp-team" in html
 
-    def test_header_label_present(self, env):
-        """Contract bar shows 'Current Contract and Trump:' header label."""
+    def test_header_label_suit(self, env):
+        """Suit contract shows 'Current Contract and Trump:' header."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=5,
@@ -2283,6 +2299,20 @@ class TestContractBar:
         )
         assert "contract-bar__header" in html
         assert "Current Contract and Trump:" in html
+
+    def test_header_label_no_trump(self, env):
+        """No-trump contract shows neutral 'Current Contract:' header."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=7,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="high",
+            trump=None,
+        )
+        assert "contract-bar__header" in html
+        assert "Current Contract:" in html
+        assert "and Trump" not in html
 
 
 # ---------------------------------------------------------------------------
