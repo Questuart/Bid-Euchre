@@ -23,7 +23,7 @@ decomposed correctly. Each stream has a different complexity profile.
 **Key finding:** Issue #2210 (show final hand result before match-over) was
 **already fully implemented** in PR #2253 (merged). The `_game_phase()` function
 now returns `"hand_result"` when the match is complete but the final hand is
-available, and `hand_result.html` renders a "See Match Results" CTA. This issue
+available, and `web/templates/partials/hand_result.html` renders a "See Match Results" CTA. This issue
 should be closed. Stream C needs no work.
 
 ---
@@ -75,6 +75,8 @@ duplication. The user's direction from issue comments is clear:
 - `web/templates/partials/game_controls.html` — help drawer content update
   (legend section references new labels)
 
+> All paths are relative to repo root.
+
 ### Recommended PR Decomposition
 
 **PR A.1 — Deduplicate information and simplify labels** (M)
@@ -120,7 +122,7 @@ make check-quiet
 
 ### Risks
 
-1. **Template test brittleness** — `test_partials.py` (219 tests) asserts
+1. **Template test brittleness** — `tests/unit/hosted_play/test_partials.py` (219 tests) asserts
    specific HTML content. Every label rename or element removal will break
    assertions. Budget ~30% of implementation time for test updates.
 2. **Mobile layout regression** — removing compact badges and icon legend
@@ -153,7 +155,7 @@ Current implementation in `web/templates/base.html` lines 64-80:
 ```
 
 Each tab links to a separate GET route that renders a full-page template
-extending `base.html`. The fix requires:
+extending `web/templates/base.html`. The fix requires:
 
 1. Adding HTMX attributes to tab links for partial content loading
 2. Creating partial-response variants of each tab route
@@ -172,7 +174,7 @@ extending `base.html`. The fix requires:
 - `web/templates/guide.html` — extract inner content to partial
 
 **Key design decision:** Use the `HX-Request` header to detect HTMX requests
-and return only the inner content block (without `base.html` wrapping).
+and return only the inner content block (without the base template wrapping).
 This avoids creating separate partial template files — the same route serves
 both full page (first visit) and partial (tab switch).
 
@@ -180,7 +182,7 @@ both full page (first visit) and partial (tab switch).
 
 **Single PR — Tab navigation HTMX conversion** (M)
 
-1. Add a `#tab-content` wrapper in `base.html` around `{% block content %}`:
+1. Add a `#tab-content` wrapper in `web/templates/base.html` around `{% block content %}`:
    ```html
    <div id="tab-content">
        {% block content %}{% endblock %}
@@ -206,13 +208,13 @@ both full page (first visit) and partial (tab switch).
            block_name="content",  # Jinja2 block rendering
        )
    ```
-   Note: Starlette's `Jinja2Templates.TemplateResponse` does not natively
-   support `block_name`. The implementation must use either:
-   - **Option 1:** Separate `_content.html` partial templates (simple, no Jinja2
-     gymnastics)
+   Note: Starlette's TemplateResponse does not natively support
+   block-level rendering. The implementation must use either:
+   - **Option 1:** Separate content partial templates (simple, no Jinja2
+     gymnastics) — e.g. `web/templates/partials/history_content.html`
    - **Option 2:** A helper that renders only the block content
-   Recommend **Option 1** — create thin `partials/history_content.html` etc.
-   that contain just the content, and have the full templates include them.
+   Recommend **Option 1** — create thin content partials and have the full
+   templates include them.
 
 4. Handle the Game tab specially — clicking "Game" while viewing another tab
    must reload the current game state via HTMX, not preserve stale HTML.
@@ -255,12 +257,12 @@ make check-quiet
    HTML.
 2. **Browser history** — HTMX's `hx-push-url` handles forward navigation but
    back-button needs `hx-history-elt` or `htmx:historyRestore` event handling.
-   The `htmx.config.historyCacheSize` may need tuning.
+   The HTMX history cache size config may need tuning.
 3. **Comments form** — The comments page has a POST form. Verify HTMX partial
    swap doesn't break form submission.
 4. **Leaderboard complexity** — Leaderboard has interactive elements (metric
    sort). Verify JS reinitializes after HTMX swap (use `htmx:afterSwap` event
-   like the existing `game.js` pattern).
+   like the existing `web/static/game.js` pattern).
 
 ---
 
@@ -269,10 +271,10 @@ make check-quiet
 ### Status: ALREADY IMPLEMENTED
 
 **PR #2253** (merged) fully implements this feature:
-- `_game_phase()` in `routes.py` returns `"hand_result"` when the match is
+- `_game_phase()` in `web/routes.py` returns `"hand_result"` when the match is
   complete but the final hand is available (lines 279-285)
-- `hand_result.html` renders a "See Match Results" CTA when
-  `match_status == "complete"` (lines 161-184)
+- `web/templates/partials/hand_result.html` renders a "See Match Results" CTA
+  when `match_status == "complete"` (lines 161-184)
 - `next_hand` handler uses `force_match_result=True` to transition from
   hand result to match-over screen (line 1596)
 - CSS styles for `.btn--see-results` and `.match-ending-notice` added
@@ -299,7 +301,7 @@ The user's decision: Server-side pacing is preferred (Approach A). Include a
 
 ### Current Architecture
 
-The engine's `_advance_ai()` method (engine.py line 538) is a **while loop**
+The engine's `_advance_ai()` method (`src/bid_euchre/hosted_play/engine.py` line 538) is a **while loop**
 that plays all AI turns until it hits a stopping point:
 - Human's turn
 - Trick completed (`paused_after_trick = True`)
@@ -452,13 +454,13 @@ make check-quiet
 | `web/templates/guide.html` | No | **Yes** (partial) | No | Safe |
 | `web/static/style.css` | **Yes** (layout) | Possible (tab active) | Possible (reveal) | **Minor overlap** — additive only |
 | `web/static/game.js` | No | Yes (tab switching JS) | No | Safe |
-| `src/.../hosted_play/engine.py` | No | No | **Yes** | Safe |
-| `src/.../hosted_play/state.py` | No | No | **Yes** | Safe |
+| `src/bid_euchre/hosted_play/engine.py` | No | No | **Yes** | Safe |
+| `src/bid_euchre/hosted_play/state.py` | No | No | **Yes** | Safe |
 
 **Verdict:** All 3 active streams (A, B, D) can run in parallel. The only
 shared file is `style.css` where all changes are additive (new classes, no
 modifications to existing rules). Route handler changes target different
-functions within `routes.py`.
+functions within `web/routes.py`.
 
 ---
 
