@@ -116,6 +116,7 @@
     ]
   },
   "permissions": {
+    "defaultMode": "dontAsk",
     "allow": [
       "Edit(.claude/skills/**)",
       "Write(.claude/skills/**)",
@@ -150,7 +151,16 @@
       "Bash(uv sync *)",
       "Bash(ruff *)",
       "Bash(codex *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(diff *)",
+      "Bash(echo *)",
+      "Bash(env *)",
       "Bash(pwd *)",
+      "Bash(python *)",
+      "Bash(sleep *)",
+      "Bash(tmux *)",
       "Bash(ls *)",
       "Bash(wc *)",
       "Bash(mkdir *)"
