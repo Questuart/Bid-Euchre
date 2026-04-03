@@ -29,6 +29,10 @@
       "path": "../Bid-Euchre-steward-author-d"
     },
     {
+      "name": "author-scratch [legacy]",
+      "path": "../Bid-Euchre-steward-author-scratch"
+    },
+    {
       "name": "brws-author-a [browser]",
       "path": "../Bid-Euchre-steward-brws-author-a"
     },
@@ -77,6 +81,119 @@
       "path": "../Bid-Euchre-steward-flex-d"
     }
   ],
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Run Web App (dev)",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "uvicorn",
+        "args": [
+          "bid_euchre.web.app:create_app",
+          "--factory",
+          "--reload",
+          "--host", "127.0.0.1",
+          "--port", "8000"
+        ],
+        "cwd": "${workspaceFolder:main}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder:main}/src"
+        },
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "Run Tests (unit)",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "pytest",
+        "args": ["tests/unit/", "-x", "--tb=short"],
+        "cwd": "${workspaceFolder:main}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder:main}/src"
+        },
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "Run Tests (web)",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "pytest",
+        "args": ["tests/unit/web/", "-x", "--tb=short"],
+        "cwd": "${workspaceFolder:main}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder:main}/src"
+        },
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "Run Experiment (quick_test, seed 42)",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "bid_euchre",
+        "args": [
+          "experiments/run_experiment.py",
+          "--config", "experiments/configs/quick_test.yaml",
+          "--seed", "42"
+        ],
+        "cwd": "${workspaceFolder:main}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder:main}/src"
+        },
+        "console": "integratedTerminal"
+      }
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "make check",
+        "type": "shell",
+        "command": "make check",
+        "group": "test",
+        "options": { "cwd": "${workspaceFolder:main}" },
+        "problemMatcher": [],
+        "presentation": { "reveal": "always", "panel": "new" }
+      },
+      {
+        "label": "make check-quiet",
+        "type": "shell",
+        "command": "make check-quiet",
+        "group": { "kind": "test", "isDefault": true },
+        "options": { "cwd": "${workspaceFolder:main}" },
+        "problemMatcher": [],
+        "presentation": { "reveal": "always", "panel": "new" }
+      },
+      {
+        "label": "make lint",
+        "type": "shell",
+        "command": "make lint",
+        "group": "test",
+        "options": { "cwd": "${workspaceFolder:main}" },
+        "problemMatcher": [],
+        "presentation": { "reveal": "always", "panel": "shared" }
+      },
+      {
+        "label": "make test",
+        "type": "shell",
+        "command": "make test",
+        "group": "test",
+        "options": { "cwd": "${workspaceFolder:main}" },
+        "problemMatcher": [],
+        "presentation": { "reveal": "always", "panel": "new" }
+      },
+      {
+        "label": "make notebook-sync",
+        "type": "shell",
+        "command": "make notebook-sync",
+        "group": "build",
+        "options": { "cwd": "${workspaceFolder:main}" },
+        "problemMatcher": [],
+        "presentation": { "reveal": "always", "panel": "shared" }
+      }
+    ]
+  },
   "settings": {
     "files.exclude": {
       "**/.venv": true,
