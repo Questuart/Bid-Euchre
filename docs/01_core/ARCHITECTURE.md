@@ -280,6 +280,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/manage_invite_codes.py` | Invite code admin CLI (generate, list, revoke) for browser game pilot access |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/plan_review_driver.py` | Plan review loop orchestrator (Codex -> fix -> re-review cycles with fallback alerting) |
+| `scripts/internal/render_admin.py` | Admin CLI for production Render DB access (player lookups, match summaries, invite codes, raw SQL) |
 | `scripts/internal/test_codex_plan_review_live.py` | Live smoke/quick/full test for Codex CLI plan review pipeline |
 | `scripts/internal/test_review_infra.py` | Tiered (SMOKE/QUICK/FULL) end-to-end review infrastructure test harness |
 | `scripts/internal/review_common.py` | Shared severity constants and predicates for the review pipeline |
