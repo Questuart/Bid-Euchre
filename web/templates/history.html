@@ -116,7 +116,15 @@
                     </td>
                     <td>{{ match.score_human }} &ndash; {{ match.score_ai }}</td>
                     <td>{{ match.hands_played }}</td>
-                    <td>{{ match.completed_at.strftime('%b %d, %Y') if match.completed_at else '—' }}</td>
+                    <td>
+                        {% if match.completed_at %}
+                        <time class="history__time" datetime="{{ match.completed_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+                            {{ match.completed_at.strftime('%b %d, %Y %I:%M %p') }} UTC
+                        </time>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -124,4 +132,36 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+    /**
+     * Convert match-history timestamps from UTC to the user's local timezone.
+     *
+     * The server renders times with a "UTC" suffix as a no-JS fallback.
+     * This script replaces that text with a locale-formatted local time.
+     */
+    (function () {
+        var FORMAT_OPTIONS = {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        };
+
+        function localizeHistoryTimestamps() {
+            var times = document.querySelectorAll('.history__time');
+            Array.prototype.forEach.call(times, function (el) {
+                var dt = el.getAttribute('datetime');
+                if (!dt) { return; }
+                var date = new Date(dt);
+                if (isNaN(date.getTime())) { return; }
+                el.textContent = date.toLocaleString(undefined, FORMAT_OPTIONS);
+            });
+        }
+
+        // Run on initial page load
+        localizeHistoryTimestamps();
+    })();
+</script>
 {% endblock %}

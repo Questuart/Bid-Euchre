@@ -2622,6 +2622,45 @@ class TestMatchHistory:
         # Active match should not appear — show empty state
         assert "No completed matches yet" in resp.text
 
+    def test_history_timestamps_use_time_element(self, client, app):
+        """Match dates use <time> elements with datetime attrs for JS localization."""
+        from datetime import datetime, timezone
+
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid, "TimeTest")
+
+        session_factory = app.state.session_factory
+        session = session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+
+        import uuid as uuid_mod
+
+        completed_match = Match(
+            match_uuid=str(uuid_mod.uuid4()),
+            player_id=player.id,
+            ai_model="bud_bot",
+            status="complete",
+            seed=42,
+            score_human=52,
+            score_ai=38,
+            hands_played=7,
+            match_state_json="{}",
+            completed_at=datetime(2026, 3, 15, 14, 30, 0, tzinfo=timezone.utc),
+        )
+        session.add(completed_match)
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/history/{link_uuid}")
+        assert resp.status_code == 200
+        # <time> element has ISO datetime attribute for JS localization
+        assert 'datetime="2026-03-15T14:30:00Z"' in resp.text
+        assert "history__time" in resp.text
+        # Server-rendered fallback includes "UTC" suffix
+        assert "UTC" in resp.text
+        # Localization script is present
+        assert "localizeHistoryTimestamps" in resp.text
+
     def test_history_nav_link_present(self, client):
         """The header nav should include a History link when link_uuid is set."""
         link_uuid = _create_game(client)
