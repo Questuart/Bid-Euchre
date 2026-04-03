@@ -28,7 +28,8 @@
 
 {% include "partials/game_controls.html" %}
 
-<div id="game-board" role="region" aria-label="Game board" aria-live="polite">
+<div id="game-board" role="region" aria-label="Game board" aria-live="polite"
+     data-match-status="{{ match_status | default('setup') }}">
 
     {# ---- Setup phases: nickname & model selection ---- #}
     {% if phase == "nickname" %}

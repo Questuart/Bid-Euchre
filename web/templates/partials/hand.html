@@ -10,9 +10,17 @@
 {% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
 {% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 
+{# Pre-compute card frequencies for copy indexing (double-deck duplicate disambiguation, #2215) #}
+{% set ns = namespace(freq={}, copy_counter={}) %}
+{% for card in human_hand %}
+    {% set card_key = card[0] ~ card[1] %}
+    {% set _ = ns.freq.update({card_key: ns.freq.get(card_key, 0) + 1}) %}
+{% endfor %}
+
+{% set hand_count = human_hand | length %}
 <div id="human-hand" class="hand" role="region" aria-label="Your hand">
     <h3>Your Hand</h3>
-    <div class="card-fan" role="group" aria-label="Cards in your hand ({{ human_hand | length }})">
+    <div class="card-fan" role="group" aria-label="{{ hand_count }} card{{ 's' if hand_count != 1 else '' }} in your hand">
         {% for card in human_hand %}
             {% set suit = card[0] %}
             {% set rank = card[1] %}
@@ -23,12 +31,19 @@
             {% set suit_sym = suit_symbols.get(disp_suit, disp_suit) %}
             {% set suit_name = suit_names.get(disp_suit, disp_suit) %}
 
+            {# Track copy number for duplicate card disambiguation (#2215) #}
+            {% set card_key = suit ~ rank %}
+            {% set copy_num = ns.copy_counter.get(card_key, 0) + 1 %}
+            {% set _ = ns.copy_counter.update({card_key: copy_num}) %}
+            {% set has_dup = ns.freq.get(card_key, 1) > 1 %}
+            {% set copy_suffix = " (" ~ copy_num ~ ")" if has_dup else "" %}
+
             {% if phase == "trick_play" and legal_plays is not none and idx in legal_plays %}
                 <button type="button"
                         id="hand-card-{{ idx }}"
                         class="card card--{{ suit_class }} card--legal{% if bower %} card--bower{% endif %}"
                         title="{{ rank|display_rank }}{{ suit_sym }}{% if bower %} ({{ bower }} bower){% endif %} (tap to play)"
-                        aria-label="Play {{ rank|display_rank }} of {{ suit_name }}{% if bower %} ({{ bower }} bower){% endif %}"
+                        aria-label="Play {{ rank|display_rank }} of {{ suit_name }}{{ copy_suffix }}{% if bower %} ({{ bower }} bower){% endif %}"
                         data-card-index="{{ idx }}">
                     <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
@@ -42,7 +57,7 @@
                      class="card card--{{ suit_class }}{% if phase == 'trick_play' %} card--illegal{% endif %}{% if bower %} card--bower{% endif %}"
                      title="{{ rank|display_rank }}{{ suit_sym }}{% if bower %} ({{ bower }} bower){% endif %}"
                      role="img"
-                     aria-label="{{ rank|display_rank }} of {{ suit_name }}{% if bower %} ({{ bower }} bower){% endif %}{% if phase == 'trick_play' %} (cannot play){% endif %}">
+                     aria-label="{{ rank|display_rank }} of {{ suit_name }}{{ copy_suffix }}{% if bower %} ({{ bower }} bower){% endif %}{% if phase == 'trick_play' %} (cannot play){% endif %}">
                     <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
                     {% if bower %}

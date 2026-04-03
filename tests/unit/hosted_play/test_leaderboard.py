@@ -1228,6 +1228,26 @@ class TestMetricDefinitions:
                 m.label
             ), f"{key}: full_label {m.full_label!r} shorter than label {m.label!r}"
 
+    def test_moon_loner_tooltips_say_team_not_personal(self):
+        """Moon/loner tooltips must reference 'your team', not 'personally' (#2228).
+
+        The underlying computation uses team-level stats (seats 0,2 for
+        human; seats 1,3 for AI), so the tooltip text must match.
+        """
+        for key in (
+            "moon_call_rate",
+            "moon_make_rate",
+            "loner_call_rate",
+            "loner_make_rate",
+        ):
+            tooltip = METRIC_DEFINITIONS[key].tooltip
+            assert (
+                "personally" not in tooltip.lower()
+            ), f"{key} tooltip still says 'personally': {tooltip!r}"
+            assert (
+                "team" in tooltip.lower()
+            ), f"{key} tooltip should reference 'team': {tooltip!r}"
+
 
 # ---------------------------------------------------------------------------
 # Current player highlight (#2224)

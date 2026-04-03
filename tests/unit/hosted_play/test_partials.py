@@ -2407,7 +2407,7 @@ class TestAccessibilityHand:
             phase="auction",
         )
         assert 'role="group"' in html
-        assert "Cards in your hand (2)" in html
+        assert "2 cards in your hand" in html
 
 
 class TestAccessibilityBidPanel:
@@ -3629,3 +3629,186 @@ class TestScoreDisplayConsistency:
             hands_played=10,
         )
         assert "score--negative" in html
+
+
+# ---------------------------------------------------------------------------
+# #2205 — Singular card count grammar
+# ---------------------------------------------------------------------------
+
+
+class TestCardCountGrammar:
+    """Card count labels use '1 card' (singular) and 'N cards' (plural)."""
+
+    def test_hand_singular_card_label(self, env):
+        """Human hand with 1 card uses singular 'card'."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["S", "A"]],
+            legal_plays=None,
+            phase="trick_play",
+        )
+        assert "1 card in your hand" in html
+
+    def test_hand_plural_card_label(self, env):
+        """Human hand with multiple cards uses plural 'cards'."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["S", "A"], ["H", "K"], ["D", "Q"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert "3 cards in your hand" in html
+
+    _BOARD_CTX = dict(
+        phase="auction",
+        link_uuid="x",
+        human_hand=[["S", "A"]],
+        legal_plays=None,
+        turn_number=0,
+        seat_labels={0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"},
+        score_human=0,
+        score_ai=0,
+        hands_played=0,
+        dealer_seat=0,
+        contract_type=None,
+        winning_bid=None,
+        tricks_team0=0,
+        tricks_team1=0,
+    )
+
+    def test_game_board_singular_ai_badge(self, env):
+        """AI badge with 1 card uses singular 'card'."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            **self._BOARD_CTX,
+            opp_left_count=1,
+            partner_count=1,
+            opp_right_count=1,
+        )
+        assert 'aria-label="Slim: 1 card"' in html
+        assert 'aria-label="Ace: 1 card"' in html
+        assert 'aria-label="Deuce: 1 card"' in html
+
+    def test_game_board_plural_ai_badge(self, env):
+        """AI badge with multiple cards uses plural 'cards'."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            **self._BOARD_CTX,
+            opp_left_count=5,
+            partner_count=5,
+            opp_right_count=5,
+        )
+        assert 'aria-label="Slim: 5 cards"' in html
+        assert 'aria-label="Ace: 5 cards"' in html
+        assert 'aria-label="Deuce: 5 cards"' in html
+
+
+# ---------------------------------------------------------------------------
+# #2215 — Duplicate card copy index in accessible names
+# ---------------------------------------------------------------------------
+
+
+class TestDuplicateCardCopyIndex:
+    """Double-deck duplicate cards get copy index in aria-label."""
+
+    def test_duplicate_cards_get_copy_suffix(self, env):
+        """Two identical cards in hand get '(1)' and '(2)' suffixes."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["S", "A"], ["S", "A"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert "A of Spades (1)" in html
+        assert "A of Spades (2)" in html
+
+    def test_unique_cards_no_copy_suffix(self, env):
+        """Unique cards do not get copy suffixes."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["S", "A"], ["H", "K"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert "A of Spades" in html
+        assert "(1)" not in html
+        assert "(2)" not in html
+
+    def test_duplicate_legal_cards_get_copy_suffix(self, env):
+        """Duplicate legal cards during trick play also get copy index."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["H", "K"], ["H", "K"]],
+            legal_plays=[0, 1],
+            phase="trick_play",
+        )
+        assert "Play K of Hearts (1)" in html
+        assert "Play K of Hearts (2)" in html
+
+    def test_mixed_duplicates_only_dups_get_suffix(self, env):
+        """Only duplicated cards get copy suffixes; unique cards do not."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["S", "A"], ["H", "K"], ["S", "A"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert "A of Spades (1)" in html
+        assert "A of Spades (2)" in html
+        # K of Hearts should not have a copy suffix
+        assert "K of Hearts" in html
+        assert "K of Hearts (1)" not in html
+
+
+# ---------------------------------------------------------------------------
+# #2209 — data-match-status attribute on game board
+# ---------------------------------------------------------------------------
+
+
+class TestMatchStatusDataAttribute:
+    """The #game-board div carries a data-match-status attribute (#2209)."""
+
+    def test_active_match_status(self, env):
+        """Active match renders data-match-status='active'."""
+        tmpl = env.get_template("game.html")
+        html = tmpl.render(
+            match_status="active",
+            phase="nickname",
+            link_uuid="x",
+        )
+        assert 'data-match-status="active"' in html
+
+    def test_complete_match_status(self, env):
+        """Completed match renders data-match-status='complete'."""
+        tmpl = env.get_template("game.html")
+        html = tmpl.render(
+            match_status="complete",
+            phase="match_result",
+            link_uuid="x",
+            winner="human",
+            score_human=52,
+            score_ai=30,
+            hands_played=10,
+        )
+        assert 'data-match-status="complete"' in html
+
+    def test_missing_match_status_defaults_to_setup(self, env):
+        """When match_status is not provided, defaults to 'setup'."""
+        tmpl = env.get_template("game.html")
+        html = tmpl.render(
+            phase="nickname",
+            link_uuid="x",
+        )
+        assert 'data-match-status="setup"' in html
