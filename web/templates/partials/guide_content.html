@@ -1,0 +1,250 @@
+{#
+    Guide tab content partial — swapped via HTMX tab navigation.
+
+    Expected context variables:
+        link_uuid  — player's link UUID
+#}
+<style>
+    .guide {
+        max-width: 720px;
+        margin: 1rem auto;
+        padding: 0 1rem 3rem;
+    }
+
+    .guide__title {
+        font-size: 1.5rem;
+        margin: 0 0 1rem;
+    }
+
+    .guide__section {
+        margin-bottom: 1.5rem;
+    }
+
+    .guide__section-title {
+        font-size: 1.15rem;
+        margin: 0 0 0.5rem;
+        color: var(--color-legal-glow);
+    }
+
+    .guide__section p,
+    .guide__section li {
+        font-size: 0.9rem;
+        line-height: 1.5;
+        color: var(--color-text);
+    }
+
+    .guide__section ul,
+    .guide__section ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+    }
+
+    .guide__section li {
+        margin-bottom: 0.4rem;
+    }
+
+    .guide__quickstart {
+        background: var(--color-surface);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.5rem;
+        border-left: 4px solid var(--color-legal-glow);
+    }
+
+    .guide__quickstart p {
+        margin: 0.3rem 0;
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    .guide__quickstart-title {
+        font-size: 1rem;
+        font-weight: 700;
+        margin: 0 0 0.5rem;
+        color: var(--color-legal-glow);
+    }
+
+    .guide__icon-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        margin: 0.5rem 0;
+    }
+
+    .guide__icon-table td {
+        padding: 0.35rem 0.5rem;
+        border-bottom: 1px solid var(--color-surface-light);
+        vertical-align: middle;
+    }
+
+    .guide__icon-table td:first-child {
+        width: 3rem;
+        text-align: center;
+        font-weight: 600;
+    }
+
+    .guide__tip {
+        background: var(--color-surface);
+        border-radius: 6px;
+        padding: 0.6rem 0.9rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.88rem;
+        line-height: 1.45;
+    }
+
+    .guide__tip strong {
+        color: var(--color-legal-glow);
+    }
+
+    .guide__back {
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+        background: var(--color-felt);
+        color: var(--color-text);
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    .guide__back:hover {
+        background: var(--color-legal-glow);
+        color: var(--color-bg-dark);
+    }
+
+    @media (max-width: 600px) {
+        .guide { padding: 0 0.75rem 2rem; }
+        .guide__section p,
+        .guide__section li,
+        .guide__tip { font-size: 0.85rem; }
+    }
+</style>
+
+<div class="guide" role="region" aria-label="How to play Bid Euchre">
+    <h2 class="guide__title">How to Play</h2>
+
+    {# ---- Quick Start ---- #}
+    <div class="guide__quickstart">
+        <div class="guide__quickstart-title">Quick Start</div>
+        <p>&#x1F0A1; You and your AI partner vs two AI opponents.</p>
+        <p>&#x270B; Bid how many tricks you think your team can win (or pass).</p>
+        <p>&#x1F3B4; Play cards by clicking them &mdash; green border = legal plays.</p>
+        <p>&#x1F3C6; First team to 52 points wins. Reaching &minus;52 means you lose!</p>
+    </div>
+
+    {# ---- The Basics ---- #}
+    <div class="guide__section">
+        <h3 class="guide__section-title">The Basics</h3>
+        <p>
+            Bid Euchre is a 4-player partnership card game. You sit across from your
+            AI partner, and the two AI opponents sit on your left and right.
+        </p>
+        <ul>
+            <li><strong>Deck:</strong> A 40-card double deck &mdash; ranks 10, J, Q, K, A in all four suits, with two copies of each card.</li>
+            <li><strong>Deal:</strong> All 40 cards are dealt, so each player gets 10 cards and every hand has 10 tricks.</li>
+            <li><strong>Goal:</strong> Win tricks to score points. A match ends when either team reaches +52 (win) or &minus;52 (loss).</li>
+        </ul>
+    </div>
+
+    {# ---- Bidding ---- #}
+    <div class="guide__section">
+        <h3 class="guide__section-title">Bidding</h3>
+        <p>
+            Each hand starts with an auction. Starting left of the dealer, each
+            player gets one chance to bid or pass.
+        </p>
+        <ul>
+            <li><strong>What to bid:</strong> Pick a number of tricks (1&ndash;10) and a contract type &mdash; a trump suit (&#9824; &#9829; &#9830; &#9827;), High (no-trump, Aces high), or Low (no-trump, Tens high).</li>
+            <li><strong>Highest bid wins:</strong> The winning bidder&rsquo;s team declares the contract. Their team must take at least that many tricks.</li>
+            <li><strong>All pass:</strong> If nobody bids, the hand is redealt and the dealer rotates.</li>
+            <li><strong>Moon &amp; Loner:</strong> Special 10-trick bids. Moon triggers a card exchange with your partner. Loner makes your partner sit out.</li>
+        </ul>
+    </div>
+
+    {# ---- Card Play ---- #}
+    <div class="guide__section">
+        <h3 class="guide__section-title">Card Play</h3>
+        <ul>
+            <li><strong>Follow suit:</strong> You must play a card matching the suit that was led, if you can.</li>
+            <li><strong>Trump wins:</strong> In suit contracts, any trump card beats any non-trump card. If you can&rsquo;t follow suit, you may play any card &mdash; including trump to try to win the trick.</li>
+            <li><strong>Bowers:</strong> In suit contracts, the Jack of trump (right bower) and the Jack of the same color (left bower) are the two strongest cards. The left bower counts as trump, not its printed suit.</li>
+            <li><strong>Duplicates:</strong> Since it&rsquo;s a double deck, identical cards can appear in the same trick. If they tie for the win, the first one played takes it.</li>
+            <li><strong>High/Low contracts:</strong> No trump suit. In High, Aces are highest. In Low, Tens are highest &mdash; the rank order is reversed.</li>
+        </ul>
+    </div>
+
+    {# ---- Scoring ---- #}
+    <div class="guide__section">
+        <h3 class="guide__section-title">Scoring</h3>
+        <ul>
+            <li><strong>Made bid:</strong> The declaring team scores the number of tricks they won.</li>
+            <li><strong>Set (missed bid):</strong> The declaring team loses points equal to their bid.</li>
+            <li><strong>Defenders:</strong> The defending team always scores the number of tricks they won.</li>
+            <li><strong>Match end:</strong> The match ends when a team reaches +52 (win) or drops to &minus;52 (loss). Expect 6&ndash;12 hands per match (about 10&ndash;20 minutes).</li>
+        </ul>
+    </div>
+
+    {# ---- Icons & Indicators ---- #}
+    <div class="guide__section">
+        <h3 class="guide__section-title">Icons &amp; Indicators</h3>
+        <table class="guide__icon-table" role="table" aria-label="Game icon legend">
+            <tbody>
+                <tr>
+                    <td><span class="seat-marker seat-marker--dealer" aria-hidden="true">D</span></td>
+                    <td>Dealer &mdash; dealt the current hand</td>
+                </tr>
+                <tr>
+                    <td><span class="seat-marker seat-marker--declarer" aria-hidden="true">&#9733;</span></td>
+                    <td>Declarer &mdash; won the auction</td>
+                </tr>
+                <tr>
+                    <td><span class="seat-marker seat-marker--leader" aria-hidden="true">L</span></td>
+                    <td>Leader &mdash; led the current trick</td>
+                </tr>
+                <tr>
+                    <td><span class="seat-marker seat-marker--turn" aria-hidden="true">&#9654;</span></td>
+                    <td>Your turn &mdash; this player is next to act</td>
+                </tr>
+                <tr>
+                    <td><span class="seat-marker seat-marker--sitting-out" aria-hidden="true">SO</span></td>
+                    <td>Sitting out &mdash; partner sits out during a loner</td>
+                </tr>
+                <tr>
+                    <td><span style="display:inline-block;width:1.2rem;height:1.2rem;border:2px solid var(--color-legal-border);border-radius:3px;box-shadow:0 0 6px var(--color-legal-glow);" aria-hidden="true"></span></td>
+                    <td>Green glow &mdash; card is a legal play (click to select)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    {# ---- Tips & Tricks ---- #}
+    <div class="guide__section">
+        <h3 class="guide__section-title">Tips &amp; Tricks</h3>
+        <div class="guide__tip"><strong>Count your sure tricks</strong> before bidding. Only bid what your team can reliably win.</div>
+        <div class="guide__tip"><strong>Lead with strength.</strong> Play your strongest suit early to draw out opponents&rsquo; cards.</div>
+        <div class="guide__tip"><strong>Save your bowers.</strong> The Jacks (right and left bower) are the two strongest trump cards &mdash; save them for key tricks.</div>
+        <div class="guide__tip"><strong>Support your partner.</strong> If your partner is winning the trick, play your lowest card to conserve.</div>
+        <div class="guide__tip"><strong>Low contracts flip the ranks.</strong> Tens are high and Aces are low &mdash; adjust your play accordingly.</div>
+        <div class="guide__tip"><strong>Don&rsquo;t overbid.</strong> Getting set costs you your entire bid as negative points.</div>
+        <div class="guide__tip"><strong>Watch the score bar.</strong> If either team is close to 52 (or &minus;52), bid conservatively.</div>
+    </div>
+
+    {# ---- Basic Strategies ---- #}
+    <div class="guide__section">
+        <h3 class="guide__section-title">Basic Strategies</h3>
+        <ul>
+            <li><strong>When to bid suit:</strong> You have 3+ trump cards including a bower, or a long strong suit you can force through.</li>
+            <li><strong>When to bid High:</strong> You have multiple Aces across different suits &mdash; you can win tricks without needing trump.</li>
+            <li><strong>When to bid Low:</strong> You have several Tens and low cards &mdash; in Low contracts the rank order is reversed.</li>
+            <li><strong>When to pass:</strong> Your hand is weak or scattered. Let someone else take the risk.</li>
+            <li><strong>Trump management:</strong> Don&rsquo;t burn all your trump early. Use them strategically to win key tricks or cut opponents&rsquo; strong suits.</li>
+            <li><strong>Read the auction:</strong> Opponents&rsquo; bids tell you about their hands. If an opponent bids high in spades, they likely have strong spades.</li>
+            <li><strong>Partnership play:</strong> Your partner&rsquo;s bid gives you information. If they bid 6 in hearts, support their contract &mdash; don&rsquo;t compete unless you have a clearly stronger hand.</li>
+        </ul>
+    </div>
+
+    {% if link_uuid is defined and link_uuid %}
+    <a href="/play/{{ link_uuid }}" class="guide__back">Back to Game</a>
+    {% endif %}
+</div>

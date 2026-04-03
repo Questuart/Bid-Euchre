@@ -63,20 +63,45 @@
             {% set _page = current_page | default("") %}
             <nav class="header-nav" role="tablist" aria-label="Main navigation">
                 <a href="/play/{{ link_uuid }}" role="tab"
+                   hx-get="/play/{{ link_uuid }}"
+                   hx-target="#tab-content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
                    class="header-nav__tab{% if _page == 'game' %} header-nav__tab--active{% endif %}"
-                   {% if _page == 'game' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Game</a>
+                   {% if _page == 'game' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
+                   data-tab="game">Game</a>
                 <a href="/history/{{ link_uuid }}" role="tab"
+                   hx-get="/history/{{ link_uuid }}"
+                   hx-target="#tab-content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
                    class="header-nav__tab{% if _page == 'history' %} header-nav__tab--active{% endif %}"
-                   {% if _page == 'history' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>History</a>
+                   {% if _page == 'history' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
+                   data-tab="history">History</a>
                 <a href="/leaderboard/{{ link_uuid }}" role="tab"
+                   hx-get="/leaderboard/{{ link_uuid }}"
+                   hx-target="#tab-content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
                    class="header-nav__tab{% if _page == 'leaderboard' %} header-nav__tab--active{% endif %}"
-                   {% if _page == 'leaderboard' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Leaderboard</a>
+                   {% if _page == 'leaderboard' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
+                   data-tab="leaderboard">Leaderboard</a>
                 <a href="/comments/{{ link_uuid }}" role="tab"
+                   hx-get="/comments/{{ link_uuid }}"
+                   hx-target="#tab-content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
                    class="header-nav__tab{% if _page == 'comments' %} header-nav__tab--active{% endif %}"
-                   {% if _page == 'comments' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Comments</a>
+                   {% if _page == 'comments' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
+                   data-tab="comments">Comments</a>
                 <a href="/guide/{{ link_uuid }}" role="tab"
+                   hx-get="/guide/{{ link_uuid }}"
+                   hx-target="#tab-content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
                    class="header-nav__tab{% if _page == 'guide' %} header-nav__tab--active{% endif %}"
-                   {% if _page == 'guide' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}>Guide</a>
+                   {% if _page == 'guide' %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
+                   data-tab="guide">Guide</a>
             </nav>
             {% endif %}
             <button id="text-size-toggle"
@@ -87,7 +112,9 @@
         </div>
     </header>
     <main id="main-content" role="main">
+        <div id="tab-content">
         {% block content %}{% endblock %}
+        </div>
     </main>
 </body>
 </html>

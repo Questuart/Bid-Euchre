@@ -176,6 +176,76 @@
     }
 
     /* ---------------------------------------------------------------
+     * Tab navigation — update active tab styling on HTMX content swap.
+     * When tab links use hx-get + hx-target="#tab-content", the active
+     * class must be toggled client-side after each swap.
+     * --------------------------------------------------------------- */
+
+    function updateActiveTab(clickedTab) {
+        var tabs = document.querySelectorAll('.header-nav__tab');
+        Array.prototype.forEach.call(tabs, function (tab) {
+            tab.classList.remove('header-nav__tab--active');
+            tab.setAttribute('aria-selected', 'false');
+        });
+        if (clickedTab) {
+            clickedTab.classList.add('header-nav__tab--active');
+            clickedTab.setAttribute('aria-selected', 'true');
+        }
+    }
+
+    function getTabFromUrl(url) {
+        // Extract the tab name from the URL path for back/forward navigation.
+        // Patterns: /play/uuid -> game, /history/uuid -> history, etc.
+        var match = url.match(/\/(play|history|leaderboard|comments|guide)\//);
+        if (!match) { return null; }
+        var page = match[1] === 'play' ? 'game' : match[1];
+        return document.querySelector('.header-nav__tab[data-tab="' + page + '"]');
+    }
+
+    function reinitTabContent() {
+        // After HTMX swaps tab content, re-execute inline scripts won't
+        // run automatically.  Clone <script> tags inside #tab-content so
+        // the browser treats them as new and executes them.
+        var tabContent = document.getElementById('tab-content');
+        if (!tabContent) { return; }
+        var scripts = tabContent.querySelectorAll('script');
+        for (var i = 0; i < scripts.length; i++) {
+            var old = scripts[i];
+            var replacement = document.createElement('script');
+            replacement.textContent = old.textContent;
+            old.parentNode.replaceChild(replacement, old);
+        }
+    }
+
+    function attachTabHandlers() {
+        // Update active tab when a tab link triggers an HTMX request
+        document.addEventListener('click', function (event) {
+            var tab = event.target.closest('.header-nav__tab[data-tab]');
+            if (!tab) { return; }
+            // Only intercept if HTMX will handle it (has hx-get)
+            if (!tab.getAttribute('hx-get')) { return; }
+            updateActiveTab(tab);
+        });
+
+        // After HTMX swaps tab content, reinitialize inline scripts
+        document.body.addEventListener('htmx:afterSwap', function (event) {
+            var target = event.target;
+            if (target && target.id === 'tab-content') {
+                reinitTabContent();
+            }
+        });
+
+        // Handle browser back/forward — HTMX popstate restores content,
+        // but we need to update the active tab indicator to match.
+        window.addEventListener('popstate', function () {
+            var tab = getTabFromUrl(window.location.pathname);
+            if (tab) {
+                updateActiveTab(tab);
+            }
+        });
+    }
+
+    /* ---------------------------------------------------------------
      * Trick history toggle — persist open/closed state across HTMX
      * swaps so the panel doesn't collapse every time the board updates.
      * --------------------------------------------------------------- */
@@ -497,6 +567,7 @@
 
     function initialize() {
         attachDelegatedHandlers();
+        attachTabHandlers();
         attachTrickHistoryToggle();
         attachTextSizeToggle();
         attachErrorHandlers();

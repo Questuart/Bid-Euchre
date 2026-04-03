@@ -1,0 +1,210 @@
+{#
+    Comments tab content partial — swapped via HTMX tab navigation.
+
+    Expected context variables:
+        link_uuid  — player's link UUID
+        comments   — list of comment dicts
+        error      — optional error message string or None
+#}
+<style>
+    .comments {
+        max-width: 720px;
+        margin: 1rem auto;
+        padding: 0 1rem;
+    }
+
+    .comments__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .comments__title {
+        font-size: 1.5rem;
+        margin: 0;
+    }
+
+    .comments__form {
+        margin-bottom: 1.5rem;
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .comments__input {
+        flex: 1;
+        padding: 0.6rem 0.75rem;
+        border: 1px solid var(--color-surface-light);
+        border-radius: 6px;
+        background: var(--color-surface);
+        color: var(--color-text);
+        font-size: 0.9rem;
+        font-family: inherit;
+        resize: none;
+        min-height: 2.5rem;
+        max-height: 6rem;
+    }
+
+    .comments__input::placeholder {
+        color: var(--color-text-muted);
+    }
+
+    .comments__input:focus {
+        outline: none;
+        border-color: var(--color-felt);
+        box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.3);
+    }
+
+    .comments__submit {
+        padding: 0.6rem 1.25rem;
+        background: var(--color-felt);
+        color: var(--color-text);
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        white-space: nowrap;
+        align-self: flex-end;
+    }
+
+    .comments__submit:hover {
+        background: var(--color-legal-glow);
+        color: var(--color-bg-dark);
+    }
+
+    .comments__submit:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .comments__empty {
+        text-align: center;
+        padding: 3rem 1rem;
+        color: var(--color-text-muted);
+    }
+
+    .comments__list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .comments__item {
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--color-surface-light);
+    }
+
+    .comments__item:last-child {
+        border-bottom: none;
+    }
+
+    .comments__meta {
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .comments__author {
+        font-weight: 600;
+        font-size: 0.85rem;
+        color: var(--color-text);
+    }
+
+    .comments__time {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+    }
+
+    .comments__content {
+        font-size: 0.9rem;
+        line-height: 1.4;
+        color: var(--color-text);
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .comments__error {
+        color: var(--color-negative);
+        font-size: 0.85rem;
+        margin-bottom: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        background: rgba(198, 40, 40, 0.15);
+        border-radius: 4px;
+    }
+
+    @media (max-width: 600px) {
+        .comments__form {
+            flex-direction: column;
+        }
+        .comments__submit {
+            align-self: flex-end;
+        }
+    }
+</style>
+
+<div class="comments" role="region" aria-label="Comments board">
+    <div class="comments__header">
+        <h2 class="comments__title">Comments</h2>
+    </div>
+
+    {% if error %}
+    <div class="comments__error" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form class="comments__form" method="post" action="/play/{{ link_uuid }}/comment"
+          hx-post="/play/{{ link_uuid }}/comment"
+          hx-target="#comments-list"
+          hx-swap="innerHTML"
+          hx-timeout="15000"
+          hx-on::after-request="if(event.detail.successful) this.reset()">
+        <textarea class="comments__input" name="content"
+                  placeholder="Share a thought about the game..."
+                  required minlength="1" maxlength="500"
+                  rows="1"
+                  aria-label="Write a comment"></textarea>
+        <button class="comments__submit" type="submit">Post</button>
+    </form>
+
+    <div id="comments-list"
+         hx-get="/comments/{{ link_uuid }}/list"
+         hx-trigger="every 15s"
+         hx-swap="innerHTML">
+        {% include "partials/comments_list.html" %}
+    </div>
+</div>
+
+<script>
+    (function () {
+        var FORMAT_OPTIONS = {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        };
+
+        function localizeCommentTimestamps() {
+            var times = document.querySelectorAll('.comments__time');
+            Array.prototype.forEach.call(times, function (el) {
+                var dt = el.getAttribute('datetime');
+                if (!dt) { return; }
+                var date = new Date(dt);
+                if (isNaN(date.getTime())) { return; }
+                el.textContent = date.toLocaleString(undefined, FORMAT_OPTIONS);
+            });
+        }
+
+        localizeCommentTimestamps();
+
+        document.body.addEventListener('htmx:afterSwap', function (event) {
+            var target = event.target;
+            if (target && target.id === 'comments-list') {
+                localizeCommentTimestamps();
+            }
+        });
+    })();
+</script>
