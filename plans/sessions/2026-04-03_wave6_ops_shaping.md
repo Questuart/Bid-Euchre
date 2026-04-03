@@ -45,7 +45,7 @@ alternative delivery path exists for research-only tasks.
 **Shaped output:** [Issue comment](https://github.com/Questuart/Bid-Euchre/issues/2257#issuecomment-4185235493)
 
 **Implementation brief:**
-- 3 files: `steward-analyst.md`, `start-task/SKILL.md`, `delegate-task/SKILL.md`
+- 3 files: the analyst agent config, the start-task skill, and the delegate-task skill
 - Adds delivery mode section (issue-comment vs PR), analyst-specific start-task
   path, and `delivery_mode`/`parent_issue` fields to task packets
 - Single PR, docs-only CI path
@@ -65,7 +65,7 @@ All investigation guidance points inward (repo state, plans, checkpoints).
 **Shaped output:** [Issue comment](https://github.com/Questuart/Bid-Euchre/issues/2252#issuecomment-4185237379)
 
 **Implementation brief:**
-- 1 file: `.claude/agents/steward-analyst.md`
+- 1 file: the analyst agent config
 - Adds Research Protocol section with default web research steps, skip
   conditions, and search strategy guidance
 - Updates Core Responsibilities to reference WebSearch explicitly
@@ -129,7 +129,7 @@ with override parameters, so the actual behavioral risk is low. If pursued later
 the approach should be:
 
 1. Introduce a central `OPS_RUNTIME_ROOT` env var / constant in a new
-   `src/bid_euchre/ops/paths.py` module
+   paths module under `src/bid_euchre/ops/`
 2. Update Python constants to reference it (mechanical, ~10 files)
 3. Update shell scripts and hooks (~11 files)
 4. Update `.gitignore` and `.claude/settings.json`
@@ -146,18 +146,18 @@ lanes — they have disjoint file scopes:
 
 | Issue | Branch | File Scope | Overlap Risk |
 |-------|--------|-----------|--------------|
-| #2251 | `ops/orchestrator-delegation-defaults` | `steward-orchestrator.md` | None |
-| #2252 | `ops/analyst-web-research-defaults` | `steward-analyst.md` | **Low** — #2257 also touches this file |
-| #2257 | `ops/analyst-issue-comment-default` | `steward-analyst.md`, `start-task/SKILL.md`, `delegate-task/SKILL.md` | **Low** — #2252 also touches `steward-analyst.md` |
+| #2251 | `ops/orchestrator-delegation-defaults` | `.claude/agents/steward-orchestrator.md` | None |
+| #2252 | `ops/analyst-web-research-defaults` | `.claude/agents/steward-analyst.md` | **Low** — #2257 also touches this file |
+| #2257 | `ops/analyst-issue-comment-default` | `.claude/agents/steward-analyst.md`, `.claude/skills/start-task/SKILL.md`, `.claude/skills/delegate-task/SKILL.md` | **Low** — #2252 also touches analyst agent config |
 
 **Safe parallelism:** #2251 is fully independent. #2252 and #2257 both modify
-`steward-analyst.md` but touch different sections (Research Protocol vs Delivery
-Modes). They can run in parallel if authors add to different sections, but a
-sequential dispatch (merge #2252 first, then #2257) avoids any rebase risk.
+the analyst agent config but touch different sections (Research Protocol vs
+Delivery Modes). They can run in parallel if authors add to different sections,
+but a sequential dispatch (merge #2252 first, then #2257) avoids rebase risk.
 
 **Recommended dispatch order:**
 1. #2251 (independent, single file) + #2252 (independent section of analyst prompt)
-2. #2257 (after #2252 merges, to avoid rebase on steward-analyst.md)
+2. #2257 (after #2252 merges, to avoid rebase on the analyst agent config)
 
 ## Outcome
 
