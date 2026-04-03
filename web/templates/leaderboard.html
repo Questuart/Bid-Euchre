@@ -203,7 +203,7 @@
         <h2 class="leaderboard__title">Leaderboard</h2>
     </div>
     <p class="leaderboard__ranking-info">
-        Ranked by Net EPPD — your average point advantage per hand.
+        Ranked by EPPD (Net Expected Points Per Deal) — your average point advantage per hand.
     </p>
 
     {% if rankings|length == 0 %}
@@ -254,14 +254,14 @@
     </div>
 
     <div class="leaderboard__help" id="help-panel" role="note" aria-label="Metric definitions">
-        <h3>Metric Definitions</h3>
+        <h3>What do these stats mean?</h3>
         <dl>
             {% set ns = namespace(prev_cat="") %}
             {% for key, m in metric_defs.items() %}
             {% if ns.prev_cat and ns.prev_cat != m.category %}
             <hr class="leaderboard__help-divider">
             {% endif %}
-            <dt>{{ m.label }}</dt>
+            <dt>{{ m.label }} — {{ m.full_label }}</dt>
             <dd>{{ m.tooltip }}</dd>
             {% set ns.prev_cat = m.category %}
             {% endfor %}
