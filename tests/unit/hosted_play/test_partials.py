@@ -164,6 +164,91 @@ class TestModelSelect:
         assert "model-card-desc" in html
         assert "model-card-name" in html
 
+    def test_quick_start_guide_shown(self, env):
+        models = [ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder")]
+        tmpl = env.get_template("partials/model_select.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            nickname="Alice",
+            models=models,
+            default_model_id="bud_bot",
+        )
+        assert "quick-start-guide" in html
+        assert "New to Bid Euchre?" in html
+        assert "green border" in html
+        assert "/guide/abc-123" in html
+
+    def test_quick_start_guide_link_uses_link_uuid(self, env):
+        models = [ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder")]
+        tmpl = env.get_template("partials/model_select.html")
+        html = tmpl.render(
+            link_uuid="my-uuid",
+            nickname="Bob",
+            models=models,
+            default_model_id="bud_bot",
+        )
+        assert "/guide/my-uuid" in html
+        assert "full guide" in html
+
+
+# ---------------------------------------------------------------------------
+# guide.html
+# ---------------------------------------------------------------------------
+
+
+class TestGuideTemplate:
+    def test_renders_title(self, env):
+        tmpl = env.get_template("guide.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            current_page="guide",
+            nickname="Alice",
+        )
+        assert "How to Play" in html
+
+    def test_contains_all_sections(self, env):
+        tmpl = env.get_template("guide.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            current_page="guide",
+            nickname="Alice",
+        )
+        assert "Quick Start" in html
+        assert "The Basics" in html
+        assert "Bidding" in html
+        assert "Card Play" in html
+        assert "Scoring" in html
+        assert "Tips" in html
+        assert "Basic Strategies" in html
+
+    def test_icon_legend_present(self, env):
+        tmpl = env.get_template("guide.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            current_page="guide",
+            nickname="Alice",
+        )
+        assert "Dealer" in html
+        assert "Declarer" in html
+        assert "Leader" in html
+
+    def test_back_link_uses_link_uuid(self, env):
+        tmpl = env.get_template("guide.html")
+        html = tmpl.render(
+            link_uuid="my-uuid",
+            current_page="guide",
+            nickname="Bob",
+        )
+        assert "/play/my-uuid" in html
+        assert "Back to Game" in html
+
+    def test_renders_without_link_uuid(self, env):
+        """Guide renders without back link when link_uuid is not set."""
+        tmpl = env.get_template("guide.html")
+        html = tmpl.render(current_page="guide", nickname="Bob")
+        assert "How to Play" in html
+        assert "Back to Game" not in html
+
 
 # ---------------------------------------------------------------------------
 # bid_panel.html
