@@ -12,8 +12,22 @@
 {% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
+{# Team relationship: seats 0 & 2 are the human's team (team 0) #}
+{% set is_my_team = bidder_seat in [0, 2] if bidder_seat is not none else false %}
+{% set team_class = "contract-bar--my-team" if is_my_team else "contract-bar--opp-team" %}
+{% if bidder_seat == 0 %}
+    {% set relationship = "" %}
+{% elif bidder_seat == 2 %}
+    {% set relationship = "(Partner)" %}
+{% else %}
+    {% set relationship = "(Opponent)" %}
+{% endif %}
+
 {% if winning_bid is not none and bidder_seat is not none %}
-<div class="contract-bar" role="status" aria-label="Current contract">
+<div class="contract-bar {{ team_class }}" role="status" aria-label="Current contract">
+    {# Header label #}
+    <span class="contract-bar__header">Contract:</span>
+
     {# Trump / contract type indicator #}
     <span class="contract-bar__contract">
         {% set bar_bid_type = bid_type | default("regular") %}
@@ -40,11 +54,12 @@
         {% endif %}
     </span>
 
-    <span class="contract-bar__separator" aria-hidden="true">&middot;</span>
+    <span class="contract-bar__separator" aria-hidden="true">&mdash;</span>
 
-    {# Declarer name #}
+    {# Declarer name + relationship #}
     <span class="contract-bar__declarer">
         {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}
+        {% if relationship %}<span class="contract-bar__relationship">{{ relationship }}</span>{% endif %}
     </span>
 </div>
 {% endif %}

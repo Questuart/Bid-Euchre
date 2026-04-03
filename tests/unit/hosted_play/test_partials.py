@@ -1872,7 +1872,7 @@ class TestContractBar:
     """Verify the contract bar partial renders correctly for all contract types."""
 
     def test_suit_contract_shows_trump_symbol(self, env):
-        """Suit contract shows bid level and trump suit symbol."""
+        """Suit contract shows bid level, trump symbol, and opponent label."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=6,
@@ -1882,12 +1882,17 @@ class TestContractBar:
             trump="H",
         )
         assert "contract-bar" in html
+        assert "contract-bar--opp-team" in html
+        assert "Contract:" in html
         assert "6" in html
         assert "\u2665" in html  # Heart symbol
         assert "Slim" in html
+        assert "(Opponent)" in html
+        # Em dash separator
+        assert "\u2014" in html or "&mdash;" in html
 
     def test_high_contract(self, env):
-        """High (no-trump) contract displays 'High' label."""
+        """High (no-trump) contract by human shows 'You' with no relationship."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=7,
@@ -1899,9 +1904,13 @@ class TestContractBar:
         assert "7" in html
         assert "High" in html
         assert "You" in html
+        assert "contract-bar--my-team" in html
+        # No relationship label for "You"
+        assert "(Partner)" not in html
+        assert "(Opponent)" not in html
 
     def test_low_contract(self, env):
-        """Low (no-trump) contract displays 'Low' label."""
+        """Low (no-trump) contract by partner shows 'Ace (Partner)'."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=7,
@@ -1913,9 +1922,11 @@ class TestContractBar:
         assert "7" in html
         assert "Low" in html
         assert "Ace" in html
+        assert "(Partner)" in html
+        assert "contract-bar--my-team" in html
 
     def test_moon_contract(self, env):
-        """Moon bid shows moon emoji and label."""
+        """Moon bid by opponent shows moon emoji and (Opponent) label."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=10,
@@ -1928,9 +1939,11 @@ class TestContractBar:
         assert "contract-bar__type--moon" in html
         assert "\u2660" in html  # Spade symbol
         assert "Deuce" in html
+        assert "(Opponent)" in html
+        assert "contract-bar--opp-team" in html
 
     def test_loner_contract(self, env):
-        """Loner bid shows loner emoji and label."""
+        """Loner bid by human shows loner emoji, 'You', no relationship."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=10,
@@ -1943,6 +1956,9 @@ class TestContractBar:
         assert "contract-bar__type--loner" in html
         assert "\u2666" in html  # Diamond symbol
         assert "You" in html
+        assert "contract-bar--my-team" in html
+        assert "(Partner)" not in html
+        assert "(Opponent)" not in html
 
     def test_hidden_when_no_bid(self, env):
         """No output when winning_bid is None (auction not resolved)."""
@@ -1969,6 +1985,62 @@ class TestContractBar:
         assert "contract-bar" in html
         assert "You" in html
         assert "\u2663" in html  # Club symbol
+        assert "contract-bar--my-team" in html
+
+    def test_partner_relationship_label(self, env):
+        """Partner (seat 2) shows '(Partner)' relationship label."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=5,
+            bidder_seat=2,
+            bid_type="regular",
+            contract_type="suit",
+            trump="S",
+        )
+        assert "Ace" in html
+        assert "(Partner)" in html
+        assert "contract-bar--my-team" in html
+
+    def test_opponent_seat1_relationship_label(self, env):
+        """Left opponent (seat 1) shows '(Opponent)' relationship label."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=5,
+            bidder_seat=1,
+            bid_type="regular",
+            contract_type="suit",
+            trump="H",
+        )
+        assert "Slim" in html
+        assert "(Opponent)" in html
+        assert "contract-bar--opp-team" in html
+
+    def test_opponent_seat3_relationship_label(self, env):
+        """Right opponent (seat 3) shows '(Opponent)' relationship label."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=8,
+            bidder_seat=3,
+            bid_type="regular",
+            contract_type="suit",
+            trump="C",
+        )
+        assert "Deuce" in html
+        assert "(Opponent)" in html
+        assert "contract-bar--opp-team" in html
+
+    def test_header_label_present(self, env):
+        """Contract bar shows 'Contract:' header label."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=5,
+            bidder_seat=0,
+            bid_type="regular",
+            contract_type="suit",
+            trump="H",
+        )
+        assert "contract-bar__header" in html
+        assert "Contract:" in html
 
 
 # ---------------------------------------------------------------------------

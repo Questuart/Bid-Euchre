@@ -502,6 +502,22 @@ main {
     flex-wrap: wrap;
 }
 
+.contract-bar--my-team {
+    border-bottom-color: #43a047;
+}
+
+.contract-bar--opp-team {
+    border-bottom-color: #f9a825;
+}
+
+.contract-bar__header {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 .contract-bar__contract {
     display: flex;
     align-items: center;
@@ -548,12 +564,27 @@ main {
 
 .contract-bar__separator {
     color: var(--color-text-muted);
-    font-size: 0.8rem;
+    font-size: 0.85rem;
 }
 
 .contract-bar__declarer {
-    color: var(--color-text-muted);
-    font-size: 0.82rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.contract-bar--my-team .contract-bar__declarer {
+    color: #66bb6a;
+}
+
+.contract-bar--opp-team .contract-bar__declarer {
+    color: #fdd835;
+}
+
+.contract-bar__relationship {
+    font-weight: 400;
+    font-size: 0.78rem;
+    margin-left: 0.2em;
+    opacity: 0.85;
 }
 
 /* --------------------------------------------------------------------------
@@ -2210,6 +2241,14 @@ main {
 
     .contract-bar__suit {
         font-size: 0.95rem;
+    }
+
+    .contract-bar__header {
+        font-size: 0.7rem;
+    }
+
+    .contract-bar__relationship {
+        font-size: 0.68rem;
     }
 
     /* Icon legend — hide on small phones (vertical space critical) */
