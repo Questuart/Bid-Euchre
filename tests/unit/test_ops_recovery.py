@@ -49,6 +49,8 @@ class TestRecoveryTemplates:
             "heartbeat_stale",
             "worktree_quarantined",
             "escalation",
+            "auth_failure",
+            "review_lane_stall",
         }
         assert expected == set(RECOVERY_TEMPLATES.keys())
 

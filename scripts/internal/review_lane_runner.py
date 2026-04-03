@@ -57,6 +57,250 @@ GH_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_SECONDS = 30
 MAX_POLL_CYCLES = 30  # 30 * 30s = 15 min max runtime
 
+# Stale lock files to clean up before processing.
+# These are left behind by crashed scheduled tasks and block clean operation.
+_STALE_LOCK_PATTERNS = [
+    ".claude/scheduled_tasks.lock",
+]
+
+# Maximum age (seconds) for a lock file before it's considered stale.
+_LOCK_STALENESS_SECONDS = 300  # 5 minutes
+
+
+# ---------------------------------------------------------------------------
+# Pre-flight health checks
+# ---------------------------------------------------------------------------
+
+
+def _check_worktree_health(repo_root: Path) -> tuple[bool, str]:
+    """Verify the review lane worktree is on a usable branch.
+
+    Detects detached HEAD state (commonly caused by stale worktrees that
+    haven't been refreshed after PR merges) and attempts to recover by
+    checking out ``main``.
+
+    Args:
+        repo_root: Repository root directory.
+
+    Returns:
+        Tuple of (healthy, message).
+    """
+    try:
+        # Check for detached HEAD
+        result = subprocess.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_root),
+        )
+        if result.returncode != 0:
+            # Detached HEAD — attempt recovery
+            logger.warning(
+                "Review lane worktree is on detached HEAD — attempting to checkout main"
+            )
+            checkout = subprocess.run(
+                ["git", "checkout", "main"],
+                capture_output=True,
+                text=True,
+                cwd=str(repo_root),
+            )
+            if checkout.returncode != 0:
+                return False, (
+                    f"Detached HEAD and checkout main failed: {checkout.stderr.strip()}"
+                )
+            logger.info("Recovered from detached HEAD — now on main")
+
+        # Refresh to latest main
+        fetch = subprocess.run(
+            ["git", "fetch", "origin", "main"],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_root),
+            timeout=30,
+        )
+        if fetch.returncode != 0:
+            logger.warning("git fetch origin main failed: %s", fetch.stderr.strip())
+            # Non-fatal — can still process with stale main
+            return True, "Worktree OK but fetch failed (using stale main)"
+
+        # Check if behind origin/main and pull if needed
+        behind = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD..origin/main"],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_root),
+        )
+        if behind.returncode == 0:
+            count = behind.stdout.strip()
+            if count != "0":
+                logger.info(
+                    "Review lane worktree is %s commits behind main — pulling",
+                    count,
+                )
+                pull = subprocess.run(
+                    ["git", "pull", "--ff-only", "origin", "main"],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(repo_root),
+                    timeout=30,
+                )
+                if pull.returncode != 0:
+                    # Try reset instead of pull (handles diverged branches)
+                    reset = subprocess.run(
+                        ["git", "reset", "--hard", "origin/main"],
+                        capture_output=True,
+                        text=True,
+                        cwd=str(repo_root),
+                    )
+                    if reset.returncode != 0:
+                        return False, (
+                            f"Could not sync to origin/main: {reset.stderr.strip()}"
+                        )
+                    logger.info("Reset to origin/main (ff-only pull failed)")
+
+        return True, "Worktree healthy and up to date"
+
+    except subprocess.TimeoutExpired:
+        logger.warning("Worktree health check timed out")
+        return True, "Health check timed out (proceeding anyway)"
+    except Exception as exc:
+        logger.warning("Worktree health check error: %s", exc)
+        return True, f"Health check error: {exc} (proceeding anyway)"
+
+
+def _cleanup_stale_locks(repo_root: Path) -> int:
+    """Remove stale lock files that block clean operation.
+
+    Lock files are considered stale if they are older than
+    ``_LOCK_STALENESS_SECONDS``.
+
+    Args:
+        repo_root: Repository root directory.
+
+    Returns:
+        Number of stale lock files removed.
+    """
+    removed = 0
+    now = time.time()
+
+    for pattern in _STALE_LOCK_PATTERNS:
+        lock_path = repo_root / pattern
+        if not lock_path.exists():
+            continue
+
+        try:
+            age = now - lock_path.stat().st_mtime
+            if age > _LOCK_STALENESS_SECONDS:
+                lock_path.unlink()
+                removed += 1
+                logger.info(
+                    "Removed stale lock file: %s (age: %.0fs)",
+                    lock_path,
+                    age,
+                )
+            else:
+                logger.debug(
+                    "Lock file %s is recent (%.0fs old) — keeping",
+                    lock_path,
+                    age,
+                )
+        except OSError as exc:
+            logger.warning("Could not remove lock file %s: %s", lock_path, exc)
+
+    return removed
+
+
+def _check_codex_auth() -> tuple[bool, str]:
+    """Pre-flight check for Codex CLI authentication.
+
+    Reuses the auth check logic from ``codex_review_adapter``. Falls back
+    to a direct ``codex login status`` check if the adapter is not importable
+    (e.g., running outside the scripts/internal PYTHONPATH).
+
+    Returns:
+        Tuple of (authenticated, message).
+    """
+    try:
+        # Try importing from the adapter (same PYTHONPATH)
+        from codex_review_adapter import check_codex_auth
+
+        return check_codex_auth()
+    except ImportError:
+        pass
+
+    # Direct fallback
+    import shutil
+
+    if shutil.which("codex"):
+        cmd = ["codex", "login", "status"]
+    else:
+        cmd = ["npx", "@openai/codex", "login", "status"]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        output = (result.stdout + result.stderr).strip()
+        if result.returncode == 0:
+            lower = output.lower()
+            if any(p in lower for p in ("not logged in", "logged out", "no session")):
+                return False, f"Auth inactive: {output}"
+            return True, output
+        return False, f"Auth check failed (exit {result.returncode}): {output}"
+    except FileNotFoundError:
+        return False, "Codex CLI not found"
+    except subprocess.TimeoutExpired:
+        return False, "Auth check timed out"
+    except Exception as exc:
+        return False, f"Auth check error: {exc}"
+
+
+def preflight_health_check(
+    repo_root: Path | None = None,
+    *,
+    skip_auth: bool = False,
+) -> list[tuple[str, bool, str]]:
+    """Run all pre-flight health checks for the review lane.
+
+    Returns a list of (check_name, passed, message) tuples. Non-fatal
+    check failures are logged but do not prevent processing — the review
+    lane should degrade gracefully rather than refusing to start.
+
+    Args:
+        repo_root: Repository root directory.
+        skip_auth: Skip Codex CLI auth check (for testing).
+
+    Returns:
+        List of (check_name, passed, message) tuples.
+    """
+    if repo_root is None:
+        repo_root = _REPO_ROOT
+
+    results: list[tuple[str, bool, str]] = []
+
+    # 1. Worktree health
+    healthy, msg = _check_worktree_health(repo_root)
+    results.append(("worktree_health", healthy, msg))
+    if not healthy:
+        logger.error("Worktree health check FAILED: %s", msg)
+
+    # 2. Stale lock cleanup
+    removed = _cleanup_stale_locks(repo_root)
+    results.append(("lock_cleanup", True, f"Removed {removed} stale lock(s)"))
+
+    # 3. Codex CLI auth (optional — non-fatal for shadow-mode runner)
+    if not skip_auth:
+        auth_ok, auth_msg = _check_codex_auth()
+        results.append(("codex_auth", auth_ok, auth_msg))
+        if not auth_ok:
+            logger.warning(
+                "Codex CLI auth check failed: %s — review lane may "
+                "encounter auth stalls. Fix: run 'codex login' "
+                "interactively.",
+                auth_msg,
+            )
+
+    return results
+
+
 # ---------------------------------------------------------------------------
 # GitHub helpers
 # ---------------------------------------------------------------------------
@@ -531,12 +775,33 @@ def run_once(
     *,
     dry_run: bool = False,
     events_dir: Path | None = None,
+    skip_preflight: bool = False,
 ) -> list[ReviewVerdict]:
     """Scan the queue and process all pending requests.
+
+    Runs pre-flight health checks before processing to detect and recover
+    from common stall causes (detached HEAD, stale locks, expired auth).
+
+    Args:
+        queue_dir: Override for queue root directory.
+        dry_run: Skip actual review invocation.
+        events_dir: Override for events directory.
+        skip_preflight: Skip pre-flight health checks (for testing).
 
     Returns:
         List of verdicts written during this cycle.
     """
+    if not skip_preflight:
+        checks = preflight_health_check(skip_auth=dry_run)
+        failed = [c for c in checks if not c[1]]
+        if failed:
+            logger.warning(
+                "Pre-flight check(s) failed: %s",
+                "; ".join(f"{name}: {msg}" for name, _, msg in failed),
+            )
+            # Non-fatal: log and proceed. The individual check handlers
+            # already attempted recovery where possible.
+
     pending = find_pending_requests(queue_dir)
     if not pending:
         logger.debug("No pending review requests found")
@@ -563,7 +828,8 @@ def run_loop(
 ) -> None:
     """Run the review lane in a polling loop.
 
-    Processes pending requests each cycle, then sleeps.
+    Runs pre-flight health checks on the first cycle, then processes
+    pending requests each cycle with a sleep between cycles.
     Exits after ``max_cycles`` iterations or when interrupted.
     """
     logger.info(
@@ -571,9 +837,16 @@ def run_loop(
         max_cycles,
         poll_interval,
     )
+
     for cycle in range(1, max_cycles + 1):
         logger.debug("Poll cycle %d/%d", cycle, max_cycles)
-        verdicts = run_once(queue_dir, dry_run=dry_run, events_dir=events_dir)
+        # Pre-flight on first cycle only (worktree refresh, lock cleanup, auth)
+        verdicts = run_once(
+            queue_dir,
+            dry_run=dry_run,
+            events_dir=events_dir,
+            skip_preflight=(cycle > 1),
+        )
         if verdicts:
             logger.info(
                 "Cycle %d: processed %d request(s) — %s",

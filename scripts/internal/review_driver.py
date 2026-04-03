@@ -1040,6 +1040,68 @@ def _step_waiting_for_ci(
     return loop_state
 
 
+def _ensure_branch_checkout(branch: str) -> bool:
+    """Ensure the working directory is on the correct branch for review.
+
+    If the worktree is on a detached HEAD or different branch, attempts
+    to check out the target branch. This prevents stale-worktree issues
+    where the Codex CLI reviews the wrong diff.
+
+    Args:
+        branch: Target branch name (from the PR).
+
+    Returns:
+        True if the checkout succeeded or was already correct,
+        False if the checkout failed.
+    """
+    try:
+        current = subprocess.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        if current.returncode == 0 and current.stdout.strip() == branch:
+            return True  # Already on the right branch
+
+        # Detached HEAD or wrong branch — attempt checkout
+        if current.returncode != 0:
+            logger.warning(
+                "Worktree is on detached HEAD — checking out branch %s",
+                branch,
+            )
+        else:
+            logger.info(
+                "Worktree on %s, checking out %s for review",
+                current.stdout.strip(),
+                branch,
+            )
+
+        # Fetch first to ensure the branch ref is available
+        subprocess.run(
+            ["git", "fetch", "origin", branch],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        checkout = subprocess.run(
+            ["git", "checkout", branch],
+            capture_output=True,
+            text=True,
+        )
+        if checkout.returncode != 0:
+            logger.warning(
+                "Could not checkout branch %s: %s",
+                branch,
+                checkout.stderr.strip(),
+            )
+            return False
+        return True
+    except Exception as exc:
+        logger.warning("Branch checkout check failed: %s", exc)
+        return False  # Non-fatal — proceed with current state
+
+
 def _step_waiting_for_codex(
     loop_state: ReviewLoopState,
     base_dir: Path | None,
@@ -1052,10 +1114,21 @@ def _step_waiting_for_codex(
     Auth failures are treated as non-retryable — the review stops immediately
     instead of burning 3 × 10min timeout cycles waiting for interactive auth
     that cannot complete unattended.
+
+    Before invoking Codex CLI, ensures the working directory is on the
+    correct branch to prevent stale-worktree review issues.
     """
     from codex_review_adapter import invoke_codex_cli, save_review_result
 
     iteration = loop_state.iteration_count + 1
+
+    # Ensure we're on the right branch before Codex review
+    if not _ensure_branch_checkout(loop_state.branch):
+        logger.warning(
+            "PR #%d: could not checkout branch %s — proceeding on current HEAD",
+            loop_state.pr_number,
+            loop_state.branch,
+        )
 
     _publish_status(
         loop_state.pr_number,
