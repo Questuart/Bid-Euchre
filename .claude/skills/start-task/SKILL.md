@@ -133,6 +133,14 @@ If you are an analyst lane and the task is research/investigation:
    gh pr create ...
    ```
 
+> **⚠ Run validation in foreground — never background.**
+> `make check-quiet` redirects all output to a tmpfile. If you run it as a
+> background task, the background capture sees 0 bytes of output. The lane
+> then interprets this as "nothing happened" and starts a second foreground
+> `make check`, causing duplicate processes that double CPU/IO load and
+> inflate validation from ~8 min to 28+ min. Always run `make check-quiet`
+> or `make check-gated` as a **foreground** Bash command.
+
 ### Phase 3 — Scope Lock
 
 7. **Confirm file scope** matches the task packet's `scope_declared`:
@@ -147,6 +155,14 @@ If you are an analyst lane and the task is research/investigation:
 
 9. Start coding within the declared scope. Follow the standard author
    lifecycle: implement -> validate (Tier 1) -> PR -> handoff.
+
+10. **Validation execution:** Run Tier 1 tests in foreground during
+    development. Before opening the PR, run Tier 2 validation in foreground:
+    ```bash
+    make check-gated   # Foreground, concurrency-capped (preferred for fleet)
+    make check-quiet   # Foreground, minimal output (logs to tmpfile)
+    ```
+    Do **not** run these as background tasks — see the warning in Phase 2b.
 
 ## Nudge-Based Dispatch
 
@@ -212,6 +228,10 @@ back to `CLAUDE_PROJECT_DIR` directory name parsing.
   the orchestrator to fill it in
 - Author lanes are background in the dashboard — the operator sees your status
   automatically; focus on the task, not on reporting visibility
+- **Never run `make check-quiet` or `make check-gated` as a background task.**
+  These variants redirect output to tmpfiles — background capture gets 0 bytes,
+  which causes the lane to spawn a duplicate foreground process. Always run
+  validation in foreground. (See #2271 for the incident report.)
 
 ## References
 
