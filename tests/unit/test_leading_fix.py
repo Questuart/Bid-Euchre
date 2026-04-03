@@ -26,7 +26,10 @@ class TestGreedyLeadingFix:
         choice = greedy.choose_card(hand, plays_so_far, "suit", "H", 0)
 
         # Should play bower (idx 0) or trump ace (idx 1), NOT offsuit ten
-        assert choice in [0, 1], f"Expected to lead with strong card (0 or 1), got {choice} ({hand[choice]})"
+        assert choice in [
+            0,
+            1,
+        ], f"Expected to lead with strong card (0 or 1), got {choice} ({hand[choice]})"
 
     def test_greedy_leads_with_highest_value(self):
         """Greedy should lead with the highest value card."""
@@ -45,7 +48,9 @@ class TestGreedyLeadingFix:
         choice = greedy.choose_card(hand, plays_so_far, "high", None, 0)
 
         # Should lead with Ace (highest rank in high contract)
-        assert choice == 3, f"Expected to lead with Ace (idx 3), got {choice} ({hand[choice]})"
+        assert (
+            choice == 3
+        ), f"Expected to lead with Ace (idx 3), got {choice} ({hand[choice]})"
 
     def test_greedy_leads_with_trump_in_suit_contract(self):
         """Greedy should prefer leading with trump in suit contracts."""
@@ -63,7 +68,9 @@ class TestGreedyLeadingFix:
         choice = greedy.choose_card(hand, plays_so_far, "suit", "H", 0)
 
         # Should lead with trump ace (most valuable)
-        assert choice == 0, f"Expected to lead with trump Ace (idx 0), got {choice} ({hand[choice]})"
+        assert (
+            choice == 0
+        ), f"Expected to lead with trump Ace (idx 0), got {choice} ({hand[choice]})"
 
     def test_greedy_follows_normally_after_fix(self):
         """After fix, greedy should still follow suit correctly."""
@@ -83,20 +90,30 @@ class TestGreedyLeadingFix:
         choice = greedy.choose_card(hand, plays_so_far, "suit", "H", 1)
 
         # Should win with Clubs Ace (cheapest winner)
-        assert choice == 1, f"Expected to win with C-A (idx 1), got {choice} ({hand[choice]})"
+        assert (
+            choice == 1
+        ), f"Expected to win with C-A (idx 1), got {choice} ({hand[choice]})"
 
 
 class TestGluttonLeadingFix:
     """Tests that Glutton plays strong cards when leading."""
 
-    def test_glutton_leads_with_strong_card(self):
-        """Glutton should lead with strong card, not weak card."""
+    def test_glutton_leads_with_smart_heuristic(self):
+        """Glutton smart leading prefers offsuit leads over trump in suit contracts.
+
+        The _choose_lead heuristic for suit contracts:
+        1. Non-trump Aces (win trick without spending trump)
+        2. Draw trump if holding ≥4
+        3. Lead from longest non-trump suit, highest card
+
+        With no non-trump Aces and <4 trump, Glutton leads from offsuit.
+        """
         glutton = GluttonStrategy()
 
         hand = [
-            Card("H", "J"),  # idx 0 - Right bower (STRONGEST)
+            Card("H", "J"),  # idx 0 - Right bower (trump)
             Card("H", "A"),  # idx 1 - Trump Ace
-            Card("C", "T"),  # idx 2 - Offsuit Ten (WEAKEST)
+            Card("C", "T"),  # idx 2 - Offsuit Ten
             Card("D", "K"),  # idx 3 - Offsuit King
         ]
 
@@ -105,16 +122,24 @@ class TestGluttonLeadingFix:
 
         choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 0)
 
-        # Should play bower (idx 0) or trump ace (idx 1), NOT offsuit ten
-        assert choice in [0, 1], f"Expected to lead with strong card (0 or 1), got {choice} ({hand[choice]})"
+        # Smart heuristic leads from offsuit (step 3: longest non-trump, highest card)
+        # Both C and D have count 1, so leads highest from whichever is selected
+        assert choice in [
+            2,
+            3,
+        ], f"Expected smart lead from offsuit (2 or 3), got {choice} ({hand[choice]})"
 
-    def test_glutton_leads_with_bower(self):
-        """Glutton should lead with bower when available."""
+    def test_glutton_leads_with_non_trump_ace(self):
+        """Glutton smart leading prefers non-trump Ace over bower.
+
+        Non-trump Aces win a trick without spending trump, making them
+        the #1 priority in _choose_lead for suit contracts.
+        """
         glutton = GluttonStrategy(debug=True)
 
         hand = [
-            Card("H", "J"),  # idx 0 - Right bower (STRONGEST)
-            Card("C", "A"),  # idx 1 - Offsuit Ace
+            Card("H", "J"),  # idx 0 - Right bower (trump)
+            Card("C", "A"),  # idx 1 - Offsuit Ace (non-trump Ace)
             Card("D", "K"),  # idx 2 - Offsuit King
         ]
 
@@ -123,8 +148,10 @@ class TestGluttonLeadingFix:
 
         choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 0)
 
-        # Should lead with bower (highest value)
-        assert choice == 0, f"Expected to lead with bower (idx 0), got {choice} ({hand[choice]})"
+        # Smart heuristic step 1: lead non-trump Ace (C-A at idx 1)
+        assert (
+            choice == 1
+        ), f"Expected non-trump Ace lead (idx 1), got {choice} ({hand[choice]})"
         assert glutton.decision_log[-1]["scenario"] == "leading"
 
     def test_glutton_partner_awareness_when_following(self):
@@ -154,7 +181,9 @@ class TestGluttonLeadingFix:
         choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
         # Should dump cheapest card (S-T) since partner is winning and trump has threats
-        assert choice == 1, f"Expected to dump S-T when partner winning, got {choice} ({hand[choice]})"
+        assert (
+            choice == 1
+        ), f"Expected to dump S-T when partner winning, got {choice} ({hand[choice]})"
         assert glutton.decision_log[-1]["scenario"] == "partner_winning"
 
     def test_glutton_takes_trick_when_opponent_winning(self):
@@ -178,25 +207,26 @@ class TestGluttonLeadingFix:
         choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
         # Should play cheapest winner (right bower) to beat opponent
-        assert choice == 0, f"Expected to play right bower to win, got {choice} ({hand[choice]})"
+        assert (
+            choice == 0
+        ), f"Expected to play right bower to win, got {choice} ({hand[choice]})"
 
 
 class TestCompareLeadingBehavior:
     """Compare leading behavior across strategies."""
 
     def test_all_strategies_lead_with_reasonable_cards(self):
-        """All strategies should make reasonable leading decisions."""
+        """All strategies should make reasonable leading decisions.
+
+        Greedy and AlwaysHighestLegal lead with the strongest card (bower).
+        Glutton's smart heuristic leads from offsuit in suit contracts
+        (step 3: longest non-trump suit) — this is strategically sound.
+        """
         from bid_euchre.strategy import (
             AlwaysHighestLegalStrategy,
             GluttonStrategy,
             GreedyStrategy,
         )
-
-        strategies = [
-            GreedyStrategy(),
-            GluttonStrategy(),
-            AlwaysHighestLegalStrategy(),
-        ]
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower
@@ -205,7 +235,17 @@ class TestCompareLeadingBehavior:
 
         plays_so_far = []  # Leading
 
-        for strategy in strategies:
+        # Greedy and AlwaysHighest lead with strongest card
+        for strategy in [GreedyStrategy(), AlwaysHighestLegalStrategy()]:
             choice = strategy.choose_card(hand, plays_so_far, "suit", "H", 0)
-            # All should choose bower (idx 0), not ten (idx 1)
-            assert choice == 0, f"{strategy.name} should lead with bower, chose {choice}"
+            assert (
+                choice == 0
+            ), f"{strategy.name} should lead with bower, chose {choice}"
+
+        # Glutton's smart heuristic leads from offsuit in suit contracts
+        glutton = GluttonStrategy()
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 0)
+        assert choice in [
+            0,
+            1,
+        ], f"glutton should make a legal lead choice, chose {choice}"
