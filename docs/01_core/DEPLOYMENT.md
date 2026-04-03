@@ -167,7 +167,83 @@ Browser ──HTMX──▶ FastAPI (uvicorn)
 - **Decision logging** — every human and AI action is persisted for later
   training data export (see Phase 4 data pipeline).
 
-## 8. Monitoring
+## 8. Production Database Access
+
+The `render_admin.py` CLI provides operator access to the production Postgres
+database for player lookups, match inspection, invite code management, and
+ad-hoc SQL queries.
+
+### Prerequisites
+
+1. **Get the external connection string** from the Render dashboard:
+   Dashboard → `bideuchre-db` → Info → **External Database URL**
+
+2. **Export the URL** (do not commit it):
+   ```bash
+   export RENDER_DATABASE_URL="postgresql://user:pass@host:port/bideuchre"
+   ```
+
+3. **Optional: Install Render CLI** for service management:
+   ```bash
+   brew tap render-oss/render && brew install render
+   render login   # Authenticate via browser
+   ```
+
+4. **Optional: Install psql** for interactive shell access:
+   ```bash
+   brew install postgresql@16
+   ```
+
+### Common Operations
+
+```bash
+# List all players
+uv run python scripts/internal/render_admin.py players list
+
+# Find a player by nickname (case-insensitive)
+uv run python scripts/internal/render_admin.py players find olivejuice
+
+# Match statistics overview
+uv run python scripts/internal/render_admin.py matches stats
+
+# List recent matches
+uv run python scripts/internal/render_admin.py matches list --limit 20
+
+# List invite codes
+uv run python scripts/internal/render_admin.py codes list
+
+# Create an invite code with label
+uv run python scripts/internal/render_admin.py codes create --label "Beta tester"
+
+# Run ad-hoc SQL
+uv run python scripts/internal/render_admin.py db query "SELECT count(*) FROM players"
+
+# Open interactive psql shell
+uv run python scripts/internal/render_admin.py db shell
+
+# Show connection info (password masked)
+uv run python scripts/internal/render_admin.py db url
+```
+
+### Security Notes
+
+- `RENDER_DATABASE_URL` contains credentials — never commit it or log it
+- The CLI masks passwords in all display output
+- Use `RENDER_DATABASE_URL` (not `DATABASE_URL`) to avoid overriding local dev config
+- The `db query` subcommand executes arbitrary SQL — use with care on production
+
+### Existing Invite Code CLI
+
+The `manage_invite_codes.py` script also manages invite codes and works with
+the same `DATABASE_URL` / `RENDER_DATABASE_URL` env var:
+
+```bash
+uv run python scripts/internal/manage_invite_codes.py list
+uv run python scripts/internal/manage_invite_codes.py generate --count 3 --label "Pilot"
+uv run python scripts/internal/manage_invite_codes.py revoke ABC12345
+```
+
+## 9. Monitoring
 
 | Endpoint | Purpose | Expected response |
 |----------|---------|-------------------|

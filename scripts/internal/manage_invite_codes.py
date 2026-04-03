@@ -46,7 +46,9 @@ except ModuleNotFoundError:
 
 def _get_session():
     """Create a DB session from env-derived config."""
-    database_url = os.environ.get("DATABASE_URL", "sqlite:///hosted_play.db")
+    database_url = os.environ.get("RENDER_DATABASE_URL") or os.environ.get(
+        "DATABASE_URL", "sqlite:///hosted_play.db"
+    )
     engine = init_engine(database_url)
     create_tables(engine)
     factory = make_session_factory(engine)
