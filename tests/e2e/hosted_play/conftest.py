@@ -23,7 +23,7 @@ from bid_euchre.hosted_play.state import MatchState
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
 from web.routes import _build_seat_bids
-from web.template_filters import display_rank
+from web.template_filters import display_rank, effective_suit
 
 # ---------------------------------------------------------------------------
 # Deterministic AI stubs
@@ -108,6 +108,7 @@ def jinja_env() -> jinja2.Environment:
         undefined=jinja2.StrictUndefined,
     )
     environment.filters["display_rank"] = display_rank
+    environment.filters["effective_suit"] = effective_suit
     return environment
 
 

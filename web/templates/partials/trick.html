@@ -82,7 +82,7 @@
         {{ display_heading }}
         {% if display_plays %}
             {% set lead_card = display_plays[0] %}
-            {% set lead_suit = lead_card[1][0] %}
+            {% set lead_suit = lead_card[1]|effective_suit(trump | default(None, true), contract_type | default(None, true)) %}
             <span class="lead-suit lead-suit--{{ suit_classes.get(lead_suit, 'spades') }}"
                   aria-label="Lead suit: {{ suit_names.get(lead_suit, lead_suit) }}">
                 {{ suit_symbols.get(lead_suit, lead_suit) }}
