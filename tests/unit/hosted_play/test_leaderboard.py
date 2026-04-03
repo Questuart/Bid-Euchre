@@ -251,13 +251,14 @@ class TestComputePlayerStats:
         assert stats.loner_call_rate == pytest.approx(1 / 3, abs=0.001)
         assert stats.loner_make_rate == 0.0  # 1 loner called, 0 made (5 < 10)
 
-    def test_ai_partner_moon_loner_excluded_from_player_stats(self, db_session):
-        """Moon/loner declared by AI partner (seat 2) must NOT count toward
-        the human player's personal moon/loner stats (#2152)."""
+    def test_ai_partner_moon_loner_included_in_team_stats(self, db_session):
+        """Moon/loner declared by AI partner (seat 2) counts toward the
+        human team's moon/loner stats — team-level for comparability with
+        AI leaderboard rows (#2173, supersedes #2152)."""
         player = _make_player(db_session)
         match = _make_match(db_session, player)
 
-        # AI partner declares moon (seat 2) — should NOT count for human
+        # AI partner declares moon (seat 2) — counts as team 0
         _make_hand(
             db_session,
             match,
@@ -271,7 +272,7 @@ class TestComputePlayerStats:
             points_team1=0,
         )
 
-        # AI partner declares loner (seat 2) — should NOT count for human
+        # AI partner declares loner (seat 2) — counts as team 0
         _make_hand(
             db_session,
             match,
@@ -305,13 +306,13 @@ class TestComputePlayerStats:
         assert stats is not None
         assert stats.hands_played == 3
 
-        # AI partner moons/loners excluded — human declared neither
-        assert stats.moon_call_rate == 0.0
-        assert stats.moon_make_rate == 0.0
-        assert stats.loner_call_rate == 0.0
-        assert stats.loner_make_rate == 0.0
+        # Team-level moon/loner stats include AI partner (seat 2)
+        assert stats.moon_call_rate == pytest.approx(1 / 3, abs=0.001)
+        assert stats.moon_make_rate == 1.0  # 1 moon called (seat 2), made
+        assert stats.loner_call_rate == pytest.approx(1 / 3, abs=0.001)
+        assert stats.loner_make_rate == 0.0  # 1 loner called (seat 2), missed
 
-        # But team-level bid stats still include partner (seat 2)
+        # Team-level bid stats also include partner (seat 2)
         # Declaring hands: seats 2, 2, 0 — all team 0 = 3/3
         assert stats.bid_rate == 1.0
 

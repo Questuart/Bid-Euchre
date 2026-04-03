@@ -27,6 +27,7 @@ Defaults to ``sqlite:///hosted_play.db`` when unset.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 
@@ -145,6 +146,15 @@ def _format_result(result: ResetResult, *, full: bool) -> str:
     return "\n".join(lines)
 
 
+def _redact_url(url: str) -> str:
+    """Mask credentials in a database URL before display.
+
+    Replaces ``user:password@`` with ``user:***@`` in standard DB URLs.
+    Returns the original string unchanged if no credentials are found.
+    """
+    return re.sub(r"(://[^:]+):([^@]+)@", r"\1:***@", url)
+
+
 def _format_counts(counts: dict[str, int]) -> str:
     """Format table counts as a human-readable summary."""
     return "\n".join(f"  {table}: {count}" for table, count in counts.items())
@@ -180,9 +190,17 @@ def main(argv: list[str] | None = None) -> int:
     config = get_config()
     db_url = config.database_url
 
-    print(f"Database: {db_url}")
+    # Redact credentials before printing (e.g. postgresql://user:pass@host/db)
+    _redacted = _redact_url(db_url)
+    print(f"Database: {_redacted}")
 
     engine = init_engine(db_url)
+
+    # Ensure tables exist before querying (fresh DB may have no schema)
+    from web.db import Base
+
+    Base.metadata.create_all(engine)
+
     session_factory = make_session_factory(engine)
     session = session_factory()
 
