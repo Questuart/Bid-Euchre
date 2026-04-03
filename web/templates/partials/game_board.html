@@ -28,6 +28,14 @@
 {% set show_next = show_next | default(false, true) %}
 {% set show_bid_panel = show_bid_panel | default(false, true) %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
+{# Trick leader for phase-dependent "Lead Trick" labels on compass seats #}
+{% set trick_leader = None %}
+{% if current_trick is defined and current_trick %}
+    {% set trick_leader = current_trick.get("leader") if current_trick is mapping else current_trick.leader %}
+{% elif completed_tricks is defined and completed_tricks %}
+    {% set last_trick = completed_tricks[-1] %}
+    {% set trick_leader = last_trick.get("leader") if last_trick is mapping else last_trick.leader %}
+{% endif %}
 
 {# ---- Match result (win/loss screen) ---- #}
 {% if phase == "match_result" %}
@@ -48,31 +56,6 @@
 {# ---- Active game phases: auction and trick play ---- #}
 {% elif phase in ("auction", "trick_play", "redeal") %}
 
-    {# AI hands — compact badges (mobile only, hidden on desktop via CSS) #}
-    <div class="ai-hands-compact" role="region" aria-label="AI opponent hands">
-        <span class="ai-badge" aria-label="{{ seat_labels[1] }}: {{ opp_left_count | default(0) }} card{{ 's' if opp_left_count | default(0) != 1 else '' }}">
-            {{ seat_labels[1][0] }}:{{ opp_left_count | default(0) }}
-            {%- if dealer_seat == 1 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
-            {%- if phase != "auction" and bidder_seat == 1 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
-            {%- if current_seat == 1 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
-            {%- if sitting_out_seat == 1 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
-        </span>
-        <span class="ai-badge" aria-label="{{ seat_labels[2] }}: {{ partner_count | default(0) }} card{{ 's' if partner_count | default(0) != 1 else '' }}">
-            {{ seat_labels[2][0] }}:{{ partner_count | default(0) }}
-            {%- if dealer_seat == 2 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
-            {%- if phase != "auction" and bidder_seat == 2 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
-            {%- if current_seat == 2 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
-            {%- if sitting_out_seat == 2 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
-        </span>
-        <span class="ai-badge" aria-label="{{ seat_labels[3] }}: {{ opp_right_count | default(0) }} card{{ 's' if opp_right_count | default(0) != 1 else '' }}">
-            {{ seat_labels[3][0] }}:{{ opp_right_count | default(0) }}
-            {%- if dealer_seat == 3 %}<span class="seat-marker seat-marker--dealer" title="Dealer">D</span>{% endif -%}
-            {%- if phase != "auction" and bidder_seat == 3 %}<span class="seat-marker seat-marker--declarer" title="Declarer">★</span>{% endif -%}
-            {%- if current_seat == 3 %}<span class="seat-marker seat-marker--turn" title="Current turn">▶</span>{% endif -%}
-            {%- if sitting_out_seat == 3 %}<span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>{% endif -%}
-        </span>
-    </div>
-
     {# Compass-rose grid: Ace (partner) top, Slim left, Deuce right, Human bottom #}
     <div class="compass-layout" role="region" aria-label="Game table">
 
@@ -81,20 +64,14 @@
             <div class="ai-hand-block">
                 <div class="ai-seat-label">
                     {{ seat_labels[2] }}
-                    {% if dealer_seat == 2 %}
-                        <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
-                    {% endif %}
-                    {% if phase != "auction" and bidder_seat == 2 %}
-                        <span class="seat-marker seat-marker--declarer" title="Declarer">★</span>
-                    {% endif %}
-                    {% if current_seat == 2 %}
-                        <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                    {# Phase-dependent word labels — one badge max per seat #}
+                    {% if phase == "auction" and dealer_seat == 2 %}
+                        <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
+                    {% elif phase == "trick_play" and trick_leader == 2 %}
+                        <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
                     {% endif %}
                     {% if sitting_out_seat == 2 %}
-                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
-                    {% endif %}
-                    {% if seat_bids is defined and seat_bids[2] is defined %}
-                        <span class="bid-tag" title="Bid: {{ seat_bids[2] }}">{{ seat_bids[2] }}</span>
+                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">Sitting Out</span>
                     {% endif %}
                 </div>
                 <div class="ai-hand" role="img" aria-label="{{ seat_labels[2] }} has {{ partner_count | default(0) }} card{{ 's' if partner_count | default(0) != 1 else '' }}">
@@ -111,20 +88,13 @@
             <div class="ai-hand-block ai-hand-block--vertical">
                 <div class="ai-seat-label">
                     {{ seat_labels[1] }}
-                    {% if dealer_seat == 1 %}
-                        <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
-                    {% endif %}
-                    {% if phase != "auction" and bidder_seat == 1 %}
-                        <span class="seat-marker seat-marker--declarer" title="Declarer">★</span>
-                    {% endif %}
-                    {% if current_seat == 1 %}
-                        <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                    {% if phase == "auction" and dealer_seat == 1 %}
+                        <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
+                    {% elif phase == "trick_play" and trick_leader == 1 %}
+                        <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
                     {% endif %}
                     {% if sitting_out_seat == 1 %}
-                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
-                    {% endif %}
-                    {% if seat_bids is defined and seat_bids[1] is defined %}
-                        <span class="bid-tag" title="Bid: {{ seat_bids[1] }}">{{ seat_bids[1] }}</span>
+                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">Sitting Out</span>
                     {% endif %}
                 </div>
                 <div class="ai-hand ai-hand--vertical" role="img" aria-label="{{ seat_labels[1] }} has {{ opp_left_count | default(0) }} card{{ 's' if opp_left_count | default(0) != 1 else '' }}">
@@ -138,10 +108,8 @@
 
         {# Center — trick area, controls, bid panel #}
         <div class="compass-center">
-            {# Contract bar — sticky, always-visible contract info during trick play #}
-            {% if phase == "trick_play" %}
-                {% include "partials/contract_bar.html" %}
-            {% endif %}
+            {# Contract bar — always visible with status #}
+            {% include "partials/contract_bar.html" %}
 
             {# Trick area — shown during trick play only (not during auction) #}
             {% if phase != "auction" %}
@@ -166,20 +134,13 @@
             <div class="ai-hand-block ai-hand-block--vertical">
                 <div class="ai-seat-label">
                     {{ seat_labels[3] }}
-                    {% if dealer_seat == 3 %}
-                        <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
-                    {% endif %}
-                    {% if phase != "auction" and bidder_seat == 3 %}
-                        <span class="seat-marker seat-marker--declarer" title="Declarer">★</span>
-                    {% endif %}
-                    {% if current_seat == 3 %}
-                        <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
+                    {% if phase == "auction" and dealer_seat == 3 %}
+                        <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
+                    {% elif phase == "trick_play" and trick_leader == 3 %}
+                        <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
                     {% endif %}
                     {% if sitting_out_seat == 3 %}
-                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
-                    {% endif %}
-                    {% if seat_bids is defined and seat_bids[3] is defined %}
-                        <span class="bid-tag" title="Bid: {{ seat_bids[3] }}">{{ seat_bids[3] }}</span>
+                        <span class="seat-marker seat-marker--sitting-out" title="Sitting out">Sitting Out</span>
                     {% endif %}
                 </div>
                 <div class="ai-hand ai-hand--vertical" role="img" aria-label="{{ seat_labels[3] }} has {{ opp_right_count | default(0) }} card{{ 's' if opp_right_count | default(0) != 1 else '' }}">
@@ -191,18 +152,17 @@
             </div>
         </div>
 
-        {# Bottom — Human hand with inline bid badge #}
+        {# Bottom — Human hand #}
         <div class="compass-bottom">
-            {% if seat_bids is defined and seat_bids[0] is defined %}
-                <div class="human-seat-label" role="status" aria-label="Your bid: {{ seat_bids[0] }}">
+            {% if phase == "auction" and dealer_seat == 0 %}
+                <div class="human-seat-label" role="status" aria-label="You are the dealer">
                     You
-                    {% if dealer_seat == 0 %}
-                        <span class="seat-marker seat-marker--dealer" title="Dealer">D</span>
-                    {% endif %}
-                    {% if current_seat == 0 %}
-                        <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
-                    {% endif %}
-                    <span class="bid-tag" title="Bid: {{ seat_bids[0] }}">{{ seat_bids[0] }}</span>
+                    <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
+                </div>
+            {% elif phase == "trick_play" and trick_leader == 0 %}
+                <div class="human-seat-label" role="status" aria-label="You lead this trick">
+                    You
+                    <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
                 </div>
             {% endif %}
             {# Human hand — always shown during active play #}
@@ -213,19 +173,6 @@
 
     {# Score bar — outside compass grid, always at bottom #}
     {% include "partials/score.html" %}
-
-    {# Compact icon legend — quick-glance badge reference (detailed docs in Help drawer) #}
-    <div class="icon-legend" role="note" aria-label="Badge legend">
-        <span class="icon-legend__item"><span class="seat-marker seat-marker--dealer" aria-hidden="true">D</span> Dealer</span>
-        <span class="icon-legend__sep" aria-hidden="true">&middot;</span>
-        <span class="icon-legend__item"><span class="seat-marker seat-marker--declarer" aria-hidden="true">★</span> Declarer</span>
-        <span class="icon-legend__sep" aria-hidden="true">&middot;</span>
-        <span class="icon-legend__item"><span class="seat-marker seat-marker--leader" aria-hidden="true">L</span> Lead</span>
-        <span class="icon-legend__sep" aria-hidden="true">&middot;</span>
-        <span class="icon-legend__item"><span class="seat-marker seat-marker--turn" aria-hidden="true">▶</span> Turn</span>
-        <span class="icon-legend__sep" aria-hidden="true">&middot;</span>
-        <span class="icon-legend__item"><span class="bid-tag" aria-hidden="true">5♠</span> Bid</span>
-    </div>
 
     {% include "partials/action_rail.html" %}
 

@@ -9,6 +9,7 @@
      - tricks_team0: int — tricks won by human's team (seats 0, 2)
      - tricks_team1: int — tricks won by AI team (seats 1, 3)
      - trick_winning_seat: int | None — seat currently winning the active trick
+     - phase: str — "auction" or "trick_play"
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
 {% set suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"} %}
@@ -32,22 +33,21 @@
     {% set display_heading = "Trick " ~ display_trick_number ~ " of 10 complete" %}
 {% endif %}
 
-{% macro seat_markers(seat, leader_seat=None) %}
+{% set cur_phase = phase | default("trick_play") %}
+
+{% macro seat_markers(seat, leader_seat=None, cur_phase="trick_play") %}
     <div class="seat-markers">
-        {% if leader_seat is not none and leader_seat == seat %}
-            <span class="seat-marker seat-marker--leader" title="Lead">L</span>
+        {# Lead Trick — shown during trick play only, word label #}
+        {% if cur_phase == "trick_play" and leader_seat is not none and leader_seat == seat %}
+            <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
         {% endif %}
-        {% if dealer_seat == seat %}
-            <span class="seat-marker seat-marker--dealer" title="Dealer"><span class="seat-marker__chip" aria-hidden="true"></span>D</span>
+        {# Dealer — shown during auction only, word label #}
+        {% if cur_phase == "auction" and dealer_seat == seat %}
+            <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
         {% endif %}
-        {% if bidder_seat == seat %}
-            <span class="seat-marker seat-marker--declarer" title="Declarer">★</span>
-        {% endif %}
-        {% if current_seat == seat %}
-            <span class="seat-marker seat-marker--turn" title="Current turn">▶</span>
-        {% endif %}
+        {# Sitting out — always shown when applicable #}
         {% if sitting_out_seat == seat %}
-            <span class="seat-marker seat-marker--sitting-out" title="Sitting out">SO</span>
+            <span class="seat-marker seat-marker--sitting-out" title="Sitting out">Sitting Out</span>
         {% endif %}
     </div>
 {% endmacro %}
@@ -93,36 +93,39 @@
             </span>
         {% endif %}
     </h3>
-    <div class="trick-table" role="group" aria-label="Cards played this trick, score {{ tricks_team0 }} to {{ tricks_team1 }}">
+    <div class="trick-table" role="group" aria-label="Cards played this trick">
         <div class="trick-slot trick-slot--top{% if display_winner is not none and display_winner == 2 %} trick-slot--winner{% endif %}">
-            {{ seat_markers(2, display_leader) }}
+            {{ seat_markers(2, display_leader, cur_phase) }}
             {{ card_slot(2) }}
         </div>
 
         <div class="trick-row-middle">
             <div class="trick-slot trick-slot--left{% if display_winner is not none and display_winner == 1 %} trick-slot--winner{% endif %}">
-                {{ seat_markers(1, display_leader) }}
+                {{ seat_markers(1, display_leader, cur_phase) }}
                 {{ card_slot(1) }}
             </div>
 
-            <div class="trick-center" aria-label="Tricks won: your team {{ tricks_team0 }}, AI team {{ tricks_team1 }}">
-                <span class="trick-count" aria-hidden="true">{{ tricks_team0 }}&ndash;{{ tricks_team1 }}</span>
+            <div class="trick-center" aria-label="Current trick score: your team {{ tricks_team0 }}, AI team {{ tricks_team1 }}">
+                <span class="trick-score-label">Current Trick Score</span>
+                <span class="trick-count">
+                    <span class="trick-count--human">{{ tricks_team0 }}</span><span class="trick-count--separator">&ndash;</span><span class="trick-count--ai">{{ tricks_team1 }}</span>
+                </span>
             </div>
 
             <div class="trick-slot trick-slot--right{% if display_winner is not none and display_winner == 3 %} trick-slot--winner{% endif %}">
-                {{ seat_markers(3, display_leader) }}
+                {{ seat_markers(3, display_leader, cur_phase) }}
                 {{ card_slot(3) }}
             </div>
         </div>
 
         <div class="trick-slot trick-slot--bottom{% if display_winner is not none and display_winner == 0 %} trick-slot--winner{% endif %}">
-            {{ seat_markers(0, display_leader) }}
+            {{ seat_markers(0, display_leader, cur_phase) }}
             {{ card_slot(0) }}
         </div>
     </div>
     {% if current_trick and trick_winning_seat is defined and trick_winning_seat is not none %}
         <p class="trick-current-winner" aria-live="polite">
-            {% if trick_winning_seat == 0 %}You are{% else %}{{ seat_labels[trick_winning_seat] }} is{% endif %} winning
+            {% if trick_winning_seat == 0 %}You are{% else %}{{ seat_labels[trick_winning_seat] }} is{% endif %} currently winning the trick
         </p>
     {% endif %}
     {% if display_winner is not none %}

@@ -1,73 +1,38 @@
-{# Match score + hand info + contract display partial.
+{# Simplified score bar — "Current Game Score" only.
+   Contract, declarer, and tricks info removed (shown in contract bar and trick area).
+   Hand details available in a collapsed dropdown.
+
    Context variables:
      - score_human: int — human team's total match score
      - score_ai: int — AI team's total match score
      - hands_played: int — number of completed hands
-     - contract_type: str | None — "suit", "high", or "low" (None if auction in progress)
-     - trump: str | None — trump suit letter if contract_type == "suit"
-     - winning_bid: int | None — winning bid amount (None if auction in progress)
-     - bidder_seat: int | None — seat of the declarer (None if auction in progress)
-     - tricks_team0: int — current hand tricks for human team
-     - tricks_team1: int — current hand tricks for AI team
      - dealer_seat: int — seat number of the dealer
      - phase: str — current hand phase
 #}
-{% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
-{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
-<div id="score-bar" class="score-bar" role="status" aria-label="Match score and hand information" aria-live="polite">
-    <div class="score-section" aria-label="Match score: You {{ score_human }}, AI {{ score_ai }}">
-        <span class="score-label">You:</span>
-        <span class="score-value{% if score_human >= 0 %} score--positive{% else %} score--negative{% endif %}">
+<div id="score-bar" class="score-bar" role="status" aria-label="Current game score: You {{ score_human }}, AI {{ score_ai }}" aria-live="polite">
+    <div class="score-section" aria-label="Current game score: You {{ score_human }}, AI {{ score_ai }}">
+        <span class="score-header">Current Game Score:</span>
+        <span class="score-label score-label--human">You:</span>
+        <span class="score-value score-value--human{% if score_human >= 0 %} score--positive{% else %} score--negative{% endif %}">
             {{ score_human }}
         </span>
         <span class="score-separator" aria-hidden="true">|</span>
-        <span class="score-label">AI:</span>
-        <span class="score-value{% if score_ai >= 0 %} score--positive{% else %} score--negative{% endif %}">
+        <span class="score-label score-label--ai">AI:</span>
+        <span class="score-value score-value--ai{% if score_ai >= 0 %} score--positive{% else %} score--negative{% endif %}">
             {{ score_ai }}
         </span>
     </div>
 
-    <div class="hand-info">
-        <span>Hand {{ hands_played + 1 }}</span>
-        <span class="info-separator" aria-hidden="true">&middot;</span>
-        <span>Dealer: {{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>
-    </div>
-
-    {% if contract_type is not none and winning_bid is not none %}
-    <div class="contract-info">
-        {% set score_bid_type = bid_type | default("regular") %}
-        <span>Contract:
-            {% if score_bid_type == "moon" %}
-                <span class="contract-bid-type contract-bid-type--moon"><span aria-hidden="true">🌙</span> Moon</span>
-            {% elif score_bid_type == "loner" %}
-                <span class="contract-bid-type contract-bid-type--loner"><span aria-hidden="true">🃏</span> Loner</span>
-            {% else %}
-                {{ winning_bid }}
-            {% endif %}
-            {% if contract_type == "suit" and trump %}
-                <span class="suit-icon suit-icon--{{ suit_classes.get(trump, 'spades') }}">{{ suit_symbols.get(trump, trump) }}</span>
-            {% elif contract_type == "high" %}
-                High
-            {% elif contract_type == "low" %}
-                Low
-            {% endif %}
-        </span>
-        <span class="info-separator" aria-hidden="true">&middot;</span>
-        <span>Declarer: {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>
-        {% if phase == "trick_play" %}
-        <span class="info-separator" aria-hidden="true">&middot;</span>
-        <span>Tricks: {{ tricks_team0 }}&ndash;{{ tricks_team1 }}</span>
-        {% endif %}
-    </div>
-    {% elif phase == "auction" %}
-    <div class="contract-info">
-        <span>Auction in progress</span>
-    </div>
-    {% endif %}
-
-    <div class="match-target" aria-label="First team to 52 points wins. Reaching minus 52 means you lose.">
-        First to 52 wins &middot; &minus;52 = loss
-    </div>
+    <details class="hand-details">
+        <summary class="hand-details__summary">Hand Details</summary>
+        <div class="hand-details__content">
+            <span>Hand {{ hands_played + 1 }}</span>
+            <span class="info-separator" aria-hidden="true">&middot;</span>
+            <span>Dealer: {{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>
+            <span class="info-separator" aria-hidden="true">&middot;</span>
+            <span>First to 52 wins &middot; &minus;52 = loss</span>
+        </div>
+    </details>
 </div>

@@ -1,6 +1,7 @@
 {# Contract bar — persistent, sticky display of the current contract during
-   trick play.  Always visible at the top of the game board so the player
-   never has to scroll to see what was bid.
+   trick play, and auction status during auction phase.
+   Always visible at the top of the game board so the player never has to
+   scroll to see what was bid.
 
    Context variables (already provided by _build_game_context):
      - winning_bid: int | None — winning bid amount
@@ -8,37 +9,30 @@
      - bid_type: str — "regular", "moon", or "loner"
      - contract_type: str | None — "suit", "high", or "low"
      - trump: str | None — trump suit letter if contract_type == "suit"
+     - phase: str — "auction", "trick_play", etc.
+     - current_high_bid: int | None — current high bid during auction
 #}
 {% set suit_symbols = {"S": "\u2660", "H": "\u2665", "D": "\u2666", "C": "\u2663"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
 {# Team relationship: seats 0 & 2 are the human's team (team 0) #}
+{% set winning_bid = winning_bid if winning_bid is defined else None %}
+{% set bidder_seat = bidder_seat if bidder_seat is defined else None %}
 {% set is_my_team = bidder_seat in [0, 2] if bidder_seat is not none else false %}
 {% set team_class = "contract-bar--my-team" if is_my_team else "contract-bar--opp-team" %}
-{% if bidder_seat == 0 %}
-    {% set relationship = "" %}
-{% elif bidder_seat == 2 %}
-    {% set relationship = "(Partner)" %}
-{% else %}
-    {% set relationship = "(Opponent)" %}
-{% endif %}
 
 {% if winning_bid is not none and bidder_seat is not none %}
 <div class="contract-bar {{ team_class }}" role="status" aria-label="Current contract">
-    {# Header label #}
-    <span class="contract-bar__header">Contract:</span>
+    {# Header label — spelled out per user direction #}
+    <span class="contract-bar__header">Current Contract and Trump:</span>
 
-    {# Trump / contract type indicator #}
+    {# Contract display #}
     <span class="contract-bar__contract">
         {% set bar_bid_type = bid_type | default("regular") %}
         {% if bar_bid_type == "moon" %}
-            <span class="contract-bar__type contract-bar__type--moon" aria-label="Moon">
-                <span aria-hidden="true">&#127769;</span> Moon
-            </span>
+            <span class="contract-bar__type contract-bar__type--moon" aria-label="Moon">Moon</span>
         {% elif bar_bid_type == "loner" %}
-            <span class="contract-bar__type contract-bar__type--loner" aria-label="Loner">
-                <span aria-hidden="true">&#127183;</span> Loner
-            </span>
+            <span class="contract-bar__type contract-bar__type--loner" aria-label="Loner">Loner</span>
         {% else %}
             <span class="contract-bar__level">{{ winning_bid }}</span>
         {% endif %}
@@ -54,12 +48,14 @@
         {% endif %}
     </span>
 
-    <span class="contract-bar__separator" aria-hidden="true">&mdash;</span>
-
-    {# Declarer name + relationship #}
+    {# Declarer — "by Name" #}
     <span class="contract-bar__declarer">
-        {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}
-        {% if relationship %}<span class="contract-bar__relationship">{{ relationship }}</span>{% endif %}
+        by {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}
     </span>
+</div>
+{% elif phase is defined and phase == "auction" %}
+<div class="contract-bar" role="status" aria-label="Auction in progress">
+    <span class="contract-bar__header">Current Contract and Trump:</span>
+    <span class="contract-bar__auction-status">Auction in Progress</span>
 </div>
 {% endif %}
