@@ -49,7 +49,7 @@ repos:
 
       - id: validate-configs
         name: Validate experiment configs
-        entry: python scripts/validate_configs.py
+        entry: uv run python scripts/validate_configs.py
         language: system
         files: ^experiments/(configs|suites)/.*\.yaml$
         pass_filenames: false
