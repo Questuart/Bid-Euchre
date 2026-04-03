@@ -640,7 +640,9 @@ class GluttonIsolatedStrategy(Strategy):
     - partner_check: Skip 3rd-seat aggression when partner winning (PR#227)
     - trump_gating: Only aggressive trump if hand ≤6 or trump ≥3 (PR#227)
     - probabilistic_trump_in: Trump to protect partner from void 4th seat (PR#228)
-    - lead_bower: Lead right bower when holding both bowers + 5+ trump (PR#2167)
+    - lead_bower: Lead right bower when holding both bowers + 5+ trump (PR#2167).
+      Defaults to smart_leads when not explicitly set, so configs with
+      smart_leads=True keep bower leads. Set False explicitly to isolate.
 
     With all features disabled, this behaves identically to GreedyStrategy.
     """
@@ -658,7 +660,7 @@ class GluttonIsolatedStrategy(Strategy):
         partner_check: bool = False,
         trump_gating: bool = False,
         probabilistic_trump_in: bool = False,
-        lead_bower: bool = False,
+        lead_bower: Optional[bool] = None,
     ):
         super().__init__(name)
         self.debug = debug
@@ -673,7 +675,9 @@ class GluttonIsolatedStrategy(Strategy):
         self._partner_check = partner_check
         self._trump_gating = trump_gating
         self._probabilistic_trump_in = probabilistic_trump_in
-        self._lead_bower = lead_bower
+        # Default lead_bower to smart_leads when not explicitly set,
+        # so existing configs with smart_leads=True keep bower leads (#2201).
+        self._lead_bower = lead_bower if lead_bower is not None else smart_leads
 
         # Double-deck aware tracking (each card exists 0-2 times)
         self._seen_counts: Dict[Card, int] = {}
