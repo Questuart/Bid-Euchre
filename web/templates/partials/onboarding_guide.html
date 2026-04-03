@@ -1,0 +1,117 @@
+{# Onboarding guide walkthrough partial — step-by-step game introduction.
+   Content is extracted from guide_content.html to avoid duplication.
+
+   Context variables:
+     - link_uuid: str — player's game link UUID
+     - nickname: str — player's display nickname
+     - step: int — current step (1-indexed: 1, 2, or 3)
+     - total_steps: int — total number of guide steps (3)
+#}
+<div id="onboarding" class="onboarding" role="region"
+     aria-label="Game guide step {{ step }} of {{ total_steps }}">
+    <div class="onboarding__card">
+        <h2 class="onboarding__title">How to Play</h2>
+
+        {# ---- Progress dots ---- #}
+        <div class="onboarding__progress" role="progressbar"
+             aria-valuenow="{{ step }}" aria-valuemin="1"
+             aria-valuemax="{{ total_steps }}"
+             aria-label="Guide progress">
+            {% for i in range(1, total_steps + 1) %}
+            <span class="onboarding__dot{% if i == step %} onboarding__dot--active{% elif i < step %} onboarding__dot--done{% endif %}"
+                  aria-hidden="true"></span>
+            {% endfor %}
+            <span class="onboarding__step-label">Step {{ step }} of {{ total_steps }}</span>
+        </div>
+
+        {# ---- Step content ---- #}
+        <div class="onboarding__content">
+
+            {% if step == 1 %}
+            {# Step 1: Quick Start + The Basics #}
+            <div class="guide__quickstart">
+                <div class="guide__quickstart-title">Quick Start</div>
+                <p>&#x1F0A1; You and your AI partner vs two AI opponents.</p>
+                <p>&#x270B; Bid how many tricks you think your team can win (or pass).</p>
+                <p>&#x1F3B4; Play cards by clicking them &mdash; green border = legal plays.</p>
+                <p>&#x1F3C6; First team to 52 points wins. Reaching &minus;52 means you lose!</p>
+            </div>
+            <div class="guide__section">
+                <h3 class="guide__section-title">The Basics</h3>
+                <p>
+                    Bid Euchre is a 4-player partnership card game. You sit across from your
+                    AI partner, and the two AI opponents sit on your left and right.
+                </p>
+                <ul>
+                    <li><strong>Deck:</strong> A 40-card double deck &mdash; ranks 10, J, Q, K, A in all four suits, with two copies of each card.</li>
+                    <li><strong>Deal:</strong> All 40 cards are dealt, so each player gets 10 cards and every hand has 10 tricks.</li>
+                    <li><strong>Goal:</strong> Win tricks to score points. A match ends when either team reaches +52 (win) or &minus;52 (loss).</li>
+                </ul>
+            </div>
+
+            {% elif step == 2 %}
+            {# Step 2: Bidding #}
+            <div class="guide__section">
+                <h3 class="guide__section-title">Bidding</h3>
+                <p>
+                    Each hand starts with an auction. Starting left of the dealer, each
+                    player gets one chance to bid or pass.
+                </p>
+                <ul>
+                    <li><strong>What to bid:</strong> Pick a number of tricks (1&ndash;10) and a contract type &mdash; a trump suit (&#9824; &#9829; &#9830; &#9827;), High (no-trump, Aces high), or Low (no-trump, Tens high).</li>
+                    <li><strong>Highest bid wins:</strong> The winning bidder&rsquo;s team declares the contract. Their team must take at least that many tricks.</li>
+                    <li><strong>All pass:</strong> If nobody bids, the hand is redealt and the dealer rotates.</li>
+                    <li><strong>Moon &amp; Loner:</strong> Special 10-trick bids. Moon triggers a card exchange with your partner. Loner makes your partner sit out.</li>
+                </ul>
+            </div>
+
+            {% elif step == 3 %}
+            {# Step 3: Card Play + Scoring #}
+            <div class="guide__section">
+                <h3 class="guide__section-title">Card Play</h3>
+                <ul>
+                    <li><strong>Follow suit:</strong> You must play a card matching the suit that was led, if you can.</li>
+                    <li><strong>Trump wins:</strong> In suit contracts, any trump card beats any non-trump card.</li>
+                    <li><strong>Bowers:</strong> The Jack of trump (right bower) and the Jack of the same color (left bower) are the two strongest cards.</li>
+                    <li><strong>Duplicates:</strong> Identical cards can appear in the same trick. If they tie, the first one played wins.</li>
+                </ul>
+            </div>
+            <div class="guide__section">
+                <h3 class="guide__section-title">Scoring</h3>
+                <ul>
+                    <li><strong>Made bid:</strong> The declaring team scores the number of tricks they won.</li>
+                    <li><strong>Set (missed bid):</strong> The declaring team loses points equal to their bid.</li>
+                    <li><strong>Defenders:</strong> The defending team always scores the tricks they won.</li>
+                    <li><strong>Match end:</strong> First to +52 wins; dropping to &minus;52 is a loss. Expect 6&ndash;12 hands per match (about 10&ndash;20 minutes).</li>
+                </ul>
+            </div>
+            {% endif %}
+
+        </div>
+
+        {# ---- Navigation buttons ---- #}
+        <div class="onboarding__actions">
+            <button type="button"
+                    class="onboarding__btn onboarding__btn--primary"
+                    hx-post="/play/{{ link_uuid }}/onboarding/next"
+                    hx-vals='{"step": {{ step }}}'
+                    hx-target="#game-board"
+                    hx-swap="morph:innerHTML"
+                    aria-label="{% if step == total_steps %}Finish guide and start playing{% else %}Continue to next step{% endif %}">
+                {% if step == total_steps %}
+                    Let's Play!
+                {% else %}
+                    Next &rarr;
+                {% endif %}
+            </button>
+            <button type="button"
+                    class="onboarding__btn onboarding__btn--skip"
+                    hx-post="/play/{{ link_uuid }}/onboarding/skip"
+                    hx-target="#game-board"
+                    hx-swap="morph:innerHTML"
+                    aria-label="Skip remaining guide steps">
+                Skip
+            </button>
+        </div>
+    </div>
+</div>

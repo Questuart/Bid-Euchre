@@ -8,6 +8,7 @@ bid → play-card → match completion → decision logging.
 from __future__ import annotations
 
 import json
+import uuid
 
 import pytest
 from starlette.testclient import TestClient
@@ -71,6 +72,11 @@ def _set_nickname(client: TestClient, link_uuid: str, nickname: str = "Tester"):
     )
 
 
+def _skip_onboarding(client: TestClient, link_uuid: str):
+    """Skip onboarding flow and return the response (model_select partial)."""
+    return client.post(f"/play/{link_uuid}/onboarding/skip")
+
+
 def _select_ai(client: TestClient, link_uuid: str, model_id: str = "olsa"):
     """Select AI model and return the response."""
     return client.post(
@@ -80,9 +86,10 @@ def _select_ai(client: TestClient, link_uuid: str, model_id: str = "olsa"):
 
 
 def _setup_game(client: TestClient) -> str:
-    """Create game, set nickname, select AI, return link_uuid."""
+    """Create game, set nickname, skip onboarding, select AI, return link_uuid."""
     link_uuid = _create_game(client)
     _set_nickname(client, link_uuid)
+    _skip_onboarding(client, link_uuid)
     _select_ai(client, link_uuid)
     return link_uuid
 
@@ -138,6 +145,7 @@ class TestSelectAI:
     def test_select_ai_creates_match(self, client, app):
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         resp = _select_ai(client, link_uuid, "olsa")
         assert resp.status_code == 200
 
@@ -158,6 +166,7 @@ class TestSelectAI:
     def test_select_invalid_model_rejected(self, client):
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         resp = _select_ai(client, link_uuid, "nonexistent_model")
         assert resp.status_code == 400
 
@@ -171,6 +180,7 @@ class TestSelectAI:
             for _ in range(2):
                 link_uuid = _create_game(c)
                 _set_nickname(c, link_uuid)
+                _skip_onboarding(c, link_uuid)
                 resp = _select_ai(c, link_uuid, "olsa")
                 assert resp.status_code == 200
 
@@ -952,6 +962,7 @@ class TestRedealPersistence:
         client, app = allpass_client
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
         advance_pending_reveals(client, app, link_uuid)
 
@@ -1032,6 +1043,7 @@ class TestRedealPersistence:
         client, app = allpass_client
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
         advance_pending_reveals(client, app, link_uuid)
 
@@ -2719,6 +2731,7 @@ class TestMatchHistory:
         """The header nav should include a History link when link_uuid is set."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
 
         resp = client.get(f"/play/{link_uuid}")
@@ -2733,6 +2746,7 @@ class TestTabNavigation:
         """Game tab is active when viewing the game page."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
 
         resp = client.get(f"/play/{link_uuid}")
@@ -2762,6 +2776,7 @@ class TestTabNavigation:
         """Comments tab is an active navigation link (not disabled)."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
 
         resp = client.get(f"/play/{link_uuid}")
@@ -2776,6 +2791,7 @@ class TestTabNavigation:
         """The nav element uses role=tablist for accessibility."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
 
         resp = client.get(f"/play/{link_uuid}")
@@ -2786,6 +2802,7 @@ class TestTabNavigation:
         """Tab links should have hx-get, hx-target, hx-push-url for HTMX swaps."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
 
         resp = client.get(f"/play/{link_uuid}")
@@ -2800,6 +2817,7 @@ class TestTabNavigation:
         """The #tab-content wrapper div exists for HTMX target."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
 
         resp = client.get(f"/play/{link_uuid}")
@@ -2871,6 +2889,7 @@ class TestHtmxTabPartials:
         """GET /play with HX-Request returns partial game content."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
         resp = client.get(
             f"/play/{link_uuid}",
@@ -2941,6 +2960,7 @@ class TestGuide:
         """The header nav should include a Guide link when link_uuid is set."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
         resp = client.get(f"/play/{link_uuid}")
         assert resp.status_code == 200
@@ -3717,6 +3737,7 @@ class TestAuctionLogPersistence:
         """
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
         _select_ai(client, link_uuid)
 
         # Advance through the hidden auction reveals
@@ -3744,3 +3765,134 @@ class TestAuctionLogPersistence:
             assert (
                 seat_label in resp.text
             ), f"Auction entry for {seat_label} missing from page refresh response"
+
+
+# ===================================================================
+# Onboarding Flow Tests
+# ===================================================================
+
+
+class TestOnboarding:
+    """Tests for first-time player onboarding flow (#2225)."""
+
+    def test_new_player_sees_welcome_after_nickname(self, client, app):
+        """Setting a nickname for a new player returns the welcome letter."""
+        link_uuid = _create_game(client)
+        resp = _set_nickname(client, link_uuid)
+        assert resp.status_code == 200
+        assert "onboarding_welcome" in resp.text or "Welcome" in resp.text
+
+    def test_game_page_shows_onboarding_for_incomplete_player(self, client, app):
+        """GET /play/<uuid> shows onboarding for player with onboarding_complete=0."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        # Player has nickname but onboarding_complete=0
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "onboarding_welcome" in resp.text or "Welcome" in resp.text
+
+    def test_onboarding_next_advances_to_guide_step(self, client, app):
+        """POST /onboarding/next with step=0 shows the first guide step."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        resp = client.post(
+            f"/play/{link_uuid}/onboarding/next",
+            data={"step": "0"},
+        )
+        assert resp.status_code == 200
+        assert "onboarding_guide" in resp.text or "guide" in resp.text.lower()
+
+    def test_onboarding_next_advances_through_all_steps(self, client, app):
+        """Walking through all 3 guide steps completes onboarding."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        # Step 0 → guide step 1
+        resp = client.post(
+            f"/play/{link_uuid}/onboarding/next",
+            data={"step": "0"},
+        )
+        assert resp.status_code == 200
+        # Step 1 → guide step 2
+        resp = client.post(
+            f"/play/{link_uuid}/onboarding/next",
+            data={"step": "1"},
+        )
+        assert resp.status_code == 200
+        # Step 2 → guide step 3
+        resp = client.post(
+            f"/play/{link_uuid}/onboarding/next",
+            data={"step": "2"},
+        )
+        assert resp.status_code == 200
+        # Step 3 → completes onboarding, shows model_select
+        resp = client.post(
+            f"/play/{link_uuid}/onboarding/next",
+            data={"step": "3"},
+        )
+        assert resp.status_code == 200
+        assert "model_select" in resp.text or "Choose" in resp.text
+
+    def test_onboarding_skip_marks_complete(self, client, app):
+        """POST /onboarding/skip sets onboarding_complete=1 and shows model select."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        resp = client.post(f"/play/{link_uuid}/onboarding/skip")
+        assert resp.status_code == 200
+        assert "model_select" in resp.text or "Choose" in resp.text
+
+    def test_returning_player_skips_onboarding(self, client, app):
+        """Player with onboarding_complete=1 never sees onboarding."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Should see model select, not onboarding
+        assert "model_select" in resp.text or "Choose" in resp.text
+        assert "onboarding_welcome" not in resp.text
+
+    def test_game_page_shows_model_select_for_completed_player(self, client, app):
+        """After completing onboarding, game page shows model selection."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        # Complete onboarding via skip
+        client.post(f"/play/{link_uuid}/onboarding/skip")
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "model_select" in resp.text or "Choose" in resp.text
+
+    def test_onboarding_next_unknown_player_404(self, client, app):
+        """POST /onboarding/next for unknown UUID returns 404."""
+        fake_uuid = str(uuid.uuid4())
+        resp = client.post(
+            f"/play/{fake_uuid}/onboarding/next",
+            data={"step": "0"},
+        )
+        assert resp.status_code == 404
+
+    def test_onboarding_skip_unknown_player_404(self, client, app):
+        """POST /onboarding/skip for unknown UUID returns 404."""
+        fake_uuid = str(uuid.uuid4())
+        resp = client.post(f"/play/{fake_uuid}/onboarding/skip")
+        assert resp.status_code == 404
+
+    def test_onboarding_complete_persists_after_next_finishes(self, client, app):
+        """After walking through all steps, onboarding_complete=1 in DB."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        # Walk through all steps
+        for step in range(4):
+            client.post(
+                f"/play/{link_uuid}/onboarding/next",
+                data={"step": str(step)},
+            )
+        # Verify DB state
+        session = app.state.session_factory()
+        try:
+            from web.db import Player
+
+            player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+            assert player is not None
+            assert player.onboarding_complete == 1
+        finally:
+            session.close()

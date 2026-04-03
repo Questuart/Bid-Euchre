@@ -53,6 +53,7 @@ class Player(Base):
     id = Column(Integer, primary_key=True)
     link_uuid = Column(String, nullable=False, unique=True)
     nickname = Column(String, nullable=True)
+    onboarding_complete = Column(Integer, nullable=False, default=0)
     created_at = Column(
         DateTime,
         nullable=False,

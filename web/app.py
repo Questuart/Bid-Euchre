@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from starlette.templating import Jinja2Templates
 
@@ -112,6 +113,29 @@ async def lifespan(app: FastAPI):
     engine = init_engine(config.database_url)
     create_tables(engine)
     session_factory = make_session_factory(engine)
+
+    # 1b. Migrate: add onboarding_complete column for existing databases.
+    # create_tables only creates new tables — it does not ALTER existing ones.
+    # On a fresh DB the column already exists; on an existing DB we add it
+    # and mark all players who already have a nickname as onboarding-complete
+    # so they are not forced through the onboarding flow.
+    inspector = sa_inspect(engine)
+    player_cols = {c["name"] for c in inspector.get_columns("players")}
+    if "onboarding_complete" not in player_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE players "
+                    "ADD COLUMN onboarding_complete INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE players SET onboarding_complete = 1 "
+                    "WHERE nickname IS NOT NULL"
+                )
+            )
+        logger.info("Migration: added onboarding_complete column to players")
 
     # 2. Auto-seed invite code on fresh database (atomic: skip if another
     #    instance already seeded between our check and insert)
