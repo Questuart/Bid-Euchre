@@ -119,6 +119,9 @@
             if (status) {
                 gameBoard.setAttribute('data-match-status', status);
             }
+        } else {
+            // Setup partials omit the carrier — clear stale status (#2276)
+            gameBoard.removeAttribute('data-match-status');
         }
     }
 
