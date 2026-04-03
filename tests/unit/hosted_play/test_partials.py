@@ -779,7 +779,8 @@ class TestGameControls:
         assert "Bowers" in html
         assert "Moon and loner" in html
         assert "High/Low" in html
-        assert "+52 or -52" in html
+        assert "+52 wins" in html
+        assert "52 means you lose" in html
 
     def test_game_controls_legend_icons(self, env):
         """Help drawer includes an icon/indicator legend."""
