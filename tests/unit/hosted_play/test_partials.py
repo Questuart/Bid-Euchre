@@ -1953,6 +1953,169 @@ class TestGameBoardSeatZeroRegression:
         assert "A:10" in html  # Ace (seat 2)
         assert "D:10" in html  # Deuce (seat 3)
 
+    def test_declarer_marker_hidden_during_auction(self, env):
+        """Declarer ★ markers must not appear during auction phase (#2203).
+
+        When a player has placed a bid during the auction, bidder_seat is set
+        to their seat, but the ★ Declarer marker should only render after the
+        auction is complete (during trick_play).
+        """
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="auction",
+            link_uuid="test-uuid",
+            dealer_seat=0,
+            bidder_seat=2,  # seat 2 has the current high bid during auction
+            current_seat=3,
+            sitting_out_seat=None,
+            current_trick=None,
+            completed_tricks=[],
+            human_hand=[["S", "A"], ["H", "Q"]],
+            auction=[[1, 5], [2, 6]],
+            contract_type=None,
+            trump=None,
+            bid_type=None,
+            winning_bid=6,
+            current_high_bid=6,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=False,
+            action_rail=[],
+        )
+        # Declarer marker must NOT appear on any seat during auction.
+        # The icon legend contains a decorative "seat-marker--declarer"
+        # with aria-hidden="true" — that's always present. We check that
+        # no *active* declarer marker (with title="Declarer") appears.
+        assert 'title="Declarer"' not in html
+        # Dealer marker SHOULD still appear
+        assert "seat-marker--dealer" in html
+
+    def test_declarer_marker_shown_during_trick_play(self, env):
+        """Declarer ★ markers appear normally during trick play (#2203)."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="trick_play",
+            link_uuid="test-uuid",
+            dealer_seat=0,
+            bidder_seat=2,
+            current_seat=1,
+            sitting_out_seat=None,
+            current_trick={"leader": 1, "plays": [[1, ["H", "K"]]]},
+            completed_tricks=[],
+            human_hand=[["S", "A"], ["H", "Q"]],
+            auction=[],
+            contract_type="suit",
+            trump="H",
+            bid_type="regular",
+            winning_bid=6,
+            current_high_bid=6,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=False,
+            action_rail=[],
+        )
+        # Declarer marker SHOULD appear during trick play
+        assert "seat-marker--declarer" in html
+        assert 'title="Declarer"' in html
+
+    def test_trick_heading_hidden_during_auction(self, env):
+        """'Trick N of 10' heading must not appear during auction (#2206).
+
+        The trick area partial should only render during trick play, not
+        during the auction phase where it would misleadingly show
+        'Trick 1 of 10'.
+        """
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="auction",
+            link_uuid="test-uuid",
+            dealer_seat=3,
+            bidder_seat=-1,
+            current_seat=0,
+            sitting_out_seat=None,
+            current_trick=None,
+            completed_tricks=[],
+            human_hand=[["S", "A"]],
+            auction=[],
+            contract_type=None,
+            trump=None,
+            bid_type=None,
+            winning_bid=0,
+            current_high_bid=0,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=True,
+            turn_number=0,
+            action_rail=[],
+        )
+        # Trick heading must NOT appear during auction
+        assert "Trick 1 of 10" not in html
+        assert "trick-area" not in html
+
+    def test_trick_heading_shown_during_trick_play(self, env):
+        """'Trick N of 10' heading appears normally during trick play (#2206)."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="trick_play",
+            link_uuid="test-uuid",
+            dealer_seat=0,
+            bidder_seat=1,
+            current_seat=2,
+            sitting_out_seat=None,
+            current_trick={"leader": 1, "plays": [[1, ["H", "K"]]]},
+            completed_tricks=[],
+            human_hand=[["S", "A"], ["H", "Q"]],
+            auction=[],
+            contract_type="suit",
+            trump="H",
+            bid_type="regular",
+            winning_bid=5,
+            current_high_bid=5,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=False,
+            action_rail=[],
+        )
+        # Trick heading SHOULD appear during trick play
+        assert "Trick 1 of 10" in html
+        assert "trick-area" in html
+
 
 # ---------------------------------------------------------------------------
 # contract_bar.html — sticky contract info bar during trick play
