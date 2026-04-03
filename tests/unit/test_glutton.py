@@ -9,6 +9,8 @@ NOTE: GluttonStrategy also has hooks (on_hand_start, observe_play) for state
 tracking, though the simplified version doesn't use them for decision-making.
 """
 
+import copy
+
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy import GluttonIsolatedStrategy, GluttonStrategy, GreedyStrategy
 
@@ -1343,3 +1345,116 @@ class TestStaleInferenceReset:
         assert (
             len(glutton._seen_counts) > 0
         ), "Isolated: inference should be preserved within same hand/contract"
+
+
+class TestCrossMatchIsolation:
+    """Prove that deepcopy-per-match prevents shared-state contamination.
+
+    Regression test for #2168: AIManager stored ONE GluttonStrategy instance
+    per model.  All concurrent matches shared that instance, leaking
+    seen_counts, void_suits, contract_type, and trump_suit across games.
+    The fix deepcopies the strategy at engine-build time.
+    """
+
+    def test_deepcopy_isolates_seen_counts(self):
+        """Two cloned strategies must not share _seen_counts."""
+        shared = GluttonStrategy()
+        a = copy.deepcopy(shared)
+        b = copy.deepcopy(shared)
+
+        # Match A is a suit/Hearts contract
+        a.on_hand_start(
+            [Card("H", "A"), Card("H", "K"), Card("S", "T")],
+            "suit",
+            "H",
+            player_index=1,
+        )
+        a.observe_play(
+            0,
+            Card("H", "Q"),
+            [(0, Card("H", "Q"))],
+            "suit",
+            "H",
+        )
+
+        # Match B is a high (no-trump) contract — sees completely different cards
+        b.on_hand_start(
+            [Card("D", "A"), Card("D", "K"), Card("C", "T")],
+            "high",
+            None,
+            player_index=2,
+        )
+        b.observe_play(
+            1,
+            Card("C", "A"),
+            [(1, Card("C", "A"))],
+            "high",
+            None,
+        )
+
+        # Match A should only know about H-Q, not C-A
+        assert Card("H", "Q") in a._seen_counts
+        assert (
+            Card("C", "A") not in a._seen_counts
+        ), "Match A leaked seen_counts from Match B"
+
+        # Match B should only know about C-A, not H-Q
+        assert Card("C", "A") in b._seen_counts
+        assert (
+            Card("H", "Q") not in b._seen_counts
+        ), "Match B leaked seen_counts from Match A"
+
+        # Original shared instance must be untouched
+        assert (
+            len(shared._seen_counts) == 0
+        ), "Shared prototype was mutated by a cloned match"
+
+    def test_deepcopy_isolates_void_suits(self):
+        """Void-suit inference must not leak between cloned strategies."""
+        shared = GluttonStrategy()
+        a = copy.deepcopy(shared)
+        b = copy.deepcopy(shared)
+
+        a.on_hand_start(
+            [Card("H", "A"), Card("S", "K")],
+            "suit",
+            "H",
+            player_index=1,
+        )
+        # Player 2 fails to follow clubs → void in clubs
+        a.observe_play(
+            2,
+            Card("H", "T"),
+            [(0, Card("C", "A")), (1, Card("C", "K")), (2, Card("H", "T"))],
+            "suit",
+            "H",
+        )
+
+        b.on_hand_start(
+            [Card("D", "A"), Card("C", "T")],
+            "high",
+            None,
+            player_index=3,
+        )
+
+        assert "C" in a._void_suits_by_seat[2], "Match A should infer seat 2 void in C"
+        assert (
+            "C" not in b._void_suits_by_seat[2]
+        ), "Match B should not inherit void inference from Match A"
+
+    def test_deepcopy_isolates_contract_context(self):
+        """Contract type and trump suit must not leak between clones."""
+        shared = GluttonStrategy()
+        a = copy.deepcopy(shared)
+        b = copy.deepcopy(shared)
+
+        a.on_hand_start([Card("H", "A")], "suit", "H", player_index=0)
+        b.on_hand_start([Card("D", "A")], "low", None, player_index=0)
+
+        assert a._contract_type == "suit"
+        assert a._trump_suit == "H"
+        assert b._contract_type == "low"
+        assert b._trump_suit is None
+        # Shared prototype retains its default
+        assert shared._contract_type == "high"
+        assert shared._trump_suit is None
