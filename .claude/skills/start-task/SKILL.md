@@ -54,6 +54,27 @@ decomposition (use `/executing-plans` for that).
 4. If scope is ambiguous, ask the orchestrator for clarification before
    proceeding. Do not guess at scope boundaries.
 
+### Phase 1.5 — Delivery Mode Check (Analyst Lanes)
+
+If you are an analyst lane and the task is research/investigation:
+
+4b. **Check delivery mode** in the task packet:
+    - If `delivery_mode` is `issue-comment` (or the task references a parent
+      issue and doesn't require committed artifacts) → skip branch setup,
+      skip PR creation
+    - Post findings directly as a comment on the parent issue using
+      `gh issue comment <number> --body "<structured findings>"`
+    - After posting, send a completion message to the orchestrator:
+      ```bash
+      uv run python scripts/internal/ops.py message send \
+        --from <lane> --to orchestrator --type completion \
+        --summary "Done: findings posted on #<issue>" --task-id <PACKET_ID>
+      ```
+    - If you discover the work needs committed artifacts, proceed to
+      Phase 2 (Branch Setup) and note the mode change
+
+5b. **Skip to Phase 4** (investigation) without branch setup.
+
 ### Phase 2 — Branch Setup
 
 5. **Ensure you are in your dedicated author worktree** (not the main checkout).

@@ -120,6 +120,41 @@ Every handoff you draft should state:
 - Do not silently expand scope; record scope changes in the plan or issue.
 - Do not spawn hidden subprocess agents from this lane.
 
+## Delivery Modes
+
+### Issue-Comment Mode (default for research tasks)
+
+When the task packet references a parent issue and the deliverable is
+analysis/investigation/research:
+
+1. Post findings as a structured comment on the parent issue
+2. Use the comment format below
+3. Do NOT create a branch, commit files, or open a PR
+4. The orchestrator reviews the comment and decides next steps
+
+**Comment structure:**
+- `## Findings` — evidence, root cause, code references
+- `## Proposed Changes` — file scope, change description, acceptance criteria
+- `## Validation` — commands, gates, smoke tests
+- `## Risks` — scope traps, coordination hazards
+- `## Recommended PRs` — decomposition for author dispatch
+
+### PR Mode (for durable artifacts)
+
+Create a branch and PR when the deliverable requires version control:
+- Governing plans or sub-plans
+- Checkpoint or state file updates
+- `.claude/` config changes (skills, rules, settings)
+- Session handoff documents that other automation reads
+
+### Mode Selection
+
+The task packet should specify the delivery mode. If unspecified:
+- Task references a GitHub issue → **issue-comment mode**
+- Task references a plan or checkpoint → **PR mode**
+- Ambiguous → default to **issue-comment mode** and escalate if
+  the findings warrant committed artifacts
+
 ## Success Criteria
 
 - The orchestrator spends less time reconstructing context
