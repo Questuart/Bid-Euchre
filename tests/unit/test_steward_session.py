@@ -1007,47 +1007,51 @@ class TestAutoCompactWindow:
         content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
 
         # Diagnostic: check git status of the file
-        git_diff = ""
-        git_log = ""
-        git_show_hash = ""
+        diag = {}
         try:
-            git_diff = subprocess.check_output(
-                ["git", "diff", "--stat", "--", str(path.relative_to(REPO_ROOT))],
+            rel = str(path.relative_to(REPO_ROOT))
+            diag["head"] = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(REPO_ROOT),
+                text=True,
+                stderr=subprocess.STDOUT,
+            ).strip()[:12]
+            diag["diff"] = subprocess.check_output(
+                ["git", "diff", "--stat", "--", rel],
                 cwd=str(REPO_ROOT),
                 text=True,
                 stderr=subprocess.STDOUT,
             ).strip()
-            git_log = subprocess.check_output(
-                [
-                    "git",
-                    "log",
-                    "--oneline",
-                    "-1",
-                    "--",
-                    str(path.relative_to(REPO_ROOT)),
-                ],
+            diag["log"] = subprocess.check_output(
+                ["git", "log", "--oneline", "-3", "--", rel],
+                cwd=str(REPO_ROOT),
+                text=True,
+                stderr=subprocess.STDOUT,
+            ).strip()
+            diag["log_all"] = subprocess.check_output(
+                ["git", "log", "--oneline", "-3"],
                 cwd=str(REPO_ROOT),
                 text=True,
                 stderr=subprocess.STDOUT,
             ).strip()
             git_content = subprocess.check_output(
-                ["git", "show", f"HEAD:{path.relative_to(REPO_ROOT)}"],
+                ["git", "show", f"HEAD:{rel}"],
                 cwd=str(REPO_ROOT),
                 text=True,
                 stderr=subprocess.STDOUT,
             )
-            git_show_hash = hashlib.sha256(git_content.encode()).hexdigest()[:16]
+            diag["git_hash"] = hashlib.sha256(git_content.encode()).hexdigest()[:16]
+            diag["git_has_compact"] = "CLAUDE_CODE_AUTO_COMPACT_WINDOW" in git_content
         except Exception as exc:
-            git_diff = f"ERROR: {exc}"
+            diag["error"] = str(exc)
 
         assert (
             'tmux set-environment -t "$SESSION" CLAUDE_CODE_AUTO_COMPACT_WINDOW'
             in content
         ), (
             f"CLAUDE_CODE_AUTO_COMPACT_WINDOW must be set via tmux set-environment. "
-            f"FS: Path={path}, size={len(content)}, hash={content_hash}. "
-            f"Git: diff='{git_diff}', log='{git_log}', show_hash={git_show_hash}. "
-            f"REPO_ROOT={REPO_ROOT}"
+            f"FS: size={len(content)}, hash={content_hash}. "
+            f"Diag: {diag}"
         )
 
     def test_auto_compact_window_value_is_200k(self) -> None:
