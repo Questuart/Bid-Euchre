@@ -31,6 +31,14 @@ intake-to-dispatch flow into a reusable workflow.
    - **priority:** low / normal / high
    - **domain:** Execution domain for routing — `platform` or `browser-game`.
      Determines which worker pool the task routes to. Omit for flex/unspecified.
+   - **delivery_mode:** `issue-comment` (default for analyst research) or
+     `pr` (for durable artifacts). Controls whether the analyst posts
+     findings as an issue comment or creates a branch and PR. Optional —
+     defaults to `pr` for author lanes, `issue-comment` for analyst lanes
+     with a `parent_issue`.
+   - **parent_issue:** GitHub issue number for issue-comment delivery.
+     Required when `delivery_mode` is `issue-comment`. The analyst posts
+     findings as a structured comment on this issue.
 
 2. **Choose the target lane** using the delegation guidelines:
 
