@@ -585,13 +585,14 @@ class TestIdempotentResubmission:
         )
         assert resp1.status_code == 200
 
-        # Same turn_number — idempotent
+        # Same turn_number — stale; returns 409 with authoritative board
         resp2 = client.post(
             f"/play/{link_uuid}/bid",
             data={"turn_number": turn, "bid_n": 0, "bid_contract": ""},
         )
-        assert resp2.status_code == 200
-        # Both should return valid responses (second is idempotent)
+        assert resp2.status_code == 409
+        # Body is the current board HTML so HTMX can re-sync
+        assert "game-board" in resp2.text
 
 
 # ---------------------------------------------------------------------------
@@ -1765,9 +1766,9 @@ class TestRefreshResumeSafety:
         state_json_1 = match_row1.match_state_json
         session1.close()
 
-        # "Double-click" — same turn_number
+        # "Double-click" — same turn_number → 409 Conflict (stale turn)
         resp2 = client.post(f"/play/{link_uuid}/bid", data=bid_data)
-        assert resp2.status_code == 200
+        assert resp2.status_code == 409
 
         # State must not have changed from the second submission
         result2 = get_match_state(app, link_uuid)
@@ -1825,9 +1826,9 @@ class TestRefreshResumeSafety:
         state_json_1 = match_row1.match_state_json
         session1.close()
 
-        # "Double-click" — same turn_number
+        # "Double-click" — same turn_number → 409 Conflict (stale turn)
         resp2 = client.post(f"/play/{link_uuid}/play-card", data=play_data)
-        assert resp2.status_code == 200
+        assert resp2.status_code == 409
 
         # State must not have changed from the second submission
         result2 = get_match_state(app, link_uuid)
@@ -3255,3 +3256,213 @@ class TestAuctionRevealUX:
                 advance_pending_reveals(client, app, link_uuid)
 
         pytest.skip("Seed did not produce a human-bids-last scenario")
+
+
+# ---------------------------------------------------------------------------
+# Corrupted match_state → POST returns redirect, not 500 (#2218)
+# ---------------------------------------------------------------------------
+
+
+class TestCorruptedMatchState:
+    """POST handlers return a redirect when match_state is corrupted (#2218).
+
+    The GET handler already marks corrupted matches as abandoned and shows
+    model selection.  These tests verify the same pattern in POST handlers.
+    """
+
+    def _corrupt_match(self, app, link_uuid: str) -> int:
+        """Corrupt the active match's state JSON. Returns the match row ID."""
+        session = app.state.session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert match_row is not None
+        match_id = match_row.id
+        match_row.match_state_json = "NOT VALID JSON {{{{"
+        session.commit()
+        session.close()
+        return match_id
+
+    def _assert_abandoned(self, app, match_id: int) -> None:
+        """Assert the match is marked abandoned in the DB."""
+        session = app.state.session_factory()
+        match_row = session.query(Match).filter_by(id=match_id).first()
+        assert match_row is not None
+        assert match_row.status == "abandoned"
+        session.close()
+
+    def test_bid_with_corrupted_state_redirects(self, client, app):
+        """POST /bid with corrupted match_state returns HX-Redirect."""
+        link_uuid = _setup_game(client)
+        match_id = self._corrupt_match(app, link_uuid)
+
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            data={"turn_number": 0, "bid_n": 0, "bid_contract": ""},
+        )
+        assert resp.status_code == 200
+        assert resp.headers.get("HX-Redirect") == f"/play/{link_uuid}"
+        self._assert_abandoned(app, match_id)
+
+    def test_play_card_with_corrupted_state_redirects(self, client, app):
+        """POST /play-card with corrupted match_state returns HX-Redirect."""
+        link_uuid = _setup_game(client)
+        match_id = self._corrupt_match(app, link_uuid)
+
+        resp = client.post(
+            f"/play/{link_uuid}/play-card",
+            data={"turn_number": 0, "card_index": 0},
+        )
+        assert resp.status_code == 200
+        assert resp.headers.get("HX-Redirect") == f"/play/{link_uuid}"
+        self._assert_abandoned(app, match_id)
+
+    def test_next_with_corrupted_state_redirects(self, client, app):
+        """POST /next with corrupted match_state returns HX-Redirect."""
+        link_uuid = _setup_game(client)
+        match_id = self._corrupt_match(app, link_uuid)
+
+        resp = client.post(f"/play/{link_uuid}/next")
+        assert resp.status_code == 200
+        assert resp.headers.get("HX-Redirect") == f"/play/{link_uuid}"
+        self._assert_abandoned(app, match_id)
+
+    def test_next_hand_with_corrupted_state_redirects(self, client, app):
+        """POST /next-hand with corrupted match_state returns HX-Redirect."""
+        link_uuid = _setup_game(client)
+        match_id = self._corrupt_match(app, link_uuid)
+
+        resp = client.post(f"/play/{link_uuid}/next-hand")
+        assert resp.status_code == 200
+        assert resp.headers.get("HX-Redirect") == f"/play/{link_uuid}"
+        self._assert_abandoned(app, match_id)
+
+    def test_exchange_with_corrupted_state_redirects(self, client, app):
+        """POST /exchange with corrupted match_state returns HX-Redirect."""
+        link_uuid = _setup_game(client)
+        match_id = self._corrupt_match(app, link_uuid)
+
+        resp = client.post(
+            f"/play/{link_uuid}/exchange",
+            data={"card_index_0": 0, "card_index_1": 1},
+        )
+        assert resp.status_code == 200
+        assert resp.headers.get("HX-Redirect") == f"/play/{link_uuid}"
+        self._assert_abandoned(app, match_id)
+
+
+# ---------------------------------------------------------------------------
+# Invalid turn_number → 409 Conflict (#2223)
+# ---------------------------------------------------------------------------
+
+
+class TestTurnNumberConflict:
+    """POST handlers return 409 when turn_number doesn't match (#2223).
+
+    Prevents race conditions from fast-clickers: the response body contains
+    the authoritative board HTML so HTMX can re-sync the DOM.
+    """
+
+    def test_play_card_stale_turn_returns_409(self, client, app):
+        """POST /play-card with stale turn_number returns 409 + board HTML."""
+        link_uuid = _setup_game(client)
+
+        # Navigate to trick play
+        for _ in range(20):
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+            elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                # Submit with wrong turn_number (stale)
+                resp = client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={
+                        "turn_number": hand.turn_number - 999,
+                        "card_index": 0,
+                    },
+                )
+                assert resp.status_code == 409
+                assert "game-board" in resp.text
+                return
+
+        pytest.fail("Never reached human's trick play turn")
+
+    def test_play_card_future_turn_returns_409(self, client, app):
+        """POST /play-card with future turn_number returns 409 + board HTML."""
+        link_uuid = _setup_game(client)
+
+        for _ in range(20):
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+            elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                resp = client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={
+                        "turn_number": hand.turn_number + 999,
+                        "card_index": 0,
+                    },
+                )
+                assert resp.status_code == 409
+                assert "game-board" in resp.text
+                return
+
+        pytest.fail("Never reached human's trick play turn")
+
+    def test_bid_stale_turn_returns_409(self, client, app):
+        """POST /bid with stale turn_number returns 409 + board HTML."""
+        link_uuid = _setup_game(client)
+        advance_pending_reveals(client, app, link_uuid)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        session.close()
+
+        hand = state.current_hand
+        if hand is None or hand.phase != "auction" or hand.current_seat != HUMAN_SEAT:
+            pytest.skip("Human not in auction position")
+
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            data={
+                "turn_number": hand.turn_number + 999,
+                "bid_n": 0,
+                "bid_contract": "",
+            },
+        )
+        assert resp.status_code == 409
+        assert "game-board" in resp.text

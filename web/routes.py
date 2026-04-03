@@ -569,6 +569,32 @@ def _render_game_board(
     return templates.get_template("partials/game_board.html").render(ctx)
 
 
+def _handle_corrupted_match(
+    request: Request,
+    session,
+    match_row: Match,
+    link_uuid: str,
+) -> HTMLResponse:
+    """Mark a match with corrupted state as abandoned and redirect.
+
+    Used by POST handlers when ``_deserialize_state`` fails.  Mirrors the
+    GET handler pattern (mark abandoned → show model selection) but returns
+    an ``HX-Redirect`` header so HTMX performs a full page navigation back
+    to ``/play/{link_uuid}``, which will render the model-select screen.
+
+    See :issue:`2218`.
+    """
+    match_row.status = "abandoned"
+    match_row.completed_at = datetime.now(timezone.utc)
+    session.commit()
+    redirect_url = f"/play/{link_uuid}"
+    return HTMLResponse(
+        content="",
+        status_code=200,
+        headers={"HX-Redirect": redirect_url},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Health / Readiness
 # ---------------------------------------------------------------------------
@@ -1014,12 +1040,26 @@ async def submit_bid(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
-        state = _deserialize_state(engine, match_row.match_state_json)
+        try:
+            state = _deserialize_state(engine, match_row.match_state_json)
+        except Exception:
+            logger.warning(
+                "Failed to deserialize match %s on bid — marking abandoned",
+                match_row.match_uuid,
+                exc_info=True,
+            )
+            return _handle_corrupted_match(request, session, match_row, link_uuid)
 
-        # Idempotency check
+        # Turn-number conflict — return the authoritative board at 409 so
+        # HTMX can re-sync the DOM without re-submitting the stale action.
         hand = state.current_hand
-        if hand is None or turn_number < hand.turn_number:
+        if hand is None:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+        if turn_number != hand.turn_number:
+            return HTMLResponse(
+                _render_game_board(request, engine, state, link_uuid),
+                status_code=409,
+            )
 
         # State-desync recovery — return the authoritative board for stale
         # requests instead of 400 so HTMX can re-sync the DOM.
@@ -1150,12 +1190,27 @@ async def submit_card(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
-        state = _deserialize_state(engine, match_row.match_state_json)
+        try:
+            state = _deserialize_state(engine, match_row.match_state_json)
+        except Exception:
+            logger.warning(
+                "Failed to deserialize match %s on play-card — marking abandoned",
+                match_row.match_uuid,
+                exc_info=True,
+            )
+            return _handle_corrupted_match(request, session, match_row, link_uuid)
 
-        # Idempotency check
+        # Turn-number conflict — return the authoritative board at 409 so
+        # HTMX can re-sync the DOM without re-submitting the stale action.
+        # Prevents race conditions from fast-clickers (#2223).
         hand = state.current_hand
-        if hand is None or turn_number < hand.turn_number:
+        if hand is None:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+        if turn_number != hand.turn_number:
+            return HTMLResponse(
+                _render_game_board(request, engine, state, link_uuid),
+                status_code=409,
+            )
 
         # State-desync recovery — if HTMX morph left stale card buttons in
         # the DOM the player may click a card while the server is in a
@@ -1248,7 +1303,15 @@ async def next_step(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
-        state = _deserialize_state(engine, match_row.match_state_json)
+        try:
+            state = _deserialize_state(engine, match_row.match_state_json)
+        except Exception:
+            logger.warning(
+                "Failed to deserialize match %s on next — marking abandoned",
+                match_row.match_uuid,
+                exc_info=True,
+            )
+            return _handle_corrupted_match(request, session, match_row, link_uuid)
 
         hand = state.current_hand
         if hand is None:
@@ -1349,7 +1412,15 @@ async def submit_exchange(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
-        state = _deserialize_state(engine, match_row.match_state_json)
+        try:
+            state = _deserialize_state(engine, match_row.match_state_json)
+        except Exception:
+            logger.warning(
+                "Failed to deserialize match %s on exchange — marking abandoned",
+                match_row.match_uuid,
+                exc_info=True,
+            )
+            return _handle_corrupted_match(request, session, match_row, link_uuid)
 
         hand = state.current_hand
         if hand is None or hand.phase != "moon_exchange":
@@ -1419,7 +1490,15 @@ async def next_hand(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
-        state = _deserialize_state(engine, match_row.match_state_json)
+        try:
+            state = _deserialize_state(engine, match_row.match_state_json)
+        except Exception:
+            logger.warning(
+                "Failed to deserialize match %s on next-hand — marking abandoned",
+                match_row.match_uuid,
+                exc_info=True,
+            )
+            return _handle_corrupted_match(request, session, match_row, link_uuid)
 
         # If the match is already complete, render the result screen
         # immediately — do not advance to a new hand (P2-005).
