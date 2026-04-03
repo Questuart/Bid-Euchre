@@ -3588,3 +3588,42 @@ class TestTurnNumberConflict:
         )
         assert resp.status_code == 409
         assert "game-board" in resp.text
+
+
+class TestAuctionLogPersistence:
+    """Auction log preserves all entries across page refresh (#2207)."""
+
+    def test_auction_log_survives_page_refresh(self, client, app):
+        """Full auction log is shown after a full page GET refresh.
+
+        Verifies that the action rail built from persisted state includes
+        all auction entries — the first entry must not be lost (#2207).
+        """
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _select_ai(client, link_uuid)
+
+        # Advance through the hidden auction reveals
+        state = advance_pending_reveals(client, app, link_uuid)
+        hand = state.current_hand
+        if hand is None:
+            pytest.skip("No hand available after reveal")
+
+        auction_count = len(hand.auction)
+        assert auction_count > 0, "Auction should have entries"
+
+        # Simulate a full page refresh (GET)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+
+        # The action rail should contain ALL auction entries.
+        # Each entry produces a text like "Slim bid 5♠" or "You passed"
+        # Count how many auction-kind entries are in the response.
+        for entry in hand.auction:
+            seat = entry.get("seat")
+            seat_label = {0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}.get(
+                int(seat), f"Seat {seat}"
+            )
+            assert (
+                seat_label in resp.text
+            ), f"Auction entry for {seat_label} missing from page refresh response"

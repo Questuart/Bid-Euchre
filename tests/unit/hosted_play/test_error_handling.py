@@ -126,6 +126,71 @@ class TestHTMXErrorResponses:
         assert 'role="alert"' in resp.text
 
 
+class TestValidationErrorHandler:
+    """Verify 422 (RequestValidationError) returns HTML for HTMX, JSON for API (#2219)."""
+
+    def test_422_htmx_returns_html_partial(self, client):
+        """HTMX request with missing form fields returns HTML error, not JSON."""
+        # POST to /bid without required form fields triggers RequestValidationError
+        link_uuid = str(uuid.uuid4())
+        # Create a player so the 404 guard doesn't fire first
+        session = client.app.state.session_factory()
+        try:
+            player = _create_player(session)
+            link_uuid = player.link_uuid
+            session.commit()
+        finally:
+            session.close()
+
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            headers={"HX-Request": "true"},
+            # Intentionally missing required fields (turn_number, bid_n)
+        )
+        # HTMX partial returns 200 for swap
+        assert resp.status_code == 200
+        assert "htmx-error" in resp.text
+        assert "Invalid request" in resp.text
+        # Must NOT contain JSON
+        assert '"detail"' not in resp.text
+
+    def test_422_non_htmx_returns_json(self, client):
+        """Non-HTMX request with missing form fields returns JSON 422."""
+        link_uuid = str(uuid.uuid4())
+        session = client.app.state.session_factory()
+        try:
+            player = _create_player(session)
+            link_uuid = player.link_uuid
+            session.commit()
+        finally:
+            session.close()
+
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            # No HX-Request header — standard API client
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert "detail" in body
+
+    def test_422_htmx_has_aria_alert(self, client):
+        """HTMX 422 partial includes role=alert for accessibility."""
+        session = client.app.state.session_factory()
+        try:
+            player = _create_player(session)
+            link_uuid = player.link_uuid
+            session.commit()
+        finally:
+            session.close()
+
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == 200
+        assert 'role="alert"' in resp.text
+
+
 # ===================================================================
 # 2. Match State Deserialization Recovery
 # ===================================================================

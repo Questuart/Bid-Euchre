@@ -17,9 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.exceptions import HTTPException
+from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
@@ -266,6 +266,33 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
                 {"request": request}
             ),
             status_code=500,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(
+        request: Request, exc: RequestValidationError
+    ) -> HTMLResponse | JSONResponse:
+        """Return an HTML error for HTMX requests, JSON for API clients.
+
+        FastAPI's default 422 handler returns JSON, which HTMX swaps into
+        the game board as raw text.  This handler intercepts validation
+        errors and returns a user-friendly HTML partial for HTMX
+        requests (#2219).
+        """
+        if _is_htmx(request):
+            return HTMLResponse(
+                _error_templates.get_template("errors/htmx_error.html").render(
+                    {
+                        "request": request,
+                        "status_code": 422,
+                        "message": "Invalid request. Please refresh the page.",
+                    }
+                ),
+                status_code=200,
+            )
+        return JSONResponse(
+            {"detail": exc.errors()},
+            status_code=422,
         )
 
     return app
