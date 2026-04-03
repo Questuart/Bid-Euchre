@@ -94,7 +94,7 @@ class TestLeadIndicator:
     def test_leader_seat_marker_present(
         self, engine: MatchEngine, jinja_env: jinja2.Environment
     ) -> None:
-        """The 'L' leader marker renders next to the trick leader's seat."""
+        """The 'Lead Trick' marker renders next to the trick leader's seat."""
         state = engine.start_match(SEED, "test")
         state = advance_to_trick_play(engine, state)
 
@@ -107,7 +107,9 @@ class TestLeadIndicator:
         html = tmpl.render(**ctx)
 
         assert "seat-marker--leader" in html, "Expected leader marker in trick HTML"
-        assert 'title="Lead"' in html, "Expected 'Lead' title attribute on marker"
+        assert (
+            'title="Lead Trick"' in html
+        ), "Expected 'Lead Trick' title attribute on marker"
 
     @pytest.mark.e2e
     def test_lead_suit_matches_first_card_suit(
@@ -539,10 +541,10 @@ class TestSeatLabels:
         assert expected in html, f"Expected winner label '{expected}' in trick history"
 
     @pytest.mark.e2e
-    def test_declarer_label_in_score_bar(
+    def test_score_bar_shows_game_score(
         self, engine: MatchEngine, jinja_env: jinja2.Environment
     ) -> None:
-        """Score bar renders the declarer's seat label when contract is set."""
+        """Score bar shows 'Current Game Score' label per #2200 cleanup."""
         state = engine.start_match(SEED, "test")
         state = advance_to_trick_play(engine, state)
 
@@ -551,19 +553,14 @@ class TestSeatLabels:
             pytest.skip("Seed produced no trick play")
 
         ctx = build_visible_context(engine, state)
-        bidder_seat = ctx.get("bidder_seat")
-
-        if bidder_seat is None:
-            pytest.skip("No bidder established")
 
         tmpl = jinja_env.get_template("partials/score.html")
         html = tmpl.render(**ctx)
 
-        expected_label = self.EXPECTED_LABELS[bidder_seat]
-        assert "Declarer:" in html, "Expected 'Declarer:' label in score bar"
+        # Score bar shows game score label (declarer moved to contract bar per #2200)
         assert (
-            expected_label in html
-        ), f"Expected declarer label '{expected_label}' for seat {bidder_seat}"
+            "Current Game Score" in html
+        ), "Expected 'Current Game Score' label in score bar"
 
     @pytest.mark.e2e
     def test_seat_labels_in_hand_result(
@@ -765,8 +762,8 @@ class TestCurrentHighPlayIndicator:
             "trick-current-winner" in html
         ), "Expected trick-current-winner element in trick HTML"
         assert (
-            "is winning" in html
-        ), "Expected 'is winning' text in current high play indicator"
+            "currently winning the trick" in html
+        ), "Expected 'currently winning the trick' text in high play indicator"
 
     @pytest.mark.e2e
     def test_no_winning_indicator_on_completed_trick(

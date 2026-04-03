@@ -695,7 +695,11 @@ class TestTrick:
         assert "Last Trick" not in html
 
     def test_markers_for_dealer_turn_declarer_and_sitout(self, env):
-        """Markers render for dealer/turn/declarer/sitting out states."""
+        """Phase-dependent markers: only Lead Trick and Sitting Out in trick area.
+
+        Dealer/turn/declarer markers removed from trick area per #2200 UI cleanup.
+        Dealer shown on compass seats during auction only; declarer in contract bar.
+        """
         tmpl = env.get_template("partials/trick.html")
         html = tmpl.render(
             current_trick={"leader": 3, "plays": [[3, ["C", "10"]]]},
@@ -704,20 +708,22 @@ class TestTrick:
             bidder_seat=2,
             current_seat=1,
             sitting_out_seat=0,
+            phase="trick_play",
             tricks_team0=0,
             tricks_team1=0,
         )
-        assert "seat-marker--dealer" in html
-        assert "seat-marker--turn" in html
-        assert "seat-marker--declarer" in html
+        # Lead Trick and Sitting Out are shown
+        assert "seat-marker--leader" in html
+        assert 'title="Lead Trick"' in html
         assert "seat-marker--sitting-out" in html
-        assert 'title="Dealer"' in html
-        assert 'title="Current turn"' in html
-        assert 'title="Declarer"' in html
         assert 'title="Sitting out"' in html
+        # Dealer, turn, and declarer markers removed from trick area
+        assert "seat-marker--dealer" not in html
+        assert "seat-marker--turn" not in html
+        assert "seat-marker--declarer" not in html
 
     def test_leader_marker_shown_for_trick_leader(self, env):
-        """Leader seat gets an 'L' marker during the current trick."""
+        """Leader seat gets a 'Lead Trick' word label during trick play."""
         tmpl = env.get_template("partials/trick.html")
         html = tmpl.render(
             current_trick={"leader": 1, "plays": [[1, ["H", "A"]]]},
@@ -726,11 +732,13 @@ class TestTrick:
             bidder_seat=0,
             current_seat=2,
             sitting_out_seat=None,
+            phase="trick_play",
             tricks_team0=0,
             tricks_team1=0,
         )
         assert "seat-marker--leader" in html
-        assert 'title="Lead"' in html
+        assert 'title="Lead Trick"' in html
+        assert "Lead Trick" in html
 
     def test_leader_marker_shown_for_completed_trick(self, env):
         """Leader marker renders when showing a completed trick (no current)."""
@@ -744,11 +752,30 @@ class TestTrick:
             bidder_seat=1,
             current_seat=3,
             sitting_out_seat=None,
+            phase="trick_play",
             tricks_team0=0,
             tricks_team1=1,
         )
         assert "seat-marker--leader" in html
-        assert 'title="Lead"' in html
+        assert 'title="Lead Trick"' in html
+
+    def test_dealer_marker_shown_during_auction(self, env):
+        """Dealer marker appears in trick area during auction phase."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={"leader": 0, "plays": []},
+            completed_tricks=[],
+            dealer_seat=1,
+            bidder_seat=None,
+            current_seat=0,
+            sitting_out_seat=None,
+            phase="auction",
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert "seat-marker--dealer" in html
+        assert 'title="Dealer"' in html
+        assert "Dealer" in html
 
     def test_lead_suit_displayed(self, env):
         """Lead suit symbol shown next to the trick heading."""
@@ -904,144 +931,71 @@ class TestGameControls:
 
 
 class TestScore:
+    """Score bar shows only 'Current Game Score' per #2200 UI cleanup.
+
+    Contract, declarer, tricks info removed (shown in contract bar and trick area).
+    Hand details available in collapsed dropdown.
+    """
+
     def test_renders_scores(self, env):
         tmpl = env.get_template("partials/score.html")
         html = tmpl.render(
             score_human=15,
             score_ai=-3,
             hands_played=4,
-            contract_type="suit",
-            trump="H",
-            winning_bid=6,
-            bidder_seat=0,
-            tricks_team0=4,
-            tricks_team1=2,
             dealer_seat=3,
             phase="trick_play",
         )
         assert "15" in html
         assert "-3" in html
+        assert "Current Game Score" in html
+        assert "You:" in html
+        assert "AI:" in html
+        # Hand details in collapsed dropdown
         assert "Hand 5" in html
-        assert "6" in html  # bid
-        assert "\u2665" in html  # ♥
-        assert "You" in html  # declarer
+        assert "Hand Details" in html
 
-    def test_auction_in_progress(self, env):
+    def test_hand_details_in_collapsed_dropdown(self, env):
         tmpl = env.get_template("partials/score.html")
         html = tmpl.render(
             score_human=0,
             score_ai=0,
             hands_played=0,
-            contract_type=None,
-            trump=None,
-            winning_bid=None,
-            bidder_seat=None,
-            tricks_team0=0,
-            tricks_team1=0,
             dealer_seat=0,
             phase="auction",
         )
-        assert "Auction in progress" in html
         assert "Hand 1" in html
+        assert "hand-details" in html
+        assert "<details" in html
+        assert "<summary" in html
 
-    def test_high_contract_display(self, env):
-        """Engine produces lowercase 'high' for no-trump high contracts."""
+    def test_dealer_shown_in_hand_details(self, env):
+        """Dealer info moved to collapsed hand details section."""
         tmpl = env.get_template("partials/score.html")
         html = tmpl.render(
             score_human=10,
             score_ai=5,
             hands_played=2,
-            contract_type="high",
-            trump=None,
-            winning_bid=7,
-            bidder_seat=1,
-            tricks_team0=0,
-            tricks_team1=0,
             dealer_seat=2,
             phase="trick_play",
         )
-        assert "7" in html
-        assert "High" in html
+        assert "Dealer: Ace" in html
 
-    def test_low_contract_display(self, env):
-        """Engine produces lowercase 'low' for no-trump low contracts."""
+    def test_no_contract_info_in_score_bar(self, env):
+        """Contract info removed from score bar (shown in contract bar instead)."""
         tmpl = env.get_template("partials/score.html")
         html = tmpl.render(
             score_human=10,
             score_ai=5,
             hands_played=2,
-            contract_type="low",
-            trump=None,
-            winning_bid=7,
-            bidder_seat=1,
-            tricks_team0=0,
-            tricks_team1=0,
             dealer_seat=2,
             phase="trick_play",
         )
-        assert "7" in html
-        assert "Low" in html
-
-    def test_moon_contract_display(self, env):
-        """Moon contract shows moon badge instead of bid number."""
-        tmpl = env.get_template("partials/score.html")
-        html = tmpl.render(
-            score_human=10,
-            score_ai=5,
-            hands_played=2,
-            contract_type="suit",
-            trump="H",
-            winning_bid=10,
-            bidder_seat=0,
-            bid_type="moon",
-            tricks_team0=3,
-            tricks_team1=0,
-            dealer_seat=2,
-            phase="trick_play",
-        )
-        assert "contract-bid-type--moon" in html
-        assert "Moon" in html
-
-    def test_loner_contract_display(self, env):
-        """Loner contract shows loner badge instead of bid number."""
-        tmpl = env.get_template("partials/score.html")
-        html = tmpl.render(
-            score_human=10,
-            score_ai=5,
-            hands_played=2,
-            contract_type="suit",
-            trump="S",
-            winning_bid=10,
-            bidder_seat=1,
-            bid_type="loner",
-            tricks_team0=0,
-            tricks_team1=3,
-            dealer_seat=2,
-            phase="trick_play",
-        )
-        assert "contract-bid-type--loner" in html
-        assert "Loner" in html
-
-    def test_regular_bid_shows_number(self, env):
-        """Regular bid shows bid number, not moon/loner badges."""
-        tmpl = env.get_template("partials/score.html")
-        html = tmpl.render(
-            score_human=10,
-            score_ai=5,
-            hands_played=2,
-            contract_type="suit",
-            trump="H",
-            winning_bid=6,
-            bidder_seat=0,
-            bid_type="regular",
-            tricks_team0=2,
-            tricks_team1=1,
-            dealer_seat=2,
-            phase="trick_play",
-        )
-        assert "contract-bid-type--moon" not in html
-        assert "contract-bid-type--loner" not in html
-        assert "6" in html
+        # Contract info should NOT appear in score bar
+        assert "contract-info" not in html
+        assert "contract-bid-type" not in html
+        assert "Declarer:" not in html
+        assert "Tricks:" not in html
 
 
 # ---------------------------------------------------------------------------
@@ -1869,11 +1823,49 @@ class TestGameBoardSeatZeroRegression:
             show_bid_panel=False,
             action_rail=[],
         )
-        # The human (seat 0) should show the dealer marker
-        assert "seat-marker--dealer" in html
+        # During trick play, dealer is NOT shown (only during auction)
+        assert "seat-marker--dealer" not in html
 
-    def test_compact_ai_badges_rendered(self, env):
-        """Compact mobile badge row renders with correct counts and markers."""
+    def test_dealer_seat_zero_shown_during_auction(self, env):
+        """dealer_seat=0 shows 'Dealer' on human seat during auction."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            phase="auction",
+            link_uuid="test-uuid",
+            dealer_seat=0,
+            bidder_seat=-1,
+            current_seat=0,
+            sitting_out_seat=None,
+            current_trick={"leader": 0, "plays": []},
+            completed_tricks=[],
+            human_hand=[["S", "A"], ["H", "Q"]],
+            auction=[],
+            contract_type=None,
+            trump=None,
+            bid_type=None,
+            winning_bid=0,
+            current_high_bid=0,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=True,
+            turn_number=0,
+            action_rail=[],
+        )
+        # During auction, dealer marker shown
+        assert "seat-marker--dealer" in html
+        assert "Dealer" in html
+
+    def test_compact_ai_badges_removed(self, env):
+        """Compact mobile badge row removed per #2200 UI cleanup."""
         tmpl = env.get_template("partials/game_board.html")
         html = tmpl.render(
             phase="trick_play",
@@ -1905,35 +1897,29 @@ class TestGameBoardSeatZeroRegression:
             show_bid_panel=False,
             action_rail=[],
         )
-        # Compact badge container present
-        assert 'class="ai-hands-compact"' in html
-        # Badges with correct card counts
-        assert "S:8" in html  # Slim (seat 1)
-        assert "A:7" in html  # Ace (seat 2)
-        assert "D:9" in html  # Deuce (seat 3)
-        # Seat markers present inside compact badges
-        # dealer at seat 1 → Slim badge; declarer at seat 2 → Ace badge; turn at seat 3 → Deuce badge
-        assert "ai-badge" in html
+        # Compact badge container removed
+        assert 'class="ai-hands-compact"' not in html
+        assert "ai-badge" not in html
 
-    def test_compact_badges_auction_phase(self, env):
-        """Compact badges also render during auction phase."""
+    def test_icon_legend_removed(self, env):
+        """Icon legend removed per #2200 UI cleanup."""
         tmpl = env.get_template("partials/game_board.html")
         html = tmpl.render(
-            phase="auction",
+            phase="trick_play",
             link_uuid="test-uuid",
-            dealer_seat=3,
-            bidder_seat=-1,
-            current_seat=0,
+            dealer_seat=1,
+            bidder_seat=2,
+            current_seat=3,
             sitting_out_seat=None,
-            current_trick={"leader": 0, "plays": []},
+            current_trick={"leader": 1, "plays": [[1, ["H", "K"]]]},
             completed_tricks=[],
-            human_hand=[["S", "A"]],
+            human_hand=[["S", "A"], ["H", "Q"]],
             auction=[],
-            contract_type=None,
-            trump=None,
-            bid_type=None,
-            winning_bid=0,
-            current_high_bid=0,
+            contract_type="suit",
+            trump="H",
+            bid_type="regular",
+            winning_bid=5,
+            current_high_bid=5,
             tricks_team0=0,
             tricks_team1=0,
             score_human=0,
@@ -1945,14 +1931,10 @@ class TestGameBoardSeatZeroRegression:
             opp_right_count=10,
             show_next=False,
             next_reason=None,
-            show_bid_panel=True,
-            turn_number=0,
+            show_bid_panel=False,
             action_rail=[],
         )
-        assert 'class="ai-hands-compact"' in html
-        assert "S:10" in html  # Slim (seat 1)
-        assert "A:10" in html  # Ace (seat 2)
-        assert "D:10" in html  # Deuce (seat 3)
+        assert "icon-legend" not in html
 
     def test_declarer_marker_hidden_during_auction(self, env):
         """Declarer ★ markers must not appear during auction phase (#2203).
@@ -1992,16 +1974,17 @@ class TestGameBoardSeatZeroRegression:
             show_bid_panel=False,
             action_rail=[],
         )
-        # Declarer marker must NOT appear on any seat during auction.
-        # The icon legend contains a decorative "seat-marker--declarer"
-        # with aria-hidden="true" — that's always present. We check that
-        # no *active* declarer marker (with title="Declarer") appears.
+        # Declarer marker removed from compass seats per #2200 UI cleanup.
+        # Declarer info now shown in contract bar only.
         assert 'title="Declarer"' not in html
-        # Dealer marker SHOULD still appear
+        # Dealer marker SHOULD appear during auction
         assert "seat-marker--dealer" in html
 
-    def test_declarer_marker_shown_during_trick_play(self, env):
-        """Declarer ★ markers appear normally during trick play (#2203)."""
+    def test_declarer_marker_removed_during_trick_play(self, env):
+        """Declarer ★ markers removed from compass seats per #2200.
+
+        Declarer info is now shown in the contract bar only.
+        """
         tmpl = env.get_template("partials/game_board.html")
         html = tmpl.render(
             phase="trick_play",
@@ -2033,9 +2016,11 @@ class TestGameBoardSeatZeroRegression:
             show_bid_panel=False,
             action_rail=[],
         )
-        # Declarer marker SHOULD appear during trick play
-        assert "seat-marker--declarer" in html
-        assert 'title="Declarer"' in html
+        # Declarer marker removed from compass seats
+        assert "seat-marker--declarer" not in html
+        assert 'title="Declarer"' not in html
+        # Contract bar shows declarer info instead
+        assert "contract-bar" in html
 
     def test_trick_heading_hidden_during_auction(self, env):
         """'Trick N of 10' heading must not appear during auction (#2206).
@@ -2127,7 +2112,7 @@ class TestContractBar:
     """Verify the contract bar partial renders correctly for all contract types."""
 
     def test_suit_contract_shows_trump_symbol(self, env):
-        """Suit contract shows bid level, trump symbol, and opponent label."""
+        """Suit contract shows bid level, trump symbol, and 'by Name' label."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=6,
@@ -2138,16 +2123,13 @@ class TestContractBar:
         )
         assert "contract-bar" in html
         assert "contract-bar--opp-team" in html
-        assert "Contract:" in html
+        assert "Current Contract and Trump:" in html
         assert "6" in html
         assert "\u2665" in html  # Heart symbol
-        assert "Slim" in html
-        assert "(Opponent)" in html
-        # Em dash separator
-        assert "\u2014" in html or "&mdash;" in html
+        assert "by Slim" in html
 
     def test_high_contract(self, env):
-        """High (no-trump) contract by human shows 'You' with no relationship."""
+        """High (no-trump) contract by human shows 'by You'."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=7,
@@ -2158,14 +2140,11 @@ class TestContractBar:
         )
         assert "7" in html
         assert "High" in html
-        assert "You" in html
+        assert "by You" in html
         assert "contract-bar--my-team" in html
-        # No relationship label for "You"
-        assert "(Partner)" not in html
-        assert "(Opponent)" not in html
 
     def test_low_contract(self, env):
-        """Low (no-trump) contract by partner shows 'Ace (Partner)'."""
+        """Low (no-trump) contract by partner shows 'by Ace'."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=7,
@@ -2176,12 +2155,11 @@ class TestContractBar:
         )
         assert "7" in html
         assert "Low" in html
-        assert "Ace" in html
-        assert "(Partner)" in html
+        assert "by Ace" in html
         assert "contract-bar--my-team" in html
 
     def test_moon_contract(self, env):
-        """Moon bid by opponent shows moon emoji and (Opponent) label."""
+        """Moon bid by opponent shows Moon label and 'by Deuce'."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=10,
@@ -2193,12 +2171,11 @@ class TestContractBar:
         assert "Moon" in html
         assert "contract-bar__type--moon" in html
         assert "\u2660" in html  # Spade symbol
-        assert "Deuce" in html
-        assert "(Opponent)" in html
+        assert "by Deuce" in html
         assert "contract-bar--opp-team" in html
 
     def test_loner_contract(self, env):
-        """Loner bid by human shows loner emoji, 'You', no relationship."""
+        """Loner bid by human shows Loner label, 'by You'."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=10,
@@ -2210,13 +2187,26 @@ class TestContractBar:
         assert "Loner" in html
         assert "contract-bar__type--loner" in html
         assert "\u2666" in html  # Diamond symbol
-        assert "You" in html
+        assert "by You" in html
         assert "contract-bar--my-team" in html
-        assert "(Partner)" not in html
-        assert "(Opponent)" not in html
 
-    def test_hidden_when_no_bid(self, env):
-        """No output when winning_bid is None (auction not resolved)."""
+    def test_auction_in_progress_display(self, env):
+        """During auction with no bid, shows 'Auction in Progress'."""
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=None,
+            bidder_seat=None,
+            bid_type="regular",
+            contract_type=None,
+            trump=None,
+            phase="auction",
+        )
+        assert "contract-bar" in html
+        assert "Current Contract and Trump:" in html
+        assert "Auction in Progress" in html
+
+    def test_hidden_when_no_bid_no_phase(self, env):
+        """No output when winning_bid is None and phase is not auction."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=None,
@@ -2238,12 +2228,12 @@ class TestContractBar:
             trump="C",
         )
         assert "contract-bar" in html
-        assert "You" in html
+        assert "by You" in html
         assert "\u2663" in html  # Club symbol
         assert "contract-bar--my-team" in html
 
-    def test_partner_relationship_label(self, env):
-        """Partner (seat 2) shows '(Partner)' relationship label."""
+    def test_partner_declarer_label(self, env):
+        """Partner (seat 2) shows 'by Ace'."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=5,
@@ -2252,12 +2242,11 @@ class TestContractBar:
             contract_type="suit",
             trump="S",
         )
-        assert "Ace" in html
-        assert "(Partner)" in html
+        assert "by Ace" in html
         assert "contract-bar--my-team" in html
 
-    def test_opponent_seat1_relationship_label(self, env):
-        """Left opponent (seat 1) shows '(Opponent)' relationship label."""
+    def test_opponent_seat1_declarer_label(self, env):
+        """Left opponent (seat 1) shows 'by Slim'."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=5,
@@ -2266,12 +2255,11 @@ class TestContractBar:
             contract_type="suit",
             trump="H",
         )
-        assert "Slim" in html
-        assert "(Opponent)" in html
+        assert "by Slim" in html
         assert "contract-bar--opp-team" in html
 
-    def test_opponent_seat3_relationship_label(self, env):
-        """Right opponent (seat 3) shows '(Opponent)' relationship label."""
+    def test_opponent_seat3_declarer_label(self, env):
+        """Right opponent (seat 3) shows 'by Deuce'."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=8,
@@ -2280,12 +2268,11 @@ class TestContractBar:
             contract_type="suit",
             trump="C",
         )
-        assert "Deuce" in html
-        assert "(Opponent)" in html
+        assert "by Deuce" in html
         assert "contract-bar--opp-team" in html
 
     def test_header_label_present(self, env):
-        """Contract bar shows 'Contract:' header label."""
+        """Contract bar shows 'Current Contract and Trump:' header label."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=5,
@@ -2295,7 +2282,7 @@ class TestContractBar:
             trump="H",
         )
         assert "contract-bar__header" in html
-        assert "Contract:" in html
+        assert "Current Contract and Trump:" in html
 
 
 # ---------------------------------------------------------------------------
@@ -2557,12 +2544,6 @@ class TestAccessibilityScore:
             score_human=10,
             score_ai=5,
             hands_played=2,
-            contract_type=None,
-            trump=None,
-            winning_bid=None,
-            bidder_seat=None,
-            tricks_team0=0,
-            tricks_team1=0,
             dealer_seat=0,
             phase="auction",
         )
@@ -2574,16 +2555,10 @@ class TestAccessibilityScore:
             score_human=15,
             score_ai=-3,
             hands_played=4,
-            contract_type=None,
-            trump=None,
-            winning_bid=None,
-            bidder_seat=None,
-            tricks_team0=0,
-            tricks_team1=0,
             dealer_seat=3,
             phase="auction",
         )
-        assert "Match score: You 15, AI -3" in html
+        assert "Current game score: You 15, AI -3" in html
 
 
 class TestAccessibilityResults:
@@ -3681,14 +3656,14 @@ class TestCardCountGrammar:
         score_ai=0,
         hands_played=0,
         dealer_seat=0,
-        contract_type=None,
         winning_bid=None,
+        bidder_seat=None,
         tricks_team0=0,
         tricks_team1=0,
     )
 
-    def test_game_board_singular_ai_badge(self, env):
-        """AI badge with 1 card uses singular 'card'."""
+    def test_game_board_singular_ai_hand(self, env):
+        """AI hand aria-label with 1 card uses singular 'card'."""
         tmpl = env.get_template("partials/game_board.html")
         html = tmpl.render(
             **self._BOARD_CTX,
@@ -3696,12 +3671,12 @@ class TestCardCountGrammar:
             partner_count=1,
             opp_right_count=1,
         )
-        assert 'aria-label="Slim: 1 card"' in html
-        assert 'aria-label="Ace: 1 card"' in html
-        assert 'aria-label="Deuce: 1 card"' in html
+        assert "Slim has 1 card" in html
+        assert "Ace has 1 card" in html
+        assert "Deuce has 1 card" in html
 
-    def test_game_board_plural_ai_badge(self, env):
-        """AI badge with multiple cards uses plural 'cards'."""
+    def test_game_board_plural_ai_hand(self, env):
+        """AI hand aria-label with multiple cards uses plural 'cards'."""
         tmpl = env.get_template("partials/game_board.html")
         html = tmpl.render(
             **self._BOARD_CTX,
@@ -3709,9 +3684,9 @@ class TestCardCountGrammar:
             partner_count=5,
             opp_right_count=5,
         )
-        assert 'aria-label="Slim: 5 cards"' in html
-        assert 'aria-label="Ace: 5 cards"' in html
-        assert 'aria-label="Deuce: 5 cards"' in html
+        assert "Slim has 5 cards" in html
+        assert "Ace has 5 cards" in html
+        assert "Deuce has 5 cards" in html
 
 
 # ---------------------------------------------------------------------------
