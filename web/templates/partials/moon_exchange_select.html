@@ -50,10 +50,10 @@
                 {% set suit_name = suit_names.get(suit, suit) %}
                 <button type="button"
                         class="card card--{{ suit_class }} card--exchange-selectable"
-                        title="{{ rank }}{{ suit_sym }} (tap to select)"
-                        aria-label="Select {{ rank }} of {{ suit_name }}"
+                        title="{{ rank|display_rank }}{{ suit_sym }} (tap to select)"
+                        aria-label="Select {{ rank|display_rank }} of {{ suit_name }}"
                         data-exchange-index="{{ idx }}">
-                    <span class="card__rank" aria-hidden="true">{{ rank }}</span>
+                    <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
                 </button>
             {% endfor %}

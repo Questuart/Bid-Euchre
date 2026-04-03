@@ -49,8 +49,8 @@
                         {% set suit = card[0] %}
                         <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--exchange"
                              role="listitem"
-                             aria-label="{{ card[1] }} of {{ suit_names.get(suit, suit) }}">
-                            <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
+                             aria-label="{{ card[1]|display_rank }} of {{ suit_names.get(suit, suit) }}">
+                            <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
                             <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
                         </div>
                     {% endfor %}
@@ -68,8 +68,8 @@
                         {% set suit = card[0] %}
                         <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--exchange card--exchange-received"
                              role="listitem"
-                             aria-label="{{ card[1] }} of {{ suit_names.get(suit, suit) }}">
-                            <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
+                             aria-label="{{ card[1]|display_rank }} of {{ suit_names.get(suit, suit) }}">
+                            <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
                             <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
                         </div>
                     {% endfor %}
@@ -87,8 +87,8 @@
                     {% set suit = card[0] %}
                     <div class="card card--{{ suit_classes.get(suit, 'spades') }} card--hand"
                          role="listitem"
-                         aria-label="{{ card[1] }} of {{ suit_names.get(suit, suit) }}">
-                        <span class="card__rank" aria-hidden="true">{{ card[1] }}</span>
+                         aria-label="{{ card[1]|display_rank }} of {{ suit_names.get(suit, suit) }}">
+                        <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
                         <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(suit, suit) }}</span>
                     </div>
                 {% endfor %}

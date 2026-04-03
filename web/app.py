@@ -37,6 +37,7 @@ from .db import (
     make_session_factory,
 )
 from .routes import router as game_router
+from .template_filters import display_rank
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,8 @@ async def lifespan(app: FastAPI):
     # Expose app_url as a Jinja2 global so templates can build absolute
     # URLs (required for og:image and other meta tags that crawlers fetch).
     templates.env.globals["app_url"] = config.app_url.rstrip("/")
+    # Custom filter: display_rank converts internal 'T' to user-facing '10'
+    templates.env.filters["display_rank"] = display_rank
 
     # 7. Stash on app.state for route access
     app.state.config = config

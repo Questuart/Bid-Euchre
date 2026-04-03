@@ -22,6 +22,7 @@ import jinja2
 import pytest
 
 from bid_euchre.scoring import compute_points
+from web.template_filters import display_rank
 
 # ---------------------------------------------------------------------------
 # Template environment
@@ -40,11 +41,13 @@ _TEMPLATES_DIR = os.path.join(
 @pytest.fixture()
 def jinja_env():
     """Jinja2 environment pointing at the web templates directory."""
-    return jinja2.Environment(
+    environment = jinja2.Environment(
         loader=jinja2.FileSystemLoader(_TEMPLATES_DIR),
         autoescape=True,
         undefined=jinja2.StrictUndefined,
     )
+    environment.filters["display_rank"] = display_rank
+    return environment
 
 
 # ---------------------------------------------------------------------------

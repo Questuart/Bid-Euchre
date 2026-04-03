@@ -11,6 +11,8 @@ import os
 import jinja2
 import pytest
 
+from web.template_filters import display_rank
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -28,11 +30,13 @@ TEMPLATES_DIR = os.path.join(
 @pytest.fixture()
 def env():
     """Jinja2 environment loading from web/templates/."""
-    return jinja2.Environment(
+    environment = jinja2.Environment(
         loader=jinja2.FileSystemLoader(TEMPLATES_DIR),
         autoescape=True,
         undefined=jinja2.StrictUndefined,
     )
+    environment.filters["display_rank"] = display_rank
+    return environment
 
 
 # ---------------------------------------------------------------------------
@@ -2855,3 +2859,132 @@ class TestTrickHistory:
         )
         assert 'role="region"' in html
         assert 'aria-label="Cards played history"' in html
+
+
+# ---------------------------------------------------------------------------
+# display_rank filter — ten cards show '10' instead of 'T'
+# ---------------------------------------------------------------------------
+
+
+class TestDisplayRankFilter:
+    """Verify the display_rank Jinja filter converts 'T' → '10'."""
+
+    def test_filter_converts_t_to_10(self):
+        """The filter function converts 'T' to '10'."""
+        assert display_rank("T") == "10"
+
+    def test_filter_passes_other_ranks(self):
+        """Non-ten ranks pass through unchanged."""
+        for rank in ("J", "Q", "K", "A"):
+            assert display_rank(rank) == rank
+
+    def test_hand_renders_ten_as_10(self, env):
+        """A ten of spades in hand.html shows '10' not 'T'."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            turn_number=0,
+            human_hand=[["S", "T"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        # The card__rank span should contain '10', not 'T'
+        assert ">10<" in html
+        assert ">T<" not in html
+
+    def test_hand_legal_card_ten_shows_10(self, env):
+        """Legal ten card button shows '10' in title and aria-label."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            turn_number=5,
+            human_hand=[["H", "T"]],
+            legal_plays=[0],
+            phase="trick_play",
+        )
+        assert "10♥" in html
+        assert "Play 10 of Hearts" in html
+
+    def test_trick_renders_ten_as_10(self, env):
+        """Played ten in trick.html shows '10'."""
+        tmpl = env.get_template("partials/trick.html")
+        html = tmpl.render(
+            current_trick={
+                "leader": 0,
+                "plays": [[0, ["S", "T"]]],
+            },
+            completed_tricks=[],
+            current_seat=1,
+            dealer_seat=0,
+            bidder_seat=0,
+            sitting_out_seat=None,
+            tricks_team0=0,
+            tricks_team1=0,
+        )
+        assert ">10<" in html
+        assert "played 10 of Spades" in html
+
+    def test_trick_history_renders_ten_as_10(self, env):
+        """Ten in trick_history.html shows '10'."""
+        tricks = [
+            {
+                "leader": 0,
+                "plays": [
+                    [0, ["S", "T"]],
+                    [1, ["S", "J"]],
+                    [2, ["S", "Q"]],
+                    [3, ["S", "K"]],
+                ],
+                "winner": 0,
+            },
+        ]
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(completed_tricks=tricks, tricks_team0=1, tricks_team1=0)
+        assert "10♠" in html
+
+    def test_moon_exchange_renders_ten_as_10(self, env):
+        """Ten cards in moon_exchange.html show '10'."""
+        tmpl = env.get_template("partials/moon_exchange.html")
+        html = tmpl.render(
+            bidder_seat=0,
+            exchange_given=[["S", "T"]],
+            exchange_received=[["H", "T"]],
+            contract_type="suit",
+            trump="S",
+            link_uuid="test-uuid",
+            human_hand=[["S", "A"], ["H", "T"]],
+        )
+        assert ">10<" in html
+        # Should not have a standalone 'T' rank display
+        # (check within card__rank spans specifically)
+        assert 'aria-hidden="true">T<' not in html
+
+    def test_moon_exchange_select_renders_ten_as_10(self, env):
+        """Ten cards in moon_exchange_select.html show '10'."""
+        tmpl = env.get_template("partials/moon_exchange_select.html")
+        html = tmpl.render(
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            link_uuid="test-uuid",
+            human_hand=[["S", "T"], ["H", "K"]],
+            exchange_prompt="Choose 2 cards to exchange",
+            is_mooner=True,
+        )
+        assert ">10<" in html
+        assert "Select 10 of Spades" in html
+
+    def test_non_ten_ranks_unchanged(self, env):
+        """Non-ten ranks still render normally."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            turn_number=0,
+            human_hand=[["S", "J"], ["H", "Q"], ["D", "K"], ["C", "A"]],
+            legal_plays=None,
+            phase="auction",
+        )
+        assert ">J<" in html
+        assert ">Q<" in html
+        assert ">K<" in html
+        assert ">A<" in html
