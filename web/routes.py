@@ -263,13 +263,26 @@ def _next_reason(hand) -> str | None:
     return None
 
 
-def _game_phase(state) -> str:
+def _game_phase(state, *, force_match_result: bool = False) -> str:
     """Map engine state to the template ``phase`` variable.
 
     The ``game.html`` template dispatches on this value to select which
     partials to include.
+
+    Parameters
+    ----------
+    force_match_result:
+        When *True*, skip the hand-result interstitial and go straight to
+        the match-result screen.  Used by the ``/next-hand`` handler after
+        the player has already seen the final hand result (#2239).
     """
     if state.status == "complete":
+        # Show the final hand result before the match-over screen so the
+        # player can review the last hand (#2239).  The hand_result partial
+        # renders a "See Match Results" CTA when match_status == "complete".
+        hand = state.current_hand
+        if not force_match_result and hand is not None and hand.phase == "complete":
+            return "hand_result"
         return "match_result"
     hand = state.current_hand
     if hand is None:
@@ -437,6 +450,8 @@ def _build_game_context(
     engine: MatchEngine,
     state,
     link_uuid: str,
+    *,
+    force_match_result: bool = False,
 ) -> dict[str, Any]:
     """Build the Jinja2 template context for the game board.
 
@@ -446,7 +461,7 @@ def _build_game_context(
     """
     visible = engine.get_visible_state(state)
     hand = state.current_hand
-    phase = _game_phase(state)
+    phase = _game_phase(state, force_match_result=force_match_result)
 
     # Defensive normalization: when the auction is settled (or we're past
     # auction), ensure revealed_auction_count covers the full auction.
@@ -590,6 +605,7 @@ def _render_game_board(
     link_uuid: str,
     *,
     error_message: str | None = None,
+    force_match_result: bool = False,
 ) -> str:
     """Render the game board composite partial as an HTML string.
 
@@ -602,9 +618,15 @@ def _render_game_board(
         Optional transient error string displayed as an inline alert
         above the board (e.g. "Illegal bid").  Cleared on the next
         normal render.
+    force_match_result:
+        When *True*, skip the hand-result interstitial and render the
+        match-result screen directly.  Used by the ``/next-hand`` handler
+        after the player has already seen the final hand result (#2239).
     """
     templates = _get_templates(request)
-    ctx = _build_game_context(engine, state, link_uuid)
+    ctx = _build_game_context(
+        engine, state, link_uuid, force_match_result=force_match_result
+    )
     ctx["request"] = request
     if error_message is not None:
         ctx["board_error"] = error_message
@@ -1569,10 +1591,15 @@ async def next_hand(
             )
             return _handle_corrupted_match(request, session, match_row, link_uuid)
 
-        # If the match is already complete, render the result screen
-        # immediately — do not advance to a new hand (P2-005).
+        # If the match is already complete, show the match-result screen.
+        # The player has already seen the final hand result (with the
+        # "See Match Results" CTA) and is now advancing (#2239).
         if state.status == "complete":
-            return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+            return HTMLResponse(
+                _render_game_board(
+                    request, engine, state, link_uuid, force_match_result=True
+                )
+            )
 
         hand = state.current_hand
         if hand is None:

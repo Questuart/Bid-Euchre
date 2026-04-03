@@ -29,7 +29,7 @@
         <p class="moon-exchange__subtitle">
             {{ mooner_label }} bid Moon
             {% if contract_type == "suit" and trump %}
-                in {{ suit_symbols.get(trump, trump) }}
+                in <span class="suit-icon suit-icon--{{ suit_classes.get(trump, 'spades') }}">{{ suit_symbols.get(trump, trump) }}</span>
             {% elif contract_type == "high" %}
                 High
             {% elif contract_type == "low" %}

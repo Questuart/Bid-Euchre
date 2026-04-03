@@ -14,6 +14,7 @@
      - hands_played: int — total hands completed
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 {% set bidder_seat = bidder_seat | int %}
 {% set hand_bid_type = bid_type | default("regular") %}
@@ -94,7 +95,7 @@
                 bid {{ winning_bid }}
             {% endif %}
             {% if contract_type == "suit" and trump %}
-                {{ suit_symbols.get(trump, trump) }}
+                <span class="suit-icon suit-icon--{{ suit_classes.get(trump, 'spades') }}">{{ suit_symbols.get(trump, trump) }}</span>
             {% elif contract_type == "high" %}
                 High
             {% elif contract_type == "low" %}
@@ -112,11 +113,11 @@
                 <p class="exchange-title"><strong>Moon Exchange</strong></p>
                 <p class="exchange-details">
                     Given {{ exchange_given_cards|length }} to partner ({{ partner_seat_label }}):
-                    {% for card in exchange_given_cards %}<span class="card-text" aria-label="{{ suit_symbols.get(card[0], card[0]) }}{{ card[1]|display_rank }}">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1]|display_rank }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                    {% for card in exchange_given_cards %}<span class="card-text card-text--{{ suit_classes.get(card[0], 'spades') }}" aria-label="{{ suit_symbols.get(card[0], card[0]) }}{{ card[1]|display_rank }}">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1]|display_rank }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
                 </p>
                 <p class="exchange-details">
                     Received {{ exchange_received_cards|length }} from partner ({{ partner_seat_label }}):
-                    {% for card in exchange_received_cards %}<span class="card-text" aria-label="{{ suit_symbols.get(card[0], card[0]) }}{{ card[1]|display_rank }}">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1]|display_rank }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                    {% for card in exchange_received_cards %}<span class="card-text card-text--{{ suit_classes.get(card[0], 'spades') }}" aria-label="{{ suit_symbols.get(card[0], card[0]) }}{{ card[1]|display_rank }}">{{ suit_symbols.get(card[0], card[0]) }} {{ card[1]|display_rank }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
                 </p>
             </div>
         {% endif %}
@@ -156,20 +157,30 @@
         {% include "partials/trick_history.html" %}
     </div>
 
-    {# Defence-in-depth: if the match has ended but this partial is rendered
-       (e.g. stale HTMX morph, race condition), show the correct CTA.
-       Primary guard is _game_phase() returning "match_result" for complete
-       matches; this is a fallback (P2-005). #}
+    {# Match-ending hand: show the result here first so the player can
+       review the final hand before seeing the match-over screen (#2239).
+       _game_phase() returns "hand_result" when the match is complete but
+       the current hand is still available.  The "See Match Results" CTA
+       advances to the match_result phase via /next-hand. #}
     {% if match_status is defined and match_status == "complete" %}
+    <div class="match-ending-notice" role="status" aria-live="polite">
+        <p class="match-ending-notice__text">
+            {% if winner is defined and winner == "human" %}
+                🎉 Match over — <strong>You win!</strong>
+            {% else %}
+                Match over — <strong>AI wins.</strong>
+            {% endif %}
+        </p>
+    </div>
     <form method="post"
-          action="/play/{{ link_uuid | default("") }}/new-match"
-          hx-post="/play/{{ link_uuid | default("") }}/new-match"
+          action="/play/{{ link_uuid | default("") }}/next-hand"
+          hx-post="/play/{{ link_uuid | default("") }}/next-hand"
           hx-target="#game-board"
           hx-swap="morph:innerHTML"
           hx-timeout="15000"
           class="hand-result-controls"
-          aria-label="Start a new match">
-        <button type="submit" class="btn btn--play-again">Play Again</button>
+          aria-label="See match results">
+        <button type="submit" class="btn btn--see-results">See Match Results</button>
     </form>
     {% else %}
     <form method="post"

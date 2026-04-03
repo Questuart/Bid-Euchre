@@ -13,6 +13,7 @@
      - phase: str — current hand phase
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
+{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
 <div id="score-bar" class="score-bar" role="status" aria-label="Match score and hand information" aria-live="polite">
@@ -46,7 +47,7 @@
                 {{ winning_bid }}
             {% endif %}
             {% if contract_type == "suit" and trump %}
-                {{ suit_symbols.get(trump, trump) }}
+                <span class="suit-icon suit-icon--{{ suit_classes.get(trump, 'spades') }}">{{ suit_symbols.get(trump, trump) }}</span>
             {% elif contract_type == "high" %}
                 High
             {% elif contract_type == "low" %}
