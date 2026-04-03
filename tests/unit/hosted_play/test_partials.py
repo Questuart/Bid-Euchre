@@ -1214,10 +1214,12 @@ class TestHandResult:
         assert "Moon exchange" in html
         assert "Given 2 to partner" in html
         assert "Received 2 from partner" in html
-        assert "♠ 10" in html
-        assert "♦ J" in html
-        assert "♥ Q" in html
-        assert "♣ A" in html
+        # Rank and suit are in separate spans: <span class="suit-icon ...">♠</span> 10
+        assert "♠" in html
+        assert ">♠</span> 10" in html
+        assert ">♦</span> J" in html
+        assert ">♥</span> Q" in html
+        assert ">♣</span> A" in html
 
     def test_hand_result_shows_next_hand_button(self, env):
         """Hand results should include an action to advance to the next hand."""
@@ -3523,7 +3525,9 @@ class TestDisplayRankFilter:
         ]
         tmpl = env.get_template("partials/trick_history.html")
         html = tmpl.render(completed_tricks=tricks, tricks_team0=1, tricks_team1=0)
-        assert "10♠" in html
+        # Rank and suit are in separate spans (#2289)
+        assert "10<span" in html
+        assert ">♠</span>" in html
 
     def test_moon_exchange_renders_ten_as_10(self, env):
         """Ten cards in moon_exchange.html show '10'."""

@@ -961,20 +961,12 @@ main {
 }
 
 /* Inline card rendering (for trick history table) —
-   suit-colored text for red/black readability (#2235).
-   Leader underline and winner highlight remain via cell classes. */
+   rank text stays default (white); suit icon colored via .suit-icon utility
+   (#2235, #2289).  Leader underline and winner highlight remain via cell
+   classes. */
 .card--inline {
     font-weight: 700;
     white-space: nowrap;
-}
-
-.card--inline-hearts,
-.card--inline-diamonds {
-    color: var(--color-red);
-}
-
-.card--inline-spades,
-.card--inline-clubs {
     color: var(--color-text);
 }
 
@@ -2824,18 +2816,11 @@ main {
     color: var(--color-text-muted);
 }
 
+/* Card text in exchange summaries — rank stays default (white); suit icon
+   colored via .suit-icon utility (#2289). */
 .card-text {
     font-weight: 700;
     white-space: nowrap;
-}
-
-.card-text--hearts,
-.card-text--diamonds {
-    color: var(--color-red);
-}
-
-.card-text--spades,
-.card-text--clubs {
     color: var(--color-text);
 }
 
