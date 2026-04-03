@@ -1571,7 +1571,7 @@ def check_fleet_idle(
         findings.append(
             MonitorFinding(
                 category="fleet_idle",
-                severity=SEVERITY_HIGH,
+                severity=SEVERITY_WARN,
                 summary=(
                     f"Fleet idle for {recommendation.idle_status.idle_minutes:.0f}m — "
                     f"auto-shutoff recommended"
