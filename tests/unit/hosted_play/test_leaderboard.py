@@ -478,6 +478,7 @@ class TestComputePlayerStats:
             "win_rate",
             "avg_margin_victory",
             "matches_played",
+            "ppd",
             "hands_played",
             "avg_match_margin",
             "bid_rate",
@@ -864,7 +865,7 @@ class TestLeaderboardWithAI:
             db_session, ai_display_names={"heuristic": "Test Bot"}
         )
         assert len(rankings) == 2
-        # Human has positive EPPD (10-2=8), AI has negative (-8)
+        # Human has positive Net PPD (10-2=8), AI has negative (-8)
         assert rankings[0].nickname == "Human"
         assert rankings[0].is_ai is False
         assert rankings[1].nickname == "Test Bot"
@@ -941,7 +942,7 @@ class TestLeaderboardRoute:
             resp = client.get(f"/leaderboard/{player.link_uuid}")
             assert resp.status_code == 200
             assert "RankedPlayer" in resp.text
-            assert "EPPD" in resp.text
+            assert "Net PPD" in resp.text
         finally:
             session.close()
 
@@ -982,7 +983,7 @@ class TestLeaderboardRoute:
 
             resp = client.get(f"/leaderboard/{player.link_uuid}")
             assert resp.status_code == 200
-            assert "Ranked by EPPD" in resp.text
+            assert "Ranked by Net PPD" in resp.text
         finally:
             session.close()
 
@@ -1215,10 +1216,10 @@ class TestMetricDefinitions:
             assert len(m.full_label) > 0, f"{key} has empty full_label"
 
     def test_labels_are_abbreviated(self):
-        """Column headers should be short abbreviations (≤6 chars)."""
+        """Column headers should be short abbreviations (≤7 chars)."""
         for key, m in METRIC_DEFINITIONS.items():
             assert (
-                len(m.label) <= 6
+                len(m.label) <= 7
             ), f"{key} label {m.label!r} too long for abbreviated header"
 
     def test_full_labels_are_longer_than_labels(self):

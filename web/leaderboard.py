@@ -47,10 +47,10 @@ class MetricDef(NamedTuple):
 #: The template iterates these to build headers, tooltips, and formatting.
 METRIC_DEFINITIONS: dict[str, MetricDef] = {
     "net_eppd": MetricDef(
-        label="EPPD",
-        full_label="Net EPPD",
+        label="Net PPD",
+        full_label="Net Points Per Deal",
         tooltip=(
-            "Net Expected Points Per Deal — your average point advantage "
+            "Net Points Per Deal — your average point advantage "
             "per hand. Positive means you're outscoring opponents."
         ),
         format="signed_float3",
@@ -84,12 +84,19 @@ METRIC_DEFINITIONS: dict[str, MetricDef] = {
         format="pct",
         category="default",
     ),
+    "ppd": MetricDef(
+        label="PPD",
+        full_label="Points Per Deal",
+        tooltip="Raw points your team earned per hand (before subtracting opponent points).",
+        format="float3",
+        category="default",
+    ),
     "avg_match_margin": MetricDef(
         label="Mgn",
         full_label="Avg Margin",
         tooltip="Average score margin across all completed matches (positive = winning).",
         format="signed_float1",
-        category="default",
+        category="secondary",
     ),
     "avg_margin_victory": MetricDef(
         label="WMgn",
@@ -200,13 +207,14 @@ class PlayerStats:
     nickname: str | None
 
     # Primary ranking metric
-    net_eppd: float  # net expected points per deal
+    net_eppd: float  # net points per deal (realized, not expected)
 
     # Default visible columns
     games_won: int
     win_rate: float  # 0.0–1.0
     avg_margin_victory: float  # average score margin when winning
     matches_played: int
+    ppd: float  # raw points per deal (team points / hands played)
 
     # Secondary columns
     hands_played: int
@@ -279,9 +287,13 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
 
     # --- Hand-level metrics (all completed hands) ---
 
-    # Net EPPD: total net points / total hands
+    # Net PPD: total net points / total hands
     total_net_points = sum(h.points_team0 - h.points_team1 for h in completed_hands)
     net_eppd = total_net_points / hands_played
+
+    # PPD: raw team points / total hands (before subtracting opponent)
+    total_team_points = sum(h.points_team0 for h in completed_hands)
+    ppd = total_team_points / hands_played
 
     # Bidding stats — human team is team 0, bidder_seat in (0, 2)
     declaring_hands = [
@@ -337,6 +349,7 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
         win_rate=round(win_rate, 3),
         avg_margin_victory=round(avg_margin_victory, 1),
         matches_played=matches_played,
+        ppd=round(ppd, 3),
         hands_played=hands_played,
         avg_match_margin=round(avg_match_margin, 1),
         bid_rate=round(bid_rate, 3),
@@ -358,7 +371,7 @@ def compute_ai_stats(
     """Compute aggregated stats for an AI opponent across all its matches.
 
     The AI team is team 1 (seats 1 and 3).  Stats are computed from the
-    AI's perspective — net EPPD, win rate, bid rate, etc. all reflect the
+    AI's perspective — net PPD, win rate, bid rate, etc. all reflect the
     AI opponent's performance, not the human's.
 
     Returns ``None`` if the AI has no completed hands.
@@ -407,9 +420,13 @@ def compute_ai_stats(
 
     # --- Hand-level metrics (all completed hands, AI = team 1) ---
 
-    # Net EPPD from AI perspective: (points_team1 - points_team0) / hands
+    # Net PPD from AI perspective: (points_team1 - points_team0) / hands
     total_net_points = sum(h.points_team1 - h.points_team0 for h in completed_hands)
     net_eppd = total_net_points / hands_played
+
+    # PPD: raw AI team points / total hands (before subtracting opponent)
+    total_team_points = sum(h.points_team1 for h in completed_hands)
+    ppd = total_team_points / hands_played
 
     # Bidding stats — AI team is team 1, seats (1, 3)
     declaring_hands = [
@@ -465,6 +482,7 @@ def compute_ai_stats(
         win_rate=round(win_rate, 3),
         avg_margin_victory=round(avg_margin_victory, 1),
         matches_played=matches_played,
+        ppd=round(ppd, 3),
         hands_played=hands_played,
         avg_match_margin=round(avg_match_margin, 1),
         bid_rate=round(bid_rate, 3),
