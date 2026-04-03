@@ -53,7 +53,7 @@
               hx-post="/play/{{ link_uuid }}/play-card"
               hx-target="#game-board"
               hx-swap="morph:innerHTML"
-              hx-timeout="10000">
+              hx-timeout="15000">
             <input type="hidden" name="turn_number" value="{{ turn_number }}">
             <input type="hidden" id="selected-card-index" name="card_index" value="">
             <button id="card-play-submit"

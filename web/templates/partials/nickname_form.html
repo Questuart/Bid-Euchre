@@ -9,6 +9,7 @@
           hx-post="/play/{{ link_uuid }}/nickname"
           hx-target="#game-board"
           hx-swap="morph:innerHTML"
+          hx-timeout="15000"
           aria-label="Choose a display name">
         <label for="nickname-input">Nickname:</label>
         <input id="nickname-input"

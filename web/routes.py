@@ -452,6 +452,17 @@ def _build_game_context(
         visible["completed_tricks"] = []
         visible["tricks_team0"] = 0
         visible["tricks_team1"] = 0
+    elif hand is not None and not hand.auction_settled:
+        # Settle pause — all bids revealed but the user hasn't dismissed
+        # the auction-complete interstitial yet.  The engine may have
+        # already auto-advanced into trick play (processing AI trick cards
+        # during the submit_bid call), but the user hasn't seen the
+        # auction result.  Hide trick-play state so the transition screen
+        # shows a clean "Auction complete" view (#2208).
+        visible["current_trick"] = None
+        visible["completed_tricks"] = []
+        visible["tricks_team0"] = 0
+        visible["tricks_team1"] = 0
     if hand is not None and hand.phase == "trick_play" and hand.paused_after_trick:
         visible["current_trick"] = None
 

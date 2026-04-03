@@ -101,6 +101,7 @@
           hx-post="/play/{{ link_uuid | default('') }}/next"
           hx-target="#game-board"
           hx-swap="morph:innerHTML"
+          hx-timeout="15000"
           class="moon-exchange__controls">
         <button type="submit" class="btn btn--next-step" aria-label="Continue to trick play">
             Start Trick Play

@@ -1211,6 +1211,56 @@ class TestHxPostUrl:
         assert "{link_uuid}" not in resp.text
 
 
+class TestHxTimeout:
+    """Verify all HTMX forms have hx-timeout for stall recovery (#2202)."""
+
+    def test_nickname_form_has_timeout(self, client):
+        """Nickname form should have hx-timeout."""
+        link_uuid = _create_game(client)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert 'hx-timeout="15000"' in resp.text
+
+    def test_next_controls_has_timeout(self, client, app):
+        """Next button form should have hx-timeout."""
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Inject state that shows the Next button (hidden auction)
+        hand.phase = "auction"
+        hand.current_seat = HUMAN_SEAT
+        hand.auction = [
+            {"seat": 1, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 0
+
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # The next_controls partial should have hx-timeout
+        assert 'hx-post="/play/' in resp.text
+        assert 'hx-timeout="15000"' in resp.text
+
+
 # ---------------------------------------------------------------------------
 # Test: AI decision content quality
 # ---------------------------------------------------------------------------
@@ -3169,6 +3219,75 @@ class TestAuctionRevealUX:
         hand3 = state3.current_hand
         assert hand3 is not None
         assert hand3.auction_settled is True
+
+    def test_settle_pause_hides_trick_play_state(self, client, app):
+        """During settle pause, trick-play data is hidden even if engine advanced (#2208).
+
+        When the engine auto-advances past the auction into trick play (AI
+        leads first trick), the settle pause screen must NOT show the trick
+        plays.  The user should see "Auction complete" without any trick cards.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Inject state: auction ended, engine already in trick_play with AI
+        # cards played.  Settle pause active (auction_settled=False).
+        hand.phase = "trick_play"
+        hand.auction = [
+            {
+                "seat": 1,
+                "n": 5,
+                "action": "bid",
+                "contract": "S",
+                "bid_type": "regular",
+            },
+            {"seat": 2, "n": 0, "action": "pass"},
+            {"seat": 3, "n": 0, "action": "pass"},
+            {"seat": 0, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 4  # all bids revealed
+        hand.auction_settled = False  # settle pause active
+        hand.contract_type = "suit"
+        hand.trump = "S"
+        hand.winning_bid = 5
+        hand.bidder_seat = 1
+        hand.current_high_bid = 5
+        # Simulate AI having already played 2 cards in first trick
+        hand.current_trick = TrickState(leader=1)
+        hand.current_trick.plays = [
+            (1, Card("S", "A")),
+            (2, Card("S", "K")),
+        ]
+        hand.current_seat = 3
+
+        # Persist injected state
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        session.commit()
+        session.close()
+
+        # The settle pause screen should NOT show trick cards
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "Auction complete" in resp.text
+        # Trick area should not show AI-played cards during settle pause
+        # The A♠ and K♠ from the injected trick should be hidden
+        assert "trick-card" not in resp.text or "current-trick" not in resp.text
 
     def test_no_settle_pause_when_human_bids_last(self, client, app):
         """When the human is the last bidder, no settle pause is needed (#2134).

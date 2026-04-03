@@ -65,6 +65,7 @@
           hx-post="/play/{{ link_uuid }}/bid"
           hx-target="#game-board"
           hx-swap="morph:innerHTML"
+          hx-timeout="15000"
           aria-label="Submit your bid">
         <input type="hidden" name="turn_number" value="{{ turn_number }}">
 
