@@ -14,7 +14,7 @@ import jinja2
 import pytest
 
 from bid_euchre.core.cards import Card
-from bid_euchre.core.rules import get_legal_indices
+from bid_euchre.core.rules import get_legal_indices, trick_winner
 from bid_euchre.hosted_play.engine import (
     HUMAN_SEAT,
     MatchEngine,
@@ -250,6 +250,19 @@ def build_visible_context(
         else:
             ctx["legal_plays"] = None
 
+        # Compute trick_winning_seat (mirrors routes.py logic)
+        trick = hand.current_trick if hand.current_trick is not None else None
+        if (
+            trick is not None
+            and len(trick.plays) >= 1
+            and hand.contract_type is not None
+        ):
+            ctx["trick_winning_seat"] = trick_winner(
+                trick.plays, hand.contract_type, hand.trump
+            )
+        else:
+            ctx["trick_winning_seat"] = None
+
         ctx["opp_left_count"] = len(hand.hands[1]) if len(hand.hands) > 1 else 0
         ctx["partner_count"] = len(hand.hands[2]) if len(hand.hands) > 2 else 0
         ctx["opp_right_count"] = len(hand.hands[3]) if len(hand.hands) > 3 else 0
@@ -264,6 +277,7 @@ def build_visible_context(
         ctx["points_team0"] = 0
         ctx["points_team1"] = 0
         ctx["legal_plays"] = None
+        ctx["trick_winning_seat"] = None
         ctx["opp_left_count"] = 0
         ctx["partner_count"] = 0
         ctx["opp_right_count"] = 0

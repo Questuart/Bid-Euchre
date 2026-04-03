@@ -242,8 +242,19 @@ main {
 
 /* Highlight the currently winning card in an active trick */
 .card--winning {
-    box-shadow: 0 0 8px 2px rgba(255, 215, 0, 0.7);
-    border-color: #ffd700;
+    box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.8);
+    border: 2px solid #ffd700;
+    animation: winning-card-pulse 2s ease-in-out infinite;
+}
+
+/* "X is winning" text below the trick center during active tricks */
+.trick-current-winner {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #ffd700;
+    text-align: center;
+    margin: 0.25rem 0 0;
+    opacity: 0.9;
 }
 
 /* --------------------------------------------------------------------------
@@ -2513,6 +2524,11 @@ main {
     50% { box-shadow: 0 0 15px rgba(76, 175, 80, 0.8); }
 }
 
+@keyframes winning-card-pulse {
+    0%, 100% { box-shadow: 0 0 8px 2px rgba(255, 215, 0, 0.5); }
+    50% { box-shadow: 0 0 14px 4px rgba(255, 215, 0, 0.9); }
+}
+
 .hand-result--animated {
     animation: banner-slide-in 0.4s ease-out;
 }
@@ -2755,6 +2771,10 @@ main {
     }
 
     .trick-slot--winner .card {
+        animation: none;
+    }
+
+    .card--winning {
         animation: none;
     }
 }
