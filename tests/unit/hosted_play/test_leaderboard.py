@@ -218,7 +218,7 @@ class TestComputePlayerStats:
             db_session,
             match,
             hand_number=1,
-            bidder_seat=2,  # partner seat, still team 0
+            bidder_seat=0,  # human seat
             winning_bid_n=10,
             winning_bid_type="loner",
             tricks_team0=5,
@@ -250,6 +250,70 @@ class TestComputePlayerStats:
         assert stats.moon_make_rate == 1.0  # 1 moon called, 1 made
         assert stats.loner_call_rate == pytest.approx(1 / 3, abs=0.001)
         assert stats.loner_make_rate == 0.0  # 1 loner called, 0 made (5 < 10)
+
+    def test_ai_partner_moon_loner_excluded_from_player_stats(self, db_session):
+        """Moon/loner declared by AI partner (seat 2) must NOT count toward
+        the human player's personal moon/loner stats (#2152)."""
+        player = _make_player(db_session)
+        match = _make_match(db_session, player)
+
+        # AI partner declares moon (seat 2) — should NOT count for human
+        _make_hand(
+            db_session,
+            match,
+            hand_number=0,
+            bidder_seat=2,  # AI partner
+            winning_bid_n=10,
+            winning_bid_type="moon",
+            tricks_team0=10,
+            tricks_team1=0,
+            points_team0=20,
+            points_team1=0,
+        )
+
+        # AI partner declares loner (seat 2) — should NOT count for human
+        _make_hand(
+            db_session,
+            match,
+            hand_number=1,
+            bidder_seat=2,  # AI partner
+            winning_bid_n=10,
+            winning_bid_type="loner",
+            tricks_team0=8,
+            tricks_team1=2,
+            points_team0=10,
+            points_team1=2,
+        )
+
+        # Regular hand by human (baseline)
+        _make_hand(
+            db_session,
+            match,
+            hand_number=2,
+            bidder_seat=0,
+            winning_bid_n=6,
+            winning_bid_type="regular",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=6,
+            points_team1=3,
+        )
+
+        db_session.flush()
+        stats = compute_player_stats(db_session, player.id)
+
+        assert stats is not None
+        assert stats.hands_played == 3
+
+        # AI partner moons/loners excluded — human declared neither
+        assert stats.moon_call_rate == 0.0
+        assert stats.moon_make_rate == 0.0
+        assert stats.loner_call_rate == 0.0
+        assert stats.loner_make_rate == 0.0
+
+        # But team-level bid stats still include partner (seat 2)
+        # Declaring hands: seats 2, 2, 0 — all team 0 = 3/3
+        assert stats.bid_rate == 1.0
 
     def test_multiple_matches(self, db_session):
         player = _make_player(db_session)

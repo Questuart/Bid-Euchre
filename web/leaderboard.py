@@ -110,25 +110,25 @@ METRIC_DEFINITIONS: dict[str, MetricDef] = {
     ),
     "moon_call_rate": MetricDef(
         label="Moon %",
-        tooltip="Percentage of hands where your team called a moon (bid all 10 tricks).",
+        tooltip="Percentage of hands where you personally called a moon (bid all 10 tricks). AI partner moons are excluded.",
         format="pct",
         category="secondary",
     ),
     "moon_make_rate": MetricDef(
         label="Moon Make",
-        tooltip="Percentage of your moon bids that were successfully made.",
+        tooltip="Percentage of your personal moon bids that were successfully made.",
         format="pct",
         category="secondary",
     ),
     "loner_call_rate": MetricDef(
         label="Loner %",
-        tooltip="Percentage of hands where your team called a loner (solo play).",
+        tooltip="Percentage of hands where you personally called a loner (solo play). AI partner loners are excluded.",
         format="pct",
         category="secondary",
     ),
     "loner_make_rate": MetricDef(
         label="Loner Make",
-        tooltip="Percentage of your loner bids that were successfully made.",
+        tooltip="Percentage of your personal loner bids that were successfully made.",
         format="pct",
         category="secondary",
     ),
@@ -291,9 +291,9 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
     ]
     avg_bid_level = sum(bid_levels) / len(bid_levels) if bid_levels else 0.0
 
-    # Moon stats
+    # Moon stats — personal only (human = seat 0, excludes AI partner seat 2)
     moon_hands = [h for h in completed_hands if h.winning_bid_type == "moon"]
-    moon_declaring = [h for h in moon_hands if h.bidder_seat in (0, 2)]
+    moon_declaring = [h for h in moon_hands if h.bidder_seat == 0]
     moon_call_rate = len(moon_declaring) / hands_played if hands_played > 0 else 0.0
     moon_made = [
         h
@@ -302,9 +302,9 @@ def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None
     ]
     moon_make_rate = len(moon_made) / len(moon_declaring) if moon_declaring else 0.0
 
-    # Loner stats
+    # Loner stats — personal only (human = seat 0, excludes AI partner seat 2)
     loner_hands = [h for h in completed_hands if h.winning_bid_type == "loner"]
-    loner_declaring = [h for h in loner_hands if h.bidder_seat in (0, 2)]
+    loner_declaring = [h for h in loner_hands if h.bidder_seat == 0]
     loner_call_rate = len(loner_declaring) / hands_played if hands_played > 0 else 0.0
     loner_made = [
         h
