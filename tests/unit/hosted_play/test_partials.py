@@ -532,6 +532,18 @@ class TestHand:
         assert 'name="card_index" value=""' in html
         assert "card--legal" in html
 
+    def test_card_play_form_has_timeout(self, env):
+        """Card play form has hx-timeout for retry on stalled requests."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="abc-123",
+            turn_number=8,
+            human_hand=[["S", "A"], ["H", "K"]],
+            legal_plays=[0, 1],
+            phase="trick_play",
+        )
+        assert 'hx-timeout="10000"' in html
+
     def test_illegal_cards_are_divs(self, env):
         """During trick play, illegal cards are plain divs."""
         tmpl = env.get_template("partials/hand.html")
