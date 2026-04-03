@@ -640,6 +640,7 @@ class GluttonIsolatedStrategy(Strategy):
     - partner_check: Skip 3rd-seat aggression when partner winning (PR#227)
     - trump_gating: Only aggressive trump if hand ≤6 or trump ≥3 (PR#227)
     - probabilistic_trump_in: Trump to protect partner from void 4th seat (PR#228)
+    - lead_bower: Lead right bower when holding both bowers + 5+ trump (PR#2167)
 
     With all features disabled, this behaves identically to GreedyStrategy.
     """
@@ -657,6 +658,7 @@ class GluttonIsolatedStrategy(Strategy):
         partner_check: bool = False,
         trump_gating: bool = False,
         probabilistic_trump_in: bool = False,
+        lead_bower: bool = False,
     ):
         super().__init__(name)
         self.debug = debug
@@ -671,6 +673,7 @@ class GluttonIsolatedStrategy(Strategy):
         self._partner_check = partner_check
         self._trump_gating = trump_gating
         self._probabilistic_trump_in = probabilistic_trump_in
+        self._lead_bower = lead_bower
 
         # Double-deck aware tracking (each card exists 0-2 times)
         self._seen_counts: Dict[Card, int] = {}
@@ -795,7 +798,7 @@ class GluttonIsolatedStrategy(Strategy):
         if self._contract_type == "suit" and self._trump_suit is not None:
             from ..core.cards import is_left_bower, is_right_bower
 
-            # 0. Both bowers + 5+ trump → lead right bower to draw trump
+            # Compute trump shape (used by steps 0 and 2)
             trump_count = self._count_effective_suit(hand, self._trump_suit)
             trump_indices = [
                 idx
@@ -809,7 +812,9 @@ class GluttonIsolatedStrategy(Strategy):
             has_left = any(
                 is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices
             )
-            if has_right and has_left and trump_count >= 5:
+
+            # 0. Both bowers + 5+ trump → lead right bower to draw trump
+            if self._lead_bower and has_right and has_left and trump_count >= 5:
                 right_bower_idx = next(
                     idx
                     for idx in trump_indices
@@ -836,7 +841,6 @@ class GluttonIsolatedStrategy(Strategy):
                 return min(non_trump_aces, key=ace_priority)
 
             # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
-            # (trump_count, trump_indices, has_right, has_left computed in Step 0)
             if trump_count >= 4 and trump_indices:
                 if not (has_right and has_left):
                     return min(trump_indices, key=card_value)

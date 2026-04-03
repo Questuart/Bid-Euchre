@@ -153,7 +153,14 @@ def _check_worktree_health(repo_root: Path) -> tuple[bool, str]:
                         text=True,
                         cwd=str(repo_root),
                     )
-                    if dirty_check.returncode == 0 and dirty_check.stdout.strip():
+                    # Exclude pure untracked files (??) — git reset --hard
+                    # does not touch them, so they are not at risk of loss.
+                    tracked_dirty = [
+                        line
+                        for line in dirty_check.stdout.splitlines()
+                        if line and not line.startswith("??")
+                    ]
+                    if dirty_check.returncode == 0 and tracked_dirty:
                         return False, (
                             "Cannot reset to origin/main: working tree has "
                             "uncommitted changes (ff-only pull also failed)"

@@ -732,6 +732,49 @@ class TestCheckWorktreeHealth:
         assert "uncommitted" in msg.lower()
 
     @patch("review_lane_runner.subprocess.run")
+    def test_pull_fails_untracked_only_allows_reset(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """Untracked files (??) should not block reset — they survive it (#2195)."""
+        mock_run.side_effect = [
+            # symbolic-ref → on a branch
+            MagicMock(returncode=0, stdout="main\n"),
+            # fetch
+            MagicMock(returncode=0),
+            # rev-list count → 1 behind
+            MagicMock(returncode=0, stdout="1\n"),
+            # pull --ff-only → fails
+            MagicMock(returncode=1, stderr="fatal: Not possible to fast-forward"),
+            # git status --porcelain → only untracked files
+            MagicMock(returncode=0, stdout="?? new_file.py\n?? another.txt\n"),
+            # git reset --hard → succeeds
+            MagicMock(returncode=0),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is True
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_pull_fails_mixed_dirty_and_untracked_refuses_reset(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """Mixed modified + untracked should still block reset (#2195)."""
+        mock_run.side_effect = [
+            # symbolic-ref → on a branch
+            MagicMock(returncode=0, stdout="main\n"),
+            # fetch
+            MagicMock(returncode=0),
+            # rev-list count → 1 behind
+            MagicMock(returncode=0, stdout="1\n"),
+            # pull --ff-only → fails
+            MagicMock(returncode=1, stderr="fatal: Not possible to fast-forward"),
+            # git status --porcelain → modified + untracked
+            MagicMock(returncode=0, stdout="?? new_file.py\n M dirty.py\n"),
+        ]
+        healthy, msg = _check_worktree_health(tmp_path)
+        assert healthy is False
+        assert "uncommitted" in msg.lower()
+
+    @patch("review_lane_runner.subprocess.run")
     def test_pull_fails_reset_fails(self, mock_run: MagicMock, tmp_path: Path) -> None:
         """When ff-only pull fails and reset also fails, report error."""
         mock_run.side_effect = [
