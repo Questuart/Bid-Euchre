@@ -7,6 +7,7 @@ infrastructure without requiring tmux to be running.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,6 +20,32 @@ INSTALL_SCRIPT = REPO_ROOT / ".claude" / "launchd" / "install-launchd.sh"
 PLIST_TEMPLATE = REPO_ROOT / ".claude" / "launchd" / "ensure-steward-session.plist"
 
 STEWARD_SESSION = Path(".claude/tmux/steward-session.sh")
+
+
+def _read_steward_script() -> str:
+    """Read steward-session.sh, preferring the git-committed version in CI.
+
+    In CI, the ``setup-uv`` cache restoration can overwrite ``.git/HEAD``,
+    causing the working-tree copy of the script to revert to the base branch.
+    When ``GITHUB_SHA`` is set (GitHub Actions), we read from the merge-commit
+    blob to get the correct PR content. Locally we just read the file.
+    """
+    github_sha = os.environ.get("GITHUB_SHA")
+    if github_sha:
+        try:
+            return subprocess.check_output(
+                [
+                    "git",
+                    "show",
+                    f"{github_sha}:.claude/tmux/steward-session.sh",
+                ],
+                cwd=str(REPO_ROOT),
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            pass  # fall through to filesystem read
+    return STEWARD_SCRIPT.read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -993,6 +1020,63 @@ cat "{target}"
         assert (
             data["enabledPlugins"]["telegram@claude-plugins-official"] is False
         ), "Explicit false must override existing plugin enable"
+
+
+class TestAutoCompactWindow:
+    """Tests for CLAUDE_CODE_AUTO_COMPACT_WINDOW in steward-session.sh (#2169)."""
+
+    def test_auto_compact_window_set_via_tmux_env(self) -> None:
+        """CLAUDE_CODE_AUTO_COMPACT_WINDOW must be propagated via tmux set-environment."""
+        content = _read_steward_script()
+        assert (
+            'tmux set-environment -t "$SESSION" CLAUDE_CODE_AUTO_COMPACT_WINDOW'
+            in content
+        ), "CLAUDE_CODE_AUTO_COMPACT_WINDOW must be set via tmux set-environment"
+
+    def test_auto_compact_window_value_is_200k(self) -> None:
+        """Auto-compact window must be set to 200000 tokens."""
+        content = _read_steward_script()
+        assert (
+            'CLAUDE_CODE_AUTO_COMPACT_WINDOW "200000"' in content
+        ), "CLAUDE_CODE_AUTO_COMPACT_WINDOW must be set to 200000"
+
+    def test_auto_compact_set_after_orchestrator_pane(self) -> None:
+        """Auto-compact env var must be set AFTER orchestrator pane creation.
+
+        The orchestrator should retain unlimited context. The env var is set
+        via tmux set-environment after the orchestrator pane is created, so
+        only panes spawned after that point inherit the limit.
+        """
+        content = _read_steward_script()
+        orch_pos = content.find("--agent steward-orchestrator")
+        compact_pos = content.find("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+        assert orch_pos > 0, "Orchestrator pane launch must exist"
+        assert compact_pos > 0, "CLAUDE_CODE_AUTO_COMPACT_WINDOW must exist"
+        assert compact_pos > orch_pos, (
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW must appear AFTER orchestrator "
+            "pane creation so the orchestrator retains unlimited context"
+        )
+
+    def test_auto_compact_set_before_non_orch_panes(self) -> None:
+        """Auto-compact env var must be set BEFORE non-orchestrator panes are created."""
+        content = _read_steward_script()
+        compact_pos = content.find("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+        # ops is the first non-orchestrator pane (split-window after orchestrator)
+        ops_pos = content.find("--name ops")
+        assert compact_pos > 0, "CLAUDE_CODE_AUTO_COMPACT_WINDOW must exist"
+        assert ops_pos > 0, "Ops pane launch must exist"
+        assert compact_pos < ops_pos, (
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW must appear BEFORE the first "
+            "non-orchestrator pane (ops) so all non-orch lanes inherit it"
+        )
+
+    def test_auto_compact_not_shell_export(self) -> None:
+        """Must use tmux set-environment, not shell export (panes don't inherit it)."""
+        content = _read_steward_script()
+        assert "export CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in content, (
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW must not use shell export "
+            "(tmux panes don't inherit it)"
+        )
 
 
 class TestBoundaryValidation:
