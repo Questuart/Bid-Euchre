@@ -334,7 +334,7 @@ def _format_auction_event(seat: int | None, action: dict[str, Any]) -> str:
     elif contract == "LOW":
         contract_label = "Low"
     else:
-        contract_label = str(contract)
+        contract_label = _SUIT_SYMBOLS.get(str(contract), str(contract))
     return f"{seat_label} bid {n} {contract_label}"
 
 
