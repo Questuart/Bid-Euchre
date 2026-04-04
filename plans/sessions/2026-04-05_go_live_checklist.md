@@ -53,7 +53,7 @@ merge" in #2320 but need explicit proving steps.
 ### A2. Bid Selector Default (#2327)
 
 - [ ] **A2a.** Start a fresh auction. Verify the bid dropdown **defaults to
-  the minimum legal bid** (e.g., "6"), NOT "Pass"
+  the minimum legal bid** (e.g., "1" at the start of the auction), NOT "Pass"
 - [ ] **A2b.** After another player bids (e.g., 7), verify your dropdown
   **defaults to the next legal bid** (e.g., 8), not pass
 - [ ] **A2c.** When all bids up to 10 are taken, verify the dropdown defaults

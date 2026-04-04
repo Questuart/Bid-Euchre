@@ -465,7 +465,10 @@ tmux set-environment -t "$SESSION" CLAUDE_CODE_RESUME_INTERRUPTED_TURN "1"
 tmux set-environment -t "$SESSION" MCP_CONNECTION_NONBLOCKING "true"
 
 # Fleet stability: disable mouse capture to prevent tmux scroll interference (#2249)
-tmux set-environment -t "$SESSION" CLAUDE_CODE_DISABLE_MOUSE "1"
+# Gated behind opt-in — set STEWARD_DISABLE_MOUSE=1 to enable.  (#2341)
+if [ "${STEWARD_DISABLE_MOUSE:-0}" = "1" ]; then
+    tmux set-environment -t "$SESSION" CLAUDE_CODE_DISABLE_MOUSE "1"
+fi
 
 # Propagate channel config into the tmux session environment so all panes
 # can read it.  Shell `export` only affects the launcher process; tmux panes
