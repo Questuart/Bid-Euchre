@@ -2242,8 +2242,8 @@ class TestSortHandForDisplay:
         ]
         sort_hand_for_display(hand)
         suits = [c.suit for c in hand]
-        # S group first, then H, D, C
-        assert suits == ["S", "S", "H", "H", "D", "C"]
+        # S group first, then H, C, D — alternating black/red
+        assert suits == ["S", "S", "H", "H", "C", "D"]
 
     def test_within_suit_rank_order(self) -> None:
         """Within a suit: J > A > K > Q > T (no trump)."""
@@ -2269,8 +2269,21 @@ class TestSortHandForDisplay:
         sort_hand_for_display(hand, contract_type="suit", trump="D")
         suits = [c.suit for c in hand]
         assert suits[0] == "D"  # Trump first
-        # Remaining suits in standard order: S, H, C
+        # Remaining suits alternate black/red: S, H, C
         assert suits[1:] == ["S", "H", "C"]
+
+    def test_trump_alternates_remaining_suits(self) -> None:
+        """Non-trump suits alternate black/red after trump group."""
+        hand = [
+            Card("S", "A"),
+            Card("H", "A"),
+            Card("D", "A"),
+            Card("C", "A"),
+        ]
+        # Trump = C (black): remaining should be H(red), S(black), D(red)
+        sort_hand_for_display(hand, contract_type="suit", trump="C")
+        suits = [c.suit for c in hand]
+        assert suits == ["C", "H", "S", "D"]
 
     def test_right_bower_highest_in_trump(self) -> None:
         """Right bower (J of trump) sorts highest in trump group."""
