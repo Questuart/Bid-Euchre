@@ -31,6 +31,38 @@ first addressed this for skill files. PR #1927 expanded auto-accept to the
 full set of infrastructure files that agents routinely modify during
 autonomous operation.
 
+## Why dontAsk, Not acceptEdits
+
+The `defaultMode` is set to `"dontAsk"` (not `"acceptEdits"`):
+
+- **`acceptEdits`**: auto-approves file edits, still **prompts** on unlisted
+  Bash/MCP tools — lanes stall waiting for human input
+- **`dontAsk`**: auto-**denies** anything not in allowlist, never prompts —
+  lanes never stall
+
+A silent denial produces an error the agent can react to (e.g., retry with
+`uv run`). A blocking prompt produces nothing — the lane hangs until a human
+notices. For a multi-lane fleet with no human watching, `dontAsk` is strictly
+better.
+
+## Bash Pattern Scoping
+
+Bash patterns are scoped to the minimum needed for fleet operation:
+
+- **Broad patterns** (`git *`, `gh *`, `make *`, `uv run *`) — core toolchain,
+  already gated by upstream systems (CI, branch protection, review)
+- **Narrow patterns** (`python -m pytest *`, `python scripts/*`, `tmux send-keys *`)
+  — specific subcommands, not open-ended
+- **Benign patterns** (`cat *`, `ls *`, `echo *`, `wc *`) — read-only or
+  low-risk operations
+
+Patterns that were intentionally excluded:
+- `python *` (too broad — covers `python -c "<arbitrary>"`)
+- `tmux *` (too broad — covers `tmux kill-server`, `tmux kill-session`)
+
+Agents that need unlisted commands should use `uv run` (which matches
+`Bash(uv run *)`) or accept the silent denial and adapt.
+
 ## Safety Net: Git Audit Trail
 
 The safety mechanism is **not** the permission gate — it is the git history.
@@ -76,4 +108,6 @@ logic (e.g., `pre-bash-dispatch.sh`).
 - #1708 — Original permission stall fix (SKILL.md)
 - #1927 — Expanded auto-accept to full infrastructure set
 - #1931 — This documentation follow-up
+- #2254 — Switch to dontAsk + fill Bash pattern gaps
+- #2304 — Narrow broad Bash auto-accept patterns
 - `.claude/rules/75_worktree_protection.md` — Related infrastructure protection

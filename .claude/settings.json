@@ -127,7 +127,7 @@
     ]
   },
   "permissions": {
-    "defaultMode": "acceptEdits",
+    "defaultMode": "dontAsk",
     "allow": [
       "Edit(.claude/skills/**)",
       "Write(.claude/skills/**)",
@@ -169,9 +169,16 @@
       "Bash(echo *)",
       "Bash(env *)",
       "Bash(pwd *)",
-      "Bash(python *)",
+      "Bash(python -m pytest *)",
+      "Bash(python scripts/*)",
+      "Bash(python experiments/*)",
+      "Bash(python -c *)",
+      "Bash(python3 -c *)",
       "Bash(sleep *)",
-      "Bash(tmux *)",
+      "Bash(tmux send-keys *)",
+      "Bash(tmux capture-pane *)",
+      "Bash(tmux list-*)",
+      "Bash(tmux display-message *)",
       "Bash(ls *)",
       "Bash(wc *)",
       "Bash(mkdir *)"
