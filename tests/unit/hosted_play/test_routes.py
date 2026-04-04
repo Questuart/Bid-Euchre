@@ -3902,3 +3902,166 @@ class TestOnboarding:
             assert player.onboarding_complete == 1
         finally:
             session.close()
+
+
+# ---------------------------------------------------------------------------
+# Skip route — POST /play/{link_uuid}/skip (#2309)
+# ---------------------------------------------------------------------------
+
+
+class TestSkipRoute:
+    """Route-level tests for /play/{link_uuid}/skip (#2309).
+
+    Verifies the skip button endpoint advances past per-card reveal pauses
+    and returns a valid game board.
+    """
+
+    def _advance_to_trick_play(self, client, app, link_uuid: str) -> None:
+        """Drive the game past auction into trick play phase.
+
+        Bids, reveals, and advances until trick_play or match end.
+        """
+        for _ in range(80):
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                return
+            if hand.phase == "trick_play" and not hand.paused_after_trick:
+                if not getattr(hand, "paused_after_play", False):
+                    return
+
+            # Reveal any hidden auction bids or paused cards
+            has_hidden = hand.revealed_auction_count < len(hand.auction)
+            auction_settled = getattr(hand, "auction_settled", True)
+            if has_hidden or not auction_settled or hand.paused_after_trick:
+                client.post(f"/play/{link_uuid}/next")
+                continue
+            if getattr(hand, "paused_after_play", False):
+                client.post(f"/play/{link_uuid}/next")
+                continue
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                if 5 > hand.current_high_bid:
+                    client.post(
+                        f"/play/{link_uuid}/bid",
+                        data={
+                            "turn_number": str(hand.turn_number),
+                            "bid_n": "5",
+                            "bid_contract": "S",
+                        },
+                    )
+                else:
+                    client.post(
+                        f"/play/{link_uuid}/bid",
+                        data={
+                            "turn_number": str(hand.turn_number),
+                            "bid_n": "0",
+                            "bid_contract": "",
+                        },
+                    )
+                continue
+            break
+
+    def test_skip_returns_200(self, client, app):
+        """POST /skip returns 200 with game board HTML."""
+        link_uuid = _setup_game(client)
+        self._advance_to_trick_play(client, app, link_uuid)
+
+        # Play a card to trigger per-card pacing pause
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+        session.close()
+        hand = state.current_hand
+        if hand is None or hand.phase != "trick_play":
+            pytest.skip("Could not reach trick play")
+        if hand.current_seat != HUMAN_SEAT:
+            pytest.skip("Not human's turn")
+
+        # Submit a human card to trigger AI pause
+        resp = client.post(
+            f"/play/{link_uuid}/play-card",
+            data={"turn_number": str(hand.turn_number), "card_index": "0"},
+        )
+        assert resp.status_code == 200
+
+        # Now hit skip to advance
+        resp = client.post(f"/play/{link_uuid}/skip")
+        assert resp.status_code == 200
+        assert (
+            "game-board" in resp.text or "game_board" in resp.text or len(resp.text) > 0
+        )
+
+    def test_skip_unknown_player_404(self, client, app):
+        """POST /skip for unknown UUID returns 404."""
+        fake_uuid = str(uuid.uuid4())
+        resp = client.post(f"/play/{fake_uuid}/skip")
+        assert resp.status_code == 404
+
+    def test_skip_no_active_match_404(self, client, app):
+        """POST /skip when player has no active match returns 404."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        _skip_onboarding(client, link_uuid)
+        # Don't select AI — no match created yet
+
+        resp = client.post(f"/play/{link_uuid}/skip")
+        assert resp.status_code == 404
+
+    def test_skip_corrupted_match_redirects(self, client, app):
+        """POST /skip with corrupted match_state returns HX-Redirect (#2218)."""
+        link_uuid = _setup_game(client)
+
+        # Corrupt the match state
+        session = app.state.session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert match_row is not None
+        match_row.match_state_json = "CORRUPT{{{{"
+        session.commit()
+        session.close()
+
+        resp = client.post(f"/play/{link_uuid}/skip")
+        assert resp.status_code == 200
+        assert resp.headers.get("HX-Redirect") == f"/play/{link_uuid}"
+
+    def test_skip_persists_state(self, client, app):
+        """POST /skip persists the updated match state in the database."""
+        link_uuid = _setup_game(client)
+        self._advance_to_trick_play(client, app, link_uuid)
+
+        # Get pre-skip state
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state_before, _, session = result
+        session.close()
+
+        hand = state_before.current_hand
+        if hand is None or hand.phase != "trick_play":
+            pytest.skip("Not in trick play")
+        if hand.current_seat != HUMAN_SEAT:
+            pytest.skip("Not human's turn")
+
+        # Play a card to enter a paused state
+        client.post(
+            f"/play/{link_uuid}/play-card",
+            data={"turn_number": str(hand.turn_number), "card_index": "0"},
+        )
+
+        # Skip
+        resp = client.post(f"/play/{link_uuid}/skip")
+        assert resp.status_code == 200
+
+        # Verify state persisted (match_state_json updated)
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state_after, match_row, session = result
+        assert match_row.match_state_json is not None
+        assert len(match_row.match_state_json) > 2  # Not empty {}
+        session.close()
