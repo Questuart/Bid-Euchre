@@ -468,6 +468,95 @@ class TestPerCardPacing:
         assert restored.current_hand is not None
         assert restored.current_hand.paused_after_play is False
 
+    def test_submit_human_card_pauses_without_ai_advance(
+        self, engine: MatchEngine
+    ) -> None:
+        """submit_human_card sets paused_after_play without advancing AI (#2405).
+
+        When the human plays a card that does NOT complete the trick, the
+        engine must:
+        1. Set ``paused_after_play = True``
+        2. NOT call ``_advance_ai()`` — no AI cards are played
+        3. Return with only the human's card added to the trick
+        """
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Have the human win the auction so they lead (guaranteeing their
+        # card won't complete the trick since they play first).
+        while hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            if hand.current_high_bid < 6:
+                state = engine.submit_human_bid(state, BidAction.bid(6, "S"))
+            else:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+            hand = state.current_hand
+            if hand is None:
+                pytest.skip("Match ended during auction")
+
+        # Advance through auction reveals and pauses to reach the human's
+        # first trick play turn.
+        for _ in range(80):
+            hand = state.current_hand
+            if hand is None:
+                break
+            if hand.phase != "trick_play":
+                break
+            if hand.paused_after_play:
+                state = engine.resume_after_play(state)
+                continue
+            if hand.paused_after_trick:
+                state = engine.resume_ai(state)
+                continue
+            if hand.current_seat == HUMAN_SEAT:
+                break  # Found the human's turn
+            break
+
+        hand = state.current_hand
+        if (
+            hand is None
+            or hand.phase != "trick_play"
+            or hand.current_seat != HUMAN_SEAT
+        ):
+            pytest.skip("Could not reach human trick-play turn")
+
+        trick = hand.current_trick
+        pre_plays = len(trick.plays) if trick else 0
+        pre_tricks = len(hand.completed_tricks)
+
+        # --- Act ---
+        legal = engine.get_legal_plays(state)
+        state = engine.submit_human_card(state, legal[0])
+
+        # --- Assert ---
+        hand_after = state.current_hand
+        assert hand_after is not None
+        assert hand_after.phase == "trick_play"
+
+        # Trick must NOT have completed (human didn't play last)
+        assert (
+            len(hand_after.completed_tricks) == pre_tricks
+        ), "Expected trick to remain incomplete after human plays mid-trick"
+
+        # 1. paused_after_play is set
+        assert (
+            hand_after.paused_after_play is True
+        ), "submit_human_card must set paused_after_play when trick is incomplete"
+
+        # 2. Only the human's card was added — no AI advancement
+        trick_after = hand_after.current_trick
+        assert trick_after is not None
+        post_plays = len(trick_after.plays)
+        assert post_plays == pre_plays + 1, (
+            f"Expected {pre_plays + 1} plays (human only), got {post_plays}; "
+            "AI should NOT advance after human card play"
+        )
+
+        # 3. No AI action events were generated
+        assert (
+            engine.last_ai_events == []
+        ), "submit_human_card must not generate AI events"
+
 
 # ---------------------------------------------------------------------------
 # Test: skip_to_next_decision (#2309)
