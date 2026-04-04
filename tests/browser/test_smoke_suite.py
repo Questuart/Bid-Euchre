@@ -158,10 +158,14 @@ def test_start_game_bid_play_verify_score(
     # Verify score bar is present during play
     score_bar = page.locator("#score-bar")
     if score_bar.count() > 0:
-        # Score bar should contain "You:" and "AI:" labels
+        # Score bar should contain "Your Team:" and "Opponent:" labels
         score_text = score_bar.inner_text()
-        assert "You:" in score_text, f"Expected 'You:' in score bar, got: {score_text}"
-        assert "AI:" in score_text, f"Expected 'AI:' in score bar, got: {score_text}"
+        assert (
+            "Your Team:" in score_text
+        ), f"Expected 'Your Team:' in score bar, got: {score_text}"
+        assert (
+            "Opponent:" in score_text
+        ), f"Expected 'Opponent:' in score bar, got: {score_text}"
 
     # If in trick play, play a card
     legal_cards = page.locator(".card--legal")

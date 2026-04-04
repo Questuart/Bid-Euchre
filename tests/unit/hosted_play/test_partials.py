@@ -179,22 +179,9 @@ class TestModelSelect:
             models=models,
             default_model_id="bud_bot",
         )
-        assert "quick-start-guide" in html
-        assert "New to Bid Euchre?" in html
-        assert "green border" in html
-        assert "/guide/abc-123" in html
-
-    def test_quick_start_guide_link_uses_link_uuid(self, env):
-        models = [ModelStub("bud_bot", "Bud Bot", "Gradient-boosted bidder")]
-        tmpl = env.get_template("partials/model_select.html")
-        html = tmpl.render(
-            link_uuid="my-uuid",
-            nickname="Bob",
-            models=models,
-            default_model_id="bud_bot",
-        )
-        assert "/guide/my-uuid" in html
-        assert "full guide" in html
+        # Quick-start guide was removed (#2288.8) — model select shows
+        # only the AI picker now; the Help / Guide tab serves this purpose.
+        assert "quick-start-guide" not in html
 
 
 # ---------------------------------------------------------------------------
@@ -949,8 +936,8 @@ class TestScore:
         assert "15" in html
         assert "-3" in html
         assert "Current Game Score" in html
-        assert "You:" in html
-        assert "AI:" in html
+        assert "Your Team:" in html
+        assert "Opponent:" in html
         # Hand details in collapsed dropdown
         assert "Hand 5" in html
         assert "Hand Details" in html
@@ -2590,7 +2577,7 @@ class TestAccessibilityScore:
             dealer_seat=3,
             phase="auction",
         )
-        assert "Current game score: You 15, AI -3" in html
+        assert "Current game score: Your Team 15, Opponent -3" in html
 
 
 class TestAccessibilityResults:
