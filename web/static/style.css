@@ -39,6 +39,8 @@
     /* Team colors — consistent across score, trick count, contract bar */
     --team-human: #66bb6a;
     --team-ai: #42a5f5;
+    /* AI card delay — time before an AI card is revealed (#2330) */
+    --ai-card-delay: 0.8s;
 }
 
 *,
@@ -266,6 +268,36 @@ main {
     box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.8);
     border: 2px solid #ffd700;
     animation: winning-card-pulse 2s ease-in-out infinite;
+}
+
+/* AI card delay — fade-in animation when AI plays (#2330) */
+.card--ai-delayed {
+    animation: ai-card-reveal var(--ai-card-delay, 0.8s) ease-out both;
+}
+
+@keyframes ai-card-reveal {
+    0% {
+        opacity: 0;
+        transform: scale(0.85) translateY(-4px);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Delay the Next button until the AI card finishes its reveal animation */
+.trick-area--ai-revealing ~ .next-controls {
+    opacity: 0;
+    pointer-events: none;
+    animation: next-btn-appear 0.3s ease-out var(--ai-card-delay, 0.8s) forwards;
+}
+
+@keyframes next-btn-appear {
+    to {
+        opacity: 1;
+        pointer-events: auto;
+    }
 }
 
 /* Bower badge — small "B" indicator on bower cards (#2204) */

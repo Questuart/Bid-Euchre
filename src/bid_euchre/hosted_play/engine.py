@@ -261,12 +261,13 @@ class MatchEngine:
         return state
 
     def submit_human_card(self, state: MatchState, card_index: int) -> MatchState:
-        """Process the human's card play, then auto-advance AI.
+        """Process the human's card play and pause for pacing.
 
-        If the human's card completes a trick, pauses **before** AI
-        auto-advance so the UI can show the trick result.  Otherwise
-        auto-advances AI until the next trick completion or the human's
-        next turn.
+        Always pauses after the human plays so the UI can show the card
+        on the table before AI takes its turn.  If the human's card
+        completes a trick, sets ``paused_after_trick``; otherwise sets
+        ``paused_after_play``.  The user must press Next to trigger AI
+        advancement (via ``resume_after_play`` or ``resume_ai``).
         """
         self.last_ai_events = []
         hand = state.current_hand
@@ -285,9 +286,11 @@ class MatchEngine:
                 hand_after.paused_after_trick = True
             return state
 
-        # Trick not yet complete — auto-advance AI to finish the trick
-        # (and pause once that trick completes).
-        state = self._advance_ai(state)
+        # Trick not yet complete — pause so the human can see their card
+        # on the table.  AI advancement happens when the user presses Next
+        # (resume_after_play).
+        if hand_after is not None and hand_after.phase == "trick_play":
+            hand_after.paused_after_play = True
         return state
 
     def submit_exchange_selection(

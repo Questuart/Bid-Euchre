@@ -249,6 +249,14 @@ def _awaiting_next(hand) -> bool:
     )
 
 
+def _last_played_seat(hand) -> int | None:
+    """Return the seat that played the most recent card in the active trick."""
+    trick = hand.current_trick
+    if trick is not None and trick.plays:
+        return trick.plays[-1][0]
+    return None
+
+
 def _next_reason(hand) -> str | None:
     """Human-readable label for the current reveal pause."""
     if _has_hidden_auction(hand):
@@ -258,6 +266,9 @@ def _next_reason(hand) -> str | None:
     if _has_pending_exchange(hand):
         return "Review the moon exchange."
     if hand.phase == "trick_play" and hand.paused_after_play:
+        last_seat = _last_played_seat(hand)
+        if last_seat == HUMAN_SEAT:
+            return "Your card is played. Press Next to continue."
         return "Reveal the next card."
     if hand.phase == "trick_play" and hand.paused_after_trick:
         return "Continue to the next trick."
@@ -526,6 +537,17 @@ def _build_game_context(
         ctx["show_skip"] = hand.phase == "trick_play" and (
             hand.paused_after_play or hand.paused_after_trick
         )
+
+        # AI card delay — flag tells the template to add a reveal
+        # animation on the last-played card when an AI just played.
+        last_seat = _last_played_seat(hand)
+        ctx["last_played_seat"] = last_seat
+        ctx["ai_just_played"] = (
+            hand.phase == "trick_play"
+            and hand.paused_after_play
+            and last_seat is not None
+            and last_seat != HUMAN_SEAT
+        )
         ctx["winning_bid"] = None if _has_hidden_auction(hand) else hand.winning_bid
         ctx["bidder_seat"] = None if _has_hidden_auction(hand) else hand.bidder_seat
         ctx["current_high_bid"] = (
@@ -605,6 +627,8 @@ def _build_game_context(
         ctx["show_next"] = False
         ctx["next_reason"] = None
         ctx["show_bid_panel"] = False
+        ctx["last_played_seat"] = None
+        ctx["ai_just_played"] = False
 
     return ctx
 
