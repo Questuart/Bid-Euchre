@@ -2370,10 +2370,6 @@ main {
         display: none;
     }
 
-    .ai-hand-block--vertical .ai-card-count {
-        font-size: 0.58rem;
-    }
-
     /* Top partner — smaller card backs */
     .compass-top .card-back {
         width: 28px;
@@ -2572,18 +2568,6 @@ main {
     /* Side hand labels — ultra-compact on small phones */
     .ai-hand-block--vertical .ai-seat-label {
         font-size: 0.55rem;
-    }
-
-    .ai-hand-block--vertical .ai-card-count {
-        font-size: 0.55rem;
-        writing-mode: vertical-lr;
-        text-orientation: mixed;
-    }
-
-    .ai-card-count {
-        font-size: 0.65rem;
-        padding: 0.15rem 0.35rem;
-        line-height: 1;
     }
 
     /* Compass grid — tighter on small phones */
