@@ -996,6 +996,29 @@ main {
     cursor: help;
 }
 
+/* Visual indicator legend items — mirror the actual table styling so the
+   legend visually matches what the player sees in the table. */
+.trick-history__legend--visual {
+    text-align: right;
+}
+
+.trick-history__legend-item {
+    cursor: help;
+}
+
+.trick-history__legend-item--leader {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}
+
+.trick-history__legend-item--winner {
+    font-weight: 700;
+    background-color: rgba(76, 175, 80, 0.08);
+    padding: 0 0.2rem;
+    border-radius: 2px;
+}
+
 /* Inline card rendering (for trick history table) —
    rank text stays default (white); suit icon colored via .suit-icon utility
    (#2235, #2289).  Leader underline and winner highlight remain via cell

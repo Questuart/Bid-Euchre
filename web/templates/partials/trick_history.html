@@ -52,6 +52,10 @@
                 {% endfor %}
             </tbody>
         </table>
+        <p class="trick-history__legend trick-history__legend--visual" aria-label="Visual indicator legend">
+            <span class="trick-history__legend-item trick-history__legend-item--leader" title="Dotted underline marks the player who led the trick">Led</span> = led trick&ensp;
+            <span class="trick-history__legend-item trick-history__legend-item--winner" title="Bold highlight marks the player who won the trick">Won</span> = won trick
+        </p>
         {% if contract_type | default(None, true) == "suit" %}
         <p class="trick-history__legend" aria-label="Bower abbreviation legend">
             <abbr title="Right Bower — Jack of trump, highest card">RB</abbr> = Right Bower&ensp;

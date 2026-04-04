@@ -3449,7 +3449,10 @@ class TestTrickHistory:
             tricks_team1=1,
             contract_type="high",
         )
-        assert "trick-history__legend" not in html
+        assert "Right Bower" not in html
+        assert "Left Bower" not in html
+        # Visual indicator legend is always present (#2385)
+        assert "trick-history__legend--visual" in html
 
     def test_bower_legend_hidden_for_low_contract(self, env, completed_tricks):
         """No bower legend when contract_type is 'low' (no bowers) (#2288)."""
@@ -3460,7 +3463,10 @@ class TestTrickHistory:
             tricks_team1=1,
             contract_type="low",
         )
-        assert "trick-history__legend" not in html
+        assert "Right Bower" not in html
+        assert "Left Bower" not in html
+        # Visual indicator legend is always present (#2385)
+        assert "trick-history__legend--visual" in html
 
     def test_bower_legend_hidden_when_no_contract(self, env, completed_tricks):
         """No bower legend when contract_type is unset (#2288)."""
@@ -3470,7 +3476,30 @@ class TestTrickHistory:
             tricks_team0=1,
             tricks_team1=1,
         )
-        assert "trick-history__legend" not in html
+        assert "Right Bower" not in html
+        assert "Left Bower" not in html
+        # Visual indicator legend is always present (#2385)
+        assert "trick-history__legend--visual" in html
+
+    def test_visual_legend_always_shown(self, env, completed_tricks):
+        """Visual indicator legend (led/won) always appears (#2385)."""
+        tmpl = env.get_template("partials/trick_history.html")
+        for ctype in ["suit", "high", "low", None]:
+            ctx = dict(
+                completed_tricks=completed_tricks,
+                tricks_team0=1,
+                tricks_team1=1,
+            )
+            if ctype is not None:
+                ctx["contract_type"] = ctype
+            html = tmpl.render(**ctx)
+            assert (
+                "trick-history__legend--visual" in html
+            ), f"Visual legend missing for contract_type={ctype!r}"
+            assert "led trick" in html
+            assert "won trick" in html
+            assert "legend-item--leader" in html
+            assert "legend-item--winner" in html
 
 
 # ---------------------------------------------------------------------------
