@@ -120,18 +120,21 @@ multi-line string, tmux wraps it in `\e[200~...\e[201~` escape sequences. If
 `Enter` is appended in the same `send-keys` call, it is consumed inside the
 paste bracket and the text is **pasted but never submitted**.
 
-**Two-step pattern (required for reliable dispatch):**
+**Three-step pattern (required for reliable dispatch):**
 ```bash
-# Step 1: send the text (do NOT append Enter)
+# Step 1: send Escape to cancel any in-progress input (#2352)
+tmux send-keys -t <pane> Escape
+sleep 0.1
+# Step 2: send the text (do NOT append Enter)
 tmux send-keys -t <pane> 'message text'
-# Step 2: wait briefly, then send Enter separately
+# Step 3: wait briefly, then send Enter separately
 sleep 1
 tmux send-keys -t <pane> Enter
 ```
 
 This applies to all manual `tmux send-keys` invocations from the orchestrator.
-The `task dispatch` command uses `nudge_pane()` internally — see issue #1834
-for the code-level fix tracking.
+The `task dispatch` command uses `nudge_pane()` internally — see issues #1834
+(paste bracketing) and #2352 (escape-before-send).
 
 ## Gotchas
 

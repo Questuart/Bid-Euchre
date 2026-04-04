@@ -11,6 +11,7 @@ import pytest
 
 from bid_euchre.ops.worker_pool import (
     _CLEANUP_PROCESS_PATTERNS,
+    _ESCAPE_CANCEL_DELAY,
     _PASTE_BRACKET_DELAY,
     DEFAULT_TMUX_SESSION,
     IDLE_PARK_MINUTES,
@@ -1901,7 +1902,13 @@ class TestNudgePane:
         assert result.error is None
         assert "/start-task pkt123" in result.reason
         assert "steward:author-a" in result.reason
-        assert mock_run.call_count == 2
+        assert mock_run.call_count == 3
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "Escape"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
         mock_run.assert_any_call(
             ["tmux", "send-keys", "-t", "steward:author-a", "/start-task pkt123"],
             check=True,
@@ -1914,8 +1921,10 @@ class TestNudgePane:
             capture_output=True,
             timeout=5,
         )
-        # Verify paste-bracket delay between text and Enter (#1834)
-        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
+        # Verify escape-cancel delay (#2352) + paste-bracket delay (#1834)
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_any_call(_ESCAPE_CANCEL_DELAY)
+        mock_sleep.assert_any_call(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="custom:author-b")
     @patch(f"{_WORKER_POOL}.time.sleep")
@@ -1926,7 +1935,13 @@ class TestNudgePane:
         mock_run.return_value = MagicMock(returncode=0)
         result = nudge_pane("author-b", "pkt456", tmux_session="custom")
         assert result.executed is True
-        assert mock_run.call_count == 2
+        assert mock_run.call_count == 3
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "custom:author-b", "Escape"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
         mock_run.assert_any_call(
             ["tmux", "send-keys", "-t", "custom:author-b", "/start-task pkt456"],
             check=True,
@@ -1939,7 +1954,9 @@ class TestNudgePane:
             capture_output=True,
             timeout=5,
         )
-        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_any_call(_ESCAPE_CANCEL_DELAY)
+        mock_sleep.assert_any_call(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
@@ -1991,10 +2008,9 @@ class TestNudgePane:
             result = nudge_pane("author-a", "pkt789", runtime_dir=tmp_path)
             assert result.executed is True
             assert "steward:platform.1" in result.reason
-            first_call = mock_run.call_args_list[0][0][0]
-            second_call = mock_run.call_args_list[1][0][0]
-            assert first_call[3] == "steward:platform.1"
-            assert second_call[3] == "steward:platform.1"
+            # All 3 calls (Escape, text, Enter) target the same pane
+            for call in mock_run.call_args_list:
+                assert call[0][0][3] == "steward:platform.1"
 
     def test_nudge_uses_default_runtime_registry(
         self,
@@ -2021,12 +2037,13 @@ class TestPasteBracketDelay:
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     def test_nudge_call_order(self, mock_resolve: MagicMock) -> None:
-        """nudge_pane sends text, sleeps, then sends Enter — in that order."""
+        """nudge_pane sends Escape, sleeps, text, sleeps, Enter — in that order."""
         call_log: list[str] = []
 
         def track_run(cmd: list[str], **_kw: object) -> MagicMock:
-            # Record whether we're sending text or Enter
-            if cmd[-1] == "Enter":
+            if cmd[-1] == "Escape":
+                call_log.append("escape")
+            elif cmd[-1] == "Enter":
                 call_log.append("enter")
             else:
                 call_log.append("text")
@@ -2042,15 +2059,23 @@ class TestPasteBracketDelay:
             result = nudge_pane("author-a", "pkt123")
             assert result.executed is True
 
-        assert call_log == ["text", f"sleep({_PASTE_BRACKET_DELAY})", "enter"]
+        assert call_log == [
+            "escape",
+            f"sleep({_ESCAPE_CANCEL_DELAY})",
+            "text",
+            f"sleep({_PASTE_BRACKET_DELAY})",
+            "enter",
+        ]
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     def test_clear_session_call_order(self, mock_resolve: MagicMock) -> None:
-        """clear_session sends /clear, sleeps, then sends Enter — in that order."""
+        """clear_session sends Escape, sleeps, /clear, sleeps, Enter — in order."""
         call_log: list[str] = []
 
         def track_run(cmd: list[str], **_kw: object) -> MagicMock:
-            if cmd[-1] == "Enter":
+            if cmd[-1] == "Escape":
+                call_log.append("escape")
+            elif cmd[-1] == "Enter":
                 call_log.append("enter")
             else:
                 call_log.append("text")
@@ -2066,7 +2091,13 @@ class TestPasteBracketDelay:
             result = clear_session("author-a")
             assert result.executed is True
 
-        assert call_log == ["text", f"sleep({_PASTE_BRACKET_DELAY})", "enter"]
+        assert call_log == [
+            "escape",
+            f"sleep({_ESCAPE_CANCEL_DELAY})",
+            "text",
+            f"sleep({_PASTE_BRACKET_DELAY})",
+            "enter",
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -2414,7 +2445,13 @@ class TestClearSession:
         assert result.action == "clear_session"
         assert result.error is None
         assert "/clear" in result.reason
-        assert mock_run.call_count == 2
+        assert mock_run.call_count == 3
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "Escape"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
         mock_run.assert_any_call(
             ["tmux", "send-keys", "-t", "steward:author-a", "/clear"],
             check=True,
@@ -2427,8 +2464,10 @@ class TestClearSession:
             capture_output=True,
             timeout=5,
         )
-        # Verify paste-bracket delay between text and Enter (#1834)
-        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
+        # Verify escape-cancel delay (#2352) + paste-bracket delay (#1834)
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_any_call(_ESCAPE_CANCEL_DELAY)
+        mock_sleep.assert_any_call(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="custom:author-b")
     @patch(f"{_WORKER_POOL}.time.sleep")
@@ -2439,11 +2478,13 @@ class TestClearSession:
         mock_run.return_value = MagicMock(returncode=0)
         result = clear_session("author-b", tmux_session="custom")
         assert result.executed is True
-        first_call = mock_run.call_args_list[0][0][0]
-        second_call = mock_run.call_args_list[1][0][0]
-        assert first_call[3] == "custom:author-b"
-        assert second_call[3] == "custom:author-b"
-        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
+        # All 3 calls (Escape, /clear, Enter) target the custom session
+        assert mock_run.call_count == 3
+        for call in mock_run.call_args_list:
+            assert call[0][0][3] == "custom:author-b"
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_any_call(_ESCAPE_CANCEL_DELAY)
+        mock_sleep.assert_any_call(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
