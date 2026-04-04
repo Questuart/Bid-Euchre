@@ -4056,10 +4056,24 @@ class TestSkipRoute:
         resp = client.post(f"/play/{link_uuid}/skip")
         assert resp.status_code == 200
 
-        # Verify state persisted (match_state_json updated)
+        # Verify state persisted: round-trip the deserialized state and
+        # assert meaningful game properties (not just non-empty JSON).
         result = get_match_state(app, link_uuid)
         assert result is not None
         state_after, match_row, session = result
         assert match_row.match_state_json is not None
         assert len(match_row.match_state_json) > 2  # Not empty {}
+        # The persisted state must represent a valid, ongoing (or complete)
+        # game — verify the deserialized state has real game properties.
+        assert state_after.status in ("active", "complete")
+        hand_after = state_after.current_hand
+        if state_after.status == "active":
+            assert hand_after is not None, "Active match must have a current hand"
+            assert hand_after.phase in (
+                "auction",
+                "trick_play",
+                "complete",
+                "redeal",
+                "moon_exchange",
+            )
         session.close()

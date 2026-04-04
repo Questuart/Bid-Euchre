@@ -604,16 +604,32 @@ class TestSkipToNextDecision:
         assert {"fake": "event"} not in engine.last_ai_events
 
     def test_skip_at_hand_end(self, engine: MatchEngine) -> None:
-        """skip_to_next_decision returns immediately if hand is None."""
+        """skip_to_next_decision returns immediately if hand is complete/None."""
         state = engine.start_match(SEED, "heuristic")
 
-        # Play a full hand to get to the inter-hand boundary
+        # Play a full hand to completion
         state = _play_full_hand(engine, state)
+        hand = state.current_hand
 
-        # If current_hand is None, skip is a no-op
-        if state.current_hand is None:
+        # After _play_full_hand, the hand may be phase="complete" (hand
+        # finished but not yet advanced) or still in trick_play (human
+        # sitting out).  If it's complete, advance to get current_hand=None.
+        if hand is not None and hand.phase == "complete":
+            state = engine.advance_to_next_hand(state)
+
+        # Now either current_hand is None (inter-hand) or status=="complete"
+        # (match over).  In both cases skip should be a no-op.
+        if state.status == "complete":
+            state_after = engine.skip_to_next_decision(state)
+            assert state_after.status == "complete"
+        elif state.current_hand is None:
             state_after = engine.skip_to_next_decision(state)
             assert state_after.current_hand is None
+        else:
+            # Hand is still in progress (e.g. redeal or next hand started)
+            # — skip should still be safe to call
+            state_after = engine.skip_to_next_decision(state)
+            assert state_after is not None
 
     def test_skip_at_match_complete(self, engine: MatchEngine) -> None:
         """skip_to_next_decision returns immediately if match is complete."""
