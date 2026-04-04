@@ -40,18 +40,24 @@ if [[ -f "$INHIBIT_FILE" ]]; then
 fi
 
 # --------------------------------------------------------------------------
-# Emit directive for the orchestrator agent
+# Emit directive for the orchestrator agent (JSON additionalContext format)
 # --------------------------------------------------------------------------
-cat <<'DIRECTIVE'
-FLEET-CHECK AUTO-START: The orchestrator fleet-check cron must be running.
-
-Action required:
-1. Run CronList to check for an existing fleet-check cron
-2. If a fleet-check cron already exists, no action needed
-3. If no fleet-check cron exists, run: /loop 8m /fleet-check
-
-This ensures periodic inbox polling, CPU checks, task completion detection,
-and lane health monitoring continue after /clear or session restart.
-DIRECTIVE
+# The Claude Code hook framework requires JSON output with an additionalContext
+# field.  Plain text is logged as "OK" and never reaches the agent.  Refs #2333.
+python3 -c "
+import json, sys
+msg = (
+    'FLEET-CHECK AUTO-START: The orchestrator fleet-check cron must be running.\n'
+    '\n'
+    'Action required:\n'
+    '1. Run CronList to check for an existing fleet-check cron\n'
+    '2. If a fleet-check cron already exists, no action needed\n'
+    '3. If no fleet-check cron exists, run: /loop 8m /fleet-check\n'
+    '\n'
+    'This ensures periodic inbox polling, CPU checks, task completion detection,\n'
+    'and lane health monitoring continue after /clear or session restart.'
+)
+json.dump({'additionalContext': msg}, sys.stdout)
+"
 
 exit 0

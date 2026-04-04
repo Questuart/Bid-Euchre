@@ -1,12 +1,14 @@
 """Tests for fleet-check-autostart.sh SessionStart hook.
 
-Validates the two guards added in #2375:
-1. Only fires when CLAUDE_AGENT_NAME=orchestrator (no directory fallback).
-2. Skips when the inhibit marker file exists (respects intentional park).
+Validates:
+1. Only fires when CLAUDE_AGENT_NAME=orchestrator (no directory fallback) (#2375).
+2. Skips when the inhibit marker file exists (respects intentional park) (#2375).
+3. Output is valid JSON with additionalContext key (#2333).
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -48,7 +50,9 @@ class TestOrchestratorGuard:
     def test_orchestrator_gets_directive(self):
         rc, stdout = _run_autostart(agent_name="orchestrator")
         assert rc == 0
-        assert "FLEET-CHECK AUTO-START" in stdout
+        data = json.loads(stdout)
+        assert "additionalContext" in data
+        assert "FLEET-CHECK AUTO-START" in data["additionalContext"]
 
     def test_non_orchestrator_skips(self):
         rc, stdout = _run_autostart(agent_name="author-a")
@@ -100,4 +104,28 @@ class TestInhibitMarker:
             agent_name="orchestrator", project_dir=str(tmp_path)
         )
         assert rc == 0
-        assert "FLEET-CHECK AUTO-START" in stdout
+        data = json.loads(stdout)
+        assert "FLEET-CHECK AUTO-START" in data["additionalContext"]
+
+
+class TestJsonOutput:
+    """Hook output must be valid JSON with additionalContext (#2333)."""
+
+    def test_output_is_valid_json(self):
+        rc, stdout = _run_autostart(agent_name="orchestrator")
+        assert rc == 0
+        data = json.loads(stdout)
+        assert isinstance(data, dict)
+
+    def test_output_has_additional_context_key(self):
+        rc, stdout = _run_autostart(agent_name="orchestrator")
+        assert rc == 0
+        data = json.loads(stdout)
+        assert set(data.keys()) == {"additionalContext"}
+
+    def test_additional_context_contains_action_items(self):
+        rc, stdout = _run_autostart(agent_name="orchestrator")
+        assert rc == 0
+        ctx = json.loads(stdout)["additionalContext"]
+        assert "CronList" in ctx
+        assert "/loop 8m /fleet-check" in ctx
