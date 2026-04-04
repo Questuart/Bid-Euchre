@@ -63,8 +63,23 @@
     <span class="contract-bar__auction-status">
         {% if current_high_bid is defined and current_high_bid is not none and current_high_bid > 0 %}
             High Bid: {{ current_high_bid }}
+            {% if high_bidder_seat is defined and high_bidder_seat is not none %}
+                by {{ seat_labels.get(high_bidder_seat, "Seat " ~ high_bidder_seat) }}
+            {% endif %}
         {% else %}
             Auction in Progress
+        {% endif %}
+    </span>
+</div>
+{% elif phase is defined and phase == "trump_selection" %}
+{# Preserve contract bar during trump selection transition #}
+<div class="contract-bar" role="status" aria-label="Trump selection">
+    <span class="contract-bar__header">Selecting Trump:</span>
+    <span class="contract-bar__auction-status">
+        {% if winning_bid is not none %}
+            Bid: {{ winning_bid }}
+        {% else %}
+            Awaiting selection
         {% endif %}
     </span>
 </div>

@@ -232,10 +232,12 @@
         });
 
         // After HTMX swaps tab content, reinitialize inline scripts
+        // and restore persisted UI state (e.g. trick-history open/closed).
         document.body.addEventListener('htmx:afterSwap', function (event) {
             var target = event.target;
             if (target && target.id === 'tab-content') {
                 reinitTabContent();
+                restoreTrickHistoryState();
             }
         });
 

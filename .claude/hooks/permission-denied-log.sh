@@ -29,10 +29,36 @@ REASON=$(echo "$INPUT" | jq -r '.reason // "no reason provided"' 2>/dev/null || 
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null || echo '{}')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null || echo "unknown")
 
-# Derive lane name from project dir
+# Derive lane name — prefer CLAUDE_AGENT_NAME, fall back to project dir parsing.
+# Use canonical lane IDs (e.g. "author-a" not "author") matching post-merge-notify.sh.
 LANE="unknown"
-if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
-    LANE=$(basename "$CLAUDE_PROJECT_DIR" | sed 's/^Bid-Euchre-steward-//' | sed 's/^Bid-Euchre/main/')
+if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
+    LANE=$(echo "$CLAUDE_AGENT_NAME" | sed 's/^steward-//')
+elif [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    DIR_NAME=$(basename "$CLAUDE_PROJECT_DIR")
+    case "$DIR_NAME" in
+        *steward-author-scratch) LANE="author-scratch" ;;
+        *steward-author-b)       LANE="author-b" ;;
+        *steward-author-c)       LANE="author-c" ;;
+        *steward-author-d)       LANE="author-d" ;;
+        *steward-author)         LANE="author-a" ;;
+        *steward-brws-author-a)  LANE="brws-author-a" ;;
+        *steward-brws-author-b)  LANE="brws-author-b" ;;
+        *steward-brws-author-c)  LANE="brws-author-c" ;;
+        *steward-brws-author-d)  LANE="brws-author-d" ;;
+        *steward-analyst-b)      LANE="analyst-b" ;;
+        *steward-analyst-c)      LANE="analyst-c" ;;
+        *steward-analyst-d)      LANE="analyst-d" ;;
+        *steward-analyst)        LANE="analyst-a" ;;
+        *steward-flex-a)         LANE="flex-a" ;;
+        *steward-flex-b)         LANE="flex-b" ;;
+        *steward-flex-c)         LANE="flex-c" ;;
+        *steward-flex-d)         LANE="flex-d" ;;
+        *steward-review)         LANE="review" ;;
+        *steward-ops)            LANE="ops" ;;
+        Bid-Euchre)              LANE="main" ;;
+        *)                       LANE=$(echo "$DIR_NAME" | sed 's/^Bid-Euchre-steward-//' | sed 's/^Bid-Euchre/main/') ;;
+    esac
 fi
 
 # Ensure runtime directory exists
