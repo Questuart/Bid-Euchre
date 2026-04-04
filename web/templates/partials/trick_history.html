@@ -52,6 +52,12 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% if contract_type | default(None, true) == "suit" %}
+        <p class="trick-history__legend" aria-label="Bower abbreviation legend">
+            <abbr title="Right Bower — Jack of trump, highest card">RB</abbr> = Right Bower&ensp;
+            <abbr title="Left Bower — Jack of same color, second highest card">LB</abbr> = Left Bower
+        </p>
+        {% endif %}
     </div>
 </details>
 {% endif %}

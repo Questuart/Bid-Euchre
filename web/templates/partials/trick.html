@@ -37,9 +37,9 @@
 
 {% macro seat_markers(seat, leader_seat=None, cur_phase="trick_play") %}
     <div class="seat-markers">
-        {# Lead Trick — shown during trick play only, word label #}
+        {# Leader — shown during trick play only, word label #}
         {% if cur_phase == "trick_play" and leader_seat is not none and leader_seat == seat %}
-            <span class="seat-marker seat-marker--leader" title="Lead Trick">Lead Trick</span>
+            <span class="seat-marker seat-marker--leader" title="Leader">Leader</span>
         {% endif %}
         {# Dealer — shown during auction only, word label #}
         {% if cur_phase == "auction" and dealer_seat == seat %}

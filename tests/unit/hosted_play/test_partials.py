@@ -695,7 +695,7 @@ class TestTrick:
         assert "Last Trick" not in html
 
     def test_markers_for_dealer_turn_declarer_and_sitout(self, env):
-        """Phase-dependent markers: only Lead Trick and Sitting Out in trick area.
+        """Phase-dependent markers: only Leader and Sitting Out in trick area.
 
         Dealer/turn/declarer markers removed from trick area per #2200 UI cleanup.
         Dealer shown on compass seats during auction only; declarer in contract bar.
@@ -712,9 +712,9 @@ class TestTrick:
             tricks_team0=0,
             tricks_team1=0,
         )
-        # Lead Trick and Sitting Out are shown
+        # Leader and Sitting Out are shown
         assert "seat-marker--leader" in html
-        assert 'title="Lead Trick"' in html
+        assert 'title="Leader"' in html
         assert "seat-marker--sitting-out" in html
         assert 'title="Sitting out"' in html
         # Dealer, turn, and declarer markers removed from trick area
@@ -723,7 +723,7 @@ class TestTrick:
         assert "seat-marker--declarer" not in html
 
     def test_leader_marker_shown_for_trick_leader(self, env):
-        """Leader seat gets a 'Lead Trick' word label during trick play."""
+        """Leader seat gets a 'Leader' word label during trick play."""
         tmpl = env.get_template("partials/trick.html")
         html = tmpl.render(
             current_trick={"leader": 1, "plays": [[1, ["H", "A"]]]},
@@ -737,8 +737,8 @@ class TestTrick:
             tricks_team1=0,
         )
         assert "seat-marker--leader" in html
-        assert 'title="Lead Trick"' in html
-        assert "Lead Trick" in html
+        assert 'title="Leader"' in html
+        assert "Leader" in html
 
     def test_leader_marker_shown_for_completed_trick(self, env):
         """Leader marker renders when showing a completed trick (no current)."""
@@ -757,7 +757,7 @@ class TestTrick:
             tricks_team1=1,
         )
         assert "seat-marker--leader" in html
-        assert 'title="Lead Trick"' in html
+        assert 'title="Leader"' in html
 
     def test_dealer_marker_shown_during_auction(self, env):
         """Dealer marker appears in trick area during auction phase."""
@@ -3193,6 +3193,54 @@ class TestTrickHistory:
         )
         assert 'role="region"' in html
         assert 'aria-label="Cards played history"' in html
+
+    def test_bower_legend_shown_for_suit_contract(self, env, completed_tricks):
+        """Bower abbreviation legend appears when contract_type is 'suit' (#2288)."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks,
+            tricks_team0=1,
+            tricks_team1=1,
+            contract_type="suit",
+            trump="H",
+        )
+        assert "trick-history__legend" in html
+        assert "RB" in html
+        assert "LB" in html
+        assert "Right Bower" in html
+        assert "Left Bower" in html
+
+    def test_bower_legend_hidden_for_high_contract(self, env, completed_tricks):
+        """No bower legend when contract_type is 'high' (no bowers) (#2288)."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks,
+            tricks_team0=1,
+            tricks_team1=1,
+            contract_type="high",
+        )
+        assert "trick-history__legend" not in html
+
+    def test_bower_legend_hidden_for_low_contract(self, env, completed_tricks):
+        """No bower legend when contract_type is 'low' (no bowers) (#2288)."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks,
+            tricks_team0=1,
+            tricks_team1=1,
+            contract_type="low",
+        )
+        assert "trick-history__legend" not in html
+
+    def test_bower_legend_hidden_when_no_contract(self, env, completed_tricks):
+        """No bower legend when contract_type is unset (#2288)."""
+        tmpl = env.get_template("partials/trick_history.html")
+        html = tmpl.render(
+            completed_tricks=completed_tricks,
+            tricks_team0=1,
+            tricks_team1=1,
+        )
+        assert "trick-history__legend" not in html
 
 
 # ---------------------------------------------------------------------------
