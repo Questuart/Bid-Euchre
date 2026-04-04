@@ -81,19 +81,22 @@ print(hand[choice])  # → AS  (Ace thrown away!)
 | Q♥ | 3 | 2 | (3, 2) | Kept |
 | K♥ | 3 | 3 | (3, 3) | Kept |
 
-**After fix:**
+**After fix (pure card-value discard):**
 
-| Card | Trump? | Card Value | Priority | Outcome |
-|------|--------|------------|----------|---------|
-| T♥ | No trump to ruff | 0 | **0** | ← Discarded (cheapest card) |
-| Q♥ | — | 2 | 2 | Kept |
-| K♥ | — | 3 | 3 | Kept |
-| A♠ | — | 4 | 4 | Kept (wins tricks!) |
-| A♣ | — | 4 | 4 | Kept (wins tricks!) |
+| Card | Card Value | Outcome |
+|------|------------|---------|
+| T♥ | 0 | ← Discarded (cheapest card) |
+| Q♥ | 2 | Kept |
+| K♥ | 3 | Kept |
+| A♠ | 4 | Kept (wins tricks!) |
+| A♣ | 4 | Kept (wins tricks!) |
 
 ### Proposed Fix
 
-Gate void-creation logic on having trump in hand:
+Remove void-creation logic entirely from `_choose_discard`. Always discard
+the cheapest non-trump card by value. Void-chasing is a context-dependent
+optimization that gets it wrong often enough to hurt — it needs proper
+research before re-introducing.
 
 ```python
 def _choose_discard(self, hand, legal_indices):
@@ -102,32 +105,33 @@ def _choose_discard(self, hand, legal_indices):
         non_trump_indices = [...]
 
         if non_trump_indices:
-            # NEW: only prioritize void creation when we have trump to exploit it
-            trump_in_hand = any(
-                effective_suit(hand[i], self._trump_suit, self._contract_type)
-                == self._trump_suit
-                for i in range(len(hand))
-            )
+            # Discard cheapest non-trump card by value.
+            # Void-creation logic removed — it throws away Aces from
+            # short suits to create voids that are only useful when
+            # the player has trump to ruff. Getting the context right
+            # is a research problem; pure value discard is safer.
+            return min(non_trump_indices, key=card_value)
 
-            if trump_in_hand:
-                # Original logic: prefer shortest suit for void creation
-                def discard_priority(idx):
-                    eff = effective_suit(hand[idx], self._trump_suit, self._contract_type)
-                    return (suit_counts.get(eff, 0), card_value(idx))
-                return min(non_trump_indices, key=discard_priority)
-            else:
-                # No trump = voids are worthless → discard cheapest card
-                return min(non_trump_indices, key=card_value)
+        # Only trump left - discard cheapest
+        return min(legal_indices, key=card_value)
     ...
 ```
 
 **Same fix needed in `GluttonIsolatedStrategy._choose_discard_smart()`.**
 
+### Future Work: Smarter Void Logic
+
+The void-creation heuristic is not inherently wrong — it's just applied
+unconditionally. A future improvement could re-introduce it with proper
+context awareness (e.g., only chase voids when holding trump, only in
+early tricks, weigh void benefit against card value lost). This is a
+research task and should not block the current simplification.
+
 ### Impact Estimate
 
-This is the single highest-impact fix. Every game where Glutton is void in
-trump (common for defending team), it currently hemorrhages Aces. The fix
-preserves trick winners that would otherwise be thrown away for no benefit.
+This is the single highest-impact fix. The current void-creation logic
+causes Glutton to hemorrhage Aces in many common game states. Simplifying
+to pure card-value discard is immediately safer and easier to reason about.
 
 ---
 
@@ -324,32 +328,32 @@ uv run python experiments/run_experiment.py \
 
 ## Test Plans
 
-### For Breakdown 1 (Discard Bias Fix)
+### For Breakdown 1 (Discard Simplification)
 
 ```python
-def test_discard_keeps_aces_when_no_trump():
-    """When void in trump, discard cheapest card, NOT shortest-suit Ace."""
+def test_discard_keeps_aces_over_low_cards():
+    """Discard cheapest non-trump card, not shortest-suit Ace."""
     g = GluttonStrategy()
     hand = [
-        Card('S', 'A'),  # singleton spade
-        Card('C', 'A'),  # singleton club
-        Card('H', 'T'),  # triple hearts
+        Card('S', 'A'),  # singleton spade — trick winner
+        Card('C', 'A'),  # singleton club — trick winner
+        Card('H', 'T'),  # triple hearts — cheapest (value 0)
         Card('H', 'Q'),
         Card('H', 'K'),
     ]
     g.on_hand_start(hand, 'suit', 'D', player_index=3)
     choice = g.choose_card(hand, [(0, Card('D', 'A'))], 'suit', 'D', 3)
-    # Should discard TH (value 0), NOT AS or AC (value 4, trick winners)
+    # Should discard TH (value 0), NOT AS or AC (value 4)
     assert hand[choice] == Card('H', 'T')
 
-def test_discard_creates_void_when_has_trump():
-    """When holding trump, void creation IS valuable — discard from shortest."""
+def test_discard_no_void_chasing_even_with_trump():
+    """Discard cheapest by value — no void-creation logic at all."""
     g = GluttonStrategy()
     hand = [
-        Card('S', 'A'),  # singleton spade
+        Card('S', 'A'),  # singleton spade (value 4)
         Card('D', 'K'),  # trump
         Card('D', 'Q'),  # trump
-        Card('H', 'T'),  # double hearts
+        Card('H', 'T'),  # double hearts — TH is cheapest (value 0)
         Card('H', 'Q'),
     ]
     g.on_hand_start(hand, 'suit', 'D', player_index=2)
@@ -359,12 +363,11 @@ def test_discard_creates_void_when_has_trump():
         [(0, Card('S', 'K')), (1, Card('S', 'Q'))],
         'suit', 'D', 2,
     )
-    # Should discard from shortest non-trump suit to create void
-    # Not necessarily AS (partner winning → discard, shortest suit = spades)
-    assert effective_suit(hand[choice], 'D', 'suit') != 'D'  # didn't waste trump
+    # Should discard TH (cheapest non-trump, value 0)
+    assert hand[choice] == Card('H', 'T')
 
-def test_discard_isolated_no_trump_gate():
-    """GluttonIsolatedStrategy also respects the no-trump gate."""
+def test_discard_isolated_no_void_chasing():
+    """GluttonIsolatedStrategy also uses pure value discard."""
     g = GluttonIsolatedStrategy(smart_discards=True)
     hand = [
         Card('S', 'A'),
@@ -403,7 +406,7 @@ def test_low_lead_isolated():
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| Discard fix changes behavior when player HAS trump too | Low | Unit tests for both trump/no-trump paths; existing test suite covers trump-holding scenarios |
+| Removing void-creation loses some good plays | Low | Pure value discard is safer on average; void logic can be re-added later with proper context awareness |
 | Low lead change hurts strategy in some edge cases | Low | Feature isolation experiment (100K deals) measures net impact |
 | Phase 2 bid-context wiring breaks existing `on_hand_start` callers | Medium | All new params default to None (backward-compat); equivalence test |
 | `GluttonIsolatedStrategy` not updated in sync | Medium | Both PRs explicitly call out both classes |
@@ -413,10 +416,9 @@ def test_low_lead_isolated():
 ## Acceptance Criteria
 
 ### Breakdown 1 (Discard)
-- [ ] `_choose_discard` falls back to value-only sorting when no trump in hand
+- [ ] `_choose_discard` uses pure card-value sorting (no void-creation logic)
 - [ ] Same fix applied to `GluttonIsolatedStrategy._choose_discard_smart()`
-- [ ] New tests prove Aces are kept when void in trump
-- [ ] New tests prove void creation still works when trump is held
+- [ ] New tests prove cheapest card discarded regardless of suit count
 - [ ] Existing `tests/unit/test_glutton.py` tests still pass
 - [ ] `make check` passes
 
