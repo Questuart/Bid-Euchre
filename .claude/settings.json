@@ -156,8 +156,6 @@
       "Write(.claude/settings.json)",
       "Edit(.claude/hooks/**)",
       "Write(.claude/hooks/**)",
-      "Edit(.claude/runtime/**)",
-      "Write(.claude/runtime/**)",
       "Edit(MEMORY.md)",
       "Write(MEMORY.md)",
       "Edit(plans/**)",
