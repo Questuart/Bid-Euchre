@@ -31,19 +31,25 @@ first addressed this for skill files. PR #1927 expanded auto-accept to the
 full set of infrastructure files that agents routinely modify during
 autonomous operation.
 
-## Why dontAsk, Not acceptEdits
+## Why bypassPermissions (Reverted)
 
-The `defaultMode` is set to `"dontAsk"` (not `"acceptEdits"`):
+The `defaultMode` is set to `"bypassPermissions"`:
 
+- **`bypassPermissions`**: auto-approves most operations, but still prompts
+  on Claude Code's built-in "sensitive file" paths (e.g., `.claude/` files)
 - **`acceptEdits`**: auto-approves file edits, still **prompts** on unlisted
   Bash/MCP tools — lanes stall waiting for human input
 - **`dontAsk`**: auto-**denies** anything not in allowlist, never prompts —
-  lanes never stall
+  but causes **silent failures** with no operator visibility
 
-A silent denial produces an error the agent can react to (e.g., retry with
-`uv run`). A blocking prompt produces nothing — the lane hangs until a human
-notices. For a multi-lane fleet with no human watching, `dontAsk` is strictly
-better.
+We previously used `dontAsk` (#2254) but reverted because silent denials
+are worse than blocking prompts — work silently doesn't happen and nobody
+knows. `bypassPermissions` with occasional sensitive-file prompts is the
+least-bad option until the self-edit problem is solved.
+
+**Known limitation:** `bypassPermissions` does not allow Claude to edit
+`.claude/settings.json` — Claude Code's sensitive file detection fires
+regardless of permission mode. This is tracked in #2249.
 
 ## Bash Pattern Scoping
 
@@ -108,6 +114,6 @@ logic (e.g., `pre-bash-dispatch.sh`).
 - #1708 — Original permission stall fix (SKILL.md)
 - #1927 — Expanded auto-accept to full infrastructure set
 - #1931 — This documentation follow-up
-- #2254 — Switch to dontAsk + fill Bash pattern gaps
-- #2304 — Narrow broad Bash auto-accept patterns
+- #2254 — Switch to dontAsk (reverted back to bypassPermissions)
+- #2304 — Narrow broad Bash auto-accept patterns (kept as fallback)
 - `.claude/rules/75_worktree_protection.md` — Related infrastructure protection

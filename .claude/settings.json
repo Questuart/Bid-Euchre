@@ -136,7 +136,7 @@
     ]
   },
   "permissions": {
-    "defaultMode": "dontAsk",
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Edit(.claude/skills/**)",
       "Write(.claude/skills/**)",
