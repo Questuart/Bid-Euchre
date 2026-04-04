@@ -73,7 +73,12 @@ class TestCIWorkflowStructure:
         """The shard job uses a 2-group matrix with pytest-split."""
         shard_job = self.jobs["tests-shard"]
         matrix = shard_job["strategy"]["matrix"]
-        assert matrix["group"] == [1, 2]
+        # Matrix can be expressed as group: [1, 2] or via include entries
+        if "group" in matrix:
+            groups = matrix["group"]
+        else:
+            groups = sorted(entry["group"] for entry in matrix["include"])
+        assert groups == [1, 2]
         # Check that pytest-split flags are present in the test step
         test_steps = [
             s for s in shard_job["steps"] if "pytest" in str(s.get("run", ""))
@@ -81,6 +86,14 @@ class TestCIWorkflowStructure:
         assert len(test_steps) == 1
         assert "--splits 2" in test_steps[0]["run"]
         assert "--group" in test_steps[0]["run"]
+
+    def test_shard_has_timeout(self) -> None:
+        """Both shard jobs must have a timeout to prevent CI hangs."""
+        shard_job = self.jobs["tests-shard"]
+        assert "timeout-minutes" in shard_job, "tests-shard must have timeout-minutes"
+        assert (
+            shard_job["timeout-minutes"] <= 20
+        ), "timeout should be reasonable (≤20min)"
 
     def test_shard_is_not_advisory(self) -> None:
         """Promoted shard job must NOT have continue-on-error."""
