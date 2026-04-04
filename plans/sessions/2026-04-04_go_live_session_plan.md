@@ -92,7 +92,7 @@ The overnight run closed significant backlog. Key go-live-relevant merges:
 
 **Orchestrator actions (no lane dispatch needed):**
 
-1. **Close #2332** — Skip button is already hidden in `next_controls.html` via
+1. **Close #2332** — Skip button is already hidden in `web/templates/partials/next_controls.html` via
    Jinja2 comment block. The template has `{# Skip button hidden per #2332 #}`.
    Post evidence comment and close:
    ```
@@ -140,7 +140,7 @@ The backend pacing system already works correctly — each AI card play sets
 
 **Detailed engine change:**
 
-In `engine.py`, `submit_human_card()` currently does:
+In `src/bid_euchre/hosted_play/engine.py`, `submit_human_card()` currently does:
 ```python
 # Human's card did NOT complete a trick:
 state = self._advance_ai(state)  # Immediately plays AI cards
@@ -157,7 +157,7 @@ Then `resume_after_play()` handles the Next click and runs `_advance_ai()`.
 
 **Frontend delay approach:**
 
-In `game.js`, intercept Next button form submissions:
+In `web/static/game.js`, intercept Next button form submissions:
 ```javascript
 document.body.addEventListener('htmx:configRequest', function(event) {
     if (event.target.closest('.btn--next-step')) {
@@ -383,7 +383,7 @@ Everything else is either shipped (needs proving) or cosmetic (#2385 legend).
 - **HTTP endpoint mode only** — fastest, ~30s-1min per match
 - **Simple game lifecycle** — join → bid → play → score → repeat
 - **Observation logging** — write to session file, no auto-issue-filing (v2)
-- **Single skill file** — `.claude/skills/playtesting/SKILL.md`
+- **Single skill file** — `.claude/skills/playtesting/SKILL.md` (NEW — to be created)
 - **Invite code required** — pre-created via render_admin.py
 
 ### Skill Interface
@@ -431,7 +431,7 @@ strategy_notes: []  # What the AI did
 
 | File | Purpose |
 |------|---------|
-| `.claude/skills/playtesting/SKILL.md` | Skill definition + instructions |
+| `.claude/skills/playtesting/SKILL.md` (NEW) | Skill definition + instructions |
 | `scripts/internal/create_invite_codes.sh` | Helper to batch-create codes |
 
 ### Acceptance Criteria
@@ -564,7 +564,7 @@ then have #2385 rebase.
 If the full pacing implementation proves too complex for one session:
 
 **Minimal viable pacing (frontend-only):**
-1. Add `hx-trigger="click delay:600ms"` to the Next button in `next_controls.html`
+1. Add `hx-trigger="click delay:600ms"` to the Next button in `web/templates/partials/next_controls.html`
 2. Show `.pacing-indicator` animation during the delay
 3. This gives a "thinking" feel without any backend changes
 
