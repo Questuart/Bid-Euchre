@@ -1,13 +1,14 @@
 ---
 name: away-mode
-description: Check operator away-mode status, toggle manually, configure Telegram push preferences, and view push history. Use from the orchestrator or ops lane to manage operator presence and remote notifications.
+description: Check operator away-mode status, send advisory toggle notifications, configure Telegram push preferences, and view push history. Use from the orchestrator or ops lane to manage operator presence and remote notifications.
 ---
 
 # /away-mode -- Operator Away-Mode Management
 
-Check, toggle, and configure the operator's away-mode detection and Telegram
-push notification settings. Wraps the `ops.py away` CLI and Telegram push
-infrastructure into a single operator-facing skill.
+Check status, send advisory toggle notifications, and configure the operator's
+away-mode detection and Telegram push notification settings. Wraps the
+`ops.py away` CLI and Telegram push infrastructure into a single
+operator-facing skill.
 
 ## When to Use
 
@@ -57,9 +58,10 @@ operator (or to the orchestrator if running from ops lane).
 
 When the operator announces they are leaving:
 
-1. **Notify the orchestrator** so the fleet treats the operator as away.
-   (There is no dedicated `event emit` CLI — the away detector infers
-   state from interaction timestamps automatically.)
+1. **Send an advisory notification** to the orchestrator so it knows the
+   operator intends to be away. This does **not** change the detected
+   away-mode state — the threshold-based detector infers state from
+   interaction timestamps automatically.
 
    ```bash
    uv run python scripts/internal/ops.py message send \
@@ -73,17 +75,19 @@ When the operator announces they are leaving:
    uv run python scripts/internal/ops.py away status
    ```
 
-> **Note:** Manual toggle is advisory — it sends a message bus notification
-> but does not override the threshold-based detector. The operator will
-> transition back to `present` automatically when they next interact
-> with any Claude Code session (UserPromptSubmit events are tracked by the
-> event system).
+> **Note:** This notification is advisory only — it does not override the
+> threshold-based detector. The detector will transition to `away` on its
+> own once the idle threshold is reached. The operator will transition back
+> to `present` automatically when they next interact with any Claude Code
+> session (UserPromptSubmit events are tracked by the event system).
 
 ### Action: Manual Toggle Off (`off`)
 
 When the operator announces they have returned:
 
-1. **Notify the orchestrator** that the operator has returned:
+1. **Send an advisory notification** that the operator has returned. The
+   detector will transition to `present` automatically once it sees a
+   fresh interaction event; this message is informational only.
 
    ```bash
    uv run python scripts/internal/ops.py message send \
