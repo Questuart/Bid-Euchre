@@ -248,7 +248,7 @@ Any lanes still running pick up remaining dispatchable work or bug fixes from pl
 Wave 1 (independent, parallel)
 ├── #2328, #2332, #2331, #2303, fleet-check, #2312 (in-flight, continue)
 ├── #2334 (CPU gate) ──→ enables safer concurrent make check
-└── #2333 (fleet-check auto) ──→ touches settings.json
+└── #2333 (fleet-check auto) ──→ touches `.claude/settings.json`
 
 Wave 2 (independent, parallel — fill freed lanes)
 ├── #2330 (AI delay + Next)
@@ -279,7 +279,7 @@ Wave 5
 ```
 
 **Critical serialization chains:**
-1. `settings.json`: #2333 (Wave 1) → #2238 (Wave 2) — same file
+1. `.claude/settings.json`: #2333 (Wave 1) → #2238 (Wave 2) — same file
 2. Playtesting skill: #2198 PR-1 → PR-2 + PR-3 + #2085 (all depend on foundation)
 3. Playwright: #2112 PR-1 → PR-2 (profiling before optimization)
 
@@ -304,7 +304,7 @@ Wave 5
 - #2338, #2249, #2136, #2188 (different files)
 
 **Group B (must serialize):**
-- #2333 → #2238 (same file: settings.json)
+- #2333 → #2238 (same file: `.claude/settings.json`)
 - #2198 PR-1 → PR-2, PR-3, #2085 (skill chain)
 - #2112 PR-1 → PR-2 (profiling before optimization)
 
@@ -351,7 +351,7 @@ The original plan reached 50 by inventing 32 new issues. With only existing open
 | Render cold-start stalls playtesting | Medium | Flex lanes blocked | 4 concurrent lanes keep server warm; fallback to localhost |
 | #2198 skill chain takes longer than est. | Medium | 3-4 PRs slip to later | Start PR-1 early (Wave 3); PR-2/3 can be next-session |
 | Review lane stalls block merges | Medium | Cascade delays | #2238 fixes root cause; manual override backup |
-| Merge conflicts on settings.json | Medium | 30-60 min delay | Strict serialization: #2333 → #2238 |
+| Merge conflicts on `.claude/settings.json` | Medium | 30-60 min delay | Strict serialization: #2333 → #2238 |
 | Lane context exhaustion (>15 min tasks) | Low | Silent lane death | Keep tasks < 90 min; monitor via fleet-check |
 | Playwright mode too slow for flex-c | High | Low game count | Accept 5 matches; value is UX bugs not volume |
 | HTML parsing breaks from recent UI PRs | Low-Medium | HTTP/hybrid modes stall | Test parsing first hand; fix inline |
