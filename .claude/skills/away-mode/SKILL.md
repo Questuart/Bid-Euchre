@@ -57,30 +57,25 @@ operator (or to the orchestrator if running from ops lane).
 
 When the operator announces they are leaving:
 
-1. **Record an away marker event** so the detector does not need to rely
-   solely on interaction timestamps:
+1. **Notify the orchestrator** so the fleet treats the operator as away.
+   (There is no dedicated `event emit` CLI — the away detector infers
+   state from interaction timestamps automatically.)
 
    ```bash
-   uv run python scripts/internal/ops.py event emit \
-     --type operator_away --detail "manual toggle via /away-mode on"
+   uv run python scripts/internal/ops.py message send \
+     --from <lane> --to orchestrator --type progress \
+     --summary "Operator manually marked as away via /away-mode on"
    ```
 
-2. **Verify** the new state:
+2. **Verify** the current detected state:
 
    ```bash
    uv run python scripts/internal/ops.py away status
    ```
 
-3. **Notify** the orchestrator if running from ops lane:
-
-   ```bash
-   uv run python scripts/internal/ops.py message send \
-     --from <lane> --to orchestrator --type progress \
-     --summary "Operator marked as away (manual toggle)"
-   ```
-
-> **Note:** The manual toggle supplements automatic detection. The operator
-> will transition back to `present` automatically when they next interact
+> **Note:** Manual toggle is advisory — it sends a message bus notification
+> but does not override the threshold-based detector. The operator will
+> transition back to `present` automatically when they next interact
 > with any Claude Code session (UserPromptSubmit events are tracked by the
 > event system).
 
@@ -88,25 +83,18 @@ When the operator announces they are leaving:
 
 When the operator announces they have returned:
 
-1. **Record a return event:**
-
-   ```bash
-   uv run python scripts/internal/ops.py event emit \
-     --type operator_returned --detail "manual toggle via /away-mode off"
-   ```
-
-2. **Verify** the state has returned to `present`:
-
-   ```bash
-   uv run python scripts/internal/ops.py away status
-   ```
-
-3. **Notify** the orchestrator:
+1. **Notify the orchestrator** that the operator has returned:
 
    ```bash
    uv run python scripts/internal/ops.py message send \
      --from <lane> --to orchestrator --type progress \
-     --summary "Operator returned (manual toggle)"
+     --summary "Operator returned (manual toggle via /away-mode off)"
+   ```
+
+2. **Verify** the current detected state:
+
+   ```bash
+   uv run python scripts/internal/ops.py away status
    ```
 
 ### Action: Show Push Configuration (`config`)
@@ -118,7 +106,7 @@ Display the current Telegram push settings:
 echo "STEWARD_TELEGRAM_ENABLED=${STEWARD_TELEGRAM_ENABLED:-unset}"
 
 # Show push state (cooldowns, per-item tracking)
-cat .claude/runtime/push_state.json 2>/dev/null || echo "(no push state file)"
+cat .claude/runtime/alert_push_state.json 2>/dev/null || echo "(no push state file)"
 
 # Show escalation thresholds
 uv run python scripts/internal/ops.py away status --json | python3 -c "
@@ -148,25 +136,16 @@ The defaults are:
 Review recent Telegram push events from the audit trail:
 
 ```bash
-# Recent push events (last 20)
-uv run python scripts/internal/ops.py audit list --type push --limit 20
+# Recent push-related events from the event log
+uv run python scripts/internal/ops.py events --limit 20
 
-# Or check the push state for per-item history
-cat .claude/runtime/push_state.json 2>/dev/null | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-items = data.get('items', {})
-if not items:
-    print('No push history recorded.')
-else:
-    print(f'Push history ({len(items)} items):\n')
-    for item_id, info in sorted(items.items(), key=lambda x: x[1].get('last_pushed', ''), reverse=True):
-        print(f\"  {item_id}:\")
-        print(f\"    Last pushed: {info.get('last_pushed', 'unknown')}\")
-        print(f\"    Push count:  {info.get('push_count', 0)}\")
-        print(f\"    Severity:    {info.get('severity', 'unknown')}\")
-"
+# Read the persisted push state (per-item cooldown and history)
+cat .claude/runtime/alert_push_state.json 2>/dev/null || echo "(no push state file)"
 ```
+
+The push state file (`.claude/runtime/alert_push_state.json`) tracks per-item
+push history including `last_pushed` timestamp, `push_count`, and `severity`.
+It is written by `alert_push.py` after each push cycle.
 
 ## Telegram Push Flow
 
@@ -212,10 +191,10 @@ UserPromptSubmit events
 
 ## Gotchas
 
-- **Manual toggle is advisory.** The `operator_away` event helps the
-  detector but does not override the threshold logic. If the operator
-  interacts with a session after toggling `on`, the detector will
-  correctly transition back to `present`.
+- **Manual toggle is advisory.** It sends a message bus notification to
+  the orchestrator but does not override the threshold-based detector. If
+  the operator interacts with a session after toggling `on`, the detector
+  will correctly transition back to `present`.
 - **Telegram push requires `STEWARD_TELEGRAM_ENABLED=1`.** If this env
   var is not set, all push operations are silently skipped.
 - **Push state is per-item.** Each controller item has its own cooldown
