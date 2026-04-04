@@ -2172,6 +2172,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="suit",
             trump="H",
+            phase="trick_play",
         )
         assert "contract-bar" in html
         assert "contract-bar--opp-team" in html
@@ -2190,6 +2191,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="high",
             trump=None,
+            phase="trick_play",
         )
         assert "7" in html
         assert "High" in html
@@ -2209,6 +2211,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="low",
             trump=None,
+            phase="trick_play",
         )
         assert "7" in html
         assert "Low" in html
@@ -2225,6 +2228,7 @@ class TestContractBar:
             bid_type="moon",
             contract_type="suit",
             trump="S",
+            phase="trick_play",
         )
         assert "Moon" in html
         assert "contract-bar__type--moon" in html
@@ -2242,6 +2246,7 @@ class TestContractBar:
             bid_type="loner",
             contract_type="suit",
             trump="D",
+            phase="trick_play",
         )
         assert "Loner" in html
         assert "contract-bar__type--loner" in html
@@ -2292,6 +2297,30 @@ class TestContractBar:
         )
         assert "contract-bar" not in html
 
+    def test_auction_settle_hides_contract(self, env):
+        """During auction settle pause, contract/trump is hidden (#2328).
+
+        After all bids are revealed but before the user clicks "Continue",
+        winning_bid and bidder_seat are set but phase is still "auction".
+        The contract bar should show the auction status, not the contract.
+        """
+        tmpl = env.get_template("partials/contract_bar.html")
+        html = tmpl.render(
+            winning_bid=6,
+            bidder_seat=1,
+            bid_type="regular",
+            contract_type="suit",
+            trump="H",
+            phase="auction",
+            current_high_bid=6,
+            high_bidder_seat=1,
+        )
+        # Must NOT show the "Current Contract" display
+        assert "Current Contract" not in html
+        # Must show auction status instead
+        assert "Auction:" in html
+        assert "High Bid: 6" in html
+
     def test_bidder_seat_zero_not_coerced(self, env):
         """bidder_seat=0 (human) must not be treated as falsy."""
         tmpl = env.get_template("partials/contract_bar.html")
@@ -2301,6 +2330,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="suit",
             trump="C",
+            phase="trick_play",
         )
         assert "contract-bar" in html
         assert "by You" in html
@@ -2316,6 +2346,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="suit",
             trump="S",
+            phase="trick_play",
         )
         assert 'class="ai-name">Ace</span>' in html
         assert "contract-bar--my-team" in html
@@ -2329,6 +2360,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="suit",
             trump="H",
+            phase="trick_play",
         )
         assert 'class="ai-name">Slim</span>' in html
         assert "contract-bar--opp-team" in html
@@ -2342,6 +2374,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="suit",
             trump="C",
+            phase="trick_play",
         )
         assert 'class="ai-name">Deuce</span>' in html
         assert "contract-bar--opp-team" in html
@@ -2355,6 +2388,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="suit",
             trump="H",
+            phase="trick_play",
         )
         assert "contract-bar__header" in html
         assert "Current Contract and Trump:" in html
@@ -2368,6 +2402,7 @@ class TestContractBar:
             bid_type="regular",
             contract_type="high",
             trump=None,
+            phase="trick_play",
         )
         assert "contract-bar__header" in html
         assert "Current Contract:" in html

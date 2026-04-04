@@ -1,5 +1,7 @@
 {# Contract bar — persistent, sticky display of the current contract during
    trick play, and auction status during auction phase.
+   During the auction phase (including settle pause) the contract/trump
+   indicator is hidden; only the auction status line is shown (#2328).
    Always visible at the top of the game board so the player never has to
    scroll to see what was bid.
 
@@ -21,7 +23,7 @@
 {% set is_my_team = bidder_seat in [0, 2] if bidder_seat is not none else false %}
 {% set team_class = "contract-bar--my-team" if is_my_team else "contract-bar--opp-team" %}
 
-{% if winning_bid is not none and bidder_seat is not none %}
+{% if winning_bid is not none and bidder_seat is not none and phase is defined and phase != "auction" %}
 <div class="contract-bar {{ team_class }}" role="status" aria-label="Current contract">
     {# Header label — include "and Trump" only for suit contracts #}
     {% if contract_type == "suit" %}
