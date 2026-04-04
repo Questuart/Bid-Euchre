@@ -99,10 +99,10 @@ These fill the pipeline to reach ~50 PRs. Each is a concrete, bounded task.
 
 | New # | Title | Scope | Est. | Depends On |
 |-------|-------|-------|------|------------|
-| NEW-1 | feat(web): forum data model, migration, and CRUD backend | `web/models/forum.py`, `web/db.py`, migration script | 90 min | None (Phase 3 complete) |
+| NEW-1 | feat(web): forum data model, migration, and CRUD backend | `web/db.py` (extend), new migration script, new model file | 90 min | None (Phase 3 complete) |
 | NEW-2 | feat(web): forum route and UI tab with invite-only gating | `web/routes.py`, `web/templates/forum/` | 90 min | NEW-1 |
 | NEW-3 | feat(web): Claude bot constraints — match and forum rate limits | `web/middleware.py`, `web/routes.py` | 60 min | NEW-2 |
-| NEW-4 | test(web): integration tests for forum + Claude constraints | `tests/unit/hosted_play/test_forum.py`, `tests/integration/` | 60 min | NEW-2 |
+| NEW-4 | test(web): integration tests for forum + Claude constraints | new test files under `tests/unit/hosted_play/`, `tests/integration/` | 60 min | NEW-2 |
 
 ### 3b. Browser Game — GBT Evaluation (Phase 5) [2 issues]
 
@@ -148,7 +148,7 @@ These fill the pipeline to reach ~50 PRs. Each is a concrete, bounded task.
 | NEW-22 | docs: update DEPLOYMENT.md for invite codes and current Render config | `docs/01_core/DEPLOYMENT.md` | 30 min | None |
 | NEW-23 | docs: add ops module README with API overview | `src/bid_euchre/ops/README.md` | 30 min | None |
 | NEW-24 | docs: add PR analytics summary for March-April 2026 | `docs/04_reports/pr_analytics_2026_04.md` | 30 min | None |
-| NEW-25 | docs: session audit 2026-04-04 overnight run | `plans/sessions/2026-04-04_overnight_run_audit.md` | 30 min | Run completes |
+| NEW-25 | docs: session audit 2026-04-04 overnight run | new file under `plans/sessions/` | 30 min | Run completes |
 
 ### 3g. CI/DX [4 issues]
 
