@@ -16,7 +16,7 @@
 {% if winning_bid is not none and bidder_seat is not none %}
 <div class="bid-recap" role="status" aria-label="Auction result">
     <span class="bid-recap__declarer">
-        {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}
+        {% if bidder_seat != 0 %}<span class="ai-name">{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>{% else %}{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}{% endif %}
     </span>
     <span class="bid-recap__separator" aria-hidden="true">bid</span>
     <span class="bid-recap__contract">
@@ -45,7 +45,7 @@
     {# Use "is not none" (not truthy) — seat 0 is the human and is valid. #}
     {% if sitting_out_seat is not none %}
     <span class="bid-recap__sitting-out" aria-label="Sitting out: {{ seat_labels.get(sitting_out_seat, 'Seat ' ~ sitting_out_seat) }}">
-        ({{ seat_labels.get(sitting_out_seat, "Seat " ~ sitting_out_seat) }} sits out)
+        ({% if sitting_out_seat != 0 %}<span class="ai-name">{{ seat_labels.get(sitting_out_seat, "Seat " ~ sitting_out_seat) }}</span>{% else %}{{ seat_labels.get(sitting_out_seat, "Seat " ~ sitting_out_seat) }}{% endif %} sits out)
     </span>
     {% endif %}
 </div>

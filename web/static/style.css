@@ -408,6 +408,11 @@ main {
     min-height: 1.4em;
 }
 
+/* AI player names — blue to distinguish from human player (#2288.4) */
+.ai-name {
+    color: #64b5f6;
+}
+
 .ai-hand-block--middle {
     flex: 1 1 auto;
 }

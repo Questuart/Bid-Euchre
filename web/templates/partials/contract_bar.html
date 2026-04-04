@@ -52,9 +52,9 @@
         {% endif %}
     </span>
 
-    {# Declarer — "by Name" #}
+    {# Declarer — "by Name" (AI names blue via .ai-name #2288.4) #}
     <span class="contract-bar__declarer">
-        by {{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}
+        by {% if bidder_seat != 0 %}<span class="ai-name">{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>{% else %}{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}{% endif %}
     </span>
 </div>
 {% elif phase is defined and phase == "auction" %}

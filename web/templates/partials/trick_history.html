@@ -19,9 +19,9 @@
                 <tr>
                     <th class="trick-history__th">#</th>
                     <th class="trick-history__th">You</th>
-                    <th class="trick-history__th">{{ seat_labels[1] }}</th>
-                    <th class="trick-history__th">{{ seat_labels[2] }}</th>
-                    <th class="trick-history__th">{{ seat_labels[3] }}</th>
+                    <th class="trick-history__th"><span class="ai-name">{{ seat_labels[1] }}</span></th>
+                    <th class="trick-history__th"><span class="ai-name">{{ seat_labels[2] }}</span></th>
+                    <th class="trick-history__th"><span class="ai-name">{{ seat_labels[3] }}</span></th>
                     <th class="trick-history__th">Won</th>
                 </tr>
             </thead>
@@ -46,7 +46,7 @@
                             </td>
                         {% endfor %}
                         <td class="trick-history__cell trick-history__cell--won">
-                            {{ seat_labels.get(trick.winner, "?") }}
+                            {% if trick.winner != 0 %}<span class="ai-name">{{ seat_labels.get(trick.winner, "?") }}</span>{% else %}{{ seat_labels.get(trick.winner, "?") }}{% endif %}
                         </td>
                     </tr>
                 {% endfor %}

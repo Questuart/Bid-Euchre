@@ -966,7 +966,10 @@ class TestScore:
             dealer_seat=2,
             phase="trick_play",
         )
-        assert "Dealer: Ace" in html
+        assert "Dealer:" in html
+        assert "Ace" in html
+        # AI dealer name wrapped in .ai-name span (#2288.4)
+        assert 'class="ai-name"' in html
 
     def test_no_contract_info_in_score_bar(self, env):
         """Contract info removed from score bar (shown in contract bar instead)."""
@@ -2115,7 +2118,8 @@ class TestContractBar:
         assert "Current Contract and Trump:" in html
         assert "6" in html
         assert "\u2665" in html  # Heart symbol
-        assert "by Slim" in html
+        # AI declarer name wrapped in .ai-name span (#2288.4)
+        assert 'class="ai-name">Slim</span>' in html
 
     def test_high_contract(self, env):
         """High (no-trump) contract by human shows 'by You'."""
@@ -2131,6 +2135,8 @@ class TestContractBar:
         assert "High" in html
         assert "by You" in html
         assert "contract-bar--my-team" in html
+        # Human name should NOT be wrapped in ai-name
+        assert "ai-name" not in html
         assert "Current Contract:" in html
         assert "and Trump" not in html
 
@@ -2146,7 +2152,8 @@ class TestContractBar:
         )
         assert "7" in html
         assert "Low" in html
-        assert "by Ace" in html
+        # AI declarer name wrapped in .ai-name span (#2288.4)
+        assert 'class="ai-name">Ace</span>' in html
         assert "contract-bar--my-team" in html
 
     def test_moon_contract(self, env):
@@ -2162,7 +2169,8 @@ class TestContractBar:
         assert "Moon" in html
         assert "contract-bar__type--moon" in html
         assert "\u2660" in html  # Spade symbol
-        assert "by Deuce" in html
+        # AI declarer name wrapped in .ai-name span (#2288.4)
+        assert 'class="ai-name">Deuce</span>' in html
         assert "contract-bar--opp-team" in html
 
     def test_loner_contract(self, env):
@@ -2180,6 +2188,8 @@ class TestContractBar:
         assert "\u2666" in html  # Diamond symbol
         assert "by You" in html
         assert "contract-bar--my-team" in html
+        # Human name should NOT be wrapped in ai-name
+        assert "ai-name" not in html
 
     def test_auction_in_progress_display(self, env):
         """During auction with no bid, shows 'Auction in Progress'."""
@@ -2238,7 +2248,7 @@ class TestContractBar:
         assert "contract-bar--my-team" in html
 
     def test_partner_declarer_label(self, env):
-        """Partner (seat 2) shows 'by Ace'."""
+        """Partner (seat 2) shows 'by Ace' wrapped in ai-name."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=5,
@@ -2247,11 +2257,11 @@ class TestContractBar:
             contract_type="suit",
             trump="S",
         )
-        assert "by Ace" in html
+        assert 'class="ai-name">Ace</span>' in html
         assert "contract-bar--my-team" in html
 
     def test_opponent_seat1_declarer_label(self, env):
-        """Left opponent (seat 1) shows 'by Slim'."""
+        """Left opponent (seat 1) shows 'by Slim' wrapped in ai-name."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=5,
@@ -2260,11 +2270,11 @@ class TestContractBar:
             contract_type="suit",
             trump="H",
         )
-        assert "by Slim" in html
+        assert 'class="ai-name">Slim</span>' in html
         assert "contract-bar--opp-team" in html
 
     def test_opponent_seat3_declarer_label(self, env):
-        """Right opponent (seat 3) shows 'by Deuce'."""
+        """Right opponent (seat 3) shows 'by Deuce' wrapped in ai-name."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=8,
@@ -2273,7 +2283,7 @@ class TestContractBar:
             contract_type="suit",
             trump="C",
         )
-        assert "by Deuce" in html
+        assert 'class="ai-name">Deuce</span>' in html
         assert "contract-bar--opp-team" in html
 
     def test_header_label_suit(self, env):
@@ -2809,9 +2819,11 @@ class TestGameTemplateAccessibility:
             bidder_seat=None,
         )
         assert 'class="ai-card-count" aria-hidden="true"' not in html
-        assert "Slim (10)" in html
-        assert "Ace (10)" in html
-        assert "Deuce (10)" in html
+        # AI names now wrapped in ai-name spans (#2288.4)
+        assert 'class="ai-name">Slim</span>' in html
+        assert "(10)" in html  # card count still present
+        assert 'class="ai-name">Ace</span>' in html
+        assert 'class="ai-name">Deuce</span>' in html
 
 
 # ---------------------------------------------------------------------------
