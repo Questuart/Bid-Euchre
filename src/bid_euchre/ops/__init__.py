@@ -82,8 +82,8 @@ def classify_check(name: str) -> str:
 
 # DEPRECATED fail-closed allowlist — prefer classify_check() (fail-open denylist).
 # New CI jobs are included by default via classify_check(); this set is retained
-# for backward compat only.  Updated: sharding collapsed to single "test-run" job
-# after shard-1 CI hang (#2311).  See #1036, #1041, #1093, #2311.
+# for backward compat only.  Updated: 2-shard CI re-enabled after root cause fix
+# (#2311, #2321).  See #1036, #1041, #1093, #2311.
 CI_CHECK_NAMES: frozenset[str] = frozenset(
     {
         "changes",
