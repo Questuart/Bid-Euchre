@@ -30,6 +30,10 @@ fi
 # Check if the path targets .claude/runtime/
 # Handle both absolute and relative paths
 case "$FILE_PATH" in
+  */.claude/runtime/*/README.md|.claude/runtime/*/README.md|*/.claude/runtime/README.md|.claude/runtime/README.md)
+    # Checked-in schema docs (README.md) are safe to edit — exempt them
+    exit 0
+    ;;
   */.claude/runtime/*|.claude/runtime/*)
     cat <<BLOCK
 BLOCKED: Edit/Write to .claude/runtime/ is not allowed.
