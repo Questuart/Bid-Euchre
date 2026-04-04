@@ -279,6 +279,62 @@ for the full operator repair UX.
 
 ---
 
+## Tiered Issue Closure
+
+Issue closure must match the complexity of the fix. Premature closure
+(auto-close on merge without verification) has caused repeated context loss
+where problems resurface after the tracking issue is already closed.
+
+### Tier 1 — Auto-Close (Simple Fixes)
+
+Use `Fixes #N` in the PR body when **all** of the following are true:
+
+| Condition | Rationale |
+|-----------|-----------|
+| The fix is a single bounded change (typo, config tweak, one-liner) | Low risk of incomplete resolution |
+| The issue has no acceptance criteria beyond "PR merged" | Nothing extra to verify |
+| The fix is fully testable by CI (unit/integration tests lock the behavior) | Automated verification sufficient |
+
+When `Fixes #N` is used, GitHub auto-closes the issue on merge. No further
+verification step is needed.
+
+### Tier 2 — Verified-Close (Complex Fixes)
+
+Use `Refs #N` in the PR body (NOT `Fixes`) when **any** of the following
+are true:
+
+| Condition | Rationale |
+|-----------|-----------|
+| The issue has explicit acceptance criteria beyond code change | Needs proving in production/fleet |
+| The fix addresses a symptom but root cause is uncertain | May resurface |
+| The issue spans multiple PRs (incremental resolution) | Partial fix should not close the tracker |
+| The fix requires fleet/production verification | CI alone is insufficient |
+| The issue was previously closed and reopened | Pattern of premature closure |
+
+**Verified-close workflow:**
+
+1. PR uses `Refs #N` — issue stays open after merge
+2. Add the `needs-verification` label to the issue (label already exists)
+3. After merge, verify the fix in production/fleet conditions
+4. Post verification evidence as an issue comment (proving command + output)
+5. Close the issue manually with the evidence comment
+
+### Choosing Between Tiers
+
+When in doubt, default to **Tier 2** (`Refs #N`). The cost of leaving an
+issue open for verification is minimal. The cost of premature closure
+(lost context, re-investigation) is significant.
+
+### Agent Guidance
+
+- Agents should default to `Refs #N` unless the fix is clearly Tier 1
+- When an agent uses `Fixes #N`, the PR description must state why
+  auto-close is appropriate (e.g., "Single config fix, locked by unit test")
+- Agents must never manually close issues without posting verification
+  evidence first
+
+---
+
 ## Anti-Spam Rules
 
 | Rule | Threshold | Rationale |
