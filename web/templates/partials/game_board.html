@@ -63,7 +63,7 @@
         <div class="compass-top" role="region" aria-label="{{ seat_labels[2] }} hand">
             <div class="ai-hand-block">
                 <div class="ai-seat-label">
-                    <span class="ai-name">{{ seat_labels[2] }}</span>
+                    <span class="ai-name player-name--human">{{ seat_labels[2] }}</span>
                     {# Phase-dependent word labels — one badge max per seat #}
                     {% if phase == "auction" and dealer_seat == 2 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
@@ -79,7 +79,6 @@
                     <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count"><span class="ai-name">{{ seat_labels[2] }}</span> ({{ partner_count | default(0) }})</span>
             </div>
         </div>
 
@@ -87,7 +86,7 @@
         <div class="compass-left" role="region" aria-label="{{ seat_labels[1] }} hand">
             <div class="ai-hand-block ai-hand-block--vertical">
                 <div class="ai-seat-label">
-                    <span class="ai-name">{{ seat_labels[1] }}</span>
+                    <span class="ai-name player-name--ai">{{ seat_labels[1] }}</span>
                     {% if phase == "auction" and dealer_seat == 1 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
                     {% elif phase == "trick_play" and trick_leader == 1 %}
@@ -102,7 +101,6 @@
                     <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count"><span class="ai-name">{{ seat_labels[1] }}</span> ({{ opp_left_count | default(0) }})</span>
             </div>
         </div>
 
@@ -139,7 +137,7 @@
         <div class="compass-right" role="region" aria-label="{{ seat_labels[3] }} hand">
             <div class="ai-hand-block ai-hand-block--vertical">
                 <div class="ai-seat-label">
-                    <span class="ai-name">{{ seat_labels[3] }}</span>
+                    <span class="ai-name player-name--ai">{{ seat_labels[3] }}</span>
                     {% if phase == "auction" and dealer_seat == 3 %}
                         <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
                     {% elif phase == "trick_play" and trick_leader == 3 %}
@@ -154,7 +152,6 @@
                     <div class="card-back" aria-hidden="true"></div>
                     {% endfor %}
                 </div>
-                <span class="ai-card-count"><span class="ai-name">{{ seat_labels[3] }}</span> ({{ opp_right_count | default(0) }})</span>
             </div>
         </div>
 
@@ -162,12 +159,12 @@
         <div class="compass-bottom">
             {% if phase == "auction" and dealer_seat == 0 %}
                 <div class="human-seat-label" role="status" aria-label="You are the dealer">
-                    You
+                    <span class="player-name--human">You</span>
                     <span class="seat-marker seat-marker--dealer" title="Dealer">Dealer</span>
                 </div>
             {% elif phase == "trick_play" and trick_leader == 0 %}
                 <div class="human-seat-label" role="status" aria-label="You lead this trick">
-                    You
+                    <span class="player-name--human">You</span>
                     <span class="seat-marker seat-marker--leader" title="Leader">Leader</span>
                 </div>
             {% endif %}

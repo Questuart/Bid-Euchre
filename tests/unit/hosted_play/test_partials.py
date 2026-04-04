@@ -1028,8 +1028,9 @@ class TestScore:
         )
         assert "Dealer:" in html
         assert "Ace" in html
-        # AI dealer name wrapped in .ai-name span (#2288.4)
-        assert 'class="ai-name"' in html
+        # AI dealer name with team color class (#2288.4, #2346)
+        # Seat 2 is partner (human team)
+        assert "player-name--human" in html
 
     def test_no_contract_info_in_score_bar(self, env):
         """Contract info removed from score bar (shown in contract bar instead)."""
@@ -2997,12 +2998,12 @@ class TestGameTemplateAccessibility:
             winning_bid=None,
             bidder_seat=None,
         )
-        assert 'class="ai-card-count" aria-hidden="true"' not in html
-        # AI names now wrapped in ai-name spans (#2288.4)
-        assert 'class="ai-name">Slim</span>' in html
-        assert "(10)" in html  # card count still present
-        assert 'class="ai-name">Ace</span>' in html
-        assert 'class="ai-name">Deuce</span>' in html
+        # Duplicate card-count lines removed; names shown once with team colors (#2346)
+        assert "ai-card-count" not in html
+        # AI names with team-color classes (#2346)
+        assert 'player-name--ai">Slim</span>' in html
+        assert 'player-name--human">Ace</span>' in html
+        assert 'player-name--ai">Deuce</span>' in html
 
 
 # ---------------------------------------------------------------------------

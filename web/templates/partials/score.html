@@ -30,7 +30,7 @@
         <div class="hand-details__content">
             <span>Hand {{ hands_played + 1 }}</span>
             <span class="info-separator" aria-hidden="true">&middot;</span>
-            <span>Dealer: {% if dealer_seat != 0 %}<span class="ai-name">{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>{% else %}{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}{% endif %}</span>
+            <span>Dealer: {% if dealer_seat != 0 %}<span class="ai-name player-name--{{ 'human' if dealer_seat == 2 else 'ai' }}">{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>{% else %}<span class="player-name--human">{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>{% endif %}</span>
             <span class="info-separator" aria-hidden="true">&middot;</span>
             <span>First to 52 wins &middot; &minus;52 = loss</span>
         </div>
