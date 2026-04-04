@@ -20,7 +20,7 @@ help:
 	@echo "Gold path targets:"
 	@echo "  make check              - repo-lint + ruff + tests"
 	@echo "  make check-quiet        - full check, minimal output (logs to tmpfile)"
-	@echo "  make check-gated        - check-quiet with concurrency cap (max 3 lanes)"
+	@echo "  make check-gated        - check-quiet with CPU-aware gate (load + semaphore)"
 	@echo "  make repo-lint          - repo linter (diff vs origin/main)"
 	@echo "  make lint               - ruff check ."
 	@echo "  make test               - pytest fast suite"
@@ -79,29 +79,12 @@ check-quiet:
 		exit 1; \
 	fi
 
-# --- Gated check (caps concurrent make check across lanes) ---
-CHECK_SEMAPHORE_DIR ?= /tmp/make-check-slots
-MAX_CHECK_CONCURRENT ?= 3
+# --- Gated check (CPU-aware gate + semaphore for fleet runs) ---
+# See scripts/internal/cpu_gate.sh for configuration env vars:
+#   CPU_GATE_MAX_LOAD, CPU_GATE_MAX_SLOTS, CPU_GATE_SLOT_DIR, etc.
 
 check-gated:
-	@mkdir -p $(CHECK_SEMAPHORE_DIR); \
-	SLOT_FILE=$(CHECK_SEMAPHORE_DIR)/$$$$; \
-	WAIT_COUNT=0; \
-	while [ $$(ls $(CHECK_SEMAPHORE_DIR)/ 2>/dev/null | wc -l | tr -d ' ') -ge $(MAX_CHECK_CONCURRENT) ]; do \
-		if [ $$WAIT_COUNT -eq 0 ]; then \
-			echo ">>> Waiting for validation slot ($$(ls $(CHECK_SEMAPHORE_DIR)/ | wc -l | tr -d ' ')/$(MAX_CHECK_CONCURRENT) in use)..."; \
-		fi; \
-		WAIT_COUNT=$$((WAIT_COUNT + 1)); \
-		sleep $$(( (RANDOM % 10) + 5 )); \
-	done; \
-	if [ $$WAIT_COUNT -gt 0 ]; then \
-		echo ">>> Slot acquired after ~$$((WAIT_COUNT * 7))s wait"; \
-	fi; \
-	touch "$$SLOT_FILE"; \
-	EXIT_CODE=0; \
-	$(MAKE) check-quiet || EXIT_CODE=$$?; \
-	rm -f "$$SLOT_FILE"; \
-	exit $$EXIT_CODE
+	@bash scripts/internal/cpu_gate.sh $(MAKE) check-quiet
 
 notebook-sync:
 	@echo ">>> Jupytext sync (notebooks)"

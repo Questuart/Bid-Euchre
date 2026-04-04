@@ -1142,7 +1142,7 @@ _ACTIVE_WORK_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?:Bash|Edit|Read|Write|Grep|Glob)\(.*\.\.\.", re.IGNORECASE),
     # make check / validation progress indicators
     re.compile(
-        r"Running full check|Waiting for.*slot|make\[|All checks passed|"
+        r"Running full check|Waiting for.*slot|CPU gate|make\[|All checks passed|"
         r"Checks FAILED|check-gated|check-quiet",
         re.IGNORECASE,
     ),
