@@ -679,19 +679,20 @@ class TestCICheckNamesConsistency:
     def test_ci_check_names_accessible(self) -> None:
         """CI_CHECK_NAMES allowlist is importable and has expected members.
 
-        Updated for sharded CI (#1086): old jobs (prechecks, governance)
-        replaced by checks, tests-shard, notebooks, promotion-gate.
+        Updated: sharding collapsed to single test-run job (#2311).
         """
         from bid_euchre.ops import CI_CHECK_NAMES
 
-        # Current sharded CI job names
+        # Current CI job names (single test-run, no sharding)
         assert "tests" in CI_CHECK_NAMES
         assert "checks" in CI_CHECK_NAMES
-        assert "tests-shard" in CI_CHECK_NAMES
-        assert "tests-shard (1)" in CI_CHECK_NAMES
-        assert "tests-shard (2)" in CI_CHECK_NAMES
+        assert "test-run" in CI_CHECK_NAMES
         assert "notebooks" in CI_CHECK_NAMES
         assert "promotion-gate" in CI_CHECK_NAMES
+        # Retired shard entries must be removed
+        assert "tests-shard" not in CI_CHECK_NAMES
+        assert "tests-shard (1)" not in CI_CHECK_NAMES
+        assert "tests-shard (2)" not in CI_CHECK_NAMES
         # Non-CI checks must NOT be in the set
         assert "reviewing-changes" not in CI_CHECK_NAMES
         assert "claude-review" not in CI_CHECK_NAMES
@@ -704,10 +705,9 @@ class TestCICheckNamesConsistency:
         assert classify_check("reviewing-changes") == "review_gate"
         assert classify_check("claude-review") == "advisory"
         assert classify_check("enable-auto-merge") == "advisory"
-        # Current sharded CI job names all classify as "ci"
+        # Current CI job names all classify as "ci"
         assert classify_check("tests") == "ci"
         assert classify_check("checks") == "ci"
-        assert classify_check("tests-shard") == "ci"
-        assert classify_check("tests-shard (1)") == "ci"
+        assert classify_check("test-run") == "ci"
         assert classify_check("notebooks") == "ci"
         assert classify_check("promotion-gate") == "ci"

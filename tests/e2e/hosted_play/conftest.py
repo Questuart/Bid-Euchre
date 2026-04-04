@@ -161,9 +161,19 @@ def play_full_hand(
         state.status == "active"
         and state.current_hand is not None
         and state.current_hand.phase == "trick_play"
-        and state.current_hand.current_seat == HUMAN_SEAT
-        and state.current_hand.sitting_out_seat != HUMAN_SEAT
     ):
+        hand = state.current_hand
+        # Handle pacing pauses introduced by sequential card reveal (#2294)
+        if hand.paused_after_play:
+            state = engine.resume_after_play(state)
+            continue
+        if hand.paused_after_trick:
+            state = engine.resume_ai(state)
+            continue
+        if hand.sitting_out_seat == HUMAN_SEAT:
+            break  # Human sits out — engine handles all play
+        if hand.current_seat != HUMAN_SEAT:
+            break  # Not human's turn
         legal = engine.get_legal_plays(state)
         state = engine.submit_human_card(state, legal[0])
 
@@ -207,7 +217,15 @@ def play_one_trick(engine: MatchEngine, state: MatchState) -> MatchState:
         and state.current_hand.phase == "trick_play"
         and len(state.current_hand.completed_tricks) == initial_completed
     ):
-        if state.current_hand.current_seat == HUMAN_SEAT:
+        cur = state.current_hand
+        # Handle pacing pauses introduced by sequential card reveal (#2294)
+        if cur.paused_after_play:
+            state = engine.resume_after_play(state)
+            continue
+        if cur.paused_after_trick:
+            state = engine.resume_ai(state)
+            continue
+        if cur.current_seat == HUMAN_SEAT:
             legal = engine.get_legal_plays(state)
             state = engine.submit_human_card(state, legal[0])
         # If AI needs to play, the engine auto-advances

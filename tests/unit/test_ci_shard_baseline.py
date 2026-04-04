@@ -1,8 +1,8 @@
 """Regression tests for the pytest-split duration baseline.
 
-The `.test_durations` file is committed to the repo and used by the
-sharded CI test lane (``tests-shard`` job).  These tests verify the
-baseline is well-formed and reasonably complete.
+The `.test_durations` file is committed to the repo.  Previously used
+for 2-way sharding; retained for future re-sharding and as a test
+timing baseline.  These tests verify the file is well-formed.
 """
 
 from __future__ import annotations
