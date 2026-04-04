@@ -25,7 +25,7 @@ from .db import Hand, Match, Player
 HUMAN_TEAM = 0
 
 # Match statuses that contribute hands to leaderboard stats.
-_LEADERBOARD_MATCH_STATUSES = ("active", "complete")
+_LEADERBOARD_MATCH_STATUSES = ("active", "complete", "abandoned")
 
 
 # ---------------------------------------------------------------------------
