@@ -283,9 +283,12 @@ def _create_legacy_db(db_path) -> str:
                 "CREATE TABLE IF NOT EXISTS invite_codes ("
                 "  id INTEGER PRIMARY KEY,"
                 "  code VARCHAR NOT NULL UNIQUE,"
-                "  status VARCHAR NOT NULL DEFAULT 'active',"
+                "  status VARCHAR NOT NULL DEFAULT 'active'"
+                "    CHECK (status IN ('active', 'redeemed', 'revoked')),"
+                "  player_id INTEGER REFERENCES players(id) ON DELETE SET NULL,"
                 "  label VARCHAR,"
-                "  created_at DATETIME NOT NULL DEFAULT (datetime('now'))"
+                "  created_at DATETIME NOT NULL DEFAULT (datetime('now')),"
+                "  redeemed_at DATETIME"
                 ")"
             )
         )
