@@ -64,11 +64,11 @@
 
 | Category | Count | Key PRs |
 |----------|-------|---------|
-| Web features | 8 | #2280, #2284, #2294, #2302, #2314, #2316, #2319 |
-| Web fixes | 6 | #2270, #2274, #2298, #2308, #2315, #2321 |
+| Web features | 7 | #2280, #2284, #2294, #2302, #2314, #2316, #2319 |
+| Web fixes | 5 | #2270, #2274, #2298, #2308, #2315 |
 | Convention follow-ups | 3 | #2275, #2287, #2318 |
-| Ops features/fixes | 4 | #2268, #2273, #2292, #2295 |
-| Docs/plans | 5 | #2264, #2266, #2267, #2278, #2281, #2282, #2285 |
+| Ops features/fixes | 5 | #2268, #2273, #2277, #2292, #2295 |
+| Docs/plans | 7 | #2264, #2266, #2267, #2278, #2281, #2282, #2285 |
 | Chore (dashboard) | 2 | #2307, #2317 |
 | CI fix | 1 | #2321 |
 
@@ -111,7 +111,7 @@ The daytime session (#2263 handoff) left 29 issues that needed closing and
 | #2313 | tiered issue closure + DISABLE_MOUSE | fix:convention | OPEN |
 | #2320 | proving run checklist (Waves 3–5) | needs-verification | OPEN |
 
-### Issues Closed During Session (~49 closed)
+### Issues Closed During Session (49 closed)
 
 Most closures were catch-up from the daytime session's 29 unclosed issues
 (bulk-closed at 20:37 and 22:20–22:53 UTC). Additional closures:
@@ -120,7 +120,8 @@ Most closures were catch-up from the daytime session's 29 unclosed issues
   (#2202–#2229, #2205–#2244)
 - **Bulk wave 2 (22:20–22:53 UTC):** 20 issues — ops/convention issues from
   evening PRs (#2237–#2290)
-- **Individual closures:** #2231 (by #2294), #2289 (by #2298)
+- **Individual closures (5):** #2231 (by #2294), #2286 (convention fix),
+  #2289 (by #2298), #2290 (research concluded), #2297 (ops resolved)
 
 ### Net Issue Movement
 
