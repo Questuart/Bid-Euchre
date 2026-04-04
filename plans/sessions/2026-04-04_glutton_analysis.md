@@ -272,8 +272,8 @@ observed issues here.
 
 | PR | Branch | Scope | Validation |
 |----|--------|-------|------------|
-| **Fix discard bias** | `fix/glutton-discard-trump-gate` | `greedy.py` (both classes), `test_glutton.py` | `uv run python -m pytest tests/unit/test_glutton.py -v` |
-| **Fix Low lead** | `fix/glutton-low-lead-greedy` | `greedy.py` (both classes), `test_glutton.py` | `uv run python -m pytest tests/unit/test_glutton.py -v` |
+| **Fix discard bias** | `fix/glutton-discard-trump-gate` | `src/bid_euchre/strategy/greedy.py` (both classes), `tests/unit/test_glutton.py` | `uv run python -m pytest tests/unit/test_glutton.py -v` |
+| **Fix Low lead** | `fix/glutton-low-lead-greedy` | `src/bid_euchre/strategy/greedy.py` (both classes), `tests/unit/test_glutton.py` | `uv run python -m pytest tests/unit/test_glutton.py -v` |
 
 These two PRs touch the same file but different functions — safe to develop
 in parallel, merge sequentially.
@@ -282,9 +282,9 @@ in parallel, merge sequentially.
 
 | PR | Branch | Scope | Depends On |
 |----|--------|-------|------------|
-| Wire bid context | `feat/strategy-bid-context` | `base.py`, `sim/simulation.py`, tests | Phase 1 merged |
-| GluttonV2 strategy | `feat/glutton-v2-bid-aware` | `greedy.py`, tests | Bid context wired |
-| Register + configs | `feat/glutton-v2-register` | `__init__.py`, `config.py`, YAML | GluttonV2 implemented |
+| Wire bid context | `feat/strategy-bid-context` | `src/bid_euchre/strategy/base.py`, `src/bid_euchre/sim/simulation.py`, tests | Phase 1 merged |
+| GluttonV2 strategy | `feat/glutton-v2-bid-aware` | `src/bid_euchre/strategy/greedy.py`, tests | Bid context wired |
+| Register + configs | `feat/glutton-v2-register` | `src/bid_euchre/strategy/__init__.py`, `src/bid_euchre/experiments/config.py`, YAML | GluttonV2 implemented |
 
 ### Phase 3: Validation
 
@@ -398,7 +398,7 @@ def test_low_lead_isolated():
 - [ ] Same fix applied to `GluttonIsolatedStrategy._choose_discard_smart()`
 - [ ] New tests prove Aces are kept when void in trump
 - [ ] New tests prove void creation still works when trump is held
-- [ ] Existing `test_glutton.py` tests still pass
+- [ ] Existing `tests/unit/test_glutton.py` tests still pass
 - [ ] `make check` passes
 
 ### Breakdown 2 (Low Lead)
