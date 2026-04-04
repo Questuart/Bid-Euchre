@@ -629,7 +629,15 @@ class TestSkipToNextDecision:
             # Hand is still in progress (e.g. redeal or next hand started)
             # — skip should still be safe to call
             state_after = engine.skip_to_next_decision(state)
-            assert state_after is not None
+            assert state_after.status in ("active", "complete")
+            if state_after.current_hand is not None:
+                assert state_after.current_hand.phase in (
+                    "auction",
+                    "trick_play",
+                    "complete",
+                    "redeal",
+                    "moon_exchange",
+                )
 
     def test_skip_at_match_complete(self, engine: MatchEngine) -> None:
         """skip_to_next_decision returns immediately if match is complete."""
