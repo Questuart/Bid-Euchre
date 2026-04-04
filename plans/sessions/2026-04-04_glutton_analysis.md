@@ -161,23 +161,41 @@ choice = g.choose_card(hand, [], 'low', None, 0)
 
 **Card values in Low:** T=4 (strongest) > J=3 > Q=2 > K=1 > A=0 (weakest)
 
+### Why This Happens: Double Reversal
+
+`card_value_for_dump()` already reverses the rank order for Low contracts —
+T is value 4 (most precious), A is value 0 (cheapest). This means
+`max(key=card_value)` already correctly picks the strongest Low card (T).
+
+The `select = min` override on line 316 **double-reverses**: the value
+function flipped ranks, then `min` flips the selection. Net effect: leads
+the weakest Low card (Ace), which is almost guaranteed to lose the trick.
+
+```
+HIGH: max(key=card_value) → picks A (value=4) → STRONGEST → wins trick ✓
+LOW if max:  max(key=card_value) → picks T (value=4) → STRONGEST in Low → wins trick ✓
+LOW actual:  min(key=card_value) → picks A (value=0) → WEAKEST in Low → loses trick ✗
+```
+
 The strategy leads A♥ and gives away the trick, then hopes to win with T♥
 later as a following play. This is a valid *conservative* strategy but
 contradicts Glutton's identity as a greedy (win-current-trick) bot.
 
 ### Proposed Fix
 
-One-line change — always lead strongest:
+One-line change — remove the `min` override and let the value function
+handle the rank reversal naturally:
 
 ```python
 # Line 316 — change from:
 select = min if self._contract_type == "low" else max
 # To:
-select = max  # Always lead strongest card regardless of contract type
+select = max  # card_value_for_dump already reverses ranks for Low
 ```
 
-This makes Glutton consistently greedy across all contract types: lead your
-best card to win the current trick.
+No other code changes needed. `card_value_for_dump()` already handles the
+Low rank inversion, so `max` correctly picks the strongest card in every
+contract type.
 
 **Same change in `GluttonIsolatedStrategy._choose_lead_smart()`** (line 869
 has the same pattern).
@@ -186,8 +204,9 @@ has the same pattern).
 
 PR #2108 deliberately introduced the `min` behavior with the rationale
 "conserve strong cards for following plays." This was a strategic choice,
-not a bug. But it conflicts with the greedy identity. The prior analyst
-review (2026-04-02) recommended changing it, and this analysis concurs.
+not a bug. But it double-reverses on top of the value function's own rank
+handling, and conflicts with the greedy identity. The prior analyst review
+(2026-04-02) recommended changing it, and this analysis concurs.
 
 ---
 
