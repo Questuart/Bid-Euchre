@@ -2156,6 +2156,90 @@ class TestGameBoardSeatZeroRegression:
 
 
 # ---------------------------------------------------------------------------
+# game_board.html — auction log repositioning (#2331)
+# ---------------------------------------------------------------------------
+
+
+class TestAuctionLogRepositioning:
+    """Auction log renders inside compass-center during auction, but moves
+    below the score bar (hand details) during trick play.  Issue #2331."""
+
+    @staticmethod
+    def _board_ctx(phase, **overrides):
+        ctx = dict(
+            phase=phase,
+            link_uuid="test-uuid",
+            dealer_seat=1,
+            bidder_seat=2,
+            current_seat=3,
+            sitting_out_seat=None,
+            current_trick={"leader": 1, "plays": [[1, ["H", "K"]]]},
+            completed_tricks=[],
+            human_hand=[["S", "A"], ["H", "Q"]],
+            auction=[],
+            contract_type="suit",
+            trump="H",
+            bid_type="regular",
+            winning_bid=6,
+            current_high_bid=6,
+            tricks_team0=0,
+            tricks_team1=0,
+            score_human=0,
+            score_ai=0,
+            hands_played=0,
+            legal_plays=None,
+            opp_left_count=10,
+            partner_count=10,
+            opp_right_count=10,
+            show_next=False,
+            next_reason=None,
+            show_bid_panel=False,
+            action_rail=[{"kind": "auction", "text": "Slim bid 6"}],
+        )
+        ctx.update(overrides)
+        return ctx
+
+    def test_auction_log_inside_compass_center_during_auction(self, env):
+        """During auction, the action-rail is inside .compass-center."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(
+            **self._board_ctx("auction", show_bid_panel=True, turn_number=0)
+        )
+        center_pos = html.index("compass-center")
+        rail_pos = html.index('id="action-rail"')
+        score_pos = html.index("score-bar")
+        assert center_pos < rail_pos < score_pos
+
+    def test_auction_log_below_score_bar_during_trick_play(self, env):
+        """During trick play, the action-rail is below .score-bar (#2331)."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(**self._board_ctx("trick_play"))
+        score_pos = html.index("score-bar")
+        rail_pos = html.index('id="action-rail"')
+        assert rail_pos > score_pos
+
+    def test_auction_log_below_score_bar_during_redeal(self, env):
+        """During redeal phase, the action-rail is below .score-bar (#2331)."""
+        tmpl = env.get_template("partials/game_board.html")
+        html = tmpl.render(**self._board_ctx("redeal"))
+        score_pos = html.index("score-bar")
+        rail_pos = html.index('id="action-rail"')
+        assert rail_pos > score_pos
+
+    def test_auction_log_not_duplicated(self, env):
+        """Auction log should appear exactly once in each phase."""
+        tmpl = env.get_template("partials/game_board.html")
+        for phase in ("auction", "trick_play", "redeal"):
+            ctx = self._board_ctx(phase)
+            if phase == "auction":
+                ctx["show_bid_panel"] = True
+                ctx["turn_number"] = 0
+            html = tmpl.render(**ctx)
+            count = html.count('id="action-rail"')
+            assert count == 1, f"Expected 1 action-rail in {phase}, found {count}"
+
+
+# ---------------------------------------------------------------------------
 # contract_bar.html — sticky contract info bar during trick play
 # ---------------------------------------------------------------------------
 

@@ -111,8 +111,11 @@
             {# Contract bar — always visible with status #}
             {% include "partials/contract_bar.html" %}
 
-            {# Auction log — center-screen during auction, collapsible during play #}
-            {% include "partials/action_rail.html" %}
+            {# Auction log — center-screen during auction only.
+               During trick play it repositions below the score bar (see below). #}
+            {% if phase == "auction" %}
+                {% include "partials/action_rail.html" %}
+            {% endif %}
 
             {# Trick area — shown during trick play only (not during auction) #}
             {% if phase != "auction" %}
@@ -176,5 +179,11 @@
 
     {# Score bar — outside compass grid, always at bottom #}
     {% include "partials/score.html" %}
+
+    {# Auction log — repositioned below hand details during gameplay.
+       During auction it appears in the compass center (see above). #}
+    {% if phase != "auction" %}
+        {% include "partials/action_rail.html" %}
+    {% endif %}
 
 {% endif %}
