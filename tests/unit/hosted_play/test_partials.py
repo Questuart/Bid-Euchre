@@ -2553,6 +2553,57 @@ class TestActionRail:
         assert "action-rail__item--trick" in html
         assert "action-rail__item--system" in html
 
+    def test_auction_log_open_during_auction(self, env):
+        """Auction log <details> should be open during auction phase (#2288)."""
+        tmpl = env.get_template("partials/action_rail.html")
+        html = tmpl.render(
+            action_rail=[{"kind": "auction", "text": "Slim bid 6"}],
+            phase="auction",
+        )
+        # <details> has open attribute during auction
+        assert "<details" in html
+        assert "open" in html
+        assert 'data-phase="auction"' in html
+
+    def test_auction_log_collapsed_during_trick_play(self, env):
+        """Auction log should be collapsed (no open attr) during trick play (#2288)."""
+        tmpl = env.get_template("partials/action_rail.html")
+        html = tmpl.render(
+            action_rail=[{"kind": "auction", "text": "Slim bid 6"}],
+            phase="trick_play",
+        )
+        assert "<details" in html
+        assert 'data-phase="trick_play"' in html
+        # The open attribute should NOT be present
+        # Parse carefully: "open" could appear in other contexts
+        import re
+
+        details_tag = re.search(r"<details[^>]*>", html).group(0)
+        assert "open" not in details_tag.split("data-phase")[0]
+
+    def test_auction_log_shows_event_count(self, env):
+        """Summary line should show item count when events exist (#2288)."""
+        tmpl = env.get_template("partials/action_rail.html")
+        html = tmpl.render(
+            action_rail=[
+                {"kind": "auction", "text": "Slim passed"},
+                {"kind": "auction", "text": "Ace bid 7"},
+            ],
+            phase="auction",
+        )
+        assert "(2)" in html
+
+    def test_auction_log_collapsible_toggle(self, env):
+        """Auction log uses <details>/<summary> for collapsibility (#2288)."""
+        tmpl = env.get_template("partials/action_rail.html")
+        html = tmpl.render(
+            action_rail=[{"kind": "auction", "text": "Test"}],
+            phase="trick_play",
+        )
+        assert "<summary" in html
+        assert "action-rail__toggle" in html
+        assert "action-rail__content" in html
+
 
 class TestNextControls:
     def test_next_controls_post_to_next_route(self, env):

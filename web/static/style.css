@@ -1352,19 +1352,45 @@ main {
     min-width: 120px;
 }
 
-/* Auction log (CSS classes retain "action-rail" prefix for compatibility) */
+/* Auction log — collapsible <details> element.
+   Open during auction phase, auto-collapsed after auction ends.
+   CSS classes retain "action-rail" prefix for compatibility. */
 .action-rail {
     margin-top: 0.5rem;
     border: 1px solid #455a64;
     border-radius: 8px;
-    padding: 0.5rem 0.75rem;
     background: var(--color-surface);
+    overflow: hidden;
 }
 
-.action-rail h3 {
-    margin: 0 0 0.35rem;
+.action-rail__toggle {
+    cursor: pointer;
     font-size: 0.85rem;
     color: var(--color-text-muted);
+    padding: 0.5rem 0.75rem;
+    user-select: none;
+    list-style: none;
+    font-weight: 600;
+}
+
+.action-rail__toggle::-webkit-details-marker {
+    display: none;
+}
+
+.action-rail__toggle::before {
+    content: "\25b6";
+    display: inline-block;
+    margin-right: 0.35rem;
+    font-size: 0.65rem;
+    transition: transform 0.15s ease;
+}
+
+.action-rail[open] > .action-rail__toggle::before {
+    transform: rotate(90deg);
+}
+
+.action-rail__content {
+    padding: 0 0.75rem 0.5rem;
 }
 
 .action-rail__list {
@@ -2210,9 +2236,14 @@ main {
         display: none;
     }
 
-    /* Hide auction log on mobile — reclaim vertical space */
-    .action-rail {
+    /* Auction log on mobile — collapsed by default to reclaim vertical space.
+       The summary toggle remains visible so users can expand if needed. */
+    .action-rail:not([open]) .action-rail__content {
         display: none;
+    }
+
+    .action-rail[open] .action-rail__list {
+        max-height: 80px;
     }
 
     .bid-controls {

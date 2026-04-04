@@ -1,24 +1,39 @@
 {# Auction log — compact event feed of auction bids, trick results, and
    system messages.  (Formerly called "Action Rail" in dev jargon.)
 
+   Collapsible: open during auction phase, auto-collapsed after auction ends.
+   Toggle state is persisted across HTMX swaps via sessionStorage (game.js).
+
    Context variables:
      - action_rail: list[dict] — ordered event objects:
          {"kind": "auction"|"trick"|"system", "text": str}
      - action_rail_label (optional): heading override
+     - phase: str — "auction", "trick_play", etc.
 #}
 {% set rail_items = action_rail | default([], true) %}
+{% set rail_phase = phase | default("auction") %}
 
-<aside id="action-rail" class="action-rail" role="region" aria-label="{{ action_rail_label | default('Auction log') }}" aria-live="polite">
-    <h3>{{ action_rail_label | default("Auction Log") }}</h3>
-    {% if rail_items %}
-        <ul class="action-rail__list">
-            {% for event in rail_items %}
-                <li class="action-rail__item action-rail__item--{{ event.kind | default('event') }}">
-                    {{ event.text }}
-                </li>
-            {% endfor %}
-        </ul>
-    {% else %}
-        <p class="action-rail__empty">Waiting for game actions.</p>
-    {% endif %}
-</aside>
+<details id="action-rail"
+         class="action-rail"
+         role="region"
+         aria-label="{{ action_rail_label | default('Auction log') }}"
+         data-phase="{{ rail_phase }}"
+         {% if rail_phase == "auction" %}open{% endif %}>
+    <summary class="action-rail__toggle">
+        {{ action_rail_label | default("Auction Log") }}
+        {% if rail_items %}({{ rail_items | length }}){% endif %}
+    </summary>
+    <div class="action-rail__content" aria-live="polite">
+        {% if rail_items %}
+            <ul class="action-rail__list">
+                {% for event in rail_items %}
+                    <li class="action-rail__item action-rail__item--{{ event.kind | default('event') }}">
+                        {{ event.text }}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="action-rail__empty">Waiting for game actions.</p>
+        {% endif %}
+    </div>
+</details>

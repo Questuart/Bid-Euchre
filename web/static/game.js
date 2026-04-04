@@ -175,6 +175,7 @@
             clearCardSelection(getCardPlayForm());
             syncCardPlayFormControls(getCardPlayForm());
             restoreTrickHistoryState();
+            restoreAuctionLogState();
         }, true);
     }
 
@@ -283,6 +284,74 @@
         document.addEventListener('toggle', function (event) {
             if (event.target && event.target.id === 'trick-history') {
                 saveTrickHistoryState();
+            }
+        }, true);
+    }
+
+    /* ---------------------------------------------------------------
+     * Auction log toggle — persist open/closed state across HTMX
+     * swaps and auto-collapse when phase transitions from auction
+     * to trick play.
+     * --------------------------------------------------------------- */
+
+    var AUCTION_LOG_KEY = 'auctionLogOpen';
+    var AUCTION_LOG_PHASE_KEY = 'auctionLogPhase';
+
+    function saveAuctionLogState() {
+        var details = document.getElementById('action-rail');
+        if (details) {
+            try {
+                sessionStorage.setItem(AUCTION_LOG_KEY, details.open ? '1' : '0');
+            } catch (_) {
+                // sessionStorage unavailable — ignore
+            }
+        }
+    }
+
+    function restoreAuctionLogState() {
+        var details = document.getElementById('action-rail');
+        if (!details) { return; }
+
+        var currentPhase = details.getAttribute('data-phase') || 'auction';
+
+        try {
+            var previousPhase = sessionStorage.getItem(AUCTION_LOG_PHASE_KEY);
+            sessionStorage.setItem(AUCTION_LOG_PHASE_KEY, currentPhase);
+
+            // Auto-collapse: transition from auction to non-auction phase
+            if (previousPhase === 'auction' && currentPhase !== 'auction') {
+                details.open = false;
+                sessionStorage.setItem(AUCTION_LOG_KEY, '0');
+                return;
+            }
+
+            // During auction phase, default to open (server-rendered)
+            if (currentPhase === 'auction') {
+                var saved = sessionStorage.getItem(AUCTION_LOG_KEY);
+                // Only override server default if user explicitly closed it
+                if (saved === '0') {
+                    details.open = false;
+                }
+                return;
+            }
+
+            // During non-auction phases, restore saved state
+            var saved = sessionStorage.getItem(AUCTION_LOG_KEY);
+            if (saved === '1') {
+                details.open = true;
+            } else if (saved === '0') {
+                details.open = false;
+            }
+            // If no saved state, keep server-rendered default (closed)
+        } catch (_) {
+            // sessionStorage unavailable — keep server-rendered state
+        }
+    }
+
+    function attachAuctionLogToggle() {
+        document.addEventListener('toggle', function (event) {
+            if (event.target && event.target.id === 'action-rail') {
+                saveAuctionLogState();
             }
         }, true);
     }
@@ -572,12 +641,14 @@
         attachDelegatedHandlers();
         attachTabHandlers();
         attachTrickHistoryToggle();
+        attachAuctionLogToggle();
         attachTextSizeToggle();
         attachErrorHandlers();
         var form = getCardPlayForm();
         clearCardSelection(form);
         syncCardPlayFormControls(form);
         restoreTrickHistoryState();
+        restoreAuctionLogState();
     }
 
     initialize();
