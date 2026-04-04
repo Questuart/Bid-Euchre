@@ -133,7 +133,10 @@ class TestIsTelegramReceiverEdgeCases:
         """No env var and no project dir → conservative: not a receiver."""
         assert is_telegram_receiver(receiver_env="", project_dir="") is False
 
-    def test_unset_env_empty_dir(self) -> None:
+    def test_unset_env_empty_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When receiver_env is None (read from real env), ensure env var is
+        unset so the test is environment-independent."""
+        monkeypatch.delenv(TELEGRAM_RECEIVER_ENV, raising=False)
         assert is_telegram_receiver(receiver_env=None, project_dir="") is False
 
     def test_trailing_slash_in_project_dir(self) -> None:

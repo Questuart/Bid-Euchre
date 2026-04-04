@@ -342,6 +342,9 @@ def _run_engine_hand(
                 raise AssertionError("Unexpected moon_exchange in forced-contract test")
             else:
                 break  # Unexpected phase
+        elif hand.paused_after_play:
+            # Per-card pacing pause — skip the reveal delay and continue.
+            state = engine.resume_after_play(state)
         elif hand.paused_after_trick:
             state = engine.resume_ai(state)
         else:
