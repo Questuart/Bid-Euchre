@@ -1007,6 +1007,87 @@ class TestLowContractBehavior:
         ), f"Low should use cheapest winner (J), got {hand[choice]}"
 
 
+class TestDiscardValueOnly:
+    """Verify discard picks lowest-value non-trump card, ignoring suit counts.
+
+    Regression tests for #2300: the old void-suit sort in _choose_discard
+    preferentially discarded from shorter suits.  This caused high-value
+    cards (e.g. Aces) to be dumped from non-void suits while low cards in
+    longer suits were preserved — a net trick loss.
+    """
+
+    def test_discard_picks_lowest_value_not_shortest_suit(self):
+        """Ace in a long suit should still be kept over 10 in a short suit."""
+        glutton = GluttonStrategy(debug=True)
+
+        # Trump is hearts.  Hand has:
+        #   1 spade  (A♠ — high value, short suit)
+        #   2 clubs  (10♣, Q♣ — low value, longer suit)
+        #   1 trump  (K♥)
+        hand = [
+            Card("S", "A"),  # idx 0 - lone spade, high value
+            Card("C", "T"),  # idx 1 - clubs (low value)
+            Card("C", "Q"),  # idx 2 - clubs (medium value)
+            Card("H", "K"),  # idx 3 - trump
+        ]
+        glutton.on_hand_start(hand[:], "suit", "H", player_index=0)
+
+        # Leading — glutton leads, then must discard on later tricks.
+        # Call _choose_discard directly to test the discard logic.
+        legal = [0, 1, 2]  # non-trump indices
+        choice = glutton._choose_discard(hand, legal)
+
+        # 10♣ is the lowest-value non-trump card — should be discarded.
+        # Old code would discard A♠ because spades has count=1 (shortest).
+        assert (
+            choice == 1
+        ), f"Should discard 10♣ (lowest value), got idx {choice} ({hand[choice]})"
+
+    def test_discard_ace_kept_over_ten_in_singleton_suit(self):
+        """A singleton Ace should NOT be discarded just because its suit is short."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("S", "A"),  # idx 0 - singleton spade Ace
+            Card("C", "T"),  # idx 1 - clubs Ten (low)
+            Card("C", "J"),  # idx 2 - clubs Jack
+            Card("C", "Q"),  # idx 3 - clubs Queen
+            Card("H", "A"),  # idx 4 - trump
+        ]
+        glutton.on_hand_start(hand[:], "suit", "H", player_index=0)
+
+        legal = [0, 1, 2, 3]  # non-trump indices
+        choice = glutton._choose_discard(hand, legal)
+
+        # 10♣ (idx 1) is the lowest-value non-trump — discard it.
+        assert (
+            choice == 1
+        ), f"Should discard 10♣ (lowest value), got idx {choice} ({hand[choice]})"
+
+    def test_isolated_discard_same_behaviour(self):
+        """GluttonIsolatedStrategy should match GluttonStrategy discard."""
+        isolated = GluttonIsolatedStrategy(
+            debug=True,
+            smart_discards=True,
+            partner_awareness=True,
+        )
+
+        hand = [
+            Card("S", "A"),  # idx 0 - singleton spade Ace
+            Card("C", "T"),  # idx 1 - clubs Ten (low)
+            Card("C", "Q"),  # idx 2 - clubs Queen
+            Card("H", "K"),  # idx 3 - trump
+        ]
+        isolated.on_hand_start(hand[:], "suit", "H", player_index=0)
+
+        legal = [0, 1, 2]
+        choice = isolated._choose_discard_smart(hand, legal)
+
+        assert (
+            choice == 1
+        ), f"Isolated should discard 10♣ (lowest value), got idx {choice} ({hand[choice]})"
+
+
 class TestContractSyncDefenseInDepth:
     """Tests for defense-in-depth contract sync (#2133 Bug B).
 

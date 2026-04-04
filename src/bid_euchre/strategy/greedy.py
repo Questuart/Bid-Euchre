@@ -332,13 +332,10 @@ class GluttonStrategy(Strategy):
         hand: List[Card],
         legal_indices: List[int],
     ) -> int:
-        """Choose which card to discard with smart void-creation logic."""
+        """Choose which card to discard — always dump the lowest-value non-trump card."""
 
         def card_value(idx: int) -> int:
             return card_value_for_dump(hand[idx], self._contract_type, self._trump_suit)
-
-        # Get suit distribution
-        suit_counts = self._get_suit_counts(hand)
 
         if self._contract_type == "suit" and self._trump_suit is not None:
             # Prefer non-trump cards
@@ -350,16 +347,12 @@ class GluttonStrategy(Strategy):
             ]
 
             if non_trump_indices:
-                # Prefer shortest non-trump suit (to create/strengthen voids)
-                def discard_priority(idx: int) -> Tuple[int, int]:
-                    eff = effective_suit(
-                        hand[idx], self._trump_suit, self._contract_type
-                    )
-                    # Lower suit count = better (creating void)
-                    # Lower card value = better (save strong cards)
-                    return (suit_counts.get(eff, 0), card_value(idx))
-
-                return min(non_trump_indices, key=discard_priority)
+                # Dump the lowest-value non-trump card.  The previous
+                # void-suit sort tried to create voids by preferring
+                # shorter suits, but this caused Aces to be dumped from
+                # non-void suits while low cards in the "kept" suit were
+                # preserved — a net trick loss.  See #2300.
+                return min(non_trump_indices, key=card_value)
 
             # Only trump left - discard cheapest
             return min(legal_indices, key=card_value)
@@ -882,12 +875,10 @@ class GluttonIsolatedStrategy(Strategy):
         hand: List[Card],
         legal_indices: List[int],
     ) -> int:
-        """Choose which card to discard with smart void-creation logic."""
+        """Choose which card to discard — always dump the lowest-value non-trump card."""
 
         def card_value(idx: int) -> int:
             return card_value_for_dump(hand[idx], self._contract_type, self._trump_suit)
-
-        suit_counts = self._get_suit_counts(hand)
 
         if self._contract_type == "suit" and self._trump_suit is not None:
             non_trump_indices = [
@@ -898,14 +889,8 @@ class GluttonIsolatedStrategy(Strategy):
             ]
 
             if non_trump_indices:
-
-                def discard_priority(idx: int) -> Tuple[int, int]:
-                    eff = effective_suit(
-                        hand[idx], self._trump_suit, self._contract_type
-                    )
-                    return (suit_counts.get(eff, 0), card_value(idx))
-
-                return min(non_trump_indices, key=discard_priority)
+                # See GluttonStrategy._choose_discard comment re #2300.
+                return min(non_trump_indices, key=card_value)
 
             return min(legal_indices, key=card_value)
 
