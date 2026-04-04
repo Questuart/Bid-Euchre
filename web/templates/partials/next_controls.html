@@ -14,6 +14,8 @@
                 Next
             </button>
         </form>
+        {# Skip button hidden per #2332 — backend skip logic preserved for
+           future reintroduction. Only the Next button is visible to players.
         {% if show_skip | default(false) %}
         <form method="post"
               action="/play/{{ link_uuid }}/skip"
@@ -26,5 +28,6 @@
             </button>
         </form>
         {% endif %}
+        #}
     </div>
 </div>
