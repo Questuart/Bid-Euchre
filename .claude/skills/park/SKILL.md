@@ -87,15 +87,24 @@ decide when to clear context. The park skill's job is process + cron cleanup.
 The orchestrator can park a lane by sending this to its tmux pane:
 
 ```bash
-tmux send-keys -t <pane> '/park' Enter
+tmux send-keys -t <pane> Escape; sleep 0.1
+tmux send-keys -t <pane> '/park'
+sleep 1
+tmux send-keys -t <pane> Enter
 ```
 
 Or for a full shutdown sequence:
 
 ```bash
-tmux send-keys -t <pane> '/park' Enter
+tmux send-keys -t <pane> Escape; sleep 0.1
+tmux send-keys -t <pane> '/park'
+sleep 1
+tmux send-keys -t <pane> Enter
 # Wait for confirmation, then:
-tmux send-keys -t <pane> '/clear' Enter
+tmux send-keys -t <pane> Escape; sleep 0.1
+tmux send-keys -t <pane> '/clear'
+sleep 1
+tmux send-keys -t <pane> Enter
 ```
 
 ## Gotchas

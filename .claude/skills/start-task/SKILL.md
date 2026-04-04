@@ -186,22 +186,27 @@ consumed inside the paste bracket and the command is **pasted but never
 submitted** — the lane appears stuck with text in the input buffer.
 
 **If you are manually nudging a lane** (e.g., dispatching to an analyst lane
-that is not in `KNOWN_AUTHOR_LANES`), always use the two-step pattern:
+that is not in `KNOWN_AUTHOR_LANES`), always use the three-step pattern:
 
 ```bash
-# Step 1: send the command text (do NOT append Enter)
+# Step 1: send Escape to cancel any in-progress input (#2352)
+tmux send-keys -t <pane> Escape
+sleep 0.1
+# Step 2: send the command text (do NOT append Enter)
 tmux send-keys -t <pane> '/start-task <packet_id>'
-# Step 2: wait briefly, then send Enter separately
+# Step 3: wait briefly, then send Enter separately
 sleep 1
 tmux send-keys -t <pane> Enter
 ```
 
-**Symptom of the bug:** The target pane shows `❯ [Pasted text ...]` but
-reports 0 tokens processed — the text was never submitted. Sending `Enter`
-separately resolves it.
+**Symptom of missing Escape:** Injected text corrupts whatever the lane is
+currently typing, producing garbled input.
 
-See issue #1834 for root cause analysis and code-level fix tracking in
-`nudge_pane()` / `clear_session()`.
+**Symptom of missing Enter delay:** The target pane shows `❯ [Pasted text ...]`
+but reports 0 tokens processed — the text was never submitted.
+
+See issue #1834 (paste bracketing) and #2352 (escape-before-send) for details.
+Both patterns are handled automatically by `nudge_pane()` / `clear_session()`.
 
 ## Auto-Completion on Merge
 

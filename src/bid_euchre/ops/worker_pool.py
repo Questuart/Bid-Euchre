@@ -77,6 +77,11 @@ POOL_STATUSES: frozenset[str] = frozenset({"active", "idle", "parked", "retired"
 #: bracket before Enter arrives.  See issue #1834.
 _PASTE_BRACKET_DELAY: float = 0.1
 
+#: Delay (seconds) after sending Escape before injecting the command text.
+#: Escape cancels any in-progress input the lane might have, preventing
+#: injected messages from corrupting the current input buffer.  See #2352.
+_ESCAPE_CANCEL_DELAY: float = 0.1
+
 #: Default domain assignment for each managed lane.
 #: Lanes with ``None`` are "flex" — available to any domain when same-domain
 #: lanes are exhausted.
@@ -1331,6 +1336,14 @@ def clear_session(
     target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
 
     try:
+        # Send Escape first to cancel any in-progress input.  See #2352.
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, "Escape"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        time.sleep(_ESCAPE_CANCEL_DELAY)
         subprocess.run(
             ["tmux", "send-keys", "-t", target, "/clear"],
             check=True,
@@ -1401,6 +1414,14 @@ def nudge_pane(
     cmd = f"/start-task {packet_id}"
 
     try:
+        # Send Escape first to cancel any in-progress input.  See #2352.
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, "Escape"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        time.sleep(_ESCAPE_CANCEL_DELAY)
         subprocess.run(
             ["tmux", "send-keys", "-t", target, cmd],
             check=True,

@@ -169,18 +169,21 @@ multi-line string (or any text that triggers paste detection), `Enter` appended
 in the same call is consumed inside the paste bracket — the text is pasted but
 **never submitted**.
 
-**Two-step pattern (required for reliable pane delivery):**
+**Three-step pattern (required for reliable pane delivery):**
 ```bash
-# Step 1: send the text (do NOT append Enter)
+# Step 1: send Escape to cancel any in-progress input (#2352)
+tmux send-keys -t <pane> Escape
+sleep 0.1
+# Step 2: send the text (do NOT append Enter)
 tmux send-keys -t <pane> 'message text'
-# Step 2: wait briefly, then send Enter separately
+# Step 3: wait briefly, then send Enter separately
 sleep 1
 tmux send-keys -t <pane> Enter
 ```
 
 This affects all manual `tmux send-keys` calls from the orchestrator, including
 analyst lane dispatch, `/park` and `/clear` commands, and any ad-hoc nudges.
-See issue #1834 for evidence and code-level fix tracking.
+See issues #1834 (paste bracketing) and #2352 (escape-before-send).
 
 ## Lane Discipline
 
@@ -316,12 +319,14 @@ orphaned cron jobs. `/clear` alone does **not** stop cron jobs — always
 
 1. **Park central lanes** — ops and review run persistent monitoring crons
    that must be stopped before the orchestrator exits.
-   Use the two-step pattern (see *Tmux Paste Bracketing Caveat* above):
+   Use the three-step pattern (see *Tmux Paste Bracketing Caveat* above):
    ```bash
+   tmux send-keys -t steward:ops Escape; sleep 0.1
    tmux send-keys -t steward:ops '/park'
    sleep 1
    tmux send-keys -t steward:ops Enter
    # Wait for "0 cron jobs" confirmation
+   tmux send-keys -t steward:review Escape; sleep 0.1
    tmux send-keys -t steward:review '/park'
    sleep 1
    tmux send-keys -t steward:review Enter
@@ -331,6 +336,7 @@ orphaned cron jobs. `/clear` alone does **not** stop cron jobs — always
 2. **Park idle author lanes** — any author lane with an active session but
    no dispatched work:
    ```bash
+   tmux send-keys -t steward:author-a Escape; sleep 0.1
    tmux send-keys -t steward:author-a '/park'
    sleep 1
    tmux send-keys -t steward:author-a Enter
