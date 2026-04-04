@@ -89,7 +89,7 @@
     {# Show current hand after exchange #}
     {% if human_hand %}
         <div class="moon-exchange__hand" role="region" aria-label="Your hand after exchange">
-            <h3 class="moon-exchange__group-title">Your Hand</h3>
+            <h3 class="moon-exchange__group-title moon-exchange__group-title--human">Your Hand</h3>
             <div class="moon-exchange__card-list" role="list">
                 {% for card in human_hand %}
                     {% set disp_suit = card[0] %}
