@@ -1,20 +1,20 @@
 ---
 name: away-mode
-description: Check operator away-mode status, send advisory toggle notifications, configure Telegram push preferences, and view push history. Use from the orchestrator or ops lane to manage operator presence and remote notifications.
+description: Check operator away-mode status, send advisory presence notifications, configure Telegram push preferences, and view push history. Use from the orchestrator or ops lane to manage operator presence and remote notifications.
 ---
 
 # /away-mode -- Operator Away-Mode Management
 
-Check status, send advisory toggle notifications, and configure the operator's
-away-mode detection and Telegram push notification settings. Wraps the
+Check the operator's away-mode detection state, send advisory presence
+notifications, and inspect Telegram push configuration and history. Wraps the
 `ops.py away` CLI and Telegram push infrastructure into a single
 operator-facing skill.
 
 ## When to Use
 
 - You want to check whether the operator is currently present, idle, or away
-- You need to manually toggle away-mode (e.g., operator announces they are
-  leaving or returning)
+- You need to send an advisory away/return notification (e.g., operator
+  announces they are leaving or returning)
 - You want to configure which alert severities trigger Telegram push
 - You want to review recent Telegram push history
 - The `/fleet-check` Step 5 needs a manual override of away detection
@@ -27,8 +27,8 @@ Optional positional argument controlling the action:
 |----------|-------------|
 | (none) | Show current status (default) |
 | `status` | Same as no argument -- show detailed status |
-| `on` | Manually mark operator as away |
-| `off` | Manually mark operator as returned/present |
+| `on` | Send advisory "away" notification to orchestrator |
+| `off` | Send advisory "returned" notification to orchestrator |
 | `config` | Show current Telegram push configuration |
 | `history` | Show recent Telegram push history |
 
@@ -39,7 +39,7 @@ Optional positional argument controlling the action:
 Run the away-mode detector against the latest operator interaction event:
 
 ```bash
-uv run python scripts/internal/ops.py away status --json
+uv run python scripts/internal/ops.py --json away status
 ```
 
 Interpret the result:
@@ -54,52 +54,43 @@ Interpret the result:
 Report the state, minutes inactive, and last interaction time to the
 operator (or to the orchestrator if running from ops lane).
 
-### Action: Manual Toggle On (`on`)
+### Action: Advisory Away Notification (`on`)
 
-When the operator announces they are leaving:
+> **Advisory only.** There is no mutable away-mode state to toggle.
+> `detect_operator_state()` is a pure function that infers presence from the
+> most recent `UserPromptSubmit` event timestamp. The notification below
+> tells the orchestrator to treat the operator as absent — but the detector
+> will transition back to `present` automatically on the next interaction.
 
-1. **Send an advisory notification** to the orchestrator so it knows the
-   operator intends to be away. This does **not** change the detected
-   away-mode state — the threshold-based detector infers state from
-   interaction timestamps automatically.
+When the operator announces they are leaving, send a message-bus notification:
 
-   ```bash
-   uv run python scripts/internal/ops.py message send \
-     --from <lane> --to orchestrator --type progress \
-     --summary "Operator manually marked as away via /away-mode on"
-   ```
+```bash
+uv run python scripts/internal/ops.py message send \
+  --from <lane> --to orchestrator --type progress \
+  --summary "Operator manually marked as away via /away-mode on"
+```
 
-2. **Verify** the current detected state:
+Then confirm the current detected state:
 
-   ```bash
-   uv run python scripts/internal/ops.py away status
-   ```
+```bash
+uv run python scripts/internal/ops.py away status
+```
 
-> **Note:** This notification is advisory only — it does not override the
-> threshold-based detector. The detector will transition to `away` on its
-> own once the idle threshold is reached. The operator will transition back
-> to `present` automatically when they next interact with any Claude Code
-> session (UserPromptSubmit events are tracked by the event system).
+### Action: Advisory Return Notification (`off`)
 
-### Action: Manual Toggle Off (`off`)
+When the operator announces they have returned, notify the orchestrator:
 
-When the operator announces they have returned:
+```bash
+uv run python scripts/internal/ops.py message send \
+  --from <lane> --to orchestrator --type progress \
+  --summary "Operator returned (manual toggle via /away-mode off)"
+```
 
-1. **Send an advisory notification** that the operator has returned. The
-   detector will transition to `present` automatically once it sees a
-   fresh interaction event; this message is informational only.
+Then confirm the current detected state:
 
-   ```bash
-   uv run python scripts/internal/ops.py message send \
-     --from <lane> --to orchestrator --type progress \
-     --summary "Operator returned (manual toggle via /away-mode off)"
-   ```
-
-2. **Verify** the current detected state:
-
-   ```bash
-   uv run python scripts/internal/ops.py away status
-   ```
+```bash
+uv run python scripts/internal/ops.py away status
+```
 
 ### Action: Show Push Configuration (`config`)
 
@@ -109,18 +100,12 @@ Display the current Telegram push settings:
 # Check if Telegram push is enabled
 echo "STEWARD_TELEGRAM_ENABLED=${STEWARD_TELEGRAM_ENABLED:-unset}"
 
-# Show push state (cooldowns, per-item tracking)
-cat .claude/runtime/alert_push_state.json 2>/dev/null || echo "(no push state file)"
+# Show escalation thresholds (included in status output)
+uv run python scripts/internal/ops.py away status
 
-# Show escalation thresholds
-uv run python scripts/internal/ops.py away status --json | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-t = data['thresholds']
-print(f\"Idle threshold:          {t['idle_minutes']:.0f}m\")
-print(f\"Away threshold:          {t['away_minutes']:.0f}m\")
-print(f\"Extended-away threshold: {t['extended_away_minutes']:.0f}m\")
-"
+# Show persisted push state (per-item cooldowns and history)
+# Written by alert_push.py after each push cycle — may not exist if no push has run yet.
+cat .claude/runtime/alert_push_state.json 2>/dev/null || echo "(no push state file yet)"
 ```
 
 **Configurable thresholds** can be overridden per-invocation:
@@ -140,16 +125,19 @@ The defaults are:
 Review recent Telegram push events from the audit trail:
 
 ```bash
-# Recent push-related events from the event log
-uv run python scripts/internal/ops.py events --limit 20
+# Filter event log to push-related events (alert_push, telegram_push types)
+uv run python scripts/internal/ops.py events --type alert_push --limit 10
+uv run python scripts/internal/ops.py events --type telegram_push --limit 10
 
-# Read the persisted push state (per-item cooldown and history)
-cat .claude/runtime/alert_push_state.json 2>/dev/null || echo "(no push state file)"
+# Read the persisted push state (per-item cooldowns, push counts, last-pushed times)
+# Written by alert_push.py after each push cycle — may not exist if no push has run yet.
+cat .claude/runtime/alert_push_state.json 2>/dev/null || echo "(no push state file yet)"
 ```
 
 The push state file (`.claude/runtime/alert_push_state.json`) tracks per-item
 push history including `last_pushed` timestamp, `push_count`, and `severity`.
-It is written by `alert_push.py` after each push cycle.
+It is written by `alert_push.py` after each push cycle. If the file does not
+exist, no push cycle has completed in this worktree.
 
 ## Telegram Push Flow
 
