@@ -272,7 +272,7 @@ used consistently, and manual closure was forgotten in the rush of a
 ### L3: Proving Run Gaps
 
 **Problem:** Multiple feature PRs shipped without user-facing proving runs.
-The session merged 8 web features and 6 web fixes, but no manual browser
+The session merged 7 web features and 5 web fixes, but no manual browser
 testing was performed during this session.
 
 **Evidence:**

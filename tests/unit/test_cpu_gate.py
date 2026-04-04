@@ -148,11 +148,16 @@ class TestCpuGateLoadAwareness:
     """Test CPU load threshold behavior."""
 
     def test_waits_when_load_exceeds_threshold(self) -> None:
-        """Gate should announce waiting when load threshold is very low."""
+        """Gate should announce waiting when load threshold is exceeded.
+
+        Uses CPU_GATE_LOAD_OVERRIDE to inject a deterministic load value,
+        making the test independent of actual host load.
+        """
         result = _run_gate(
             ["echo", "done"],
             env_overrides={
-                "CPU_GATE_MAX_LOAD": "0.01",  # Impossibly low
+                "CPU_GATE_LOAD_OVERRIDE": "50.0",  # Injected fake load
+                "CPU_GATE_MAX_LOAD": "1.0",  # Threshold well below fake load
                 "CPU_GATE_MAX_WAIT": "3",
                 "CPU_GATE_POLL_BASE": "1",
             },
@@ -164,10 +169,17 @@ class TestCpuGateLoadAwareness:
         assert "done" in result.stdout
 
     def test_proceeds_immediately_when_load_is_low(self) -> None:
-        """Gate should not wait when threshold is very high."""
+        """Gate should not wait when load is below threshold.
+
+        Uses CPU_GATE_LOAD_OVERRIDE to inject a deterministic load value,
+        making the test independent of actual host load.
+        """
         result = _run_gate(
             ["echo", "fast"],
-            env_overrides={"CPU_GATE_MAX_LOAD": "999.0"},
+            env_overrides={
+                "CPU_GATE_LOAD_OVERRIDE": "0.5",  # Injected low load
+                "CPU_GATE_MAX_LOAD": "999.0",
+            },
         )
         assert result.returncode == 0
         assert "fast" in result.stdout

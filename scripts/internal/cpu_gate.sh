@@ -36,6 +36,11 @@ get_ncpu() {
 }
 
 get_load_1m() {
+    # Allow tests to inject a deterministic load value via env var.
+    if [[ -n "${CPU_GATE_LOAD_OVERRIDE:-}" ]]; then
+        echo "$CPU_GATE_LOAD_OVERRIDE"
+        return
+    fi
     if [[ "$(uname)" == "Darwin" ]]; then
         sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}'
     elif [[ -f /proc/loadavg ]]; then
