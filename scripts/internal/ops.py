@@ -2181,6 +2181,23 @@ def cmd_message(args: argparse.Namespace) -> int:
             print(f"  To:      {args.to_lane}")
             print(f"  Type:    {args.msg_type}")
             print(f"  Summary: {args.summary}")
+
+        # Best-effort tmux nudge so idle lanes see the message immediately.
+        if not getattr(args, "no_nudge", False):
+            try:
+                from bid_euchre.ops.worker_pool import nudge_inbox
+
+                result = nudge_inbox(args.to_lane)
+                if result.executed:
+                    if not args.json:
+                        print(f"  Nudge:   sent /inbox-poll to {args.to_lane}")
+                else:
+                    if not args.json:
+                        print(f"  Nudge:   skipped ({result.reason})")
+            except Exception as exc:
+                if not args.json:
+                    print(f"  Nudge:   failed ({exc})")
+
         return 0
 
     if action != "show":
@@ -3960,6 +3977,13 @@ def build_parser() -> argparse.ArgumentParser:
         default="normal",
         choices=["low", "normal", "high", "urgent"],
         help="Message priority (default: normal)",
+    )
+    message_send_parser.add_argument(
+        "--no-nudge",
+        action="store_true",
+        default=False,
+        dest="no_nudge",
+        help="Skip tmux inbox nudge after sending (default: nudge recipient)",
     )
 
     # supervisor (Platform-6: supervisor routines and delta summaries)
