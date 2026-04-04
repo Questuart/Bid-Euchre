@@ -126,6 +126,30 @@ class TestCIWorkflowStructure:
             assert "checkout" not in name.lower()
             assert "setup" not in name.lower()
 
+    def test_concurrency_group_unique_per_push(self) -> None:
+        """Push events to main must get unique concurrency groups (#2363).
+
+        If all pushes to main share a single concurrency group with
+        cancel-in-progress, each merge cancels the previous CI run and
+        CI never completes under high merge frequency.
+        """
+        concurrency = self.workflow["concurrency"]
+        group_expr = str(concurrency["group"])
+        cancel_expr = str(concurrency["cancel-in-progress"])
+
+        # The group must use github.sha (or equivalent unique value) for
+        # push events so each merge gets its own non-colliding group.
+        assert (
+            "github.sha" in group_expr
+        ), "Concurrency group must include github.sha for push-unique groups"
+
+        # cancel-in-progress must NOT be unconditionally true — push events
+        # to main must not cancel each other.
+        assert cancel_expr.lower() != "true", (
+            "cancel-in-progress must not be unconditionally true; "
+            "push events to main would cancel each other (#2363)"
+        )
+
     def test_aggregator_evaluates_all_upstream_jobs(self) -> None:
         """The gate must check every upstream job including ``changes``.
 
