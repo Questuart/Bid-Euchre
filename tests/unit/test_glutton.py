@@ -849,16 +849,16 @@ class TestProbabilisticTrumpIn:
 
 
 class TestLowContractBehavior:
-    """Tests for correct card ranking on low contracts (#2098).
+    """Tests for correct card ranking on low contracts (#2098, #2300).
 
     In low contracts (10 high, A low), the Glutton should:
-    - Lead with WEAK cards (aces) to conserve strong cards (tens)
+    - Lead with STRONGEST cards (tens) to win the current trick (greedy)
     - Discard weak cards when following and can't win
     - Use the cheapest winner when following and can win
     """
 
-    def test_low_lead_plays_weakest_card(self):
-        """On low contracts, lead with weakest card (A) not strongest (T)."""
+    def test_low_lead_plays_strongest_card(self):
+        """On low contracts, lead with strongest card (T) to win the trick (#2300)."""
         glutton = GluttonStrategy(debug=True)
 
         hand = [
@@ -877,14 +877,15 @@ class TestLowContractBehavior:
         glutton.on_hand_start(hand, "low", None, player_index=0)
         choice = glutton.choose_card(hand, [], "low", None, 0)
 
-        # Should lead with weakest card from longest suit (both suits equal,
-        # picks first = spades; weakest in spades = A at idx 4)
+        # Greedy: lead strongest card from longest suit to win the trick.
+        # card_value_for_dump inverts ranks for low (T=4, J=3, ... A=0),
+        # so max() correctly picks T.
         assert (
-            hand[choice].rank == "A"
-        ), f"Low lead should play A (weakest), got {hand[choice]}"
+            hand[choice].rank == "T"
+        ), f"Low lead should play T (strongest), got {hand[choice]}"
 
-    def test_low_lead_order_weak_to_strong(self):
-        """On low contracts, successive leads go weak-to-strong (A, K, Q, J, T)."""
+    def test_low_lead_order_strong_to_weak(self):
+        """On low contracts, successive leads go strong-to-weak (T, T, J, J, Q) (#2300)."""
         glutton = GluttonStrategy(debug=True)
 
         hand = [
@@ -911,14 +912,14 @@ class TestLowContractBehavior:
             lead_ranks.append(sub_hand[choice].rank)
             remaining.pop(choice)
 
-        # Should lead weak-to-strong: A, A, K, K, Q (not T, T, J, J, Q)
+        # Greedy: lead strong-to-weak in Low: T, T, J, J, Q
         assert lead_ranks == [
-            "A",
-            "A",
-            "K",
-            "K",
+            "T",
+            "T",
+            "J",
+            "J",
             "Q",
-        ], f"Low leads should go weak-to-strong, got {lead_ranks}"
+        ], f"Low leads should go strong-to-weak, got {lead_ranks}"
 
     def test_high_lead_order_strong_to_weak(self):
         """On high contracts, successive leads go strong-to-weak (unchanged)."""
@@ -1127,12 +1128,10 @@ class TestContractSyncDefenseInDepth:
         ), f"Low discard without on_hand_start should dump A (weakest), got {hand[choice]}"
 
     def test_low_lead_without_on_hand_start(self):
-        """Low lead should play weakest card (A) without on_hand_start.
+        """Low lead should play strongest card (T) without on_hand_start (#2300).
 
-        Before the fix, _contract_type stayed "high" and _choose_lead
-        used high-contract logic, leading with A (strongest in high)
-        — which is correct by accident for the first card but wrong
-        for the overall strategy ranking.
+        Greedy strategy always leads strongest to win the current trick.
+        In Low contracts, T is strongest (value 4).
         """
         glutton = GluttonStrategy(debug=True)
         # Do NOT call on_hand_start
@@ -1150,8 +1149,8 @@ class TestContractSyncDefenseInDepth:
         choice = glutton.choose_card(hand, [], "low", None, 0)
 
         assert (
-            hand[choice].rank == "A"
-        ), f"Low lead without on_hand_start should play A (weakest), got {hand[choice]}"
+            hand[choice].rank == "T"
+        ), f"Low lead without on_hand_start should play T (strongest), got {hand[choice]}"
 
     def test_contract_type_synced_on_every_call(self):
         """_contract_type should reflect the most recent choose_card() call.

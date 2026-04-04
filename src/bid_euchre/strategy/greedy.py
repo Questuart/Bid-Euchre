@@ -310,10 +310,10 @@ class GluttonStrategy(Strategy):
         else:
             # HIGH / LOW CONTRACT LEADS
             #
-            # HIGH: lead strongest card to establish dominance (A first)
-            # LOW:  lead weakest card to conserve strong cards (T, J)
-            #       for following plays where they win tricks efficiently
-            select = min if self._contract_type == "low" else max
+            # Always lead strongest card to win the current trick.
+            # In Low contracts, card_value_for_dump already inverts ranks
+            # (T=4, J=3, ... A=0), so max() correctly picks the best lead.
+            select = max
             if suit_counts:
                 longest_suit = max(
                     suit_counts.keys(), key=lambda s: suit_counts.get(s, 0)
