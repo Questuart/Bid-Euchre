@@ -967,8 +967,11 @@ async def game_page(request: Request, link_uuid: str):
             )
 
         # Prefer the most recent *active* match so the reconnect prompt
-        # on the landing page and the game page agree.  Fall back to any
-        # match (e.g. completed) when no active match exists.  (#2056)
+        # on the landing page and the game page agree.  Fall back to a
+        # *complete* match when no active match exists so the player can
+        # see the result screen / "Play Again".  Abandoned matches are
+        # excluded — they would render a stale board whose POST handlers
+        # reject non-active state with 404.  (#2056, #2410)
         match_row = (
             session.query(Match)
             .filter_by(player_id=player.id, status="active")
@@ -978,7 +981,7 @@ async def game_page(request: Request, link_uuid: str):
         if match_row is None:
             match_row = (
                 session.query(Match)
-                .filter_by(player_id=player.id)
+                .filter_by(player_id=player.id, status="complete")
                 .order_by(Match.created_at.desc())
                 .first()
             )
