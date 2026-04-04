@@ -1457,6 +1457,12 @@ main {
     color: var(--color-text-muted);
 }
 
+/* When the auction log is repositioned below the score bar during gameplay,
+   the sibling combinator adds breathing room between the two blocks. */
+.score-bar + .action-rail {
+    margin-top: 0.75rem;
+}
+
 .result-banner .result-title {
     font-size: 1.5rem;
     margin: 0 0 0.5rem;
