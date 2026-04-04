@@ -1602,10 +1602,15 @@ class TestAutoImport:
         # even though no new sessions were imported
         mock_attr.assert_called_once()
 
-    def test_stale_full_import_uses_force_for_project_jsonl(
+    def test_stale_full_import_does_not_force_project_jsonl(
         self, tmp_path: Path
     ) -> None:
-        """Project JSONL import is forced so stale runs rebuild all telemetry."""
+        """Project JSONL import uses force=False to avoid double attribution.
+
+        _ensure_imported manages its own attribute_sessions call, so
+        import_project_jsonl must not use force=True which would trigger
+        a redundant internal attribution (#2362).
+        """
         import os
         from datetime import datetime, timezone
         from unittest.mock import MagicMock, patch
@@ -1653,7 +1658,7 @@ class TestAutoImport:
             _ensure_imported(output_dir)
 
         mock_import_usage.assert_called_once_with(output_dir=output_dir)
-        mock_import_project.assert_called_once_with(output_dir=output_dir, force=True)
+        mock_import_project.assert_called_once_with(output_dir=output_dir, force=False)
         mock_attr.assert_called_once_with(output_dir=output_dir)
 
 
