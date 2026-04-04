@@ -11,15 +11,15 @@
 #}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 
-<div id="score-bar" class="score-bar" role="status" aria-label="Current game score: You {{ score_human }}, AI {{ score_ai }}" aria-live="polite">
-    <div class="score-section" aria-label="Current game score: You {{ score_human }}, AI {{ score_ai }}">
+<div id="score-bar" class="score-bar" role="status" aria-label="Current game score: Your Team {{ score_human }}, Opponent {{ score_ai }}" aria-live="polite">
+    <div class="score-section" aria-label="Current game score: Your Team {{ score_human }}, Opponent {{ score_ai }}">
         <span class="score-header">Current Game Score:</span>
-        <span class="score-label score-label--human">You:</span>
+        <span class="score-label score-label--human">Your Team:</span>
         <span class="score-value score-value--human{% if score_human >= 0 %} score--positive{% else %} score--negative{% endif %}">
             {{ score_human }}
         </span>
         <span class="score-separator" aria-hidden="true">|</span>
-        <span class="score-label score-label--ai">AI:</span>
+        <span class="score-label score-label--ai">Opponent:</span>
         <span class="score-value score-value--ai{% if score_ai >= 0 %} score--positive{% else %} score--negative{% endif %}">
             {{ score_ai }}
         </span>

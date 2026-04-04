@@ -481,8 +481,8 @@ class TestSeatLabels:
         tmpl = jinja_env.get_template("partials/score.html")
         html = tmpl.render(**ctx)
 
-        assert "You:" in html, "Expected 'You:' label in score bar"
-        assert "AI:" in html, "Expected 'AI:' label in score bar"
+        assert "Your Team:" in html, "Expected 'Your Team:' label in score bar"
+        assert "Opponent:" in html, "Expected 'Opponent:' label in score bar"
 
         # Dealer label should use the seat_labels mapping
         dealer_seat = ctx["dealer_seat"]
