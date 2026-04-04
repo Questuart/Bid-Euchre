@@ -213,7 +213,8 @@ Once an issue passes the eligibility contract:
 
 - Title prefix: `fix(repair): <short description>`
 - Label: `follow-up`
-- Body must reference: the issue number (`Fixes #N`) and the source PR
+- Body must reference: the issue number (`Refs #N` by default; use `Fixes #N`
+  only for Tier 1 single-bounded fixes — see [Tiered Issue Closure](#tiered-issue-closure)) and the source PR
 - Scope must stay within the issue's identified subsystem
 
 ### Lane Ownership

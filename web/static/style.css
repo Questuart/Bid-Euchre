@@ -2243,7 +2243,13 @@ main {
     }
 
     /* Auction log on mobile — collapsed by default to reclaim vertical space.
-       The summary toggle remains visible so users can expand if needed. */
+       The summary toggle remains visible so users can expand if needed.
+       order: 3 keeps it below score bar (order: 1) and compass (order: 2)
+       after the flex reorder above.  (#2353) */
+    .action-rail {
+        order: 3;
+    }
+
     .action-rail:not([open]) .action-rail__content {
         display: none;
     }
