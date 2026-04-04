@@ -345,7 +345,7 @@ main {
 .hand h3 {
     margin: 0 0 0.5rem;
     font-size: 1rem;
-    color: var(--color-text-muted);
+    color: var(--team-human);
     text-align: center;
 }
 
@@ -3072,6 +3072,10 @@ main {
     color: var(--color-text-muted);
 }
 
+.moon-exchange__group-title--human {
+    color: var(--team-human);
+}
+
 .moon-exchange__card-list {
     display: flex;
     justify-content: center;
@@ -3321,6 +3325,10 @@ main {
     color: var(--color-text-muted);
     margin: 0 0 0.5rem;
     font-weight: 600;
+}
+
+.moon-exchange__group-title--human {
+    color: var(--team-human);
 }
 
 .moon-exchange__card-list {
