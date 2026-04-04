@@ -101,6 +101,26 @@ def test_no_url_exits(monkeypatch):
         mod._get_database_url()
 
 
+def test_get_session_does_not_call_create_tables(monkeypatch):
+    """_get_session must NOT call create_tables — schema is managed via deployment."""
+    mod = _import_render_admin()
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.delenv("RENDER_DATABASE_URL", raising=False)
+
+    # Patch create_tables into web.db so we can detect if it's called
+    call_count = 0
+
+    def _spy_create_tables(engine):
+        nonlocal call_count
+        call_count += 1
+
+    monkeypatch.setattr("web.db.create_tables", _spy_create_tables)
+
+    session, url = mod._get_session()
+    session.close()
+    assert call_count == 0, "create_tables() must not be called by _get_session()"
+
+
 def test_manage_invite_codes_render_url_priority(monkeypatch):
     """manage_invite_codes.py _get_session uses RENDER_DATABASE_URL when set."""
     monkeypatch.setenv("RENDER_DATABASE_URL", "sqlite:///:memory:")
