@@ -470,6 +470,174 @@ class TestPerCardPacing:
 
 
 # ---------------------------------------------------------------------------
+# Test: skip_to_next_decision (#2309)
+# ---------------------------------------------------------------------------
+
+
+class TestSkipToNextDecision:
+    """skip_to_next_decision advances past all per-card pauses (#2309)."""
+
+    def _reach_paused_after_play(
+        self, engine: MatchEngine, seed: int = SEED
+    ) -> MatchState:
+        """Drive match to a ``paused_after_play`` state, or pytest.skip."""
+        state = engine.start_match(seed, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Bid through auction
+        while hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            if 5 > hand.current_high_bid:
+                state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
+            else:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+            hand = state.current_hand
+            if hand is None:
+                pytest.skip("Match ended during auction")
+
+        # Advance to first paused_after_play state
+        for _ in range(80):
+            hand = state.current_hand
+            if hand is None:
+                break
+            if hand.phase == "trick_play" and hand.paused_after_play:
+                return state
+            if hand.paused_after_trick:
+                state = engine.resume_ai(state)
+                continue
+            if hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                legal = engine.get_legal_plays(state)
+                state = engine.submit_human_card(state, legal[0])
+                continue
+            break
+
+        pytest.skip("Could not reach paused_after_play state")
+
+    def test_skip_advances_to_trick_end(self, engine: MatchEngine) -> None:
+        """skip_to_next_decision stops at paused_after_trick (trick boundary)."""
+        state = self._reach_paused_after_play(engine)
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.paused_after_play is True
+
+        state = engine.skip_to_next_decision(state)
+        hand = state.current_hand
+
+        # After skip, should NOT be paused_after_play — only after_trick,
+        # human turn, or hand/match end are valid stops.
+        if hand is not None and hand.phase == "trick_play":
+            assert hand.paused_after_play is False
+            # Must be at a valid decision point:
+            assert (
+                hand.paused_after_trick
+                or hand.current_seat == HUMAN_SEAT
+                or hand.phase != "trick_play"
+            )
+
+    def test_skip_stops_at_human_turn(self, engine: MatchEngine) -> None:
+        """skip_to_next_decision returns when the human's seat is next."""
+        state = self._reach_paused_after_play(engine)
+
+        state = engine.skip_to_next_decision(state)
+        hand = state.current_hand
+
+        if hand is not None and hand.phase == "trick_play":
+            # Must be at a valid stop: paused_after_trick or human's turn
+            assert hand.paused_after_trick or hand.current_seat == HUMAN_SEAT
+
+    def test_skip_when_not_paused_is_noop(self, engine: MatchEngine) -> None:
+        """skip_to_next_decision is a no-op when no pause flag is set."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+
+        # Bid through auction
+        while hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            if 5 > hand.current_high_bid:
+                state = engine.submit_human_bid(state, BidAction.bid(5, "S"))
+            else:
+                state = engine.submit_human_bid(state, BidAction.pass_bid())
+            hand = state.current_hand
+            if hand is None:
+                pytest.skip("Match ended during auction")
+
+        # Clear any pauses to reach a clean state
+        for _ in range(80):
+            hand = state.current_hand
+            if hand is None:
+                break
+            if hand.paused_after_play:
+                state = engine.resume_after_play(state)
+                continue
+            if hand.paused_after_trick:
+                state = engine.resume_ai(state)
+                continue
+            break
+
+        hand = state.current_hand
+        if hand is None or hand.phase != "trick_play":
+            pytest.skip("Could not reach clean trick_play state")
+
+        # Take a snapshot before skip
+        pre_trick_count = len(hand.completed_tricks)
+        pre_seat = hand.current_seat
+
+        state_after = engine.skip_to_next_decision(state)
+        hand_after = state_after.current_hand
+
+        # When neither pause flag is set, skip_to_next_decision returns
+        # immediately — state unchanged.
+        if hand_after is not None and hand_after.phase == "trick_play":
+            assert len(hand_after.completed_tricks) == pre_trick_count
+            assert hand_after.current_seat == pre_seat
+
+    def test_skip_clears_last_ai_events(self, engine: MatchEngine) -> None:
+        """skip_to_next_decision always clears last_ai_events before advancing."""
+        state = self._reach_paused_after_play(engine)
+
+        # Pre-populate events to verify they get cleared
+        engine.last_ai_events = [{"fake": "event"}]
+        state = engine.skip_to_next_decision(state)
+
+        # last_ai_events should have been reset (may contain new events from
+        # the advance, but the pre-existing fake event must be gone).
+        assert {"fake": "event"} not in engine.last_ai_events
+
+    def test_skip_at_hand_end(self, engine: MatchEngine) -> None:
+        """skip_to_next_decision returns immediately if hand is None."""
+        state = engine.start_match(SEED, "heuristic")
+
+        # Play a full hand to get to the inter-hand boundary
+        state = _play_full_hand(engine, state)
+
+        # If current_hand is None, skip is a no-op
+        if state.current_hand is None:
+            state_after = engine.skip_to_next_decision(state)
+            assert state_after.current_hand is None
+
+    def test_skip_at_match_complete(self, engine: MatchEngine) -> None:
+        """skip_to_next_decision returns immediately if match is complete."""
+        state = _play_until_match_end(engine, engine.start_match(SEED, "heuristic"))
+        assert state.status == "complete"
+
+        state_after = engine.skip_to_next_decision(state)
+        assert state_after.status == "complete"
+
+    def test_skip_during_non_trick_phase(self, engine: MatchEngine) -> None:
+        """skip_to_next_decision returns immediately if not in trick_play."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.phase == "auction"
+
+        state_after = engine.skip_to_next_decision(state)
+        hand_after = state_after.current_hand
+        assert hand_after is not None
+        # Should return without changing the phase
+        assert hand_after.phase == "auction"
+
+
+# ---------------------------------------------------------------------------
 # Test 2: All-pass redeal
 # ---------------------------------------------------------------------------
 
