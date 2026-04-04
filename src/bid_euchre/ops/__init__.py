@@ -88,7 +88,9 @@ CI_CHECK_NAMES: frozenset[str] = frozenset(
     {
         "changes",
         "checks",
-        "test-run",
+        "tests-shard",
+        "tests-shard (1)",
+        "tests-shard (2)",
         "notebooks",
         "promotion-gate",
         "tests",

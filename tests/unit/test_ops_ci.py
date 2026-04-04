@@ -679,20 +679,20 @@ class TestCICheckNamesConsistency:
     def test_ci_check_names_accessible(self) -> None:
         """CI_CHECK_NAMES allowlist is importable and has expected members.
 
-        Updated: sharding collapsed to single test-run job (#2311).
+        Updated: 2-shard CI re-enabled after root cause fix (#2311, #2321).
         """
         from bid_euchre.ops import CI_CHECK_NAMES
 
-        # Current CI job names (single test-run, no sharding)
+        # Current CI job names (2-way sharding re-enabled)
         assert "tests" in CI_CHECK_NAMES
         assert "checks" in CI_CHECK_NAMES
-        assert "test-run" in CI_CHECK_NAMES
+        assert "tests-shard" in CI_CHECK_NAMES
+        assert "tests-shard (1)" in CI_CHECK_NAMES
+        assert "tests-shard (2)" in CI_CHECK_NAMES
         assert "notebooks" in CI_CHECK_NAMES
         assert "promotion-gate" in CI_CHECK_NAMES
-        # Retired shard entries must be removed
-        assert "tests-shard" not in CI_CHECK_NAMES
-        assert "tests-shard (1)" not in CI_CHECK_NAMES
-        assert "tests-shard (2)" not in CI_CHECK_NAMES
+        # Retired single-job entry must be removed
+        assert "test-run" not in CI_CHECK_NAMES
         # Non-CI checks must NOT be in the set
         assert "reviewing-changes" not in CI_CHECK_NAMES
         assert "claude-review" not in CI_CHECK_NAMES
@@ -708,6 +708,6 @@ class TestCICheckNamesConsistency:
         # Current CI job names all classify as "ci"
         assert classify_check("tests") == "ci"
         assert classify_check("checks") == "ci"
-        assert classify_check("test-run") == "ci"
+        assert classify_check("tests-shard") == "ci"
         assert classify_check("notebooks") == "ci"
         assert classify_check("promotion-gate") == "ci"

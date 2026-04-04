@@ -89,7 +89,7 @@ class TestConsistencyWithGithubPrState:
             for name in (
                 "tests",
                 "checks",
-                "test-run",
+                "tests-shard",
                 "notebooks",
                 "promotion-gate",
             ):

@@ -1,6 +1,6 @@
 """Regression tests for the promoted CI workflow structure.
 
-The CI workflow splits work across several jobs (checks, test-run,
+The CI workflow splits work across several jobs (checks, tests-shard,
 notebooks, promotion-gate) and uses a non-matrix ``tests`` aggregation
 job to preserve the required check context.  These tests verify the
 structural invariants that branch protection depends on.
@@ -27,7 +27,7 @@ class TestCIWorkflowStructure:
         expected = {
             "changes",
             "checks",
-            "test-run",
+            "tests-shard",
             "notebooks",
             "promotion-gate",
             "tests",
@@ -43,7 +43,7 @@ class TestCIWorkflowStructure:
         expected_needs = {
             "changes",
             "checks",
-            "test-run",
+            "tests-shard",
             "notebooks",
             "promotion-gate",
         }
@@ -58,7 +58,7 @@ class TestCIWorkflowStructure:
 
         for job_name in (
             "checks",
-            "test-run",
+            "tests-shard",
             "notebooks",
             "promotion-gate",
             "tests",
@@ -69,24 +69,28 @@ class TestCIWorkflowStructure:
             if job_name != "tests":
                 assert "github.event_name == 'push'" in if_expr
 
-    def test_test_run_is_single_job(self) -> None:
-        """test-run is a single non-matrix job running all tests."""
-        job = self.jobs["test-run"]
-        assert "strategy" not in job, "test-run should not have a matrix strategy"
-        # Check that pytest is invoked without split flags
+    def test_tests_shard_is_2_way_matrix(self) -> None:
+        """tests-shard uses a 2-way matrix split via pytest-split."""
+        job = self.jobs["tests-shard"]
+        assert "strategy" in job, "tests-shard should have a matrix strategy"
+        matrix = job["strategy"]["matrix"]
+        assert matrix["group"] == [1, 2], "Expected 2-way shard split"
+        assert job["strategy"].get("fail-fast") is False
+        # Check that pytest is invoked with split flags
         test_steps = [s for s in job["steps"] if "pytest" in str(s.get("run", ""))]
         assert len(test_steps) == 1
-        assert "--splits" not in test_steps[0]["run"]
+        assert "--splits 2" in test_steps[0]["run"]
+        assert "--group" in test_steps[0]["run"]
 
-    def test_test_run_has_timeout(self) -> None:
-        """test-run must have a timeout to prevent CI hangs (#2311)."""
-        job = self.jobs["test-run"]
-        assert "timeout-minutes" in job, "test-run must have timeout-minutes"
-        assert job["timeout-minutes"] <= 25, "timeout should be reasonable (≤25min)"
+    def test_tests_shard_has_timeout(self) -> None:
+        """tests-shard must have a timeout to prevent CI hangs (#2311)."""
+        job = self.jobs["tests-shard"]
+        assert "timeout-minutes" in job, "tests-shard must have timeout-minutes"
+        assert job["timeout-minutes"] <= 20, "timeout should be reasonable (≤20min)"
 
-    def test_test_run_is_not_advisory(self) -> None:
-        """test-run must NOT have continue-on-error."""
-        job = self.jobs["test-run"]
+    def test_tests_shard_is_not_advisory(self) -> None:
+        """tests-shard must NOT have continue-on-error."""
+        job = self.jobs["tests-shard"]
         assert job.get("continue-on-error") is not True
 
     def test_docs_only_pr_path_supported(self) -> None:
@@ -100,7 +104,7 @@ class TestCIWorkflowStructure:
         # The changes job runs on PRs only
         assert "pull_request" in str(self.jobs["changes"].get("if", ""))
         # Heavy jobs depend on changes outputs
-        for job_name in ("checks", "test-run", "notebooks"):
+        for job_name in ("checks", "tests-shard", "notebooks"):
             job = self.jobs[job_name]
             assert "changes" in job.get("needs", [])
             job_if = str(job.get("if", ""))

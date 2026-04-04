@@ -85,10 +85,11 @@ jobs:
       - name: Ruff (lint)
         run: make lint
 
-  # ── Pytest (single job, no sharding) ───────────────────────────────
-  # Collapsed from 2-way sharding after shard-1 CI hang (#2311).
-  # Runs all non-slow tests in one job with a timeout safety net.
-  test-run:
+  # ── Sharded pytest (2-way split via pytest-split) ─────────────────
+  # Two balanced shards run in parallel; both must pass for the `tests`
+  # aggregation gate to succeed.  Uses the committed `.test_durations`
+  # baseline.  Re-enabled after root cause fix for CI hang (#2311, #2321).
+  tests-shard:
     needs: [changes]
     if: >-
       always() && !cancelled() &&
@@ -99,7 +100,11 @@ jobs:
       (github.event_name == 'push' ||
        needs.changes.outputs.code_changed == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -117,10 +122,11 @@ jobs:
       - name: Install package + dev deps
         run: uv sync --frozen --extra dev
 
-      - name: Tests
+      - name: Tests (shard ${{ matrix.group }}/2)
         run: |
           PYTHONPATH=.:src uv run python -m pytest \
             -m "not slow" tests/ \
+            --splits 2 --group ${{ matrix.group }} \
             -q --tb=short
 
   # ── Notebook hygiene + smoke execution ────────────────────────────
@@ -213,7 +219,7 @@ jobs:
   #   - Fails if any applicable upstream is failure or cancelled
   #   - Passes when all upstreams are success or skipped
   tests:
-    needs: [changes, checks, test-run, notebooks, promotion-gate]
+    needs: [changes, checks, tests-shard, notebooks, promotion-gate]
     if: >-
       always() &&
       (github.event_name == 'push' ||
@@ -226,7 +232,7 @@ jobs:
         if: >-
           github.event_name == 'pull_request' &&
           needs.checks.result == 'skipped' &&
-          needs.test-run.result == 'skipped' &&
+          needs.tests-shard.result == 'skipped' &&
           needs.notebooks.result == 'skipped'
         run: echo "::notice::Docs/plans-only PR — all heavy jobs skipped"
 
@@ -234,11 +240,11 @@ jobs:
         run: |
           echo "changes:        ${{ needs.changes.result }}"
           echo "checks:         ${{ needs.checks.result }}"
-          echo "test-run:        ${{ needs.test-run.result }}"
+          echo "tests-shard:    ${{ needs.tests-shard.result }}"
           echo "notebooks:      ${{ needs.notebooks.result }}"
           echo "promotion-gate: ${{ needs.promotion-gate.result }}"
 
-          results=("${{ needs.changes.result }}" "${{ needs.checks.result }}" "${{ needs.test-run.result }}" "${{ needs.notebooks.result }}" "${{ needs.promotion-gate.result }}")
+          results=("${{ needs.changes.result }}" "${{ needs.checks.result }}" "${{ needs.tests-shard.result }}" "${{ needs.notebooks.result }}" "${{ needs.promotion-gate.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
               echo "::error::Upstream job result: $r"
