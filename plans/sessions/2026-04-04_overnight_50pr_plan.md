@@ -23,14 +23,17 @@
 | flex-b | Flex | Browser game — HTTP mode | Yes |
 | flex-c | Flex | Browser game — Playwright mode | Yes |
 | flex-d | Flex | Browser game — HTTP try-hard mode | Yes |
-| steward-analyst | Analyst | Research (#2300) | Yes |
-| steward-analyst-b | Analyst | Research (#2220) | Yes |
+| steward-analyst | Analyst | Research (#2300) + wave triage | Yes |
+| steward-analyst-b | Analyst | Research (#2220) + wave triage | Yes |
 | steward-review | Review | Autonomous review loop | Yes |
 | steward-ops | Ops | Monitoring, alerts | Yes |
 
 **Active PR-producing lanes: 8** (4 browser + 4 platform).
 **Playtesting lanes: 4** (flex pool — continuous browser game play).
 **Support lanes: 4** (2 analyst + review + ops).
+
+> **Analyst triage duty:** Both analyst lanes have a dual role — initial research
+> tasks (#2300, #2220) plus recurring wave triage. See §3a for the triage cycle.
 
 ## 2. Issue Triage Table
 
@@ -142,6 +145,95 @@ See analyst-b findings on #2198 for detailed prompts and API reference.
 3. Inject prompts into flex-a through flex-d via tmux (two-step: text then Enter)
 4. Monitor via `capture-pane` every 15 min
 
+### 3a. Analyst Triage Cycles (Recurring)
+
+Both analyst lanes have a dual role: initial research tasks plus **recurring wave
+triage** that keeps later waves fed with well-scoped work.
+
+**Cycle cadence:** After completing their initial research task (#2300 / #2220),
+each analyst enters a triage loop aligned with wave boundaries.
+
+| Wave | Analyst Triage Duty |
+|------|-------------------|
+| Wave 1 | Complete initial research (#2300, #2220). Begin monitoring newly filed issues from review coordinator and playtest lanes. |
+| Wave 2 | Triage new issues from Wave 1 review findings. Assess wave progress — are lanes ahead/behind? Recommend priority reordering for Wave 3. |
+| Wave 3 | Triage playtest bug reports from flex lanes. Shape any complex issues into dispatch-ready packets. Recommend lane reassignment if throughput drops. |
+| Wave 4 | Triage repo review findings (see §4 Wave 2). Shape high-priority findings into Wave 5 dispatch items. |
+| Wave 5+ | Final triage pass — assess which remaining issues need `needs-verification` labels. Draft overnight run audit notes. |
+
+**Triage outputs per cycle:**
+- Review newly filed issues (from review coordinator, playtest lanes, repo review)
+- Assess lane progress and wave health
+- Shape complex issues into dispatch-ready packets (file scope, validation, acceptance criteria)
+- Recommend priority reordering or lane reassignment to orchestrator
+- Add `needs-verification` label to issues with merged fixes not yet proven in production
+
+**Analyst dispatch pattern:**
+```
+analyst-a: #2300 research → triage cycle (Waves 2-5)
+analyst-b: #2220 research → triage cycle (Waves 2-5)
+```
+
+### 3b. Playtest Skill MVP Spec (Pre-Overnight Build)
+
+The `/playtest` skill does not exist yet (#2198 is open). One platform lane must
+build the MVP skill **before** the overnight run so flex lanes have a durable,
+cron-compatible skill to invoke instead of ad-hoc prompts.
+
+**Minimum viable skill: `/play-game`** — a registered skill in
+`.claude/skills/play-game/SKILL.md` that encodes:
+
+**Game lifecycle state machine:**
+```
+JOIN → AUCTION → [TRICK_PLAY × 10] → HAND_RESULT → [next hand or MATCH_OVER]
+```
+
+**HTTP mode API reference:**
+
+| Phase | Endpoint | Method | Key Payload |
+|-------|----------|--------|-------------|
+| Join | `/enter-code` | POST | `code=<invite>` |
+| Nickname | `/play/{uuid}/nickname` | POST | `nickname=<name>` |
+| Start | `/play/{uuid}/select-ai` | POST | `ai_model=bud_bot_hard` |
+| Bid | `/play/{uuid}/bid` | POST | `bid_type=suit&bid_level=5&bid_suit=H&turn_number=N` |
+| Pass | `/play/{uuid}/bid` | POST | `bid_type=pass&turn_number=N` |
+| Play card | `/play/{uuid}/play-card` | POST | `card_index=N&turn_number=N` |
+| Advance | `/play/{uuid}/next` | POST | `turn_number=N` |
+| Next hand | `/play/{uuid}/next-hand` | POST | (empty) |
+| New match | `/play/{uuid}/new-match` | POST | (empty) |
+
+**Bidding heuristics:**
+- A = 1 trick, K pair = 1, Right bower = 1.5, Left bower = 1
+- Bid guaranteed tricks minus 1 (conservative)
+- Prefer suit with most cards; HIGH/LOW for balanced hands
+
+**Card play heuristics:**
+- Lead trump to pull opponents' trump
+- Follow suit (server-enforced)
+- Play aces early in no-trump
+- Bower hierarchy: Right > Left > A of trump > K of trump
+
+**Mode parameter:** `--mode playwright|http|hybrid|tryhard`
+
+**Output format:** Structured session log with winner, score, hands_played,
+contract_distribution, observations, bugs.
+
+**Acceptance criteria:**
+- `.claude/skills/play-game/SKILL.md` exists with complete game lifecycle
+- HTTP mode: all endpoints, payloads, state detection documented
+- Bidding and card play heuristics included
+- Invocable as `/play-game --mode http --code <CODE>`
+- `make check-quiet` passes
+
+**Dispatch recommendation:** Assign to author-b or author-d in Wave 1 (before
+flex lanes start). Estimated effort: 60-90 min. No code changes — skill file only.
+
+**Follow-on skills (Waves 3-4):**
+- `/playtest` — QA loop wrapper: reads `plans/gameplay_intelligence/`, invokes
+  `/play-game`, updates observation files, files GitHub issues, clears context
+- `/researcher` — Competitive play wrapper: persistent leaderboard identity,
+  strategy playbook tracking, win/loss stats, comments board posts
+
 ## 4. Wave Plan
 
 ### Timing Model
@@ -181,12 +273,14 @@ Lanes completing Wave 1 pick up next issues. Priority: quick wins first, unblock
 | 4 | #2309 | any | tests/unit/hosted_play/ | pytest passes | 30m |
 | 5 | #2305 | any | tests/unit/hosted_play/ | pytest passes | 30m |
 | 6 | #2306 | platform | ops, hooks | Proving check enforced | 45m |
+| 7 | `/reviewing-repo` | platform | docs, issues | Scored report committed | 90m |
 
 **Note:** #2238 depends on dontAsk mode (PR #2268, already merged). Safe to dispatch.
 **Note:** #2238 and #2333 both touch `.claude/settings.json` — serialize: #2333 first (Wave 1), then #2238 (Wave 2).
+**Note:** `/reviewing-repo` runs a comprehensive 5-phase repository review (`docs/02_agent/REPO_REVIEW_PROMPT.md`). It discovers real issues — correctness bugs, test gaps, doc drift, architecture violations. The lane commits a scored report as a PR AND files GitHub issues for all findings. These findings feed the analyst triage pipeline and generate dispatchable work for Waves 3-5.
 
-**Expected Wave 2 output:** ~6 PRs.
-**Cumulative:** ~14 PRs.
+**Expected Wave 2 output:** ~7 PRs (6 issues + 1 repo review report).
+**Cumulative:** ~15 PRs.
 **Wall clock:** T+1h to T+2h.
 
 ### Wave 3 — Ops & Skills (T+2h, freed lanes)
@@ -256,7 +350,8 @@ Wave 2 (independent, parallel — fill freed lanes)
 ├── #2238 (review lane stalls) — depends: #2333 merged (shared file)
 ├── #2309 (tests)
 ├── #2305 (tests)
-└── #2306 (harden issue close)
+├── #2306 (harden issue close)
+└── /reviewing-repo (platform lane) ──→ findings feed analyst triage (Wave 3+)
 
 Wave 3
 ├── #2198 PR-1 (play-game skill) ──→ serializes: PR-2 (Wave 4), PR-3 (Wave 4)
@@ -315,33 +410,38 @@ Wave 5
 | In-flight issues (Wave 1) | 6 | High (already started) |
 | New dispatch Wave 1 | 2 | High (well-scoped) |
 | Backlog dispatch (Wave 2) | 6 | High (small, bounded) |
+| Repo review report (Wave 2) | 1 | High (single skill invocation) |
 | Ops & skills (Wave 3) | 5-6 | Medium-High |
 | Skill chain + proving (Wave 4) | 3-4 | Medium (depends on PR-1 landing) |
 | Stretch + overflow (Wave 5) | 2-4 | Low-Medium |
-| **Total** | **25-28** | |
+| Repo review follow-up PRs (Wave 3-5) | 2-4 | Medium (depends on findings) |
+| Playtest bug fix PRs (Wave 3-5) | 1-3 | Medium (depends on flex lane output) |
+| **Total** | **28-36** | |
 
 ### Confidence Tiers
 
-- **High confidence (14 PRs):** In-flight + backlog clear (Waves 1-2)
-- **Medium confidence (8-10 PRs):** Ops features + skill chain (Waves 3-4)
-- **Low confidence (2-4 PRs):** Stretch goals + reactive follow-ups (Wave 5)
+- **High confidence (15 PRs):** In-flight + backlog clear + repo review (Waves 1-2)
+- **Medium confidence (10-14 PRs):** Ops features + skill chain + repo review follow-ups (Waves 3-4)
+- **Low confidence (3-7 PRs):** Stretch goals + reactive follow-ups + playtest bugs (Wave 5)
 
 ### Fallback Targets
 
 | Scenario | Expected PRs | Notes |
 |----------|-------------|-------|
-| Everything goes well | 28-30 | All waves complete, flex lanes file extra bugs |
-| Normal friction (80%) | 22-25 | Some Wave 4-5 tasks slip |
-| Heavy friction (60%) | 16-20 | Skill chain incomplete |
-| Minimum viable run | 14 | Waves 1-2 only |
+| Everything goes well | 34-36 | All waves complete, repo review + playtest generate follow-ups |
+| Normal friction (80%) | 26-30 | Some Wave 4-5 tasks slip |
+| Heavy friction (60%) | 18-22 | Skill chain incomplete, few follow-ups |
+| Minimum viable run | 15 | Waves 1-2 only |
 
 ### Why Not 50?
 
 The original plan reached 50 by inventing 32 new issues. With only existing open issues:
 - **18 dispatchable issues** yield ~23 PRs (including multi-PR splits)
 - **6 in-flight** items add 6 PRs
-- **Total ceiling: ~29 PRs** from existing backlog
-- Additional PRs come only from reactive work (review follow-ups, playtest bug reports)
+- **Repo review** generates 1 report PR + 2-4 follow-up PRs from findings
+- **Playtest bug reports** generate 1-3 reactive fix PRs
+- **Total ceiling: ~36 PRs** from existing backlog + generated work
+- The gap to 50 would require creating new issues — which this plan avoids
 
 ## 8. Risk Assessment
 
@@ -355,6 +455,8 @@ The original plan reached 50 by inventing 32 new issues. With only existing open
 | Lane context exhaustion (>15 min tasks) | Low | Silent lane death | Keep tasks < 90 min; monitor via fleet-check |
 | Playwright mode too slow for flex-c | High | Low game count | Accept 5 matches; value is UX bugs not volume |
 | HTML parsing breaks from recent UI PRs | Low-Medium | HTTP/hybrid modes stall | Test parsing first hand; fix inline |
+| Repo review generates too many issues | Low | Analyst triage overwhelmed | Cap at P0/P1 findings only for dispatch; P2 deferred |
+| Analyst triage cycle delays | Low | Later waves lack well-scoped work | Analysts start triage early; orchestrator fills gaps |
 
 ## 9. Monitoring Plan
 
@@ -367,10 +469,27 @@ The original plan reached 50 by inventing 32 new issues. With only existing open
 | Review loop | Every 10 min | `/check-reviews` cron | Manual override if stuck |
 | Render health | Every 30 min | `curl .../health` | Switch flex lanes to localhost |
 | CI status | Per PR | `gh pr checks` | Rerun on flake |
+| Analyst triage output | Per wave boundary | Inbox messages | Nudge if no triage report between waves |
+| Repo review progress | Once (Wave 2) | `capture-pane` | Ensure report PR opens by T+3h |
 
 ## 10. Pre-Dispatch Checklist
 
-- [ ] Close issues already fixed: #2310, #2311, #2329, #2313 (PRs merged but issues open)
+### Stale Issue Verification
+
+Before closing issues with merged PRs, verify the fix is proven in production.
+Issues fixed but NOT yet proven should get `needs-verification` label, not closure.
+
+| # | PR Merged | Fix Proven in Prod? | Action |
+|---|-----------|-------------------|--------|
+| 2310 | #2327 | Needs verification | Add `needs-verification` label |
+| 2311 | #2325 | CI-only fix — verified by passing CI | Close |
+| 2329 | #2335 | Needs verification (visual) | Add `needs-verification` label |
+| 2313 | #2339 | Ops-only — verified by fleet run | Close |
+
+### Launch Checklist
+
+- [ ] Apply `needs-verification` label to #2310, #2329 (merged but unproven in prod)
+- [ ] Close #2311, #2313 (fixes verified by CI/fleet)
 - [ ] Verify 6 in-flight lanes are progressing (not stalled)
 - [ ] Verify main is green: `gh run list --branch main --limit 1`
 - [ ] Create 4 invite codes for flex lane playtesting
@@ -378,9 +497,12 @@ The original plan reached 50 by inventing 32 new issues. With only existing open
 - [ ] Fetch latest main in all worktrees
 - [ ] Start fleet-check cron: `/loop 8m /fleet-check`
 - [ ] Start review cron: `/loop 10m /check-reviews`
+- [ ] Dispatch `/play-game` skill build → author-b or author-d (must land before flex lanes start)
 - [ ] Dispatch Wave 1 new tasks: #2334 → author-b, #2333 → author-d
-- [ ] Dispatch flex lane playtesting prompts
+- [ ] Dispatch flex lane playtesting prompts (after `/play-game` skill merges)
+- [ ] Dispatch `/reviewing-repo` → platform lane (Wave 2)
 - [ ] Dispatch analyst tasks: #2300 → analyst-a, #2220 → analyst-b
+- [ ] Brief analyst lanes on triage cycle duty (§3a)
 
 ## Outcome
 
