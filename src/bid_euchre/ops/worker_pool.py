@@ -1474,9 +1474,10 @@ def nudge_inbox(
     message is written to a lane's inbox, calling this function wakes the lane
     so it reads the message promptly — even if the lane is idle at the prompt.
 
-    Uses the same two-step ``tmux send-keys`` pattern as :func:`nudge_pane`
-    (text first, then ``Enter`` after a paste-bracket delay) to avoid the
-    bracketed-paste issue described in #1834.
+    Uses the same three-step ``tmux send-keys`` pattern as :func:`nudge_pane`
+    (``Escape`` first to cancel in-progress input, then text, then ``Enter``
+    after a paste-bracket delay) to avoid the bracketed-paste issue described
+    in #1834 and the input corruption issue described in #2352.
 
     The nudge is best-effort: failures are reported in the returned
     :class:`PoolAction` but never raise.
@@ -1494,6 +1495,14 @@ def nudge_inbox(
     cmd = "/inbox-poll"
 
     try:
+        # Send Escape first to cancel any in-progress input.  See #2352.
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, "Escape"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        time.sleep(_ESCAPE_CANCEL_DELAY)
         subprocess.run(
             ["tmux", "send-keys", "-t", target, cmd],
             check=True,

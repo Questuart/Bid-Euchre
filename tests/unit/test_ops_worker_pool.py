@@ -2120,7 +2120,13 @@ class TestNudgeInbox:
         assert result.action == "inbox_nudge"
         assert result.error is None
         assert "/inbox-poll" in result.reason
-        assert mock_run.call_count == 2
+        assert mock_run.call_count == 3
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "Escape"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
         mock_run.assert_any_call(
             ["tmux", "send-keys", "-t", "steward:author-a", "/inbox-poll"],
             check=True,
@@ -2133,7 +2139,8 @@ class TestNudgeInbox:
             capture_output=True,
             timeout=5,
         )
-        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
+        mock_sleep.assert_any_call(_ESCAPE_CANCEL_DELAY)
+        mock_sleep.assert_any_call(_PASTE_BRACKET_DELAY)
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     @patch(f"{_WORKER_POOL}.subprocess.run")
@@ -2171,11 +2178,13 @@ class TestNudgeInbox:
 
     @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
     def test_nudge_inbox_call_order(self, mock_resolve: MagicMock) -> None:
-        """nudge_inbox sends /inbox-poll, sleeps, then sends Enter — in order."""
+        """nudge_inbox sends Escape, sleeps, /inbox-poll, sleeps, Enter — in order."""
         call_log: list[str] = []
 
         def track_run(cmd: list[str], **_kw: object) -> MagicMock:
-            if cmd[-1] == "Enter":
+            if cmd[-1] == "Escape":
+                call_log.append("escape")
+            elif cmd[-1] == "Enter":
                 call_log.append("enter")
             else:
                 call_log.append("text")
@@ -2191,7 +2200,13 @@ class TestNudgeInbox:
             result = nudge_inbox("author-a")
             assert result.executed is True
 
-        assert call_log == ["text", f"sleep({_PASTE_BRACKET_DELAY})", "enter"]
+        assert call_log == [
+            "escape",
+            f"sleep({_ESCAPE_CANCEL_DELAY})",
+            "text",
+            f"sleep({_PASTE_BRACKET_DELAY})",
+            "enter",
+        ]
 
 
 # ---------------------------------------------------------------------------
