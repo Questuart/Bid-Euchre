@@ -43,8 +43,8 @@ Base.metadata.create_all(engine)
 SessionFactory = make_session_factory(engine)
 session = SessionFactory()
 
-count = int('${COUNT}')
-label = '${LABEL}'
+count = int(sys.argv[1])
+label = sys.argv[2]
 codes = []
 
 try:
@@ -64,4 +64,4 @@ except Exception as e:
 finally:
     session.close()
     engine.dispose()
-"
+" "${COUNT}" "${LABEL}"
