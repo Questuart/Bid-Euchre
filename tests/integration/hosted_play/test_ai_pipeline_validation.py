@@ -134,9 +134,13 @@ def _advance_pending_reveals(
     app,
     link_uuid: str,
     *,
-    max_steps: int = 20,
+    max_steps: int = 40,
 ):
-    """Advance hidden auction/trick reveals until the state is actionable."""
+    """Advance hidden auction/trick reveals and pacing pauses until actionable.
+
+    Handles paused_after_play and paused_after_trick states introduced by
+    sequential card reveal (#2294).
+    """
     for _ in range(max_steps):
         result = _get_match_state(app, link_uuid)
         assert result is not None, "Match disappeared unexpectedly"
@@ -153,6 +157,7 @@ def _advance_pending_reveals(
             not has_hidden_auction
             and not auction_settling
             and not hand.paused_after_trick
+            and not hand.paused_after_play
         ):
             return state
 
