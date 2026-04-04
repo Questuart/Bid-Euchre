@@ -60,6 +60,22 @@ Then restart your Claude session in that directory.
      cd ../Bid-Euchre-<branch-name>
 ```
 
+### `fleet-check-autostart.sh` (SessionStart)
+
+**Trigger:** When any Claude session starts (init, clear, compact)
+
+**Purpose:** Auto-starts the fleet-check durable cron on the orchestrator lane
+
+**Behavior:**
+1. Checks if the current lane is the orchestrator (via `CLAUDE_AGENT_NAME`
+   or project directory fallback)
+2. If not orchestrator: exits silently (no output, no cost)
+3. If orchestrator: outputs a directive instructing the agent to verify and
+   start the `/loop 8m /fleet-check` cron with dedup (check CronList first)
+4. Always exits 0 (never blocks session start)
+
+**Refs:** #2333
+
 ### `post-pr-review.sh` (PostToolUse)
 
 **Trigger:** After any Bash tool call
@@ -219,6 +235,7 @@ Hooks are registered across two files:
 **`.claude/settings.json`** (committed, shared):
 - `SessionStart` (compact) → `compact-context.sh`
 - `SessionStart` (all) → `session-sync-worktree.sh` (no matcher — fires on init, clear, compact)
+- `SessionStart` (all) → `fleet-check-autostart.sh` (no matcher — auto-starts fleet-check cron on orchestrator)
 - `PreToolUse` (Edit|Write) → `rule-loader.sh`
 - `PreToolUse` (Bash) → `pre-bash-dispatch.sh` (consolidated dispatcher)
 - `PostToolUse` (Write|Edit) → `post-write-check.sh`
