@@ -1441,6 +1441,76 @@ def nudge_pane(
         )
 
 
+def nudge_inbox(
+    lane_id: str,
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+) -> PoolAction:
+    """Send ``/inbox-poll`` to a lane's tmux pane so it processes new messages.
+
+    This is the push-notification companion to :func:`send_message`.  When a
+    message is written to a lane's inbox, calling this function wakes the lane
+    so it reads the message promptly — even if the lane is idle at the prompt.
+
+    Uses the same two-step ``tmux send-keys`` pattern as :func:`nudge_pane`
+    (text first, then ``Enter`` after a paste-bracket delay) to avoid the
+    bracketed-paste issue described in #1834.
+
+    The nudge is best-effort: failures are reported in the returned
+    :class:`PoolAction` but never raise.
+
+    Args:
+        lane_id: Target lane whose pane should receive the command.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A :class:`PoolAction` with ``action="inbox_nudge"`` describing the
+        outcome.
+    """
+    target = _resolve_tmux_target(lane_id, tmux_session, runtime_dir)
+    cmd = "/inbox-poll"
+
+    try:
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, cmd],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        # Paste-bracket delay — see nudge_pane() and #1834.
+        time.sleep(_PASTE_BRACKET_DELAY)
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, "Enter"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        return PoolAction(
+            action="inbox_nudge",
+            lane_id=lane_id,
+            reason=f"Sent '{cmd}' to pane {target}",
+            executed=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return PoolAction(
+            action="inbox_nudge",
+            lane_id=lane_id,
+            reason=f"Failed to nudge inbox: {exc}",
+            executed=False,
+            error="nudge_failed",
+        )
+    except (FileNotFoundError, OSError) as exc:
+        return PoolAction(
+            action="inbox_nudge",
+            lane_id=lane_id,
+            reason=f"Failed to nudge inbox: {exc}",
+            executed=False,
+            error="nudge_failed",
+        )
+
+
 def dispatch_to_worker(
     packet_id: str,
     lane_id: str,

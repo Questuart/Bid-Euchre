@@ -3820,6 +3820,84 @@ class TestMessageSend:
         assert data["message_type"] == "progress"
         assert data["task_id"] == "abc123"
 
+    def test_message_send_nudge_output(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """message send prints nudge status when nudge succeeds."""
+        import ops
+
+        (runtime_dir / "message_bus" / "inbox").mkdir(parents=True)
+
+        from unittest.mock import patch
+
+        from bid_euchre.ops.worker_pool import PoolAction
+
+        mock_action = PoolAction(
+            action="inbox_nudge",
+            lane_id="orchestrator",
+            reason="Sent '/inbox-poll' to pane steward:orchestrator",
+            executed=True,
+        )
+
+        with patch("bid_euchre.ops.worker_pool.nudge_inbox", return_value=mock_action):
+            rc = ops.main(
+                [
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "message",
+                    "send",
+                    "--from",
+                    "author-a",
+                    "--to",
+                    "orchestrator",
+                    "--type",
+                    "ack",
+                    "--summary",
+                    "Task done",
+                ]
+            )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Nudge:" in out
+        assert "/inbox-poll" in out
+
+    def test_message_send_no_nudge_flag(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--no-nudge suppresses the tmux nudge."""
+        import ops
+
+        (runtime_dir / "message_bus" / "inbox").mkdir(parents=True)
+
+        from unittest.mock import patch
+
+        with patch("bid_euchre.ops.worker_pool.nudge_inbox") as mock_nudge:
+            rc = ops.main(
+                [
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "message",
+                    "send",
+                    "--from",
+                    "author-a",
+                    "--to",
+                    "orchestrator",
+                    "--type",
+                    "ack",
+                    "--summary",
+                    "Task done",
+                    "--no-nudge",
+                ]
+            )
+        assert rc == 0
+        mock_nudge.assert_not_called()
+        out = capsys.readouterr().out
+        assert "Nudge:" not in out
+
 
 class TestInboxAck:
     """Tests for ops.py inbox ack subcommand."""

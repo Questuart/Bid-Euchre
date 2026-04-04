@@ -40,6 +40,7 @@ from bid_euchre.ops.worker_pool import (
     format_pool_json,
     format_pool_text,
     get_lane_domain,
+    nudge_inbox,
     nudge_pane,
     park_worker,
     refresh_all_idle,
@@ -2063,6 +2064,100 @@ class TestPasteBracketDelay:
             patch(f"{_WORKER_POOL}.time.sleep", side_effect=track_sleep),
         ):
             result = clear_session("author-a")
+            assert result.executed is True
+
+        assert call_log == ["text", f"sleep({_PASTE_BRACKET_DELAY})", "enter"]
+
+
+# ---------------------------------------------------------------------------
+# Nudge inbox (inbox delivery reliability)
+# ---------------------------------------------------------------------------
+
+
+class TestNudgeInbox:
+    """Test nudge_inbox() with mocked subprocess."""
+
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
+    @patch(f"{_WORKER_POOL}.time.sleep")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_inbox_success(
+        self, mock_run: MagicMock, mock_sleep: MagicMock, mock_resolve: MagicMock
+    ) -> None:
+        mock_run.return_value = MagicMock(returncode=0)
+        result = nudge_inbox("author-a")
+        assert result.executed is True
+        assert result.action == "inbox_nudge"
+        assert result.error is None
+        assert "/inbox-poll" in result.reason
+        assert mock_run.call_count == 2
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "/inbox-poll"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        mock_run.assert_any_call(
+            ["tmux", "send-keys", "-t", "steward:author-a", "Enter"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        mock_sleep.assert_called_once_with(_PASTE_BRACKET_DELAY)
+
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_inbox_subprocess_error(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
+        import subprocess as sp
+
+        mock_run.side_effect = sp.CalledProcessError(1, "tmux")
+        result = nudge_inbox("author-a")
+        assert result.executed is False
+        assert result.error == "nudge_failed"
+        assert result.action == "inbox_nudge"
+
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_inbox_tmux_not_found(
+        self, mock_run: MagicMock, mock_resolve: MagicMock
+    ) -> None:
+        mock_run.side_effect = FileNotFoundError("tmux not found")
+        result = nudge_inbox("author-a")
+        assert result.executed is False
+        assert result.error == "nudge_failed"
+
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:flex-b")
+    @patch(f"{_WORKER_POOL}.time.sleep")
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_inbox_custom_session(
+        self, mock_run: MagicMock, mock_sleep: MagicMock, mock_resolve: MagicMock
+    ) -> None:
+        mock_run.return_value = MagicMock(returncode=0)
+        result = nudge_inbox("flex-b", tmux_session="custom")
+        assert result.executed is True
+        mock_resolve.assert_called_once_with("flex-b", "custom", None)
+
+    @patch(f"{_WORKER_POOL}._resolve_tmux_target", return_value="steward:author-a")
+    def test_nudge_inbox_call_order(self, mock_resolve: MagicMock) -> None:
+        """nudge_inbox sends /inbox-poll, sleeps, then sends Enter — in order."""
+        call_log: list[str] = []
+
+        def track_run(cmd: list[str], **_kw: object) -> MagicMock:
+            if cmd[-1] == "Enter":
+                call_log.append("enter")
+            else:
+                call_log.append("text")
+            return MagicMock(returncode=0)
+
+        def track_sleep(seconds: float) -> None:
+            call_log.append(f"sleep({seconds})")
+
+        with (
+            patch(f"{_WORKER_POOL}.subprocess.run", side_effect=track_run),
+            patch(f"{_WORKER_POOL}.time.sleep", side_effect=track_sleep),
+        ):
+            result = nudge_inbox("author-a")
             assert result.executed is True
 
         assert call_log == ["text", f"sleep({_PASTE_BRACKET_DELAY})", "enter"]
