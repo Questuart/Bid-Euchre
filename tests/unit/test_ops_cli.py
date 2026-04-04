@@ -4671,3 +4671,151 @@ class TestBusRootRegression:
             "Found worktree-local bus path(s) in ops.py — use shared_bus_root() instead:\n"
             + "\n".join(f"  L{n}: {l.strip()}" for n, l in hits)
         )
+
+
+class TestCmdReviewHwm:
+    """Tests for the review-hwm subcommand (#2312)."""
+
+    def test_get_returns_none_when_unset(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-hwm",
+                "get",
+            ]
+        )
+        assert rc == 0
+        assert capsys.readouterr().out.strip() == "none"
+
+    def test_set_creates_file(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-hwm",
+                "set",
+                "2345",
+            ]
+        )
+        assert rc == 0
+        hwm_file = runtime_dir / "review_state" / "last_merged_pr.txt"
+        assert hwm_file.is_file()
+        assert hwm_file.read_text().strip() == "2345"
+        assert "2345" in capsys.readouterr().out
+
+    def test_get_after_set(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-hwm",
+                "set",
+                "100",
+            ]
+        )
+        capsys.readouterr()  # discard set output
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-hwm",
+                "get",
+            ]
+        )
+        assert rc == 0
+        assert capsys.readouterr().out.strip() == "100"
+
+    def test_set_rejects_non_integer(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-hwm",
+                "set",
+                "abc",
+            ]
+        )
+        assert rc == 1
+        assert "positive integer" in capsys.readouterr().err
+
+    def test_set_rejects_zero(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-hwm",
+                "set",
+                "0",
+            ]
+        )
+        assert rc == 1
+
+    def test_set_rejects_negative(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "review-hwm",
+                "set",
+                "-5",
+            ]
+        )
+        assert rc == 1

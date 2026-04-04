@@ -49,17 +49,28 @@ On every session boot, set up a recurring merged-PR review loop:
    gh pr list --repo Questuart/Bid-Euchre --state merged --limit 5 \
      --json number,title,mergedAt,headRefName
    ```
-2. **Track last-reviewed PR number** to avoid re-reviewing. Store the
-   high-water mark in `.claude/runtime/review_state/last_merged_pr.txt`.
-   If the file does not exist, start from the most recent merged PR
-   (review nothing on first boot).
+2. **Track last-reviewed PR number** to avoid re-reviewing. Read and
+   write the high-water mark via the subprocess-safe CLI (never use
+   Claude's Write tool for this — it triggers a `.claude/` permission
+   prompt; see #2312):
+   ```bash
+   # Read current HWM (prints the PR number, or "none" if unset)
+   uv run python scripts/internal/ops.py review-hwm get
+   # Update HWM after processing
+   uv run python scripts/internal/ops.py review-hwm set <PR_NUMBER>
+   ```
+   If the HWM is "none" (first boot), start from the most recent merged
+   PR (review nothing on first boot).
 3. **For each new merge since last check**, review the diff against `main`:
    - Run `gh pr diff <number>` to get the changeset.
    - Produce findings (BLOCK/WARN/INFO) using the same severity mapping
      as queue-driven review below.
    - File GitHub issues for WARN findings per the Issue Triage protocol.
    - Log INFO findings in the review report only.
-4. **Update the high-water mark** after processing all new merges.
+4. **Update the high-water mark** after processing all new merges:
+   ```bash
+   uv run python scripts/internal/ops.py review-hwm set <HIGHEST_PR_NUMBER>
+   ```
 5. **Set up a 15-minute recurring poll** using `/loop 15m` to repeat
    steps 1–4 continuously. This ensures merged PRs are reviewed even
    when no explicit review request arrives via the message bus.
