@@ -287,11 +287,71 @@ class TestBidPanel:
         bid_options = bid_select.group(1)
         for n in range(1, 6):
             assert f'value="{n}">{n}' not in bid_options
-        # Should have bid levels 6-10
+        # Should have bid levels 6-10 (first may have 'selected' attr)
         for n in range(6, 11):
-            assert f'value="{n}">{n}' in bid_options
+            assert f'value="{n}"' in bid_options
         # Pass is always available
         assert "Pass" in bid_options
+
+    def test_default_selection_is_next_bid(self, env):
+        """Bid selector defaults to next possible bid, not pass (#2310)."""
+        import re
+
+        tmpl = env.get_template("partials/bid_panel.html")
+        # current_high_bid=5 → first legal bid is 6, should be selected
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=5,
+            dealer_seat=3,
+        )
+        bid_select = re.search(
+            r'<select id="bid-level"[^>]*>(.*?)</select>', html, re.DOTALL
+        )
+        assert bid_select is not None
+        bid_options = bid_select.group(1)
+        assert 'value="6" selected' in bid_options
+        assert 'value="7" selected' not in bid_options
+
+    def test_default_selection_first_bid_when_no_bids(self, env):
+        """When no bids yet (current_high_bid=0), bid 1 is selected."""
+        import re
+
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=3,
+        )
+        bid_select = re.search(
+            r'<select id="bid-level"[^>]*>(.*?)</select>', html, re.DOTALL
+        )
+        assert bid_select is not None
+        bid_options = bid_select.group(1)
+        assert 'value="1" selected' in bid_options
+
+    def test_default_selection_pass_when_all_bids_exhausted(self, env):
+        """When current_high_bid=10, no numeric bids available; pass is default."""
+        import re
+
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=10,
+            dealer_seat=3,
+        )
+        bid_select = re.search(
+            r'<select id="bid-level"[^>]*>(.*?)</select>', html, re.DOTALL
+        )
+        assert bid_select is not None
+        bid_options = bid_select.group(1)
+        # No selected attribute on any option → browser defaults to first (Pass)
+        assert "selected" not in bid_options
 
     def test_shows_all_contract_types(self, env):
         tmpl = env.get_template("partials/bid_panel.html")
