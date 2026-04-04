@@ -489,10 +489,8 @@ class TestNextRevealFlow:
         # D♦ / A would appear as card rank+suit in the trick area
         assert "card--played" not in resp.text
 
-        # Slim (seat 1) hand count should show 10 (pre-play), not 9
-        # AI names wrapped in .ai-name span (#2288.4)
-        assert 'class="ai-name">Slim</span>' in resp.text
-        assert "(10)" in resp.text
+        # Slim (seat 1) should appear with team color class (#2346)
+        assert 'player-name--ai">Slim</span>' in resp.text
 
         # No "Play card" button — still in auction reveal
         assert 'id="card-play-form"' not in resp.text

@@ -70,7 +70,7 @@
     {% else %}
         <div class="{{ fallback_class }}" aria-label="{{ seat_labels[seat] }} waiting to play">
             {% if show_label %}
-                <span class="seat-label">{% if seat != 0 %}<span class="ai-name">{{ seat_labels[seat] }}</span>{% else %}{{ seat_labels[seat] }}{% endif %}</span>
+                <span class="seat-label">{% if seat != 0 %}<span class="ai-name player-name--{{ 'human' if seat == 2 else 'ai' }}">{{ seat_labels[seat] }}</span>{% else %}<span class="player-name--human">{{ seat_labels[seat] }}</span>{% endif %}</span>
             {% endif %}
         </div>
     {% endif %}
@@ -125,7 +125,7 @@
     </div>
     {% if current_trick and trick_winning_seat is defined and trick_winning_seat is not none %}
         <p class="trick-current-winner" aria-live="polite">
-            {% if trick_winning_seat == 0 %}You are{% else %}<span class="ai-name">{{ seat_labels[trick_winning_seat] }}</span> is{% endif %} currently winning the trick
+            {% if trick_winning_seat == 0 %}<span class="player-name--human">You</span> are{% else %}<span class="ai-name player-name--{{ 'human' if trick_winning_seat == 2 else 'ai' }}">{{ seat_labels[trick_winning_seat] }}</span> is{% endif %} currently winning the trick
         </p>
     {% endif %}
     {% if display_winner is not none %}
@@ -138,9 +138,9 @@
         {% endif %}
         <p class="trick-winner" aria-live="polite">
             {% if display_winner == 0 %}
-                You
+                <span class="player-name--human">You</span>
             {% else %}
-                <span class="ai-name">{{ seat_labels[display_winner] if display_winner in seat_labels else ("Seat " ~ display_winner) }}</span>
+                <span class="ai-name player-name--{{ 'human' if display_winner == 2 else 'ai' }}">{{ seat_labels[display_winner] if display_winner in seat_labels else ("Seat " ~ display_winner) }}</span>
             {% endif %}
             won{% if winning_card %} with
                 {% set wc_suit = winning_card[0] %}

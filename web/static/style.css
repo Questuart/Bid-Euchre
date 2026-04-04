@@ -379,12 +379,8 @@ main {
     margin: 0 -4px;
 }
 
-.ai-card-count {
-    font-size: 0.8rem;
-    color: var(--color-text-muted);
-    text-align: center;
-    display: block;
-}
+/* .ai-card-count removed — duplicate name + card count below hands
+   eliminated in #2346.  Responsive overrides kept as no-ops for safety. */
 
 /* Legacy horizontal row (kept for non-compass contexts) */
 .ai-hands-row {
@@ -414,9 +410,18 @@ main {
     min-height: 1.4em;
 }
 
-/* AI player names — blue to distinguish from human player (#2288.4) */
+/* AI player names — default to AI team color for non-compass contexts */
 .ai-name {
-    color: #64b5f6;
+    color: var(--team-ai);
+}
+
+/* Team-colored player names — used on compass seats for team distinction (#2346) */
+.player-name--human {
+    color: var(--team-human);
+}
+
+.player-name--ai {
+    color: var(--team-ai);
 }
 
 .ai-hand-block--middle {
