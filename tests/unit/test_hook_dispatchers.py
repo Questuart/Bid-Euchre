@@ -213,3 +213,70 @@ class TestPostPushCiCheckStdoutRedirect:
         hook_content = (HOOKS_DIR / "post-push-ci-check.sh").read_text()
         # The fix adds > /dev/null 2>&1 to the background subshell
         assert "> /dev/null 2>&1 &" in hook_content
+
+
+class TestPermissionDeniedHook:
+    """permission-denied-log.sh uses canonical lane IDs (#2299)."""
+
+    SCRIPT = "permission-denied-log.sh"
+    PAYLOAD = {
+        "tool_name": "Bash",
+        "reason": "test denial",
+        "tool_input": {"command": "test"},
+        "session_id": "unit-test",
+    }
+
+    def test_primary_author_worktree_maps_to_author_a(self) -> None:
+        """Bid-Euchre-steward-author → author-a (not 'author')."""
+        rc, _raw, out = _run_hook(
+            self.SCRIPT,
+            self.PAYLOAD,
+            env_override={
+                "CLAUDE_PROJECT_DIR": "/fake/Bid-Euchre-steward-author",
+                "CLAUDE_AGENT_NAME": "",
+            },
+        )
+        assert rc == 0
+        assert out is not None
+
+    def test_primary_analyst_worktree_maps_to_analyst_a(self) -> None:
+        """Bid-Euchre-steward-analyst → analyst-a (not 'analyst')."""
+        rc, _raw, out = _run_hook(
+            self.SCRIPT,
+            self.PAYLOAD,
+            env_override={
+                "CLAUDE_PROJECT_DIR": "/fake/Bid-Euchre-steward-analyst",
+                "CLAUDE_AGENT_NAME": "",
+            },
+        )
+        assert rc == 0
+        assert out is not None
+
+    def test_claude_agent_name_takes_precedence(self) -> None:
+        """CLAUDE_AGENT_NAME env var should be preferred over dir parsing."""
+        rc, _raw, out = _run_hook(
+            self.SCRIPT,
+            self.PAYLOAD,
+            env_override={
+                "CLAUDE_AGENT_NAME": "steward-ops",
+                "CLAUDE_PROJECT_DIR": "/fake/Bid-Euchre-steward-author",
+            },
+        )
+        assert rc == 0
+        assert out is not None
+
+    def test_malformed_input_exits_zero(self) -> None:
+        """Malformed input should exit 0 with retry: false (never block)."""
+        env = os.environ.copy()
+        env["CLAUDE_PROJECT_DIR"] = str(HOOKS_DIR.parents[1])
+        result = subprocess.run(
+            ["bash", str(HOOKS_DIR / self.SCRIPT)],
+            input="not json at all",
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=15,
+        )
+        assert result.returncode == 0
+        parsed = json.loads(result.stdout.strip())
+        assert parsed["hookSpecificOutput"]["retry"] is False
