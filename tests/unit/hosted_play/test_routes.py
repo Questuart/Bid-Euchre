@@ -490,7 +490,9 @@ class TestNextRevealFlow:
         assert "card--played" not in resp.text
 
         # Slim (seat 1) hand count should show 10 (pre-play), not 9
-        assert "Slim (10)" in resp.text
+        # AI names wrapped in .ai-name span (#2288.4)
+        assert 'class="ai-name">Slim</span>' in resp.text
+        assert "(10)" in resp.text
 
         # No "Play card" button — still in auction reveal
         assert 'id="card-play-form"' not in resp.text

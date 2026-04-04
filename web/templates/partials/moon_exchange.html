@@ -27,7 +27,7 @@
             <span aria-hidden="true">&#x1F319;</span> Moon Exchange
         </h2>
         <p class="moon-exchange__subtitle">
-            {{ mooner_label }} bid Moon
+            {% if bidder_seat != 0 %}<span class="ai-name">{{ mooner_label }}</span>{% else %}{{ mooner_label }}{% endif %} bid Moon
             {% if contract_type == "suit" and trump %}
                 in <span class="suit-icon suit-icon--{{ suit_classes.get(trump, 'spades') }}">{{ suit_symbols.get(trump, trump) }}</span>
             {% elif contract_type == "high" %}
@@ -42,7 +42,7 @@
         {% if exchange_given_cards %}
             <div class="moon-exchange__group">
                 <h3 class="moon-exchange__group-title">
-                    Given to {{ partner_label }}
+                    Given to {% if partner_seat != 0 %}<span class="ai-name">{{ partner_label }}</span>{% else %}{{ partner_label }}{% endif %}
                 </h3>
                 <div class="moon-exchange__card-list" role="list">
                     {% for card in exchange_given_cards %}
@@ -65,7 +65,7 @@
         {% if exchange_received_cards %}
             <div class="moon-exchange__group">
                 <h3 class="moon-exchange__group-title">
-                    Received from {{ partner_label }}
+                    Received from {% if partner_seat != 0 %}<span class="ai-name">{{ partner_label }}</span>{% else %}{{ partner_label }}{% endif %}
                 </h3>
                 <div class="moon-exchange__card-list" role="list">
                     {% for card in exchange_received_cards %}
