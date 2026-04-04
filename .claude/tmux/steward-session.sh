@@ -464,6 +464,9 @@ tmux set-environment -t "$SESSION" CLAUDE_CODE_RESUME_INTERRUPTED_TURN "1"
 # Fleet resilience: non-blocking MCP connections for headless startup
 tmux set-environment -t "$SESSION" MCP_CONNECTION_NONBLOCKING "true"
 
+# Fleet stability: disable mouse capture to prevent tmux scroll interference (#2249)
+tmux set-environment -t "$SESSION" CLAUDE_CODE_DISABLE_MOUSE "1"
+
 # Propagate channel config into the tmux session environment so all panes
 # can read it.  Shell `export` only affects the launcher process; tmux panes
 # are spawned by the tmux server and need `set-environment` instead.

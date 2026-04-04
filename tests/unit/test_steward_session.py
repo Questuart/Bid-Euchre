@@ -1090,6 +1090,7 @@ class TestFleetEnvFlags:
         "DISABLE_COST_WARNINGS": "1",
         "CLAUDE_CODE_RESUME_INTERRUPTED_TURN": "1",
         "MCP_CONNECTION_NONBLOCKING": "true",
+        "CLAUDE_CODE_DISABLE_MOUSE": "1",
     }
 
     @pytest.mark.parametrize("flag,value", FLEET_FLAGS.items())

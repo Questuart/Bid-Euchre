@@ -78,7 +78,14 @@
 - Regression test: <!-- Path to new/updated test, e.g., tests/unit/test_ci_poller.py -->
 - Detection/logging note: <!-- How was this detected? What monitoring exists now? -->
 
+## Issue Linkage
+<!-- Use 'Fixes #N' ONLY when this PR fully resolves the issue — merge will auto-close it.
+     Use 'Refs #N' when the PR partially addresses or relates to the issue without resolving it.
+     See .claude/rules/deferred/55_issue_closure.md for the tiered closure policy. -->
+-
+
 ## Checklist
 - [ ] No generated artifacts committed (`data/runs`, `data/reports`)
 - [ ] If behavior changed, tests updated/added to lock it
 - [ ] PR is focused (one concept)
+- [ ] Issue linkage uses correct keyword (`Fixes` vs `Refs`) per closure policy
