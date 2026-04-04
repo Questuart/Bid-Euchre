@@ -45,8 +45,17 @@ _NUM_PLAYERS = 4
 _TRICKS_PER_HAND = 10
 
 
-# Display suit order: Spades, Hearts, Diamonds, Clubs
-_SUIT_DISPLAY_ORDER: dict[str, int] = {"S": 0, "H": 1, "D": 2, "C": 3}
+# Display suit order: alternating black/red — S(♠), H(♥), C(♣), D(♦)
+_SUIT_DISPLAY_ORDER: dict[str, int] = {"S": 0, "H": 1, "C": 2, "D": 3}
+
+# Trump-aware alternating orders: trump first, then alternate starting with
+# the opposite color.  Pre-computed for all four possible trump suits.
+_SUIT_DISPLAY_ORDER_TRUMP: dict[str, dict[str, int]] = {
+    "S": {"S": 0, "H": 1, "C": 2, "D": 3},  # B R B R
+    "H": {"H": 0, "S": 1, "D": 2, "C": 3},  # R B R B
+    "C": {"C": 0, "H": 1, "S": 2, "D": 3},  # B R B R
+    "D": {"D": 0, "S": 1, "H": 2, "C": 3},  # R B R B
+}
 
 # Within-suit rank order: J highest, then A-K-Q-T (auction / trump suit)
 _RANK_DISPLAY_ORDER: dict[str, int] = {"J": 0, "A": 1, "K": 2, "Q": 3, "T": 4}
@@ -68,8 +77,10 @@ def sort_hand_for_display(
     Grouping:
     - Cards are grouped by effective suit (bowers move to trump group in suit
       contracts).
+    - Suits alternate black/red for visual clarity.
     - When trump is active, the trump suit appears first; remaining suits
-      follow standard order (S > H > D > C).
+      alternate starting with the opposite color of trump.
+    - Without trump: S(♠) H(♥) C(♣) D(♦).
 
     Within-suit ordering:
     - Suit contracts (trump suit): right bower > left bower > A > K > Q > (non-bower J) > T
@@ -86,9 +97,11 @@ def sort_hand_for_display(
         else:
             eff = card.suit
 
-        # Suit ordering — trump first when active
-        if contract_type == "suit" and trump and eff == trump:
-            suit_key = -1
+        # Suit ordering — alternating black/red; trump first when active
+        if contract_type == "suit" and trump:
+            suit_key = _SUIT_DISPLAY_ORDER_TRUMP.get(trump, _SUIT_DISPLAY_ORDER).get(
+                eff, 99
+            )
         else:
             suit_key = _SUIT_DISPLAY_ORDER.get(eff, 99)
 

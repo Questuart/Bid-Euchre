@@ -282,7 +282,7 @@ class TestHandSorting:
 
     @pytest.mark.e2e
     def test_suit_grouping_no_trump(self) -> None:
-        """Cards group by suit in S > H > D > C order without trump."""
+        """Cards group by suit in alternating black/red order without trump."""
         hand = [
             Card("C", "A"),
             Card("H", "K"),
@@ -295,9 +295,9 @@ class TestHandSorting:
         assert suits == [
             "S",
             "H",
-            "D",
             "C",
-        ], f"Expected S > H > D > C order, got {suits}"
+            "D",
+        ], f"Expected S > H > C > D (alternating B/R) order, got {suits}"
 
     @pytest.mark.e2e
     def test_suit_grouping_with_trump(self) -> None:
