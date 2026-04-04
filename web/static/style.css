@@ -30,6 +30,12 @@
     --color-moon-glow: #ffca28;
     --color-loner: #7e57c2;
     --color-loner-glow: #b39ddb;
+    /* Black-suit text-shadow for visibility on dark backgrounds (#2329) */
+    --suit-black-shadow:
+        -1px -1px 0 rgba(255, 255, 255, 0.55),
+         1px -1px 0 rgba(255, 255, 255, 0.55),
+        -1px  1px 0 rgba(255, 255, 255, 0.55),
+         1px  1px 0 rgba(255, 255, 255, 0.55);
     /* Team colors — consistent across score, trick count, contract bar */
     --team-human: #66bb6a;
     --team-ai: #42a5f5;
@@ -527,7 +533,8 @@ main {
 
 .bid-recap__suit--s,
 .bid-recap__suit--c {
-    color: var(--color-text);
+    color: var(--color-black);
+    text-shadow: var(--suit-black-shadow);
 }
 
 .bid-recap__no-trump {
@@ -613,7 +620,8 @@ main {
 
 .contract-bar__suit--s,
 .contract-bar__suit--c {
-    color: var(--color-text);
+    color: var(--color-black);
+    text-shadow: var(--suit-black-shadow);
 }
 
 .contract-bar__no-trump {
@@ -793,7 +801,8 @@ main {
 
 .lead-suit--spades,
 .lead-suit--clubs {
-    color: #222;
+    color: var(--color-black);
+    text-shadow: var(--suit-black-shadow);
 }
 
 /* Top (partner) */
@@ -2077,7 +2086,8 @@ main {
 
 .landing-hero__suit--spade,
 .landing-hero__suit--club {
-    color: var(--color-text);
+    color: var(--color-black);
+    text-shadow: var(--suit-black-shadow);
 }
 
 .landing-hero__suit--heart,
@@ -3070,7 +3080,8 @@ main {
 
 .suit-icon--spades,
 .suit-icon--clubs {
-    color: var(--color-text);
+    color: var(--color-black);
+    text-shadow: var(--suit-black-shadow);
 }
 
 /* --------------------------------------------------------------------------
