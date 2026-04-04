@@ -58,7 +58,8 @@
         {% set disp_suit = card[0] %}
         {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
         {% set is_winning = (current_trick is not none and trick_winning_seat is defined and trick_winning_seat == seat) %}
-        <div class="card card--{{ suit_classes.get(disp_suit, 'spades') }} card--played{% if is_winning %} card--winning{% endif %}{% if bower %} card--bower{% endif %}"
+        {% set is_ai_reveal = (ai_just_played | default(false)) and (last_played_seat | default(None)) == seat %}
+        <div class="card card--{{ suit_classes.get(disp_suit, 'spades') }} card--played{% if is_winning %} card--winning{% endif %}{% if bower %} card--bower{% endif %}{% if is_ai_reveal %} card--ai-delayed{% endif %}"
              role="img"
              aria-label="{{ seat_labels[seat] }} played {{ card[1]|display_rank }} of {{ suit_names.get(disp_suit, disp_suit) }}{% if bower %} ({{ bower }} bower){% endif %}{% if is_winning %} (currently winning){% endif %}">
             <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
@@ -81,7 +82,7 @@
         {% set _ = ns.cards.update({play[0]: play[1]}) %}
 {% endfor %}
 
-<div id="trick-area" class="trick-area" role="region" aria-label="Current trick" aria-live="polite">
+<div id="trick-area" class="trick-area{% if ai_just_played | default(false) %} trick-area--ai-revealing{% endif %}" role="region" aria-label="Current trick" aria-live="polite">
     <h3>
         {{ display_heading }}
         {% if display_plays %}

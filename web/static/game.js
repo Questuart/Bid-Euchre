@@ -410,6 +410,31 @@
     }
 
     /* ---------------------------------------------------------------
+     * AI card delay — prevent Next submission while the AI card
+     * reveal animation is running (#2330).  CSS handles pointer-events
+     * but keyboard submit needs a JS guard.
+     * --------------------------------------------------------------- */
+
+    function isAiRevealing() {
+        return !!document.querySelector('.trick-area--ai-revealing');
+    }
+
+    function attachAiDelayGuard() {
+        document.addEventListener('submit', function (event) {
+            var form = event.target;
+            if (
+                form &&
+                form.action &&
+                form.action.indexOf('/next') !== -1 &&
+                isAiRevealing()
+            ) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }, true);
+    }
+
+    /* ---------------------------------------------------------------
      * Error handling — show user-friendly toast when HTMX requests
      * fail (network error, server error, timeout).
      * --------------------------------------------------------------- */
@@ -645,6 +670,7 @@
         attachTrickHistoryToggle();
         attachAuctionLogToggle();
         attachTextSizeToggle();
+        attachAiDelayGuard();
         attachErrorHandlers();
         var form = getCardPlayForm();
         clearCardSelection(form);
