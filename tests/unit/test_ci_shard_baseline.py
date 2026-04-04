@@ -1,8 +1,8 @@
 """Regression tests for the pytest-split duration baseline.
 
-The `.test_durations` file is committed to the repo.  Previously used
-for 2-way sharding; retained for future re-sharding and as a test
-timing baseline.  These tests verify the file is well-formed.
+The `.test_durations` file is committed to the repo and used for
+2-way sharding via pytest-split.  These tests verify the file is
+well-formed and suitable for balanced shard splitting.
 """
 
 from __future__ import annotations
