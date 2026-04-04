@@ -38,6 +38,24 @@ Premature closure loses context and causes re-investigation.
 - When using `Fixes #N`, state why in the PR description
 - Never manually close issues without posting verification evidence
 
+## Tooling
+
+Validation and proving are supported by CLI tooling:
+
+```bash
+# List issues needing verification
+uv run python scripts/internal/verify_issue_closure.py list-pending
+
+# Validate Fixes/Refs usage on a PR
+uv run python scripts/internal/verify_issue_closure.py check-pr <PR_NUMBER>
+
+# Post verification evidence and close an issue
+uv run python scripts/internal/verify_issue_closure.py prove <ISSUE_NUMBER> \
+    --evidence "Verified: <command> → <output>"
+```
+
+Use `/proving-issues` for the full guided workflow.
+
 ## Anti-Patterns
 
 - Using `Fixes #N` for multi-PR issue resolution
@@ -45,5 +63,7 @@ Premature closure loses context and causes re-investigation.
 - Using `Closes #N` as a synonym for `Fixes #N` (both auto-close, but
   `Fixes` signals intentional resolution; prefer `Fixes` for clarity)
 - Reopening issues instead of filing new ones that reference the closed issue
+- Saying "looks fixed" without running a proving command
+- Merging with `Refs #N` and then forgetting to verify and close
 
 See `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md` for the complete workflow.

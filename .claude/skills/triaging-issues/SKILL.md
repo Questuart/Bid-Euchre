@@ -65,3 +65,5 @@ Group related findings into batch PRs:
 ## References
 
 - `.claude/rules/deferred/60_review_gate.md` — Severity definitions and label assignments
+- `.claude/rules/deferred/55_issue_closure.md` — Tiered closure policy (`Fixes` vs `Refs`)
+- `/proving-issues` — Verified-close workflow for Tier 2 issues
