@@ -1128,6 +1128,46 @@ class TestEdgeCases:
         )
         assert resp.status_code == 404
 
+    def test_abandoned_match_shows_model_select(self, client, app):
+        """Player whose only match is abandoned should see model-select, not
+        a stale game board that POST handlers will reject (#2410)."""
+        link_uuid = _setup_game(client)
+        # Mark the active match as abandoned (simulates cleanup / corruption)
+        session = app.state.session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert match_row is not None
+        match_row.status = "abandoned"
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "model_select" in resp.text or "Choose" in resp.text
+
+    def test_complete_match_still_shown_as_fallback(self, client, app):
+        """Player whose only match is complete should see the match result
+        (not model-select), preserving the 'Play Again' flow (#2056)."""
+        link_uuid = _setup_game(client)
+        # Mark the active match as complete
+        session = app.state.session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert match_row is not None
+        match_row.status = "complete"
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Should NOT show model_select — should render the completed match
+        # (the response will contain game context, not the selection screen)
+        assert "model_select" not in resp.text
+
 
 # ---------------------------------------------------------------------------
 # XSS prevention (issue #1438)
