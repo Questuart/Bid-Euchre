@@ -66,7 +66,6 @@ try:
         InviteCode,
         Match,
         Player,
-        create_tables,
         generate_invite_code,
         init_engine,
         make_session_factory,
@@ -116,10 +115,14 @@ def _mask_url(url: str) -> str:
 
 
 def _get_session():
-    """Create a DB session from the production URL."""
+    """Create a DB session from the production URL.
+
+    Does NOT call ``create_tables()`` — schema is managed through deployment,
+    not through admin CLI invocations.  Running DDL on every admin query risks
+    creating tables for ORM models that haven't been deployed yet.
+    """
     database_url = _get_database_url()
     engine = init_engine(database_url)
-    create_tables(engine)
     factory = make_session_factory(engine)
     return factory(), database_url
 
