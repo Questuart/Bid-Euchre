@@ -16,20 +16,26 @@ trap 'exit 0' ERR
 # Guard: only act on the orchestrator lane
 # --------------------------------------------------------------------------
 # CLAUDE_AGENT_NAME is set by the --name flag (e.g., "orchestrator").
+# We require an explicit agent name — do not fall back to directory-based
+# detection, because ad-hoc sessions in the main checkout are not the
+# orchestrator.  Refs #2375.
 AGENT_NAME="${CLAUDE_AGENT_NAME:-}"
-
-if [[ -z "$AGENT_NAME" ]]; then
-    # Fallback: detect from project directory name
-    PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-    DIR_NAME="$(basename "$PROJECT_DIR")"
-    # The main checkout (Bid-Euchre) is where the orchestrator runs
-    if [[ "$DIR_NAME" == "Bid-Euchre" ]]; then
-        AGENT_NAME="orchestrator"
-    fi
-fi
 
 # Only the orchestrator needs fleet-check
 if [[ "$AGENT_NAME" != "orchestrator" ]]; then
+    exit 0
+fi
+
+# --------------------------------------------------------------------------
+# Guard: skip autostart after an intentional park
+# --------------------------------------------------------------------------
+# The /park skill (or park_worker()) can drop this marker to suppress
+# fleet-check autostart on the next session start.  Remove the marker
+# manually or via /fleet-check to re-enable autostart.  Refs #2375.
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+INHIBIT_FILE="$PROJECT_DIR/.claude/runtime/fleet-check-inhibit"
+
+if [[ -f "$INHIBIT_FILE" ]]; then
     exit 0
 fi
 
