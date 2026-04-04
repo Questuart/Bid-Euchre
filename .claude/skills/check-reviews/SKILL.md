@@ -51,8 +51,12 @@ The review driver performs:
 
 ### Step 3 -- Update the high-water mark
 
-After processing all identified PRs, the high-water mark is updated so the
-next cycle only checks newer merges.
+After processing all identified PRs, update the high-water mark via the
+subprocess-safe CLI (never use Claude's Write tool for `.claude/` paths):
+
+```bash
+uv run python scripts/internal/ops.py review-hwm set <HIGHEST_PR_NUMBER>
+```
 
 ### Step 4 -- Report findings
 

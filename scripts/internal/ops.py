@@ -2659,6 +2659,49 @@ def cmd_review_check(args: argparse.Namespace) -> int:
     return 1 if has_blockers else 0
 
 
+def cmd_review_hwm(args: argparse.Namespace) -> int:
+    """Get or set the review lane high-water mark (last reviewed merged PR).
+
+    The HWM is stored at ``<runtime_dir>/review_state/last_merged_pr.txt``.
+    This CLI command exists so the review agent can read/write the HWM via
+    subprocess instead of Claude's Write tool, which triggers a platform-level
+    permission prompt for ``.claude/`` paths.  See issue #2312.
+    """
+    action = getattr(args, "hwm_action", None)
+    hwm_dir: Path = args.runtime_dir / "review_state"
+    hwm_file: Path = hwm_dir / "last_merged_pr.txt"
+
+    if action == "get":
+        if hwm_file.is_file():
+            value = hwm_file.read_text().strip()
+            print(value)
+        else:
+            print("none")
+        return 0
+
+    if action == "set":
+        pr_number: str = args.pr_number
+        # Basic validation: must be a positive integer
+        try:
+            n = int(pr_number)
+            if n <= 0:
+                raise ValueError
+        except ValueError:
+            print(
+                f"Error: PR number must be a positive integer, got '{pr_number}'",
+                file=sys.stderr,
+            )
+            return 1
+        hwm_dir.mkdir(parents=True, exist_ok=True)
+        hwm_file.write_text(f"{n}\n")
+        print(f"HWM updated to {n}")
+        return 0
+
+    # No sub-action given
+    print("Usage: ops.py review-hwm {get|set}", file=sys.stderr)
+    return 1
+
+
 def cmd_lane(args: argparse.Namespace) -> int:
     """Lane lifecycle management (refresh, etc.)."""
     action = getattr(args, "lane_action", None)
@@ -4015,6 +4058,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not send findings to the orchestrator inbox",
     )
 
+    # review-hwm (review lane high-water mark — subprocess-safe, see #2312)
+    hwm_parser = subparsers.add_parser(
+        "review-hwm",
+        help="Get or set the review lane high-water mark (last reviewed merged PR)",
+    )
+    hwm_sub = hwm_parser.add_subparsers(dest="hwm_action")
+    hwm_sub.add_parser("get", help="Print the current HWM PR number (or 'none')")
+    hwm_set_parser = hwm_sub.add_parser("set", help="Update the HWM to a PR number")
+    hwm_set_parser.add_argument("pr_number", help="PR number to store as HWM")
+
     # lane (lane lifecycle management)
     lane_parser = subparsers.add_parser(
         "lane", help="Lane lifecycle management (refresh, etc.)"
@@ -4318,6 +4371,7 @@ def main(argv: list[str] | None = None) -> int:
         "monitor": cmd_monitor,
         "fleet": cmd_fleet,
         "review-check": cmd_review_check,
+        "review-hwm": cmd_review_hwm,
         "lane": cmd_lane,
         "workers": cmd_workers,
         "usage": cmd_usage,
