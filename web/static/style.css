@@ -30,12 +30,6 @@
     --color-moon-glow: #ffca28;
     --color-loner: #7e57c2;
     --color-loner-glow: #b39ddb;
-    /* Black-suit text-shadow for visibility on dark backgrounds (#2329) */
-    --suit-black-shadow:
-        -1px -1px 0 rgba(255, 255, 255, 0.55),
-         1px -1px 0 rgba(255, 255, 255, 0.55),
-        -1px  1px 0 rgba(255, 255, 255, 0.55),
-         1px  1px 0 rgba(255, 255, 255, 0.55);
     /* Team colors — consistent across score, trick count, contract bar */
     --team-human: #66bb6a;
     --team-ai: #42a5f5;
@@ -570,8 +564,7 @@ main {
 
 .bid-recap__suit--s,
 .bid-recap__suit--c {
-    color: var(--color-black);
-    text-shadow: var(--suit-black-shadow);
+    color: var(--color-text);
 }
 
 .bid-recap__no-trump {
@@ -657,8 +650,7 @@ main {
 
 .contract-bar__suit--s,
 .contract-bar__suit--c {
-    color: var(--color-black);
-    text-shadow: var(--suit-black-shadow);
+    color: var(--color-text);
 }
 
 .contract-bar__no-trump {
@@ -838,8 +830,7 @@ main {
 
 .lead-suit--spades,
 .lead-suit--clubs {
-    color: var(--color-black);
-    text-shadow: var(--suit-black-shadow);
+    color: var(--color-text);
 }
 
 /* Top (partner) */
@@ -2152,8 +2143,7 @@ main {
 
 .landing-hero__suit--spade,
 .landing-hero__suit--club {
-    color: var(--color-black);
-    text-shadow: var(--suit-black-shadow);
+    color: var(--color-text);
 }
 
 .landing-hero__suit--heart,
@@ -3126,9 +3116,11 @@ main {
     color: var(--color-text);
 }
 
-/* Reusable suit-icon utility — applies red/black to any inline suit symbol.
-   Use `suit-icon suit-icon--hearts` (or diamonds/spades/clubs) on a <span>
-   wrapping a suit symbol like ♠ ♥ ♦ ♣.  (#2235) */
+/* Reusable suit-icon utility — applies red/white to any inline suit symbol
+   on dark backgrounds.  Red for hearts/diamonds, white (--color-text) for
+   spades/clubs so they render as solid filled shapes, not invisible dark
+   outlines (#2329).  Use `suit-icon suit-icon--hearts` (or
+   diamonds/spades/clubs) on a <span> wrapping ♠ ♥ ♦ ♣.  (#2235) */
 .suit-icon {
     white-space: nowrap;
 }
@@ -3140,8 +3132,7 @@ main {
 
 .suit-icon--spades,
 .suit-icon--clubs {
-    color: var(--color-black);
-    text-shadow: var(--suit-black-shadow);
+    color: var(--color-text);
 }
 
 /* --------------------------------------------------------------------------
