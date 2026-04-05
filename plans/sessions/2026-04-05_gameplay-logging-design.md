@@ -87,21 +87,41 @@ Add a FastAPI middleware that logs every request with structured fields.
 
 ### Layer 2: Game Action Logging in Route Handlers (HIGH priority)
 
-Add structured info-level log calls at key decision points in route handlers.
+Add structured info-level log calls at key decision points in route handlers,
+including sub-phase timing to surface latency bottlenecks.
 
 **What to log:**
 - Every POST action with `match_uuid`, `turn_number`, action type, result
 - Turn-number conflicts (stale submission detection)
 - State-desync recovery events (phase mismatch)
 - Match creation and completion events
-- Deserialization failures (already logged as warnings — add `request_id`)
+- Deserialization failures (already logged as warnings — add request\_id)
+- **Sub-phase timing** for the expensive phases of each request:
+  - `deser_ms` — time to deserialize match\_state\_json
+  - `engine_ms` — time in engine computation (AI auto-advance, bid/play resolution)
+  - `commit_ms` — time for the DB commit (state + decision rows)
+- **Slow-request warnings** — log at WARNING level when any sub-phase exceeds
+  200ms, so latency spikes are immediately visible without log queries
+- **Populate `decision_time_ms`** — the Decision table already has this column
+  but no caller provides it. Populate it from the engine computation timing
+  so per-decision latency is queryable from the DB
 
 **Pattern for each POST handler** (pseudocode):
 
-    log INFO "Action: play_card match=<uuid> turn=<N> result=ok"
-    fields: action_type, match_uuid, turn_number, result, request_id
+    t0 = monotonic()
+    state = deserialize(match_state_json)       # deser_ms = elapsed
+    state = engine.submit_human_card(state, i)  # engine_ms = elapsed
+    session.commit()                            # commit_ms = elapsed
 
-**Files:** `web/routes.py` (add ~15-20 info-level log calls across POST handlers)
+    log INFO "Action: play_card match=<uuid> turn=<N> result=ok
+              deser_ms=2.1 engine_ms=12.4 commit_ms=3.7"
+    fields: action_type, match_uuid, turn_number, result,
+            request_id, deser_ms, engine_ms, commit_ms
+
+    if any sub-phase > 200ms:
+        log WARNING "Slow sub-phase: engine_ms=312.5 match=<uuid> turn=<N>"
+
+**Files:** `web/routes.py` (add ~20-25 log calls + timing across POST handlers)
 
 ### Layer 3: JSON Log Formatter for Production (MEDIUM priority)
 
@@ -160,10 +180,10 @@ documenting how to access and search Render logs for debugging.
 | PR | Scope | Files | Estimated Size | Dependencies |
 |----|-------|-------|---------------|-------------|
 | **PR-1** | Request logging middleware + JSON formatter | `web/middleware.py`, new web/log\_config.py, `web/app.py`, `web/start.py`, new test file | ~150 LOC | None |
-| **PR-2** | Game action logging in route handlers | `web/routes.py` | ~60 LOC (info-level log additions) | PR-1 (uses request\_id) |
+| **PR-2** | Game action logging + sub-phase timing in route handlers | `web/routes.py` | ~80 LOC (log calls, timing, decision\_time\_ms) | PR-1 (uses request\_id) |
 | **PR-3** | Render log access docs + env var docs | new operator runbook, `render.yaml` (optional LOG\_LEVEL), `.env.example` | ~40 LOC | None (parallel) |
 
-**Total estimated LOC:** ~250
+**Total estimated LOC:** ~270
 **Estimated author time:** 2-3 hours across 3 PRs
 
 ## 5. Acceptance Criteria
@@ -177,13 +197,17 @@ documenting how to access and search Render logs for debugging.
 - [ ] No new pip dependencies added
 - [ ] Integration test verifies log output for a sample request
 
-### PR-2 (Game Action Logging)
-- [ ] Every POST route handler logs the action type, match_uuid, turn_number, and result
+### PR-2 (Game Action Logging + Latency Tracking)
+- [ ] Every POST route handler logs the action type, match\_uuid, turn\_number, and result
 - [ ] Turn-number conflicts are logged with the submitted vs expected turn numbers
 - [ ] State-desync recovery events are logged with the expected vs actual phase
-- [ ] Existing warning logs for deserialization include `request_id`
+- [ ] Existing warning logs for deserialization include request\_id
 - [ ] Match creation (`select-ai`) and completion events are logged
 - [ ] No decision content (hands, legal moves) is logged — only identifiers and outcomes
+- [ ] Sub-phase timing (deser\_ms, engine\_ms, commit\_ms) included in action log entries
+- [ ] WARNING-level log emitted when any sub-phase exceeds 200ms threshold
+- [ ] `decision_time_ms` column populated in Decision table from engine timing
+- [ ] Timing uses `time.monotonic()` (not wall clock) for accuracy
 
 ### PR-3 (Docs)
 - [ ] Operator runbook documents how to access Render dashboard logs
