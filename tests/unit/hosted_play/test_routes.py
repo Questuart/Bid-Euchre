@@ -3538,11 +3538,12 @@ class TestAuctionRevealUX:
         # The A♠ and K♠ from the injected trick should be hidden
         assert "trick-card" not in resp.text or "current-trick" not in resp.text
 
-    def test_no_settle_pause_when_human_bids_last(self, client, app):
-        """When the human is the last bidder, no settle pause is needed (#2134).
+    def test_settle_pause_when_human_bids_last(self, client, app):
+        """When the human bids last, a settle pause still appears (#2438).
 
-        If the human bids last (as dealer), revealed_auction_count == len(auction)
-        immediately after submit_bid, so auction_settled stays True.
+        Even though no hidden bids remain (the human's bid was the final
+        auction action), auction_settled is set to False so the player can
+        review the auction result before trick play begins.
         """
         link_uuid = _setup_game(client)
 
@@ -3562,25 +3563,10 @@ class TestAuctionRevealUX:
                 client.post(f"/play/{link_uuid}/next")
                 continue
 
-            # Check if auction just settled without a pause
-            if (
-                not has_hidden
-                and hand.auction_settled
-                and hand.phase
-                in (
-                    "trick_play",
-                    "moon_exchange",
-                )
-            ):
-                # No settle pause was needed — the human bid last.
-                # Verify we can immediately play (or see exchange).
-                return  # Test passed
-
             if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
                 # Check if human is the last bidder (dealer position).
-                # The dealer bids last in the auction rotation.
                 if hand.dealer_seat == HUMAN_SEAT:
-                    # Human IS the dealer — bid and check for no settle
+                    # Human IS the dealer — bid and verify settle pause
                     if hand.current_high_bid < 3:
                         client.post(
                             f"/play/{link_uuid}/bid",
@@ -3600,7 +3586,6 @@ class TestAuctionRevealUX:
                             },
                         )
 
-                    # After dealer bids, check: no hidden bids, settled = True
                     result2 = get_match_state(app, link_uuid)
                     assert result2 is not None
                     state2, _, session2 = result2
@@ -3609,8 +3594,26 @@ class TestAuctionRevealUX:
                     if hand2 is not None and not (
                         hand2.revealed_auction_count < len(hand2.auction)
                     ):
-                        # Human bid last — no hidden bids remain
-                        assert hand2.auction_settled is True
+                        if hand2.phase == "redeal":
+                            # All passed — redeal has its own interstitial,
+                            # no settle pause expected.
+                            return
+
+                        # Human bid last — no hidden bids remain.
+                        # Settle pause should be active so the player
+                        # can see the auction result (#2438).
+                        assert hand2.auction_settled is False
+
+                        # Dismiss the settle pause
+                        client.post(f"/play/{link_uuid}/next")
+
+                        result3 = get_match_state(app, link_uuid)
+                        assert result3 is not None
+                        state3, _, session3 = result3
+                        session3.close()
+                        hand3 = state3.current_hand
+                        if hand3 is not None:
+                            assert hand3.auction_settled is True
                         return  # Test passed
                 else:
                     # Not dealer, just pass
@@ -3627,6 +3630,105 @@ class TestAuctionRevealUX:
                 advance_pending_reveals(client, app, link_uuid)
 
         pytest.skip("Seed did not produce a human-bids-last scenario")
+
+    def test_settle_pause_when_human_bids_last_injected(self, client, app):
+        """Deterministic test: settle pause fires when human bids last (#2438).
+
+        Uses state injection to guarantee the human-dealer scenario:
+        three AI bids already revealed, human (seat 0) about to bid last.
+        After the human bids, auction_settled must be False so the player
+        can review the auction result before trick play.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Inject state: auction in progress, human is the dealer (bids last),
+        # three AI bids already revealed, human's turn next.
+        hand.phase = "auction"
+        hand.dealer_seat = HUMAN_SEAT
+        hand.auction = [
+            {
+                "seat": 1,
+                "n": 3,
+                "action": "bid",
+                "contract": "H",
+                "bid_type": "regular",
+            },
+            {"seat": 2, "n": 0, "action": "pass"},
+            {"seat": 3, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 3  # all AI bids revealed
+        hand.auction_settled = True  # default — no hidden bids
+        hand.current_high_bid = 3
+        hand.bidder_seat = 1
+        hand.winning_bid = 3
+        hand.contract_type = "suit"
+        hand.trump = "H"
+        hand.current_seat = HUMAN_SEAT
+        hand.turn_number = 3
+
+        # Persist injected state
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        session.commit()
+        session.close()
+
+        # Human bids last (passes as dealer) — no hidden bids will remain
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            data={
+                "turn_number": 3,
+                "bid_n": 0,
+                "bid_contract": "",
+            },
+        )
+        assert resp.status_code == 200
+
+        # Verify: settle pause is active (auction_settled = False)
+        result2 = get_match_state(app, link_uuid)
+        assert result2 is not None
+        state2, _, session2 = result2
+        session2.close()
+        hand2 = state2.current_hand
+        assert hand2 is not None
+        # No hidden bids — all 4 are revealed
+        assert hand2.revealed_auction_count == len(hand2.auction)
+        # But settle pause IS active so the user can see the result
+        assert hand2.auction_settled is False
+
+        # The board should show the settle pause interstitial
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "Auction complete" in resp.text
+
+        # Dismiss the settle pause
+        resp = client.post(f"/play/{link_uuid}/next")
+        assert resp.status_code == 200
+
+        result3 = get_match_state(app, link_uuid)
+        assert result3 is not None
+        state3, _, session3 = result3
+        session3.close()
+        hand3 = state3.current_hand
+        assert hand3 is not None
+        assert hand3.auction_settled is True
+        # Now in trick play (or moon exchange if bid was moon)
+        assert hand3.phase in ("trick_play", "moon_exchange")
 
 
 # ---------------------------------------------------------------------------
