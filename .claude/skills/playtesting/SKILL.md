@@ -29,7 +29,7 @@ the hosted web app. Logs observations per match for bug detection and research.
 1. **Invite code** -- obtain one from the operator, or generate codes against
    the **hosted** database:
    ```bash
-   DATABASE_URL="<hosted_db_url>" bash scripts/internal/create_invite_codes.sh <count> <label>
+   DATABASE_URL="<hosted_db_url>" bash scripts/internal/create_invite_codes.sh [count] [label]
    ```
    Without `DATABASE_URL`, the script writes to a local SQLite file, which
    is only useful for local dev servers — those codes won't work on the
@@ -128,11 +128,11 @@ Parse the HTML response for phase indicators:
 | `id="bid-panel"` | Auction (human turn) | Submit a bid |
 | `id="match-result"` | Match complete | Log result, exit loop |
 | `id="hand-result"` | Hand complete | POST next-hand |
-| `class="next-controls"` | Paused reveal | POST next |
 | `id="card-play-form"` | Trick play (human turn) | Play a card |
 | `id="model-select"` | Model selection | POST select-ai |
-| `id="moon-exchange-select"` with `id="exchange-form"` | Moon exchange selection | POST exchange (select 2 cards) |
-| `id="moon-exchange"` (no `exchange-form`) | Moon exchange summary | POST next (advance interstitial) |
+| `id="moon-exchange-select"` | Moon exchange selection | POST exchange (select 2 cards) |
+| `id="moon-exchange"` (without `moon-exchange-select`) | Moon exchange summary | POST next |
+| `class="next-controls"` | Paused reveal (catch-all) | POST next |
 
 #### 5a: Auction Phase -- Submit Bid (Always Pass for MVP)
 
@@ -205,23 +205,26 @@ Then re-enter the game loop from Step 4 (select-ai).
 
 #### 5f: Moon Exchange Selection (if encountered)
 
-When `id="moon-exchange-select"` with `id="exchange-form"` is detected:
+When `id="moon-exchange-select"` is detected (the interactive selection phase):
 
 1. Find card buttons with `data-exchange-index="N"` attributes
-2. Select the first 2 card indices (MVP: no strategic selection)
-3. Submit the exchange form with two separate index fields:
+2. Select the first 2 exchange indices (MVP: no strategic selection)
+3. Map the selected `data-exchange-index` values to the hidden form fields
+   `card_index_0` and `card_index_1` (these are the actual `<input name="...">`
+   fields inside `id="exchange-form"`)
+4. Submit the exchange form:
 
 ```
 POST {url}/play/{link_uuid}/exchange
 Content-Type: application/x-www-form-urlencoded
 
-card_index_0={first_idx}&card_index_1={second_idx}
+card_index_0={exchange_index_0}&card_index_1={exchange_index_1}
 ```
 
 #### 5g: Moon Exchange Summary (interstitial)
 
-When `id="moon-exchange"` is detected (without `exchange-form`), this is the
-exchange summary showing which cards were swapped. Advance like any other
+When `id="moon-exchange"` is detected (without `id="moon-exchange-select"`),
+this is the summary showing which cards were swapped. Advance like any other
 interstitial:
 
 ```
@@ -285,10 +288,10 @@ Priority order (check in this order):
 2. `id="hand-result"` -> hand complete
 3. `id="bid-panel"` -> auction (human's turn to bid)
 4. `id="card-play-form"` -> trick play (human's turn to play)
-5. `class="next-controls"` -> paused, needs /next to advance
-6. `id="model-select"` -> needs model selection
-7. `id="moon-exchange-select"` with `id="exchange-form"` -> moon exchange selection (POST exchange)
-8. `id="moon-exchange"` (no `exchange-form`) -> moon exchange summary (POST next)
+5. `id="model-select"` -> needs model selection
+6. `id="moon-exchange-select"` -> moon exchange selection (POST exchange)
+7. `id="moon-exchange"` (without `moon-exchange-select`) -> moon exchange summary (POST next)
+8. `class="next-controls"` -> paused, needs /next to advance (catch-all)
 
 ## Error Handling
 
