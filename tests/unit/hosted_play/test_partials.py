@@ -2714,19 +2714,36 @@ class TestActionRail:
         html = tmpl.render(
             action_rail=[
                 {"kind": "auction", "text": "Slim passed"},
-                {"kind": "trick", "text": "Your team won Trick 1"},
-                {"kind": "system", "text": "Hand starts"},
+                {"kind": "result", "text": "Ace wins auction: 7 \u2665"},
+                {"kind": "system", "text": "All players passed; redeal starting."},
             ],
             action_rail_label="Auction Log",
         )
         assert 'id="action-rail"' in html
         assert "Auction Log" in html
         assert "Slim passed" in html
-        assert "Your team won Trick 1" in html
-        assert "Hand starts" in html
+        assert "Ace wins auction" in html
+        assert "redeal starting" in html
         assert "action-rail__item--auction" in html
-        assert "action-rail__item--trick" in html
+        assert "action-rail__item--result" in html
         assert "action-rail__item--system" in html
+
+    def test_action_rail_no_trick_results(self, env):
+        """Auction log must not display trick results (#2477)."""
+        tmpl = env.get_template("partials/action_rail.html")
+        # Even if trick events were somehow passed, the template renders
+        # whatever it receives — the fix is in the route, not the template.
+        # This test documents that trick events are no longer part of the
+        # auction log data contract.
+        html = tmpl.render(
+            action_rail=[
+                {"kind": "auction", "text": "Slim bid 6 \u2660"},
+                {"kind": "result", "text": "Slim wins auction: 6 \u2660"},
+            ],
+            action_rail_label="Auction Log",
+        )
+        assert "action-rail__item--trick" not in html
+        assert "won Trick" not in html
 
     def test_auction_log_open_during_auction(self, env):
         """Auction log <details> should be open during auction phase (#2288)."""

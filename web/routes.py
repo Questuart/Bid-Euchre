@@ -417,15 +417,17 @@ def _build_seat_bids(auction: list[dict[str, Any]]) -> dict[int, str]:
     return seat_bids
 
 
-def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
-    """Build the auction-log event feed from auction/trick/redeal transitions.
+def _build_action_rail(state) -> list[dict[str, str]]:
+    """Build the auction-log event feed with auction actions only.
+
+    Shows bids, passes, the auction result, and redeal notices.
+    Trick results are intentionally excluded — they belong in the trick
+    history panel, not the auction log (#2477).
 
     The list is capped to the most recent 12 entries for compact rendering.
 
     Auction entries are sourced from ``state.current_hand.auction`` (the full
-    persisted transcript) rather than ``visible["auction"]`` which may be
-    sliced during the hidden-auction reveal phase.  The *visible* dict
-    continues to be used for tricks and other fields.  This ensures a page
+    persisted transcript), sliced to ``revealed_auction_count``, so a page
     refresh never loses already-revealed auction entries (#2207).
     """
     hand = state.current_hand
@@ -447,57 +449,31 @@ def _build_action_rail(visible: dict[str, Any], state) -> list[dict[str, str]]:
             }
         )
 
-    # Completed tricks — use team-based language to avoid confusion with
-    # auction events (e.g. "You won trick #1" reads like "won the auction").
-    for idx, trick in enumerate(visible.get("completed_tricks", []), start=1):
-        winner = trick.get("winner")
-        if winner is None:
-            continue
-        winner_int = int(winner)
-        if winner_int in (0, 2):
-            text = f"Your team won Trick {idx}"
+    # Auction result — shown once the auction is settled and a winner exists.
+    if hand.auction_settled and hand.bidder_seat is not None:
+        bidder = SEAT_LABELS.get(hand.bidder_seat, f"Seat {hand.bidder_seat}")
+        bid_type = hand.bid_type
+        if bid_type == "moon":
+            result_label = "Moon"
+        elif bid_type == "loner":
+            result_label = "Loner"
+        elif hand.contract_type == "suit" and hand.trump is not None:
+            sym = _SUIT_SYMBOLS.get(hand.trump, hand.trump)
+            result_label = f"{hand.winning_bid} {sym}"
+        elif hand.contract_type == "high":
+            result_label = f"{hand.winning_bid} High"
+        elif hand.contract_type == "low":
+            result_label = f"{hand.winning_bid} Low"
         else:
-            text = f"Opponents won Trick {idx}"
-        events.append({"kind": "trick", "text": text})
+            result_label = str(hand.winning_bid)
+        events.append(
+            {"kind": "result", "text": f"{bidder} wins auction: {result_label}"}
+        )
 
-    # Redeal transition.
+    # Redeal transition (all players passed — an auction-phase event).
     if hand.phase == "redeal":
         events.append(
             {"kind": "system", "text": "All players passed; redeal starting."}
-        )
-
-    # Hand-complete outcomes (compact summary).
-    if hand.phase == "complete":
-        bidder = SEAT_LABELS.get(hand.bidder_seat, f"Seat {hand.bidder_seat}")
-        if hand.contract_type == "suit" and hand.trump is not None:
-            contract = hand.trump
-        elif hand.contract_type == "high":
-            contract = "High"
-        elif hand.contract_type == "low":
-            contract = "Low"
-        elif hand.winning_bid is None:
-            contract = "No contract"
-        else:
-            contract = str(hand.winning_bid)
-
-        bid_type = hand.bid_type
-        if bid_type == "moon":
-            contract_label = "Moon"
-        elif bid_type == "loner":
-            contract_label = "Loner"
-        elif hand.winning_bid is None:
-            contract_label = "No contract"
-        else:
-            contract_label = f"{hand.winning_bid} {contract}"
-
-        events.append(
-            {
-                "kind": "system",
-                "text": (
-                    f"Hand complete: {bidder} made {contract_label}; "
-                    f"scores {state.score_human} vs {state.score_ai}"
-                ),
-            }
         )
 
     return events[-12:]
@@ -607,7 +583,7 @@ def _build_game_context(
         ctx["auction_settled"] = hand.auction_settled
         ctx["points_team0"] = hand.points_team0
         ctx["points_team1"] = hand.points_team1
-        ctx["action_rail"] = _build_action_rail(visible, state)
+        ctx["action_rail"] = _build_action_rail(state)
         ctx["seat_bids"] = _build_seat_bids(visible.get("auction", []))
         ctx["show_bid_panel"] = (
             phase == "auction"

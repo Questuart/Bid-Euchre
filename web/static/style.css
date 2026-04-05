@@ -1385,8 +1385,9 @@ main {
     border-bottom: none;
 }
 
-.action-rail__item--trick {
+.action-rail__item--result {
     color: var(--color-positive);
+    font-weight: 600;
 }
 
 .action-rail__item--system {
