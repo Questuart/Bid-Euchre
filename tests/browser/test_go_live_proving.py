@@ -9,6 +9,8 @@ These tests are NOT included in ``make check``.  Run via::
 
 Issues proven:
 - #2331 — Auction log repositions below hand details during gameplay
+- #2462 — Detect auction state independently of human bid panel
+- #2463 — Handle auction reveal/redeal after test submits Pass
 """
 
 from __future__ import annotations
@@ -75,15 +77,18 @@ def test_auction_log_repositions_during_gameplay(
     # to advance through AI actions.
     _advance_next_steps(page)
 
-    # Wait for auction or trick-play phase to materialize
+    # Wait for auction or trick-play phase to materialize.
+    # Use #action-rail (always present) or #trick-area (trick play) rather
+    # than #bid-panel, which only renders on the human's turn to bid (#2462).
     page.wait_for_selector(
-        "#bid-panel, #trick-area, #human-hand",
+        "#action-rail, #trick-area, #human-hand",
         timeout=10000,
     )
 
-    # Check if we caught the auction phase
-    bid_panel = page.locator("#bid-panel")
-    auction_caught = bid_panel.count() > 0
+    # Detect auction phase via the action-rail data attribute — this is
+    # independent of the human bid panel visibility (#2462).
+    action_rail_auction = page.locator("#action-rail[data-phase='auction']")
+    auction_caught = action_rail_auction.count() > 0
 
     if auction_caught:
         # During auction: action-rail should be INSIDE .compass-layout
@@ -117,10 +122,15 @@ def test_auction_log_repositions_during_gameplay(
         """)
         assert is_open is True, "During auction, action-rail <details> should be open"
 
-        # Submit a pass bid to advance past auction
+        # Submit a pass bid to advance past auction.
+        # After Pass, the game may show an auction reveal (Next button),
+        # transition to trick play, or trigger a redeal if all players
+        # passed — wait for any of these states (#2463).
         page.click("button.pass-btn")
         page.wait_for_selector(
-            "#trick-area, #hand-result, #match-result",
+            "#trick-area, #hand-result, #match-result, "
+            "button.btn--next-step, "
+            "#action-rail[data-phase='trick_play']",
             timeout=10000,
         )
         _advance_next_steps(page)
