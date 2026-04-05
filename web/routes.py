@@ -14,6 +14,7 @@ import copy
 import json
 import logging
 import random
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -36,9 +37,13 @@ from .leaderboard import METRIC_DEFINITIONS, format_metric, get_leaderboard
 from .middleware import (
     check_match_limit,
     get_player_link_from_cookie,
+    get_request_id,
     lookup_active_match,
     set_player_cookie,
 )
+
+# Threshold (ms) above which a sub-phase is flagged as slow.
+_SLOW_SUBPHASE_MS = 200.0
 
 router = APIRouter()
 
@@ -57,6 +62,31 @@ SEAT_LABELS: dict[int, str] = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _check_slow_subphases(
+    action: str,
+    match_uuid: str,
+    *,
+    deser_ms: float = 0.0,
+    engine_ms: float = 0.0,
+    commit_ms: float = 0.0,
+) -> None:
+    """Emit a WARNING log when any sub-phase exceeds the slow threshold."""
+    if (
+        deser_ms > _SLOW_SUBPHASE_MS
+        or engine_ms > _SLOW_SUBPHASE_MS
+        or commit_ms > _SLOW_SUBPHASE_MS
+    ):
+        logger.warning(
+            "slow_subphase action=%s match=%s deser_ms=%.1f engine_ms=%.1f commit_ms=%.1f request_id=%s",
+            action,
+            match_uuid,
+            deser_ms,
+            engine_ms,
+            commit_ms,
+            get_request_id(),
+        )
 
 
 def _get_templates(request: Request) -> Jinja2Templates:
@@ -1217,7 +1247,10 @@ async def select_ai(
             seed = config.test_seed
         else:
             seed = random.Random().randint(0, 2**31 - 1)
+
+        t_engine = time.monotonic()
         state = engine.start_match(seed=seed, ai_model=model_id)
+        engine_ms = round((time.monotonic() - t_engine) * 1000, 1)
 
         match_uuid = str(uuid.uuid4())
         match_row = Match(
@@ -1238,7 +1271,22 @@ async def select_ai(
                 session, match_row, state.current_hand, state.current_hand.deal_id
             )
 
+        t_commit = time.monotonic()
         session.commit()
+        commit_ms = round((time.monotonic() - t_commit) * 1000, 1)
+
+        logger.info(
+            "action=select_ai match=%s model=%s seed=%d result=ok engine_ms=%.1f commit_ms=%.1f request_id=%s",
+            match_uuid,
+            model_id,
+            seed,
+            engine_ms,
+            commit_ms,
+            get_request_id(),
+        )
+        _check_slow_subphases(
+            "select_ai", match_uuid, engine_ms=engine_ms, commit_ms=commit_ms
+        )
 
         # Return game board (HTMX partial)
         return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
@@ -1273,15 +1321,18 @@ async def submit_bid(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
+        t_deser = time.monotonic()
         try:
             state = _deserialize_state(engine, match_row.match_state_json)
         except Exception:
             logger.warning(
-                "Failed to deserialize match %s on bid — marking abandoned",
+                "action=bid match=%s result=error reason=deserialize_failed request_id=%s",
                 match_row.match_uuid,
+                get_request_id(),
                 exc_info=True,
             )
             return _handle_corrupted_match(request, session, match_row, link_uuid)
+        deser_ms = round((time.monotonic() - t_deser) * 1000, 1)
 
         # Turn-number conflict — return the authoritative board at 409 so
         # HTMX can re-sync the DOM without re-submitting the stale action.
@@ -1289,6 +1340,13 @@ async def submit_bid(
         if hand is None:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if turn_number != hand.turn_number:
+            logger.info(
+                "action=bid match=%s turn=%d expected_turn=%d result=conflict request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                hand.turn_number,
+                get_request_id(),
+            )
             return HTMLResponse(
                 _render_game_board(request, engine, state, link_uuid),
                 status_code=409,
@@ -1297,10 +1355,30 @@ async def submit_bid(
         # State-desync recovery — return the authoritative board for stale
         # requests instead of 400 so HTMX can re-sync the DOM.
         if hand.phase != "auction":
+            logger.info(
+                "action=bid match=%s turn=%d result=desync expected_phase=auction actual_phase=%s request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                hand.phase,
+                get_request_id(),
+            )
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if hand.current_seat != HUMAN_SEAT:
+            logger.info(
+                "action=bid match=%s turn=%d result=desync reason=not_human_turn current_seat=%d request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                hand.current_seat,
+                get_request_id(),
+            )
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if _awaiting_next(hand):
+            logger.info(
+                "action=bid match=%s turn=%d result=desync reason=awaiting_next request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                get_request_id(),
+            )
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         # Build bid action
@@ -1330,6 +1408,15 @@ async def submit_bid(
             b.n == bid.n and b.contract == bid.contract and b.bid_type == bid.bid_type
             for b in legal_bids
         ):
+            logger.info(
+                "action=bid match=%s turn=%d result=illegal bid_n=%d bid_contract=%s bid_type=%s request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                bid_n,
+                bid_contract,
+                bid_type,
+                get_request_id(),
+            )
             return HTMLResponse(
                 _render_game_board(
                     request,
@@ -1371,7 +1458,9 @@ async def submit_bid(
         pre_auction_count = len(hand.auction)
 
         # Apply action — engine auto-advances AI
+        t_engine = time.monotonic()
         state = engine.submit_human_bid(state, bid)
+        engine_ms = round((time.monotonic() - t_engine) * 1000, 1)
         current_hand = state.current_hand
         if current_hand is not None:
             current_hand.revealed_auction_count = min(
@@ -1405,7 +1494,26 @@ async def submit_bid(
             hand_row.hand_state_json = json.dumps(current_hand.to_dict())
 
         _update_match_row(match_row, state)
+        t_commit = time.monotonic()
         session.commit()
+        commit_ms = round((time.monotonic() - t_commit) * 1000, 1)
+
+        logger.info(
+            "action=bid match=%s turn=%d result=ok deser_ms=%.1f engine_ms=%.1f commit_ms=%.1f request_id=%s",
+            match_row.match_uuid,
+            turn_number,
+            deser_ms,
+            engine_ms,
+            commit_ms,
+            get_request_id(),
+        )
+        _check_slow_subphases(
+            "bid",
+            match_row.match_uuid,
+            deser_ms=deser_ms,
+            engine_ms=engine_ms,
+            commit_ms=commit_ms,
+        )
 
         return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
@@ -1437,15 +1545,18 @@ async def submit_card(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
+        t_deser = time.monotonic()
         try:
             state = _deserialize_state(engine, match_row.match_state_json)
         except Exception:
             logger.warning(
-                "Failed to deserialize match %s on play-card — marking abandoned",
+                "action=play_card match=%s result=error reason=deserialize_failed request_id=%s",
                 match_row.match_uuid,
+                get_request_id(),
                 exc_info=True,
             )
             return _handle_corrupted_match(request, session, match_row, link_uuid)
+        deser_ms = round((time.monotonic() - t_deser) * 1000, 1)
 
         # Turn-number conflict — return the authoritative board at 409 so
         # HTMX can re-sync the DOM without re-submitting the stale action.
@@ -1454,6 +1565,13 @@ async def submit_card(
         if hand is None:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if turn_number != hand.turn_number:
+            logger.info(
+                "action=play_card match=%s turn=%d expected_turn=%d result=conflict request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                hand.turn_number,
+                get_request_id(),
+            )
             return HTMLResponse(
                 _render_game_board(request, engine, state, link_uuid),
                 status_code=409,
@@ -1466,15 +1584,42 @@ async def submit_card(
         # re-render the authoritative board so HTMX can swap in the correct
         # state.  True validation errors (illegal card) still return 400.
         if hand.phase != "trick_play":
+            logger.info(
+                "action=play_card match=%s turn=%d result=desync expected_phase=trick_play actual_phase=%s request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                hand.phase,
+                get_request_id(),
+            )
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if hand.current_seat != HUMAN_SEAT:
+            logger.info(
+                "action=play_card match=%s turn=%d result=desync reason=not_human_turn current_seat=%d request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                hand.current_seat,
+                get_request_id(),
+            )
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
         if _awaiting_next(hand):
+            logger.info(
+                "action=play_card match=%s turn=%d result=desync reason=awaiting_next request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                get_request_id(),
+            )
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         # Validate legality
         legal_plays = engine.get_legal_plays(state)
         if card_index not in legal_plays:
+            logger.info(
+                "action=play_card match=%s turn=%d result=illegal card_index=%d request_id=%s",
+                match_row.match_uuid,
+                turn_number,
+                card_index,
+                get_request_id(),
+            )
             return HTMLResponse(
                 _render_game_board(
                     request,
@@ -1508,7 +1653,9 @@ async def submit_card(
 
         # Apply action — engine auto-advances AI and sets
         # paused_after_trick when a trick completes.
+        t_engine = time.monotonic()
         state = engine.submit_human_card(state, card_index)
+        engine_ms = round((time.monotonic() - t_engine) * 1000, 1)
         current_hand = state.current_hand
 
         # Log AI decisions captured during auto-advance
@@ -1528,7 +1675,36 @@ async def submit_card(
             hand_row.hand_state_json = json.dumps(current_hand.to_dict())
 
         _update_match_row(match_row, state)
+        t_commit = time.monotonic()
         session.commit()
+        commit_ms = round((time.monotonic() - t_commit) * 1000, 1)
+
+        logger.info(
+            "action=play_card match=%s turn=%d result=ok deser_ms=%.1f engine_ms=%.1f commit_ms=%.1f request_id=%s",
+            match_row.match_uuid,
+            turn_number,
+            deser_ms,
+            engine_ms,
+            commit_ms,
+            get_request_id(),
+        )
+        _check_slow_subphases(
+            "play_card",
+            match_row.match_uuid,
+            deser_ms=deser_ms,
+            engine_ms=engine_ms,
+            commit_ms=commit_ms,
+        )
+        # Log match completion when the game ends after this card play.
+        if state.status == "complete":
+            logger.info(
+                "action=match_complete match=%s score_human=%d score_ai=%d hands_played=%d request_id=%s",
+                match_row.match_uuid,
+                state.score_human,
+                state.score_ai,
+                state.hands_played,
+                get_request_id(),
+            )
 
         return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
@@ -1558,42 +1734,54 @@ async def next_step(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
+        t_deser = time.monotonic()
         try:
             state = _deserialize_state(engine, match_row.match_state_json)
         except Exception:
             logger.warning(
-                "Failed to deserialize match %s on next — marking abandoned",
+                "action=next match=%s result=error reason=deserialize_failed request_id=%s",
                 match_row.match_uuid,
+                get_request_id(),
                 exc_info=True,
             )
             return _handle_corrupted_match(request, session, match_row, link_uuid)
+        deser_ms = round((time.monotonic() - t_deser) * 1000, 1)
 
         hand = state.current_hand
         if hand is None:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
+        # Determine which next-step branch we take for logging.
+        next_sub = "unknown"
+        t_engine = time.monotonic()
         if _has_hidden_auction(hand):
+            next_sub = "auction_reveal"
             hand.revealed_auction_count += 1
         elif not hand.auction_settled:
+            next_sub = "auction_settle"
             # Settle pause dismissed — all bids were visible, user acknowledged.
             hand.auction_settled = True
         elif _has_pending_exchange(hand):
+            next_sub = "exchange_reveal"
             hand.exchange_revealed = True
             # Moon: trigger deferred AI advancement.  When the human is
             # sitting out (partner of the mooner), submit_exchange_selection
             # deferred _advance_ai so the interstitial could display first.
             state = engine.advance_after_exchange_reveal(state)
         elif hand.phase == "trick_play" and hand.paused_after_play:
+            next_sub = "resume_after_play"
             # Resume AI advancement after per-card reveal pause.
             # The engine will play one more AI card and pause again,
             # or return immediately if the next turn is the human's.
             state = engine.resume_after_play(state)
         elif hand.phase == "trick_play" and hand.paused_after_trick:
+            next_sub = "resume_after_trick"
             # Resume AI advancement after trick-result interstitial.
             # The engine will play one AI card (with per-card pacing),
             # reach the human's turn, or hit hand/match end.
             state = engine.resume_ai(state)
         elif hand.phase == "redeal":
+            next_sub = "redeal"
             # All players passed — persist the terminal redeal hand,
             # then deal the next hand and auto-advance AI bids.
             hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
@@ -1609,6 +1797,7 @@ async def next_step(
                 )
         else:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
+        engine_ms = round((time.monotonic() - t_engine) * 1000, 1)
 
         # Ensure hand row exists for the current hand (may have changed
         # after redeal or resume).
@@ -1639,7 +1828,37 @@ async def next_step(
         else:
             hand_row.hand_state_json = json.dumps(hand.to_dict())
         _update_match_row(match_row, state)
+        t_commit = time.monotonic()
         session.commit()
+        commit_ms = round((time.monotonic() - t_commit) * 1000, 1)
+
+        logger.info(
+            "action=next match=%s sub=%s result=ok deser_ms=%.1f engine_ms=%.1f commit_ms=%.1f request_id=%s",
+            match_row.match_uuid,
+            next_sub,
+            deser_ms,
+            engine_ms,
+            commit_ms,
+            get_request_id(),
+        )
+        _check_slow_subphases(
+            "next",
+            match_row.match_uuid,
+            deser_ms=deser_ms,
+            engine_ms=engine_ms,
+            commit_ms=commit_ms,
+        )
+        # Log match completion when the game ends after a next-step advance
+        # (e.g. moon/loner with human sitting out).
+        if state.status == "complete":
+            logger.info(
+                "action=match_complete match=%s score_human=%d score_ai=%d hands_played=%d request_id=%s",
+                match_row.match_uuid,
+                state.score_human,
+                state.score_ai,
+                state.hands_played,
+                get_request_id(),
+            )
 
         return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
@@ -1673,21 +1892,26 @@ async def skip_pacing(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
+        t_deser = time.monotonic()
         try:
             state = _deserialize_state(engine, match_row.match_state_json)
         except Exception:
             logger.warning(
-                "Failed to deserialize match %s on skip — marking abandoned",
+                "action=skip match=%s result=error reason=deserialize_failed request_id=%s",
                 match_row.match_uuid,
+                get_request_id(),
                 exc_info=True,
             )
             return _handle_corrupted_match(request, session, match_row, link_uuid)
+        deser_ms = round((time.monotonic() - t_deser) * 1000, 1)
 
         hand = state.current_hand
         if hand is None:
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
+        t_engine = time.monotonic()
         state = engine.skip_to_next_decision(state)
+        engine_ms = round((time.monotonic() - t_engine) * 1000, 1)
 
         # Ensure hand row exists for the current hand
         current_hand = state.current_hand
@@ -1714,7 +1938,35 @@ async def skip_pacing(
         else:
             hand_row.hand_state_json = json.dumps(hand.to_dict())
         _update_match_row(match_row, state)
+        t_commit = time.monotonic()
         session.commit()
+        commit_ms = round((time.monotonic() - t_commit) * 1000, 1)
+
+        logger.info(
+            "action=skip match=%s result=ok deser_ms=%.1f engine_ms=%.1f commit_ms=%.1f request_id=%s",
+            match_row.match_uuid,
+            deser_ms,
+            engine_ms,
+            commit_ms,
+            get_request_id(),
+        )
+        _check_slow_subphases(
+            "skip",
+            match_row.match_uuid,
+            deser_ms=deser_ms,
+            engine_ms=engine_ms,
+            commit_ms=commit_ms,
+        )
+        # Log match completion when the game ends after skipping pacing.
+        if state.status == "complete":
+            logger.info(
+                "action=match_complete match=%s score_human=%d score_ai=%d hands_played=%d request_id=%s",
+                match_row.match_uuid,
+                state.score_human,
+                state.score_ai,
+                state.hands_played,
+                get_request_id(),
+            )
 
         return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
@@ -1746,24 +1998,41 @@ async def submit_exchange(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
+        t_deser = time.monotonic()
         try:
             state = _deserialize_state(engine, match_row.match_state_json)
         except Exception:
             logger.warning(
-                "Failed to deserialize match %s on exchange — marking abandoned",
+                "action=exchange match=%s result=error reason=deserialize_failed request_id=%s",
                 match_row.match_uuid,
+                get_request_id(),
                 exc_info=True,
             )
             return _handle_corrupted_match(request, session, match_row, link_uuid)
+        deser_ms = round((time.monotonic() - t_deser) * 1000, 1)
 
         hand = state.current_hand
         if hand is None or hand.phase != "moon_exchange":
+            logger.info(
+                "action=exchange match=%s result=desync expected_phase=moon_exchange actual_phase=%s request_id=%s",
+                match_row.match_uuid,
+                hand.phase if hand is not None else "no_hand",
+                get_request_id(),
+            )
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
         if hand.exchange_phase != "selecting":
+            logger.info(
+                "action=exchange match=%s result=desync reason=not_selecting exchange_phase=%s request_id=%s",
+                match_row.match_uuid,
+                hand.exchange_phase,
+                get_request_id(),
+            )
             return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
 
+        t_engine = time.monotonic()
         state = engine.submit_exchange_selection(state, [card_index_0, card_index_1])
+        engine_ms = round((time.monotonic() - t_engine) * 1000, 1)
 
         hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
 
@@ -1778,7 +2047,25 @@ async def submit_exchange(
 
         hand_row.hand_state_json = json.dumps(hand.to_dict())
         _update_match_row(match_row, state)
+        t_commit = time.monotonic()
         session.commit()
+        commit_ms = round((time.monotonic() - t_commit) * 1000, 1)
+
+        logger.info(
+            "action=exchange match=%s result=ok deser_ms=%.1f engine_ms=%.1f commit_ms=%.1f request_id=%s",
+            match_row.match_uuid,
+            deser_ms,
+            engine_ms,
+            commit_ms,
+            get_request_id(),
+        )
+        _check_slow_subphases(
+            "exchange",
+            match_row.match_uuid,
+            deser_ms=deser_ms,
+            engine_ms=engine_ms,
+            commit_ms=commit_ms,
+        )
 
         return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
@@ -1819,20 +2106,28 @@ async def next_hand(
 
         ai_manager = _get_ai_manager(request)
         engine = _build_engine(ai_manager, match_row.ai_model)
+        t_deser = time.monotonic()
         try:
             state = _deserialize_state(engine, match_row.match_state_json)
         except Exception:
             logger.warning(
-                "Failed to deserialize match %s on next-hand — marking abandoned",
+                "action=next_hand match=%s result=error reason=deserialize_failed request_id=%s",
                 match_row.match_uuid,
+                get_request_id(),
                 exc_info=True,
             )
             return _handle_corrupted_match(request, session, match_row, link_uuid)
+        deser_ms = round((time.monotonic() - t_deser) * 1000, 1)
 
         # If the match is already complete, show the match-result screen.
         # The player has already seen the final hand result (with the
         # "See Match Results" CTA) and is now advancing (#2239).
         if state.status == "complete":
+            logger.info(
+                "action=next_hand match=%s result=ok sub=match_already_complete request_id=%s",
+                match_row.match_uuid,
+                get_request_id(),
+            )
             return HTMLResponse(
                 _render_game_board(
                     request, engine, state, link_uuid, force_match_result=True
@@ -1849,7 +2144,9 @@ async def next_hand(
             _update_hand_row(hand_row, hand)
 
         # Only start a new hand when we are paused on a completed hand
+        t_engine = time.monotonic()
         state = engine.advance_to_next_hand(state)
+        engine_ms = round((time.monotonic() - t_engine) * 1000, 1)
 
         if state.current_hand is not None:
             next_hand_row = _ensure_hand_row(
@@ -1868,7 +2165,25 @@ async def next_hand(
                 )
 
         _update_match_row(match_row, state)
+        t_commit = time.monotonic()
         session.commit()
+        commit_ms = round((time.monotonic() - t_commit) * 1000, 1)
+
+        logger.info(
+            "action=next_hand match=%s result=ok deser_ms=%.1f engine_ms=%.1f commit_ms=%.1f request_id=%s",
+            match_row.match_uuid,
+            deser_ms,
+            engine_ms,
+            commit_ms,
+            get_request_id(),
+        )
+        _check_slow_subphases(
+            "next_hand",
+            match_row.match_uuid,
+            deser_ms=deser_ms,
+            engine_ms=engine_ms,
+            commit_ms=commit_ms,
+        )
 
         return HTMLResponse(_render_game_board(request, engine, state, link_uuid))
     finally:
@@ -1891,6 +2206,10 @@ async def new_match(
         # Return model selection form (HTMX partial)
         ai_manager = _get_ai_manager(request)
         models = ai_manager.list_available()
+        logger.info(
+            "action=new_match result=ok request_id=%s",
+            get_request_id(),
+        )
         return HTMLResponse(
             templates.get_template("partials/model_select.html").render(
                 {
