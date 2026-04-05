@@ -58,7 +58,7 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 ### Pre-Commit Checklist
 
 - Run `git fetch origin main && git rebase origin/main` before opening a PR to avoid stale-base conflicts.
-- Run full `make check` (or equivalent test suite) before creating any PR.
+- Run full `make check-gated` (or `make check`) before creating any PR.
 - Verify no uncommitted notebook changes that would trigger git diff checks.
 - Run linter (`ruff check --fix`) and formatter (`ruff format`) on all changed files.
 
@@ -76,8 +76,9 @@ make sync               # Install dependencies (uses uv sync)
 ```
 
 ```bash
-make check              # Full validation: repo-lint + ruff + pytest + notebook-check + docs-check (run before PRs)
-make check-quiet        # Same validation, minimal output (logs to tmpfile)
+make check-gated        # Full validation with concurrency cap (default for fleet — run before PRs)
+make check-quiet        # Same validation, minimal output, no concurrency cap (single-lane debugging)
+make check              # Full validation, full output (interactive debugging)
 make test               # Pytest fast suite only
 make lint               # Ruff check only
 make repo-lint          # Repo boundary linter only
@@ -202,7 +203,7 @@ All code changes MUST happen in dedicated git worktrees, never on `main` in the 
 
 ### PR Requirements
 - One concept per PR
-- Run `make check` before opening
+- Run `make check-gated` before opening
 - Include exact repro command with seed in PR description
 - Use the PR template from `.github/pull_request_template.md`
 - **Define test criteria** — every PR must include specific, verifiable pass/fail conditions (not just "tests pass"). State what observable outcome proves the feature works, with exact commands and expected results.

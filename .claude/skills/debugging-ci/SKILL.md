@@ -56,7 +56,7 @@ See [SYMPTOM_TABLE.md](SYMPTOM_TABLE.md) for the full lookup table. Quick refere
 ## Gotchas
 
 - `make check` runs 5 sub-checks sequentially (repo-lint, ruff, pytest, notebook-check, docs-check) — read the output to identify WHICH one failed
-- `make check-quiet` logs to a tmpfile — on failure, read that file for details
+- `make check-gated` / `make check-quiet` log to a tmpfile — on failure, read that file for details
 - Review loop crashes are silent — always check state.json when status is stuck
 - `set_review_status.sh` requires the PR's HEAD SHA — it reads it automatically from git
 - Don't retry the same command hoping for a different result — diagnose the root cause

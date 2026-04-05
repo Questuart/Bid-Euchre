@@ -134,12 +134,12 @@ If you are an analyst lane and the task is research/investigation:
    ```
 
 > **⚠ Run validation in foreground — never background.**
-> `make check-quiet` redirects all output to a tmpfile. If you run it as a
-> background task, the background capture sees 0 bytes of output. The lane
-> then interprets this as "nothing happened" and starts a second foreground
-> `make check`, causing duplicate processes that double CPU/IO load and
-> inflate validation from ~8 min to 28+ min. Always run `make check-quiet`
-> or `make check-gated` as a **foreground** Bash command.
+> `make check-gated` and `make check-quiet` redirect all output to a tmpfile.
+> If you run either as a background task, the background capture sees 0 bytes
+> of output. The lane then interprets this as "nothing happened" and starts a
+> second foreground `make check`, causing duplicate processes that double
+> CPU/IO load and inflate validation from ~8 min to 28+ min. Always run
+> `make check-gated` (or `make check-quiet`) as a **foreground** Bash command.
 
 ### Phase 3 — Scope Lock
 
@@ -233,7 +233,7 @@ back to `CLAUDE_PROJECT_DIR` directory name parsing.
   the orchestrator to fill it in
 - Author lanes are background in the dashboard — the operator sees your status
   automatically; focus on the task, not on reporting visibility
-- **Never run `make check-quiet` or `make check-gated` as a background task.**
+- **Never run `make check-gated` or `make check-quiet` as a background task.**
   These variants redirect output to tmpfiles — background capture gets 0 bytes,
   which causes the lane to spawn a duplicate foreground process. Always run
   validation in foreground. (See #2271 for the incident report.)

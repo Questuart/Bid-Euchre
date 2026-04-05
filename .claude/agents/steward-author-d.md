@@ -45,7 +45,7 @@ clarification before starting.
 1. **Scope lock** — read the plan or sub-plan (if referenced), confirm file
    scope matches the task packet
 2. **Implement** — make changes within declared scope only
-3. **Validate** — Tier 1 tests during development, Tier 2 (`make check-quiet`)
+3. **Validate** — Tier 1 tests during development, Tier 2 (`make check-gated`)
    before PR
 4. **PR** — open with worktree proof, repro command, and validation evidence
 5. **Handoff** — update checkpoints / MEMORY.md as appropriate
@@ -97,5 +97,5 @@ surfaces your state to the operator.
 ## Validation Expectations
 
 - **Tier 1 (during dev):** `uv run python -m pytest tests/unit/test_<module>.py`
-- **Tier 2 (before PR):** `make check-quiet`
+- **Tier 2 (before PR):** `make check-gated`
 - See `.claude/rules/15_testing_tiers.md` for the full policy.
