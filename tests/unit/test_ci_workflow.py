@@ -66,8 +66,13 @@ class TestCIWorkflowStructure:
             if_expr = str(self.jobs[job_name].get("if", ""))
             assert skip_marker in if_expr, f"{job_name} missing skip marker"
             assert branch_marker in if_expr, f"{job_name} missing branch marker"
+            # Non-PR events (push, schedule, workflow_dispatch) run
+            # unconditionally — the if condition must distinguish PR events
             if job_name != "tests":
-                assert "github.event_name == 'push'" in if_expr
+                assert (
+                    "github.event_name != 'pull_request'" in if_expr
+                    or "github.event_name == 'push'" in if_expr
+                ), f"{job_name} missing event-type guard"
 
     def test_tests_shard_is_2_way_matrix(self) -> None:
         """tests-shard uses a 2-way matrix split via pytest-split."""
@@ -125,6 +130,22 @@ class TestCIWorkflowStructure:
             assert "install" not in name.lower()
             assert "checkout" not in name.lower()
             assert "setup" not in name.lower()
+
+    def test_schedule_and_dispatch_triggers_exist(self) -> None:
+        """CI must have schedule + workflow_dispatch for main validation.
+
+        GitHub's auto-merge uses GITHUB_TOKEN, and push events from
+        GITHUB_TOKEN do not trigger workflows (anti-recursion). The
+        schedule trigger ensures main is validated at least daily, and
+        workflow_dispatch allows on-demand runs. See #2363.
+        """
+        triggers = self.workflow[True]  # 'on' key parsed as True by yaml
+        assert "schedule" in triggers, "Missing schedule trigger"
+        assert "workflow_dispatch" in triggers, "Missing workflow_dispatch trigger"
+        # Schedule must have a cron entry
+        schedules = triggers["schedule"]
+        assert len(schedules) >= 1
+        assert "cron" in schedules[0]
 
     def test_concurrency_group_unique_per_push(self) -> None:
         """Push events to main must get unique concurrency groups (#2363).

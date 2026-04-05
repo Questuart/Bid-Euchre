@@ -8,6 +8,15 @@ on:
     # gating, and the `tests` aggregation gate passes on all-skipped upstream.
   push:
     branches: [ "main" ]
+  schedule:
+    # Daily at 06:00 UTC — safety-net validation for main.
+    # Why: GitHub's auto-merge uses GITHUB_TOKEN, and push events from
+    # GITHUB_TOKEN do not trigger workflows (anti-recursion rule). When the
+    # fleet auto-merges PRs, no push-to-main CI runs. This schedule ensures
+    # main is validated at least daily. See #2363.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    # Manual trigger for on-demand main validation (e.g., after fleet runs).
 
 concurrency:
   group: ci-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number || github.ref }}
@@ -48,13 +57,11 @@ jobs:
     needs: [changes]
     if: >-
       always() && !cancelled() &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-          startsWith(github.head_ref, 'chore/auto-dashboard')))) &&
-      (github.event_name == 'push' ||
-       needs.changes.outputs.code_changed == 'true' ||
-       needs.changes.outputs.notebooks_changed == 'true')
+      (github.event_name != 'pull_request' ||
+       (!(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard')) &&
+        (needs.changes.outputs.code_changed == 'true' ||
+         needs.changes.outputs.notebooks_changed == 'true')))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -93,12 +100,10 @@ jobs:
     needs: [changes]
     if: >-
       always() && !cancelled() &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-          startsWith(github.head_ref, 'chore/auto-dashboard')))) &&
-      (github.event_name == 'push' ||
-       needs.changes.outputs.code_changed == 'true')
+      (github.event_name != 'pull_request' ||
+       (!(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard')) &&
+        needs.changes.outputs.code_changed == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -134,12 +139,10 @@ jobs:
     needs: [changes]
     if: >-
       always() && !cancelled() &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-          startsWith(github.head_ref, 'chore/auto-dashboard')))) &&
-      (github.event_name == 'push' ||
-       needs.changes.outputs.notebooks_changed == 'true')
+      (github.event_name != 'pull_request' ||
+       (!(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard')) &&
+        needs.changes.outputs.notebooks_changed == 'true'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -169,12 +172,10 @@ jobs:
     needs: [changes]
     if: >-
       always() && !cancelled() &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-          startsWith(github.head_ref, 'chore/auto-dashboard')))) &&
-      (github.event_name == 'push' ||
-       needs.changes.outputs.code_changed == 'true') &&
+      (github.event_name != 'pull_request' ||
+       (!(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+          startsWith(github.head_ref, 'chore/auto-dashboard')) &&
+        needs.changes.outputs.code_changed == 'true')) &&
       contains(github.event.pull_request.labels.*.name, 'promotion')
     runs-on: ubuntu-latest
     steps:
@@ -222,10 +223,9 @@ jobs:
     needs: [changes, checks, tests-shard, notebooks, promotion-gate]
     if: >-
       always() &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' &&
-        !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
-          startsWith(github.head_ref, 'chore/auto-dashboard'))))
+      (github.event_name != 'pull_request' ||
+       !(contains(github.event.pull_request.title, 'chore: update PR analytics dashboard') ||
+         startsWith(github.head_ref, 'chore/auto-dashboard')))
     runs-on: ubuntu-latest
     steps:
       - name: Skip notice
