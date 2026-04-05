@@ -3635,6 +3635,29 @@ class TestBowerDisplay:
         )
         assert "card--bower" not in html
 
+    def test_hand_no_bower_during_auction_even_with_trump_set(self, env):
+        """No bower badge during auction settle pause when trump leaks (#2473).
+
+        During the auction settle interstitial, the engine may have already
+        resolved the contract (setting trump/contract_type), but the template
+        phase is still "auction".  Bower badges must not appear.
+        """
+        tmpl = env.get_template("partials/hand.html")
+        # J♣ would be right bower of clubs — but phase is auction
+        html = tmpl.render(
+            link_uuid="test-uuid",
+            turn_number=0,
+            human_hand=[["C", "J"], ["S", "J"], ["H", "A"]],
+            legal_plays=None,
+            phase="auction",
+            contract_type="suit",
+            trump="C",
+        )
+        assert "card--bower" not in html
+        assert ">RB<" not in html
+        assert ">LB<" not in html
+        assert "bower" not in html.lower().replace("is_bower", "")
+
     # -- trick_history.html: card in history table --
 
     def test_left_bower_in_history_shows_printed_suit(self, env):
