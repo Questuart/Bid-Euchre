@@ -19,12 +19,14 @@ import pytest
 
 from web.db import Hand, Match, Player
 from web.leaderboard import (
+    EXCLUDED_TEST_PLAYERS,
     METRIC_DEFINITIONS,
     PlayerStats,
     compute_ai_stats,
     compute_player_stats,
     format_metric,
     get_leaderboard,
+    is_excluded_test_player,
 )
 
 # ---------------------------------------------------------------------------
@@ -603,6 +605,110 @@ class TestGetLeaderboard:
         assert rankings[0].hands_played == 1
         assert rankings[0].matches_played == 0  # no completed matches yet
         assert rankings[0].games_won == 0
+
+
+# ---------------------------------------------------------------------------
+# Test player exclusion tests
+# ---------------------------------------------------------------------------
+
+
+class TestIsExcludedTestPlayer:
+    """Tests for is_excluded_test_player helper."""
+
+    def test_none_nickname_not_excluded(self):
+        assert is_excluded_test_player(None) is False
+
+    def test_exact_match_excluded(self):
+        for name in EXCLUDED_TEST_PLAYERS:
+            assert is_excluded_test_player(name) is True, f"{name} should be excluded"
+
+    def test_prefix_match_excluded(self):
+        assert is_excluded_test_player("FlexBot-A") is True
+        assert is_excluded_test_player("FlexBot-B") is True
+        assert is_excluded_test_player("FlexBot-C") is True
+        assert is_excluded_test_player("FlexBot-D") is True
+        assert is_excluded_test_player("FlexBot-XYZ") is True
+
+    def test_real_player_not_excluded(self):
+        assert is_excluded_test_player("TESTV2") is False
+        assert is_excluded_test_player("PHIL-TEST") is False
+        assert is_excluded_test_player("CINDY-TEST") is False
+        assert is_excluded_test_player("Alice") is False
+
+    def test_case_sensitive(self):
+        # Exact names are case-sensitive
+        assert is_excluded_test_player("claude") is False
+        assert is_excluded_test_player("CLAUDE") is True
+        assert is_excluded_test_player("test") is False
+        assert is_excluded_test_player("TEST") is True
+
+
+class TestLeaderboardExcludesTestPlayers:
+    """get_leaderboard filters out test/bot accounts."""
+
+    def test_excludes_exact_match_player(self, db_session):
+        # Real player should appear
+        real = _make_player(db_session, nickname="RealPlayer")
+        rmatch = _make_match(db_session, real)
+        _make_hand(db_session, rmatch)
+
+        # Test player should be filtered out
+        test = _make_player(db_session, nickname="QUE-TEST")
+        tmatch = _make_match(db_session, test)
+        _make_hand(db_session, tmatch, hand_number=1)
+
+        db_session.flush()
+        rankings = get_leaderboard(db_session)
+
+        assert len(rankings) == 1
+        assert rankings[0].nickname == "RealPlayer"
+
+    def test_excludes_prefix_match_player(self, db_session):
+        real = _make_player(db_session, nickname="RealPlayer")
+        rmatch = _make_match(db_session, real)
+        _make_hand(db_session, rmatch)
+
+        bot = _make_player(db_session, nickname="FlexBot-A")
+        bmatch = _make_match(db_session, bot)
+        _make_hand(db_session, bmatch, hand_number=1)
+
+        db_session.flush()
+        rankings = get_leaderboard(db_session)
+
+        assert len(rankings) == 1
+        assert rankings[0].nickname == "RealPlayer"
+
+    def test_excludes_multiple_test_players(self, db_session):
+        real = _make_player(db_session, nickname="RealPlayer")
+        rmatch = _make_match(db_session, real)
+        _make_hand(db_session, rmatch)
+
+        for i, name in enumerate(["CLAUDE", "StratBot", "FlexBot-B"], start=1):
+            p = _make_player(db_session, nickname=name)
+            m = _make_match(db_session, p)
+            _make_hand(db_session, m, hand_number=i)
+
+        db_session.flush()
+        rankings = get_leaderboard(db_session)
+
+        assert len(rankings) == 1
+        assert rankings[0].nickname == "RealPlayer"
+
+    def test_test_player_data_still_computable(self, db_session):
+        """Test player data remains in DB — compute_player_stats still works."""
+        test = _make_player(db_session, nickname="QUE-TEST")
+        tmatch = _make_match(db_session, test)
+        _make_hand(db_session, tmatch)
+        db_session.flush()
+
+        # Direct computation still works — data is not deleted
+        stats = compute_player_stats(db_session, test.id)
+        assert stats is not None
+        assert stats.nickname == "QUE-TEST"
+
+        # But leaderboard filters them out
+        rankings = get_leaderboard(db_session)
+        assert len(rankings) == 0
 
 
 # ---------------------------------------------------------------------------

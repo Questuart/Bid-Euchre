@@ -27,6 +27,23 @@ HUMAN_TEAM = 0
 # Match statuses that contribute hands to leaderboard stats.
 _LEADERBOARD_MATCH_STATUSES = ("active", "complete", "abandoned")
 
+# Nicknames excluded from leaderboard display (test/bot accounts).
+# Data remains in the DB — this only hides them from the public ranking.
+EXCLUDED_TEST_PLAYERS: frozenset[str] = frozenset(
+    {
+        "QUE-TEST",
+        "StratBot",
+        "Claude-PW",
+        "CLAUDE",
+        "TEST",
+        "Claude-HTTP",
+        "MEEKS-TEST",
+    }
+)
+
+# Nickname prefixes excluded from leaderboard display.
+_EXCLUDED_PREFIXES: tuple[str, ...] = ("FlexBot",)
+
 
 # ---------------------------------------------------------------------------
 # Metric definitions — display metadata for the leaderboard UI
@@ -229,6 +246,18 @@ class PlayerStats:
 
     # AI indicator (must be last — has default value)
     is_ai: bool = False  # True for AI opponent aggregate entries
+
+
+def is_excluded_test_player(nickname: str | None) -> bool:
+    """Return True if *nickname* belongs to a test/bot account.
+
+    Matches are case-sensitive against the exact list and prefix list.
+    """
+    if nickname is None:
+        return False
+    if nickname in EXCLUDED_TEST_PLAYERS:
+        return True
+    return any(nickname.startswith(p) for p in _EXCLUDED_PREFIXES)
 
 
 def compute_player_stats(session: Session, player_id: int) -> PlayerStats | None:
@@ -528,7 +557,7 @@ def get_leaderboard(
     stats_list: list[PlayerStats] = []
     for player_id, _count in player_hand_counts:
         stats = compute_player_stats(session, player_id)
-        if stats is not None:
+        if stats is not None and not is_excluded_test_player(stats.nickname):
             stats_list.append(stats)
 
     # Add AI opponent aggregate entries
