@@ -21,6 +21,7 @@ from web.app import _run_self_test, create_app
 from web.cleanup import (
     DEFAULT_MAX_MATCH_AGE,
     PLAYER_STALE_MATCH_AGE,
+    abandon_player_active_matches,
     expire_player_stale_matches,
     expire_stale_matches,
 )
@@ -129,8 +130,14 @@ class TestMatchRateLimit:
         finally:
             session.close()
 
-    def test_route_returns_429_when_limit_reached(self, client, app):
-        """POST /play/{uuid}/select-ai returns 429 when limit exceeded."""
+    def test_select_ai_abandons_prior_active_matches(self, client, app):
+        """POST /play/{uuid}/select-ai abandons all active matches and
+        creates a new one instead of returning 429 (#2467).
+
+        The rate limit check was removed because select_ai now abandons
+        all active matches before creating the new match — there can never
+        be more than one active match per player.
+        """
         session = app.state.session_factory()
         try:
             player = _create_player(session)
@@ -145,8 +152,28 @@ class TestMatchRateLimit:
             f"/play/{link_uuid}/select-ai",
             data={"model_id": "olsa"},
         )
-        assert resp.status_code == 429
-        assert "limit" in resp.text.lower() or "Match limit" in resp.text
+        # Should succeed — all prior active matches are abandoned first
+        assert resp.status_code == 200
+
+        # Verify: exactly one active match remains (the new one)
+        session = app.state.session_factory()
+        try:
+            active = (
+                session.query(Match)
+                .filter_by(player_id=player.id, status="active")
+                .all()
+            )
+            assert len(active) == 1
+
+            # All others should be abandoned
+            abandoned = (
+                session.query(Match)
+                .filter_by(player_id=player.id, status="abandoned")
+                .all()
+            )
+            assert len(abandoned) == MAX_ACTIVE_MATCHES_PER_PLAYER
+        finally:
+            session.close()
 
 
 # ===================================================================
@@ -555,3 +582,104 @@ class TestPlayerStaleMatchCleanup:
             )
             # Should succeed (200), not be rate-limited (429)
             assert resp.status_code == 200
+
+
+# ===================================================================
+# 7. Abandon all active matches for a player (#2467)
+# ===================================================================
+
+
+class TestAbandonPlayerActiveMatches:
+    """abandon_player_active_matches marks ALL active matches as abandoned,
+    regardless of age (#2467)."""
+
+    def test_abandons_all_active_matches(self):
+        """All active matches for a player are abandoned, including recent ones."""
+        engine = init_engine("sqlite:///:memory:")
+        create_tables(engine)
+        sf = make_session_factory(engine)
+        session = sf()
+
+        player = _create_player(session)
+        # Create matches of varying ages — all should be abandoned
+        recent = _create_match(session, player.id)
+        recent.created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        old = _create_match(session, player.id)
+        old.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+        session.commit()
+
+        count = abandon_player_active_matches(session, player.id)
+        session.commit()
+
+        assert count == 2
+        session.refresh(recent)
+        session.refresh(old)
+        assert recent.status == "abandoned"
+        assert recent.completed_at is not None
+        assert old.status == "abandoned"
+        assert old.completed_at is not None
+        session.close()
+
+    def test_does_not_touch_other_players(self):
+        """Only the specified player's matches are abandoned."""
+        engine = init_engine("sqlite:///:memory:")
+        create_tables(engine)
+        sf = make_session_factory(engine)
+        session = sf()
+
+        player_a = _create_player(session)
+        player_b = _create_player(session)
+        match_a = _create_match(session, player_a.id)
+        match_b = _create_match(session, player_b.id)
+        session.commit()
+
+        count = abandon_player_active_matches(session, player_a.id)
+        session.commit()
+
+        assert count == 1
+        session.refresh(match_a)
+        session.refresh(match_b)
+        assert match_a.status == "abandoned"
+        assert match_b.status == "active"  # Untouched
+        session.close()
+
+    def test_skips_completed_and_abandoned_matches(self):
+        """Only active matches are affected — complete/abandoned are unchanged."""
+        engine = init_engine("sqlite:///:memory:")
+        create_tables(engine)
+        sf = make_session_factory(engine)
+        session = sf()
+
+        player = _create_player(session)
+        active = _create_match(session, player.id)
+        complete = _create_match(session, player.id)
+        complete.status = "complete"
+        already_abandoned = _create_match(session, player.id)
+        already_abandoned.status = "abandoned"
+        session.commit()
+
+        count = abandon_player_active_matches(session, player.id)
+        session.commit()
+
+        assert count == 1
+        session.refresh(active)
+        session.refresh(complete)
+        session.refresh(already_abandoned)
+        assert active.status == "abandoned"
+        assert complete.status == "complete"
+        assert already_abandoned.status == "abandoned"
+        session.close()
+
+    def test_returns_zero_when_no_active_matches(self):
+        """Returns 0 when the player has no active matches."""
+        engine = init_engine("sqlite:///:memory:")
+        create_tables(engine)
+        sf = make_session_factory(engine)
+        session = sf()
+
+        player = _create_player(session)
+        session.commit()
+
+        count = abandon_player_active_matches(session, player.id)
+        assert count == 0
+        session.close()

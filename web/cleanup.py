@@ -117,3 +117,54 @@ def expire_player_stale_matches(
         )
 
     return count
+
+
+def abandon_player_active_matches(
+    session: Session,
+    player_id: int,
+) -> int:
+    """Abandon **all** active matches for a player.
+
+    Called when a player creates a new match to ensure at most one active
+    match exists per player.  Unlike :func:`expire_player_stale_matches`,
+    this has no age threshold — every active match is abandoned regardless
+    of how recently it was created.
+
+    This prevents stale active matches from shadowing newer completed
+    matches on page refresh (#2467).
+
+    Parameters
+    ----------
+    session:
+        An open SQLAlchemy session (caller is responsible for commit).
+    player_id:
+        The player whose active matches to abandon.
+
+    Returns
+    -------
+    int
+        Number of matches abandoned.
+    """
+    active = (
+        session.query(Match)
+        .filter(
+            Match.player_id == player_id,
+            Match.status == "active",
+        )
+        .all()
+    )
+
+    now = datetime.now(timezone.utc)
+    for match in active:
+        match.status = "abandoned"
+        match.completed_at = now
+
+    count = len(active)
+    if count > 0:
+        logger.info(
+            "Abandoned %d active match(es) for player %d before new match",
+            count,
+            player_id,
+        )
+
+    return count
