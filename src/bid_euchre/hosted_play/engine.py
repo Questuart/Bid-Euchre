@@ -281,8 +281,10 @@ class MatchEngine:
         hand_after = state.current_hand
         if hand_after is not None and len(hand_after.completed_tricks) > pre_tricks:
             # Human's card completed a trick — pause to show the result
-            # before any further AI play.
-            if hand_after.phase == "trick_play":
+            # before any further AI play.  This includes trick 10 (hand
+            # complete) so the player sees the final trick result before
+            # the hand-result screen (#2210).
+            if hand_after.phase in ("trick_play", "complete"):
                 hand_after.paused_after_trick = True
             return state
 
@@ -721,12 +723,14 @@ class MatchEngine:
                 # After an AI card play, always pause for per-card reveal.
                 # If the trick just completed, use paused_after_trick; otherwise
                 # use paused_after_play so the UI reveals one card at a time.
+                # Includes trick 10 (hand complete) so the final trick result
+                # is shown before the hand-result screen (#2210).
                 hand_after = state.current_hand
                 if (
                     hand_after is not None
                     and len(hand_after.completed_tricks) > pre_tricks
                 ):
-                    if hand_after.phase == "trick_play":
+                    if hand_after.phase in ("trick_play", "complete"):
                         hand_after.paused_after_trick = True
                     return state
 
