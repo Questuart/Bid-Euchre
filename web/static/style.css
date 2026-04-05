@@ -33,8 +33,8 @@
     /* Team colors — consistent across score, trick count, contract bar */
     --team-human: #66bb6a;
     --team-ai: #42a5f5;
-    /* AI card delay — time before an AI card is revealed (#2330) */
-    --ai-card-delay: 0.8s;
+    /* AI card delay — time before an AI card is revealed (#2330, #2386) */
+    --ai-card-delay: 0.75s;
 }
 
 *,
@@ -266,7 +266,7 @@ main {
 
 /* AI card delay — fade-in animation when AI plays (#2330) */
 .card--ai-delayed {
-    animation: ai-card-reveal var(--ai-card-delay, 0.8s) ease-out both;
+    animation: ai-card-reveal var(--ai-card-delay, 0.75s) ease-out both;
 }
 
 @keyframes ai-card-reveal {
@@ -280,11 +280,22 @@ main {
     }
 }
 
-/* Delay the Next button until the AI card finishes its reveal animation */
-.trick-area--ai-revealing ~ .next-controls {
+/* Delay the Next button until the AI card finishes its reveal animation.
+   When auto-advance is active, the button stays hidden because JS triggers
+   the advance automatically (#2442, #2386). */
+.trick-area--ai-revealing ~ .next-controls:not(.next-controls--auto-advance) {
     opacity: 0;
     pointer-events: none;
-    animation: next-btn-appear 0.3s ease-out var(--ai-card-delay, 0.8s) forwards;
+    animation: next-btn-appear 0.3s ease-out var(--ai-card-delay, 0.75s) forwards;
+}
+
+/* Auto-advancing: hide the Next button entirely — JS auto-submits */
+.next-controls--auto-advance {
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    height: 0;
+    overflow: hidden;
 }
 
 @keyframes next-btn-appear {

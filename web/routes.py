@@ -575,6 +575,22 @@ def _build_game_context(
             and last_seat is not None
             and last_seat != HUMAN_SEAT
         )
+
+        # Auto-advance — when paused_after_play (mid-trick reveal), the
+        # client JS auto-triggers the Next endpoint after the animation
+        # completes so the player doesn't have to click Next for every
+        # single AI card.  Manual Next is still required for trick results
+        # (paused_after_trick) and other interstitials (#2442, #2386).
+        if hand.phase == "trick_play" and hand.paused_after_play:
+            is_ai = last_seat is not None and last_seat != HUMAN_SEAT
+            # AI cards: match the CSS animation duration (750ms) + buffer.
+            # Human card: brief pause to see own card on the table.
+            ctx["auto_advance"] = True
+            ctx["auto_advance_delay_ms"] = 850 if is_ai else 500
+        else:
+            ctx["auto_advance"] = False
+            ctx["auto_advance_delay_ms"] = 0
+
         ctx["winning_bid"] = None if _has_hidden_auction(hand) else hand.winning_bid
         ctx["bidder_seat"] = None if _has_hidden_auction(hand) else hand.bidder_seat
         ctx["current_high_bid"] = (
@@ -656,6 +672,8 @@ def _build_game_context(
         ctx["show_bid_panel"] = False
         ctx["last_played_seat"] = None
         ctx["ai_just_played"] = False
+        ctx["auto_advance"] = False
+        ctx["auto_advance_delay_ms"] = 0
 
     return ctx
 
