@@ -329,8 +329,17 @@
 
             // During auction phase, default to open (server-rendered)
             if (currentPhase === 'auction') {
+                // New hand: previous phase was non-auction (e.g. trick_play).
+                // Reset stale saved state so server-rendered `open` takes
+                // effect — the '0' left over from auto-collapse should not
+                // close the log for the brand-new auction.
+                if (previousPhase && previousPhase !== 'auction') {
+                    sessionStorage.removeItem(AUCTION_LOG_KEY);
+                    return;
+                }
                 var saved = sessionStorage.getItem(AUCTION_LOG_KEY);
                 // Only override server default if user explicitly closed it
+                // during *this* auction (not stale from a prior hand).
                 if (saved === '0') {
                     details.open = false;
                 }

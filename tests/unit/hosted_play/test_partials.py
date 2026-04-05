@@ -2780,6 +2780,49 @@ class TestActionRail:
         assert "action-rail__content" in html
 
 
+STATIC_DIR = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "web",
+    "static",
+)
+
+
+class TestAuctionLogJsToggle:
+    """Verify game.js resets stale sessionStorage on new-hand auction (#2471)."""
+
+    @pytest.fixture()
+    def game_js(self):
+        path = os.path.join(STATIC_DIR, "game.js")
+        with open(path) as f:
+            return f.read()
+
+    def test_restore_function_exists(self, game_js):
+        assert "function restoreAuctionLogState()" in game_js
+
+    def test_save_function_exists(self, game_js):
+        assert "function saveAuctionLogState()" in game_js
+
+    def test_new_hand_resets_stale_state(self, game_js):
+        """When previousPhase is non-auction and currentPhase is auction,
+        the JS must clear the stale AUCTION_LOG_KEY so the server-rendered
+        open attribute takes effect (#2471)."""
+        # Find the restoreAuctionLogState function body
+        fn_start = game_js.index("function restoreAuctionLogState()")
+        fn_block = game_js[fn_start : fn_start + 1800]
+        # Must contain the new-hand reset logic
+        assert "previousPhase !== 'auction'" in fn_block
+        assert "sessionStorage.removeItem(AUCTION_LOG_KEY)" in fn_block
+
+    def test_auction_log_keys_defined(self, game_js):
+        assert "AUCTION_LOG_KEY" in game_js
+        assert "'auctionLogOpen'" in game_js
+        assert "AUCTION_LOG_PHASE_KEY" in game_js
+        assert "'auctionLogPhase'" in game_js
+
+
 class TestNextControls:
     def test_next_controls_post_to_next_route(self, env):
         tmpl = env.get_template("partials/next_controls.html")
