@@ -320,29 +320,22 @@
             var previousPhase = sessionStorage.getItem(AUCTION_LOG_PHASE_KEY);
             sessionStorage.setItem(AUCTION_LOG_PHASE_KEY, currentPhase);
 
+            // During auction phase: always force open.
+            // Server renders <details open> during auction, and JS must
+            // not override that based on stale sessionStorage.  Previous
+            // attempts (#2459, #2475) to selectively clear stale state
+            // still left edge cases where saved '0' closed the log.
+            // The authoritative rule is simple: auction → open.  (#2488)
+            if (currentPhase === 'auction') {
+                details.open = true;
+                sessionStorage.removeItem(AUCTION_LOG_KEY);
+                return;
+            }
+
             // Auto-collapse: transition from auction to non-auction phase
             if (previousPhase === 'auction' && currentPhase !== 'auction') {
                 details.open = false;
                 sessionStorage.setItem(AUCTION_LOG_KEY, '0');
-                return;
-            }
-
-            // During auction phase, default to open (server-rendered)
-            if (currentPhase === 'auction') {
-                // New hand: previous phase was non-auction (e.g. trick_play).
-                // Reset stale saved state so server-rendered `open` takes
-                // effect — the '0' left over from auto-collapse should not
-                // close the log for the brand-new auction.
-                if (previousPhase && previousPhase !== 'auction') {
-                    sessionStorage.removeItem(AUCTION_LOG_KEY);
-                    return;
-                }
-                var saved = sessionStorage.getItem(AUCTION_LOG_KEY);
-                // Only override server default if user explicitly closed it
-                // during *this* auction (not stale from a prior hand).
-                if (saved === '0') {
-                    details.open = false;
-                }
                 return;
             }
 
