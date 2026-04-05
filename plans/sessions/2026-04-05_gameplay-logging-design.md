@@ -24,11 +24,11 @@ TEST player got stuck on card play (match 94, turn 33). We could query
 
 | Layer | Logging | Gap |
 |-------|---------|-----|
-| **Server routes** (`web/routes.py`) | 7 `logger.warning()` calls — all for deserialization failures marking matches abandoned | No request-level logs, no action-type logs, no match/turn context on normal flow |
-| **App startup** (`web/app.py`) | `logger.info/warning` for migrations, invite seed, cleanup, self-test, 500 errors | Good for startup, but no request middleware |
-| **AI manager** (`web/ai_manager.py`) | `logger.info/warning` for model loading | Adequate |
-| **Cleanup** (`web/cleanup.py`) | `logger.info` for stale match expiry | Adequate |
-| **Client JS** (`web/static/game.js`) | Error toasts for HTMX failures, offline detection, card-play lifecycle tracking | No console logging, no error reporting back to server |
+| **Server routes** (`web/routes.py`) | 7 warning-level log calls — all for deserialization failures marking matches abandoned | No request-level logs, no action-type logs, no match/turn context on normal flow |
+| **App startup** (`web/app.py`) | Info/warning log calls for migrations, invite seed, cleanup, self-test, 500 errors | Good for startup, but no request middleware |
+| **AI manager** (`web/ai_manager.py`) | Info/warning log calls for model loading | Adequate |
+| **Cleanup** (`web/cleanup.py`) | Info log calls for stale match expiry | Adequate |
+| **Client JS** (`web/static/game.js`) | Error toasts for HTMX failures, offline detection, card-play lifecycle | No console logging, no error reporting back to server |
 | **DB schema** (`web/db.py`) | `Decision` table captures every bid/play with full game state JSON | Excellent for replay, but not queryable for debugging (deeply nested JSON) |
 | **Middleware** (`web/middleware.py`) | Cookie/session helpers, match limit check | No request logging middleware |
 | **Render config** (`render.yaml`) | Standard Docker web service | No LOG_LEVEL override, no log stream config |
@@ -54,7 +54,7 @@ Add a FastAPI middleware that logs every request with structured fields.
 
 **Implementation:**
 - Add a `RequestLoggingMiddleware` in `web/middleware.py`
-- Generate a `request_id` (UUID4) per request via `contextvars.ContextVar`
+- Generate a request\_id (UUID4) per request via Python ContextVar
 - Log on both request start and request completion
 - Use Python stdlib `logging` with JSON formatter (avoid new dependency)
 
@@ -87,7 +87,7 @@ Add a FastAPI middleware that logs every request with structured fields.
 
 ### Layer 2: Game Action Logging in Route Handlers (HIGH priority)
 
-Add `logger.info()` calls at key decision points in route handlers.
+Add structured info-level log calls at key decision points in route handlers.
 
 **What to log:**
 - Every POST action with `match_uuid`, `turn_number`, action type, result
@@ -96,45 +96,38 @@ Add `logger.info()` calls at key decision points in route handlers.
 - Match creation and completion events
 - Deserialization failures (already logged as warnings — add `request_id`)
 
-**Pattern for each POST handler:**
-```python
-logger.info(
-    "Action: %s match=%s turn=%d result=%s",
-    "play_card",          # action type
-    match_row.match_uuid, # match identifier
-    turn_number,          # submitted turn
-    "ok",                 # or "conflict", "desync", "illegal", "error"
-    extra={"request_id": get_request_id()},
-)
-```
+**Pattern for each POST handler** (pseudocode):
 
-**Files:** `web/routes.py` (add ~15-20 logger.info calls across POST handlers)
+    log INFO "Action: play_card match=<uuid> turn=<N> result=ok"
+    fields: action_type, match_uuid, turn_number, result, request_id
+
+**Files:** `web/routes.py` (add ~15-20 info-level log calls across POST handlers)
 
 ### Layer 3: JSON Log Formatter for Production (MEDIUM priority)
 
 Configure structured JSON output when running in production.
 
 **Implementation:**
-- Add a `JSONFormatter` class in a new `web/log_config.py` module
+- Add a JSONFormatter class in a new module (proposed: web/log\_config.py)
 - Wire it into `web/app.py` lifespan or `web/start.py`
-- Use `LOG_FORMAT=json` env var to toggle (default: text for dev, json for prod)
-- Include `request_id` from the ContextVar in all log records
+- Use LOG\_FORMAT=json env var to toggle (default: text for dev, json for prod)
+- Include request\_id from the ContextVar in all log records
 
-**Files:** `web/log_config.py` (new), `web/start.py` (configure), `web/app.py`
+**Files:** new web/log\_config.py, `web/start.py` (configure), `web/app.py`
 (optional early-init)
 
 ### Layer 4: Client-Side Error Reporting (LOW priority — defer)
 
 **Recommendation: Defer to post-pilot.** Rationale:
 - The server already returns structured error pages for 4xx/5xx
-- HTMX error handlers in `game.js` show user-friendly toasts
-- Adding `window.onerror` / `console.error` capture and a `/report-error`
-  endpoint adds complexity with limited debugging value for a small pilot
+- HTMX error handlers in `web/static/game.js` show user-friendly toasts
+- Adding a global JS error handler and a /report-error endpoint adds
+  complexity with limited debugging value for a small pilot
 - Server-side logging (Layers 1-2) will catch the vast majority of issues
 
-**If needed later:** Add a minimal `POST /report-error` endpoint that
-accepts `{message, url, line, col, stack}` from a `window.onerror` handler
-and logs it server-side. ~30 LOC client + ~20 LOC server.
+**If needed later:** Add a minimal POST /report-error endpoint that
+accepts error details (message, url, line, col, stack) from a global JS
+error handler and logs it server-side. ~30 LOC client + ~20 LOC server.
 
 ### Layer 5: DB Action Log Table (NOT recommended)
 
@@ -159,16 +152,16 @@ specific query patterns emerge during go-live. The structured request logs
 - HTTP request logs on Professional tier (we're on Free)
 
 **Recommended action:** Add a section to the operator runbook
-(`docs/03_web/DEPLOYMENT_GUIDE.md` or `docs/03_web/OPERATOR_RUNBOOK.md`)
+(proposed: docs/03\_web/OPERATOR\_RUNBOOK.md or existing deployment guide)
 documenting how to access and search Render logs for debugging.
 
 ## 4. PR Decomposition
 
 | PR | Scope | Files | Estimated Size | Dependencies |
 |----|-------|-------|---------------|-------------|
-| **PR-1** | Request logging middleware + JSON formatter | `web/middleware.py`, `web/log_config.py` (new), `web/app.py`, `web/start.py`, `tests/integration/test_request_logging.py` | ~150 LOC | None |
-| **PR-2** | Game action logging in route handlers | `web/routes.py` | ~60 LOC (logger.info additions) | PR-1 (uses request_id) |
-| **PR-3** | Render log access docs + env var docs | `docs/03_web/OPERATOR_RUNBOOK.md`, `render.yaml` (optional LOG_LEVEL), `.env.example` | ~40 LOC | None (parallel) |
+| **PR-1** | Request logging middleware + JSON formatter | `web/middleware.py`, new web/log\_config.py, `web/app.py`, `web/start.py`, new test file | ~150 LOC | None |
+| **PR-2** | Game action logging in route handlers | `web/routes.py` | ~60 LOC (info-level log additions) | PR-1 (uses request\_id) |
+| **PR-3** | Render log access docs + env var docs | new operator runbook, `render.yaml` (optional LOG\_LEVEL), `.env.example` | ~40 LOC | None (parallel) |
 
 **Total estimated LOC:** ~250
 **Estimated author time:** 2-3 hours across 3 PRs
@@ -178,7 +171,7 @@ documenting how to access and search Render logs for debugging.
 ### PR-1 (Request Logging Middleware)
 - [ ] Every HTTP request produces a `request_start` and `request_complete` log entry
 - [ ] Each log entry includes `request_id`, method, path, status_code, duration_ms
-- [ ] `request_id` is available via `contextvars` to route handlers
+- [ ] request\_id is available via Python contextvars to route handlers
 - [ ] JSON format activatable via `LOG_FORMAT=json` env var
 - [ ] Health/ready endpoints are excluded from verbose logging (or logged at DEBUG)
 - [ ] No new pip dependencies added
@@ -202,7 +195,7 @@ documenting how to access and search Render logs for debugging.
 ```bash
 # Tier 1 — during implementation
 uv run python -m pytest tests/integration/test_web_app.py -v
-uv run python -m pytest tests/integration/test_request_logging.py -v  # new
+uv run python -m pytest tests/integration/test_request_logging.py -v  # new file from PR-1
 
 # Tier 2 — before PR
 make check-quiet
@@ -226,56 +219,56 @@ curl -s http://localhost:8000/health | jq .
 
 ## 8. Implementation Notes
 
-### ContextVar pattern for request_id
+### ContextVar pattern for request\_id
+
+Use a Python ContextVar to store the request ID so it is accessible
+from any coroutine within the same request. Proposed location:
+web/middleware.py alongside the existing middleware helpers.
 
 ```python
-# web/middleware.py
-import contextvars
-import uuid
+import contextvars, uuid
 
-request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "request_id", default=""
-)
+request_id_var = contextvars.ContextVar("request_id", default="")
 
-def get_request_id() -> str:
+def get_request_id():
     return request_id_var.get()
 ```
 
 ### JSON formatter pattern (no deps)
 
+A thin stdlib Formatter subclass that emits one JSON object per log
+record. Proposed location: a new web/log\_config.py module.
+
 ```python
-# web/log_config.py
-import json
-import logging
+import json, logging
 from datetime import datetime, timezone
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
-        log_data = {
+        return json.dumps({
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", ""),
-        }
-        if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_data)
+        })
 ```
 
 ### Middleware pattern
 
+A Starlette BaseHTTPMiddleware subclass that generates the request\_id,
+sets the ContextVar, and logs start/complete events.
+
 ```python
-# In web/middleware.py
 from starlette.middleware.base import BaseHTTPMiddleware
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         rid = str(uuid.uuid4())
         request_id_var.set(rid)
-        logger.info("request_start", extra={...})
+        # log request_start with method, path
         response = await call_next(request)
-        logger.info("request_complete", extra={...})
+        # log request_complete with status_code, duration_ms
         return response
 ```
 
@@ -284,8 +277,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 - **FastAPI structured logging:** The consensus approach is stdlib `logging`
   with a JSON formatter for production, optionally `structlog` for larger
   projects. For our scale, stdlib is sufficient. ([Better Stack guide](https://betterstack.com/community/guides/logging/logging-with-fastapi/), [Apitally guide](https://apitally.io/blog/fastapi-logging-guide))
-- **Request correlation:** `contextvars.ContextVar` is the standard async-safe
-  mechanism for propagating request IDs. Libraries like `asgi-correlation-id`
+- **Request correlation:** Python's ContextVar is the standard async-safe
+  mechanism for propagating request IDs. Libraries like asgi-correlation-id
   exist but are unnecessary for our single-service architecture. ([ASGI correlation ID](https://github.com/snok/asgi-correlation-id))
 - **Event sourcing for games:** Our `decisions` table already implements the
   core pattern (append-only action log with full state snapshots). Adding a
