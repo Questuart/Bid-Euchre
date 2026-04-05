@@ -80,6 +80,14 @@
 
         <div class="onboarding__actions">
             <button type="button"
+                    class="onboarding__btn onboarding__btn--back"
+                    hx-get="/play/{{ link_uuid }}"
+                    hx-target="#game-board"
+                    hx-swap="morph:outerHTML"
+                    aria-label="Back to welcome">
+                &larr; Back
+            </button>
+            <button type="button"
                     class="onboarding__btn onboarding__btn--primary"
                     hx-post="/play/{{ link_uuid }}/onboarding/next"
                     hx-vals='{"step": 1}'
