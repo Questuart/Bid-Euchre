@@ -13,6 +13,7 @@ Variable              Default      Purpose
 ``PORT``              ``8000``     Bind port (Render injects ``$PORT``)
 ``WEB_WORKERS``       ``1``        Uvicorn worker count
 ``LOG_LEVEL``         ``info``     Uvicorn log level
+``LOG_FORMAT``        ``text``     ``text`` or ``json`` (structured output)
 ====================  ===========  ========================================
 
 Usage::
@@ -39,10 +40,16 @@ def main() -> None:
     # uvicorn installation checks at import time.
     import uvicorn
 
+    from web.log_config import configure_logging
+
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
     workers = int(os.environ.get("WEB_WORKERS", "1"))
     log_level = os.environ.get("LOG_LEVEL", "info").lower()
+    log_format = os.environ.get("LOG_FORMAT", "text").lower()
+
+    # Configure structured logging before uvicorn starts.
+    configure_logging(log_format=log_format, log_level=log_level)
 
     # Validate workers — uvicorn requires >= 1
     if workers < 1:

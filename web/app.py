@@ -37,6 +37,7 @@ from .db import (
     init_engine,
     make_session_factory,
 )
+from .middleware import RequestLoggingMiddleware
 from .routes import router as game_router
 from .template_filters import display_rank, effective_suit, is_bower
 
@@ -228,6 +229,12 @@ def create_app(config: HostedPlayConfig | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Request logging — structured request_start/request_complete events
+    # with per-request correlation IDs.  Must be added *after* CORS so
+    # that the logging middleware wraps the inner app and sees the final
+    # response status (Starlette middleware order is LIFO).
+    app.add_middleware(RequestLoggingMiddleware)
 
     # Serve static assets (CSS, JS) from web/static/
     app.mount("/static", StaticFiles(directory=str(_WEB_DIR / "static")), name="static")
