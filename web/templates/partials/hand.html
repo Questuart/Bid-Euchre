@@ -26,7 +26,9 @@
             {% set rank = card[1] %}
             {% set idx = loop.index0 %}
             {% set disp_suit = card[0] %}
-            {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
+            {# Suppress bower badges during auction — trump is undecided so
+               bower status is unknown (#2473). #}
+            {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) if phase != "auction" else "" %}
             {% set suit_class = suit_classes.get(disp_suit, "spades") %}
             {% set suit_sym = suit_symbols.get(disp_suit, disp_suit) %}
             {% set suit_name = suit_names.get(disp_suit, disp_suit) %}
