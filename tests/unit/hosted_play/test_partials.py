@@ -1070,7 +1070,7 @@ class TestHandResult:
             score_ai=3,
             hands_played=1,
         )
-        assert "Made it!" in html
+        assert "Your Team Made It!" in html
         assert "7" in html  # tricks
         assert "\u2660" in html  # ♠
 
@@ -1089,7 +1089,7 @@ class TestHandResult:
             score_ai=5,
             hands_played=1,
         )
-        assert "Set!" in html
+        assert "Your Team was Set!" in html
         assert "-8" in html  # points
 
     def test_high_contract_result(self, env):
@@ -1108,7 +1108,7 @@ class TestHandResult:
             score_ai=2,
             hands_played=1,
         )
-        assert "Made it!" in html
+        assert "Your Team Made It!" in html
         assert "High" in html
 
     def test_low_contract_result(self, env):
@@ -1127,7 +1127,7 @@ class TestHandResult:
             score_ai=7,
             hands_played=1,
         )
-        assert "Made it!" in html
+        assert "Opponent Made It!" in html
         assert "Low" in html
 
     def test_moon_made_banner(self, env):
@@ -1147,13 +1147,13 @@ class TestHandResult:
             score_ai=0,
             hands_played=1,
         )
-        assert "Moon Made!" in html
+        assert "Your Team Moon Made!" in html
         assert "result--moon-made" in html
         assert "+20" in html
         assert "MOON" in html
         assert "MADE" in html
-        # Should NOT show regular "Made it!" text
-        assert "Made it!" not in html
+        # Should NOT show regular "Made It!" text
+        assert "Made It!" not in html
 
     def test_moon_set_banner(self, env):
         """Moon set shows special banner with negative score."""
@@ -1172,12 +1172,12 @@ class TestHandResult:
             score_ai=3,
             hands_played=1,
         )
-        assert "Moon Set!" in html
+        assert "Your Team Moon Set!" in html
         assert "result--moon-set" in html
         assert "-20" in html
         assert "SET" in html
-        # Should show moon-specific banner, not plain "Set!" alone
-        assert ">Set!<" not in html
+        # Should show moon-specific banner, not plain "was Set!" alone
+        assert "was Set!" not in html
 
     def test_loner_made_banner(self, env):
         """Loner made shows special banner."""
@@ -1196,7 +1196,7 @@ class TestHandResult:
             score_ai=0,
             hands_played=1,
         )
-        assert "Loner Made!" in html
+        assert "Your Team Loner Made!" in html
         assert "result--loner-made" in html
         assert "+20" in html
         assert "LONER" in html
@@ -1218,7 +1218,7 @@ class TestHandResult:
             score_ai=5,
             hands_played=1,
         )
-        assert "Loner Set!" in html
+        assert "Your Team Loner Set!" in html
         assert "result--loner-set" in html
         assert "-20" in html
 
@@ -1241,7 +1241,43 @@ class TestHandResult:
         )
         assert "result--moon" not in html
         assert "result--loner" not in html
-        assert "Made it!" in html
+        assert "Your Team Made It!" in html
+
+    def test_opponent_declared_made_shows_opponent_prefix(self, env):
+        """When AI team declares and makes, banner says 'Opponent Made It!' (#2439)."""
+        html = env.get_template("partials/hand_result.html").render(
+            winning_bid=6,
+            bidder_seat=1,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=3,
+            tricks_team1=7,
+            points_team0=3,
+            points_team1=7,
+            score_human=3,
+            score_ai=7,
+            hands_played=1,
+        )
+        assert "Opponent Made It!" in html
+        assert "Your Team" not in html
+
+    def test_opponent_declared_set_shows_opponent_prefix(self, env):
+        """When AI team declares and is set, banner says 'Opponent was Set!' (#2439)."""
+        html = env.get_template("partials/hand_result.html").render(
+            winning_bid=8,
+            bidder_seat=3,
+            contract_type="suit",
+            trump="H",
+            tricks_team0=5,
+            tricks_team1=5,
+            points_team0=5,
+            points_team1=-8,
+            score_human=5,
+            score_ai=-8,
+            hands_played=1,
+        )
+        assert "Opponent was Set!" in html
+        assert "Your Team" not in html
 
     def test_moon_result_shows_exchange_summary(self, env):
         """Moon results include exchange card summary."""
@@ -1481,7 +1517,7 @@ class TestHandResult:
             hands_played=1,
         )
         # Should render without error even when completed_tricks is not provided
-        assert "Made it!" in html
+        assert "Your Team Made It!" in html
         assert "trick-history" not in html
 
     def test_trick_history_wrapper_has_class(self, env):
@@ -1791,7 +1827,7 @@ class TestGameBoardSeatZeroRegression:
     """
 
     def test_hand_result_via_game_board_seat0_set(self, env):
-        """Human (seat 0) bid and got set — banner must say 'Set!'."""
+        """Human (seat 0) bid and got set — banner must say 'Your Team was Set!'."""
         tmpl = env.get_template("partials/game_board.html")
         html = tmpl.render(
             phase="hand_result",
@@ -1812,14 +1848,14 @@ class TestGameBoardSeatZeroRegression:
             score_ai=6,
             hands_played=1,
         )
-        assert "Set!" in html
+        assert "Your Team was Set!" in html
         # Verify human is identified as the bidder
         assert "You" in html
-        # Should NOT say "Made it!"
-        assert "Made it!" not in html
+        # Should NOT say "Made It!"
+        assert "Made It!" not in html
 
     def test_hand_result_via_game_board_seat0_made(self, env):
-        """Human (seat 0) bid and made — banner must say 'Made it!'."""
+        """Human (seat 0) bid and made — banner must say 'Your Team Made It!'."""
         tmpl = env.get_template("partials/game_board.html")
         html = tmpl.render(
             phase="hand_result",
@@ -1840,7 +1876,7 @@ class TestGameBoardSeatZeroRegression:
             score_ai=3,
             hands_played=1,
         )
-        assert "Made it!" in html
+        assert "Your Team Made It!" in html
         assert "You" in html
 
     def test_dealer_seat_zero_preserved(self, env):
