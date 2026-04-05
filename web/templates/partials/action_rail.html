@@ -1,12 +1,13 @@
-{# Auction log — compact event feed of auction bids, trick results, and
-   system messages.  (Formerly called "Action Rail" in dev jargon.)
+{# Auction log — compact event feed of auction bids, passes, the auction
+   result, and redeal notices.  Trick results are shown in the trick history
+   panel, not here (#2477).
 
    Collapsible: open during auction phase, auto-collapsed after auction ends.
    Toggle state is persisted across HTMX swaps via sessionStorage (game.js).
 
    Context variables:
      - action_rail: list[dict] — ordered event objects:
-         {"kind": "auction"|"trick"|"system", "text": str}
+         {"kind": "auction"|"result"|"system", "text": str}
      - action_rail_label (optional): heading override
      - phase: str — "auction", "trick_play", etc.
 #}
