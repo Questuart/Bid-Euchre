@@ -90,7 +90,7 @@
         {% endif %}
 
         <p class="result-detail">
-            {% if bidder_seat != 0 %}<span class="ai-name">{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>{% else %}{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}{% endif %}
+            {% if bidder_seat != 0 %}<span class="ai-name player-name--{{ 'human' if bidder_seat == 2 else 'ai' }}">{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>{% else %}<span class="player-name--human">{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>{% endif %}
             {% if hand_bid_type == "moon" %}
                 bid Moon
             {% elif hand_bid_type == "loner" %}
@@ -116,11 +116,11 @@
             <div class="result-exchange" aria-label="Moon exchange summary">
                 <p class="exchange-title"><strong>Moon Exchange</strong></p>
                 <p class="exchange-details">
-                    Given {{ exchange_given_cards|length }} to partner ({% if partner_seat != 0 %}<span class="ai-name">{{ partner_seat_label }}</span>{% else %}{{ partner_seat_label }}{% endif %}):
+                    Given {{ exchange_given_cards|length }} to partner ({% if partner_seat != 0 %}<span class="ai-name player-name--{{ 'human' if partner_seat == 2 else 'ai' }}">{{ partner_seat_label }}</span>{% else %}<span class="player-name--human">{{ partner_seat_label }}</span>{% endif %}):
                     {% for card in exchange_given_cards %}<span class="card-text" aria-label="{{ suit_symbols.get(card[0], card[0]) }}{{ card[1]|display_rank }}"><span class="suit-icon suit-icon--{{ suit_classes.get(card[0], 'spades') }}">{{ suit_symbols.get(card[0], card[0]) }}</span> {{ card[1]|display_rank }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
                 </p>
                 <p class="exchange-details">
-                    Received {{ exchange_received_cards|length }} from partner ({% if partner_seat != 0 %}<span class="ai-name">{{ partner_seat_label }}</span>{% else %}{{ partner_seat_label }}{% endif %}):
+                    Received {{ exchange_received_cards|length }} from partner ({% if partner_seat != 0 %}<span class="ai-name player-name--{{ 'human' if partner_seat == 2 else 'ai' }}">{{ partner_seat_label }}</span>{% else %}<span class="player-name--human">{{ partner_seat_label }}</span>{% endif %}):
                     {% for card in exchange_received_cards %}<span class="card-text" aria-label="{{ suit_symbols.get(card[0], card[0]) }}{{ card[1]|display_rank }}"><span class="suit-icon suit-icon--{{ suit_classes.get(card[0], 'spades') }}">{{ suit_symbols.get(card[0], card[0]) }}</span> {{ card[1]|display_rank }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
                 </p>
             </div>

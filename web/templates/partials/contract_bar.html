@@ -54,9 +54,9 @@
         {% endif %}
     </span>
 
-    {# Declarer — "by Name" (AI names blue via .ai-name #2288.4) #}
+    {# Declarer — "by Name" with team color (#2346) #}
     <span class="contract-bar__declarer">
-        by {% if bidder_seat != 0 %}<span class="ai-name">{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>{% else %}{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}{% endif %}
+        by {% if bidder_seat != 0 %}<span class="ai-name player-name--{{ 'human' if bidder_seat == 2 else 'ai' }}">{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>{% else %}<span class="player-name--human">{{ seat_labels.get(bidder_seat, "Seat " ~ bidder_seat) }}</span>{% endif %}
     </span>
 </div>
 {% elif phase is defined and phase == "auction" %}
@@ -66,7 +66,7 @@
         {% if current_high_bid is defined and current_high_bid is not none and current_high_bid > 0 %}
             High Bid: {{ current_high_bid }}
             {% if high_bidder_seat is defined and high_bidder_seat is not none %}
-                by {{ seat_labels.get(high_bidder_seat, "Seat " ~ high_bidder_seat) }}
+                by {% if high_bidder_seat != 0 %}<span class="ai-name player-name--{{ 'human' if high_bidder_seat == 2 else 'ai' }}">{{ seat_labels.get(high_bidder_seat, "Seat " ~ high_bidder_seat) }}</span>{% else %}<span class="player-name--human">{{ seat_labels.get(high_bidder_seat, "Seat " ~ high_bidder_seat) }}</span>{% endif %}
             {% endif %}
         {% else %}
             Auction in Progress
