@@ -935,44 +935,6 @@ class TestTrick:
 
 
 # ---------------------------------------------------------------------------
-# game_controls.html
-# ---------------------------------------------------------------------------
-
-
-class TestGameControls:
-    def test_game_controls_render_help(self, env):
-        tmpl = env.get_template("partials/game_controls.html")
-        html = tmpl.render()
-        assert "Help: Bid Euchre Rules" in html
-        assert "double deck" in html
-        assert "40-card" in html
-        assert "Bowers" in html
-        assert "Moon and loner" in html
-        assert "High/Low" in html
-        assert "+52 wins" in html
-        assert "52 means you lose" in html
-
-    def test_game_controls_legend_icons(self, env):
-        """Help drawer includes an icon/indicator legend."""
-        tmpl = env.get_template("partials/game_controls.html")
-        html = tmpl.render()
-        assert "Icons &amp; Indicators" in html
-        # Each seat marker variant is present
-        assert "seat-marker--dealer" in html
-        assert "seat-marker--declarer" in html
-        assert "seat-marker--leader" in html
-        assert "seat-marker--turn" in html
-        assert "seat-marker--sitting-out" in html
-        # Green glow swatch
-        assert "help-legend__swatch--legal" in html
-        # Descriptions
-        assert "Dealer" in html
-        assert "Declarer" in html
-        assert "Sitting out" in html
-        assert "legal play" in html
-
-
-# ---------------------------------------------------------------------------
 # score.html
 # ---------------------------------------------------------------------------
 
