@@ -2262,8 +2262,8 @@ class TestContractBar:
         assert "Current Contract and Trump:" in html
         assert "6" in html
         assert "\u2665" in html  # Heart symbol
-        # AI declarer name wrapped in .ai-name span (#2288.4)
-        assert 'class="ai-name">Slim</span>' in html
+        # AI declarer name wrapped in .ai-name with team color (#2346)
+        assert 'class="ai-name player-name--ai">Slim</span>' in html
 
     def test_high_contract(self, env):
         """High (no-trump) contract by human shows 'by You'."""
@@ -2278,7 +2278,7 @@ class TestContractBar:
         )
         assert "7" in html
         assert "High" in html
-        assert "by You" in html
+        assert 'player-name--human">You</span>' in html
         assert "contract-bar--my-team" in html
         # Human name should NOT be wrapped in ai-name
         assert "ai-name" not in html
@@ -2298,8 +2298,8 @@ class TestContractBar:
         )
         assert "7" in html
         assert "Low" in html
-        # AI declarer name wrapped in .ai-name span (#2288.4)
-        assert 'class="ai-name">Ace</span>' in html
+        # Partner declarer name wrapped in .ai-name with human team color (#2346)
+        assert 'class="ai-name player-name--human">Ace</span>' in html
         assert "contract-bar--my-team" in html
 
     def test_moon_contract(self, env):
@@ -2316,8 +2316,8 @@ class TestContractBar:
         assert "Moon" in html
         assert "contract-bar__type--moon" in html
         assert "\u2660" in html  # Spade symbol
-        # AI declarer name wrapped in .ai-name span (#2288.4)
-        assert 'class="ai-name">Deuce</span>' in html
+        # AI declarer name wrapped in .ai-name with team color (#2346)
+        assert 'class="ai-name player-name--ai">Deuce</span>' in html
         assert "contract-bar--opp-team" in html
 
     def test_loner_contract(self, env):
@@ -2334,7 +2334,7 @@ class TestContractBar:
         assert "Loner" in html
         assert "contract-bar__type--loner" in html
         assert "\u2666" in html  # Diamond symbol
-        assert "by You" in html
+        assert 'player-name--human">You</span>' in html
         assert "contract-bar--my-team" in html
         # Human name should NOT be wrapped in ai-name
         assert "ai-name" not in html
@@ -2416,12 +2416,12 @@ class TestContractBar:
             phase="trick_play",
         )
         assert "contract-bar" in html
-        assert "by You" in html
+        assert 'player-name--human">You</span>' in html
         assert "\u2663" in html  # Club symbol
         assert "contract-bar--my-team" in html
 
     def test_partner_declarer_label(self, env):
-        """Partner (seat 2) shows 'by Ace' wrapped in ai-name."""
+        """Partner (seat 2) shows 'by Ace' with human team color."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=5,
@@ -2431,11 +2431,11 @@ class TestContractBar:
             trump="S",
             phase="trick_play",
         )
-        assert 'class="ai-name">Ace</span>' in html
+        assert 'class="ai-name player-name--human">Ace</span>' in html
         assert "contract-bar--my-team" in html
 
     def test_opponent_seat1_declarer_label(self, env):
-        """Left opponent (seat 1) shows 'by Slim' wrapped in ai-name."""
+        """Left opponent (seat 1) shows 'by Slim' with AI team color."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=5,
@@ -2445,11 +2445,11 @@ class TestContractBar:
             trump="H",
             phase="trick_play",
         )
-        assert 'class="ai-name">Slim</span>' in html
+        assert 'class="ai-name player-name--ai">Slim</span>' in html
         assert "contract-bar--opp-team" in html
 
     def test_opponent_seat3_declarer_label(self, env):
-        """Right opponent (seat 3) shows 'by Deuce' wrapped in ai-name."""
+        """Right opponent (seat 3) shows 'by Deuce' with AI team color."""
         tmpl = env.get_template("partials/contract_bar.html")
         html = tmpl.render(
             winning_bid=8,
@@ -2459,7 +2459,7 @@ class TestContractBar:
             trump="C",
             phase="trick_play",
         )
-        assert 'class="ai-name">Deuce</span>' in html
+        assert 'class="ai-name player-name--ai">Deuce</span>' in html
         assert "contract-bar--opp-team" in html
 
     def test_header_label_suit(self, env):

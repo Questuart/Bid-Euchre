@@ -30,7 +30,7 @@
                 {% for entry in auction %}
                 {% set entry_bid_type = entry.get("bid_type", "regular") %}
                 <tr{% if entry_bid_type == "moon" %} class="bid--moon"{% elif entry_bid_type == "loner" %} class="bid--loner"{% endif %}>
-                    <td>{% if entry.seat != 0 %}<span class="ai-name">{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}</span>{% else %}{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}{% endif %}</td>
+                    <td>{% if entry.seat != 0 %}<span class="ai-name player-name--{{ 'human' if entry.seat == 2 else 'ai' }}">{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}</span>{% else %}<span class="player-name--human">{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}</span>{% endif %}</td>
                     <td>
                         {% if entry.action == "pass" %}
                             Pass
@@ -129,7 +129,7 @@
         {% endif %}
     </p>
     {% endif %}
-    <p class="bid-info">Dealer: {% if dealer_seat != 0 %}<span class="ai-name">{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>{% else %}{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}{% endif %}</p>
+    <p class="bid-info">Dealer: {% if dealer_seat != 0 %}<span class="ai-name player-name--{{ 'human' if dealer_seat == 2 else 'ai' }}">{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>{% else %}<span class="player-name--human">{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>{% endif %}</p>
 </div>
 
 <script>
