@@ -648,6 +648,73 @@
         });
     }
 
+    /* ---------------------------------------------------------------
+     * Auto-advance — automatically trigger the Next endpoint after
+     * AI card reveal animations complete.  Reduces per-trick clicks
+     * from 4+ (one per AI card) to 1 (trick result only).
+     * (#2442 latency, #2386 pacing)
+     * --------------------------------------------------------------- */
+
+    var _autoAdvanceTimer = null;
+
+    function cancelAutoAdvance() {
+        if (_autoAdvanceTimer !== null) {
+            clearTimeout(_autoAdvanceTimer);
+            _autoAdvanceTimer = null;
+        }
+    }
+
+    function scheduleAutoAdvance() {
+        cancelAutoAdvance();
+
+        var nextControls = document.querySelector('.next-controls[data-auto-advance]');
+        if (!nextControls) {
+            return;
+        }
+
+        var delayMs = parseInt(nextControls.getAttribute('data-auto-advance'), 10);
+        if (isNaN(delayMs) || delayMs <= 0) {
+            delayMs = 850;
+        }
+
+        var form = nextControls.querySelector('#next-step-form');
+        if (!form) {
+            return;
+        }
+
+        _autoAdvanceTimer = setTimeout(function () {
+            _autoAdvanceTimer = null;
+            // Only auto-advance if the form still exists in the DOM
+            // (HTMX may have swapped it out if the user clicked manually)
+            if (document.body.contains(form)) {
+                htmx.trigger(form, 'submit');
+            }
+        }, delayMs);
+    }
+
+    function attachAutoAdvanceHandler() {
+        // After each HTMX swap on the game board, check if we should
+        // auto-advance the Next step.
+        document.body.addEventListener('htmx:afterSettle', function (event) {
+            var target = event.target;
+            if (!(target instanceof Element) || target.id !== 'game-board') {
+                return;
+            }
+            scheduleAutoAdvance();
+        }, true);
+
+        // Cancel auto-advance if the user navigates away or clicks
+        // something else (e.g., trick history toggle).
+        document.body.addEventListener('htmx:beforeRequest', function (event) {
+            var elt = event.detail && event.detail.elt;
+            // Don't cancel if the auto-advance form itself is firing
+            if (elt && elt.id === 'next-step-form') {
+                return;
+            }
+            cancelAutoAdvance();
+        });
+    }
+
     function initialize() {
         attachDelegatedHandlers();
         attachTabHandlers();
@@ -655,11 +722,15 @@
         attachAuctionLogToggle();
         attachTextSizeToggle();
         attachErrorHandlers();
+        attachAutoAdvanceHandler();
         var form = getCardPlayForm();
         clearCardSelection(form);
         syncCardPlayFormControls(form);
         restoreTrickHistoryState();
         restoreAuctionLogState();
+        // Check for auto-advance on initial page load (e.g., page refresh
+        // while an AI card reveal is pending).
+        scheduleAutoAdvance();
     }
 
     initialize();

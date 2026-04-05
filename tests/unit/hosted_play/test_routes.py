@@ -353,6 +353,153 @@ class TestNextRevealFlow:
         assert state_after.current_hand.paused_after_trick is False
         session_after.close()
 
+    def test_auto_advance_present_for_ai_card_reveal(self, client, app):
+        """paused_after_play with AI last play renders auto-advance data attr.
+
+        When an AI card was just revealed (paused_after_play and last card
+        played by a non-human seat), the next-controls should include a
+        data-auto-advance attribute so that client JS auto-triggers the
+        Next endpoint after the CSS animation delay (#2442, #2386).
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+        hand.phase = "trick_play"
+        hand.current_seat = HUMAN_SEAT
+        hand.turn_number = 6
+        hand.bidder_seat = 1
+        hand.winning_bid = 6
+        hand.bid_type = "regular"
+        hand.contract_type = "suit"
+        hand.trump = "S"
+        hand.revealed_auction_count = len(hand.auction)
+        hand.auction_settled = True
+        hand.hands = [
+            [Card("H", "K"), Card("S", "A")],
+            [],
+            [],
+            [],
+        ]
+        hand.current_trick = TrickState(
+            leader=1, plays=[(1, Card("H", "A")), (2, Card("H", "Q"))]
+        )
+        hand.paused_after_play = True
+        hand.paused_after_trick = False
+        match_row.match_state_json = json.dumps(state.to_dict())
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Auto-advance attribute should be present (AI seat 2 last played)
+        assert 'data-auto-advance="850"' in resp.text
+        assert "next-controls--auto-advance" in resp.text
+
+    def test_auto_advance_absent_for_trick_result(self, client, app):
+        """paused_after_trick (trick result) does NOT render auto-advance.
+
+        Trick results require manual Next click so the player can see who
+        won the trick before advancing.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+        hand.phase = "trick_play"
+        hand.current_seat = HUMAN_SEAT
+        hand.turn_number = 6
+        hand.bidder_seat = 1
+        hand.winning_bid = 6
+        hand.bid_type = "regular"
+        hand.contract_type = "suit"
+        hand.trump = "S"
+        hand.revealed_auction_count = len(hand.auction)
+        hand.auction_settled = True
+        hand.hands = [
+            [Card("H", "K"), Card("S", "A")],
+            [],
+            [],
+            [],
+        ]
+        hand.completed_tricks = [
+            TrickResult(
+                leader=1,
+                plays=[
+                    (1, Card("D", "A")),
+                    (2, Card("D", "K")),
+                    (3, Card("D", "Q")),
+                    (0, Card("D", "10")),
+                ],
+                winner=1,
+            )
+        ]
+        hand.current_trick = TrickState(leader=1, plays=[(1, Card("H", "A"))])
+        hand.paused_after_trick = True
+        hand.paused_after_play = False
+        match_row.match_state_json = json.dumps(state.to_dict())
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Manual Next — no auto-advance
+        assert "data-auto-advance" not in resp.text
+        assert "next-controls--auto-advance" not in resp.text
+        assert "Continue to the next trick." in resp.text
+
+    def test_auto_advance_human_card_uses_shorter_delay(self, client, app):
+        """paused_after_play with human last play uses 500ms auto-advance delay.
+
+        When the human just played (not the trick-completing card), the
+        auto-advance delay is shorter (500ms) because no AI card animation
+        is needed — just a brief pause to see the card on the table.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+        hand.phase = "trick_play"
+        hand.current_seat = HUMAN_SEAT
+        hand.turn_number = 6
+        hand.bidder_seat = 1
+        hand.winning_bid = 6
+        hand.bid_type = "regular"
+        hand.contract_type = "suit"
+        hand.trump = "S"
+        hand.revealed_auction_count = len(hand.auction)
+        hand.auction_settled = True
+        hand.hands = [
+            [Card("H", "K"), Card("S", "A")],
+            [],
+            [],
+            [],
+        ]
+        hand.current_trick = TrickState(leader=0, plays=[(0, Card("H", "K"))])
+        hand.paused_after_play = True
+        hand.paused_after_trick = False
+        match_row.match_state_json = json.dumps(state.to_dict())
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Human card reveal — shorter delay
+        assert 'data-auto-advance="500"' in resp.text
+        assert "next-controls--auto-advance" in resp.text
+
     def test_next_reveals_moon_exchange_and_transitions_to_trick_play(
         self, client, app
     ):

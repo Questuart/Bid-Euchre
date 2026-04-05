@@ -1,10 +1,17 @@
-{# Unified reveal-step control shown when auction/trick progression is paused. #}
-<div class="next-controls" role="region" aria-label="Continue game progression">
+{# Unified reveal-step control shown when auction/trick progression is paused.
+   When auto_advance is true (mid-trick per-card reveals), JS auto-triggers the
+   Next endpoint after the animation delay so the player doesn't need to click
+   for every AI card (#2442, #2386). #}
+<div class="next-controls{% if auto_advance | default(false) %} next-controls--auto-advance{% endif %}"
+     role="region"
+     aria-label="Continue game progression"
+     {% if auto_advance | default(false) %}data-auto-advance="{{ auto_advance_delay_ms | default(850) }}"{% endif %}>
     {% if next_reason %}
     <p class="next-controls__reason" aria-live="polite">{{ next_reason }}</p>
     {% endif %}
     <div class="next-controls__buttons">
-        <form method="post"
+        <form id="next-step-form"
+              method="post"
               action="/play/{{ link_uuid }}/next"
               hx-post="/play/{{ link_uuid }}/next"
               hx-target="#game-board"
