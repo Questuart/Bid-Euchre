@@ -1117,8 +1117,15 @@ async def set_nickname(
         session.close()
 
 
-# Total number of onboarding guide steps (0-indexed pages within the guide).
-_ONBOARDING_GUIDE_STEPS = 3
+# Onboarding flow step layout:
+#   step 0 = welcome letter (already shown on page load)
+#   step 1 = dedication page
+#   steps 2..4 = guide walkthrough (3 steps)
+# After step 4 → model selection.
+_ONBOARDING_DEDICATION_STEP = 1
+_ONBOARDING_GUIDE_FIRST_STEP = 2
+_ONBOARDING_GUIDE_STEPS = 3  # number of guide walkthrough steps
+_ONBOARDING_LAST_STEP = _ONBOARDING_GUIDE_FIRST_STEP + _ONBOARDING_GUIDE_STEPS - 1
 
 
 @router.post("/play/{link_uuid}/onboarding/next", response_class=HTMLResponse)
@@ -1129,8 +1136,9 @@ async def onboarding_next(
 ):
     """Advance through onboarding steps.
 
-    Step 0 = welcome letter (already shown) → returns guide step 1.
-    Steps 1..N = guide walkthrough pages.
+    Step 0 = welcome letter (already shown) → returns dedication page.
+    Step 1 = dedication page → returns guide step 1.
+    Steps 2..4 = guide walkthrough pages.
     After the last guide step, marks onboarding complete and returns model
     selection.
     """
@@ -1144,7 +1152,7 @@ async def onboarding_next(
         next_step = step + 1
 
         # Past the last guide step → complete onboarding
-        if next_step > _ONBOARDING_GUIDE_STEPS:
+        if next_step > _ONBOARDING_LAST_STEP:
             player.onboarding_complete = 1
             session.commit()
             ai_manager = _get_ai_manager(request)
@@ -1161,15 +1169,28 @@ async def onboarding_next(
                 )
             )
 
+        # Dedication page
+        if next_step == _ONBOARDING_DEDICATION_STEP:
+            return HTMLResponse(
+                templates.get_template("partials/onboarding_dedication.html").render(
+                    {
+                        "request": request,
+                        "link_uuid": link_uuid,
+                    }
+                )
+            )
+
         # Show the next guide step
+        guide_step = next_step - _ONBOARDING_GUIDE_FIRST_STEP + 1
         return HTMLResponse(
             templates.get_template("partials/onboarding_guide.html").render(
                 {
                     "request": request,
                     "link_uuid": link_uuid,
                     "nickname": player.nickname,
-                    "step": next_step,
+                    "step": guide_step,
                     "total_steps": _ONBOARDING_GUIDE_STEPS,
+                    "onboarding_step": next_step,
                 }
             )
         )

@@ -3906,8 +3906,8 @@ class TestOnboarding:
         assert resp.status_code == 200
         assert "onboarding_welcome" in resp.text or "Welcome" in resp.text
 
-    def test_onboarding_next_advances_to_guide_step(self, client, app):
-        """POST /onboarding/next with step=0 shows the first guide step."""
+    def test_onboarding_next_step0_shows_dedication(self, client, app):
+        """POST /onboarding/next with step=0 shows the dedication page."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
         resp = client.post(
@@ -3915,34 +3915,52 @@ class TestOnboarding:
             data={"step": "0"},
         )
         assert resp.status_code == 200
-        assert "onboarding_guide" in resp.text or "guide" in resp.text.lower()
+        assert "dedication" in resp.text.lower()
 
-    def test_onboarding_next_advances_through_all_steps(self, client, app):
-        """Walking through all 3 guide steps completes onboarding."""
+    def test_onboarding_next_step1_shows_guide(self, client, app):
+        """POST /onboarding/next with step=1 advances from dedication to guide."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
-        # Step 0 → guide step 1
-        resp = client.post(
-            f"/play/{link_uuid}/onboarding/next",
-            data={"step": "0"},
-        )
-        assert resp.status_code == 200
-        # Step 1 → guide step 2
         resp = client.post(
             f"/play/{link_uuid}/onboarding/next",
             data={"step": "1"},
         )
         assert resp.status_code == 200
-        # Step 2 → guide step 3
+        assert "onboarding_guide" in resp.text or "How to Play" in resp.text
+
+    def test_onboarding_next_advances_through_all_steps(self, client, app):
+        """Walking through dedication + 3 guide steps completes onboarding."""
+        link_uuid = _create_game(client)
+        _set_nickname(client, link_uuid)
+        # Step 0 → dedication
+        resp = client.post(
+            f"/play/{link_uuid}/onboarding/next",
+            data={"step": "0"},
+        )
+        assert resp.status_code == 200
+        assert "dedication" in resp.text.lower()
+        # Step 1 → guide step 1
+        resp = client.post(
+            f"/play/{link_uuid}/onboarding/next",
+            data={"step": "1"},
+        )
+        assert resp.status_code == 200
+        # Step 2 → guide step 2
         resp = client.post(
             f"/play/{link_uuid}/onboarding/next",
             data={"step": "2"},
         )
         assert resp.status_code == 200
-        # Step 3 → completes onboarding, shows model_select
+        # Step 3 → guide step 3
         resp = client.post(
             f"/play/{link_uuid}/onboarding/next",
             data={"step": "3"},
+        )
+        assert resp.status_code == 200
+        # Step 4 → completes onboarding, shows model_select
+        resp = client.post(
+            f"/play/{link_uuid}/onboarding/next",
+            data={"step": "4"},
         )
         assert resp.status_code == 200
         assert "model_select" in resp.text or "Choose" in resp.text
@@ -3995,8 +4013,8 @@ class TestOnboarding:
         """After walking through all steps, onboarding_complete=1 in DB."""
         link_uuid = _create_game(client)
         _set_nickname(client, link_uuid)
-        # Walk through all steps
-        for step in range(4):
+        # Walk through all steps (dedication at step 1 + 3 guide steps)
+        for step in range(5):
             client.post(
                 f"/play/{link_uuid}/onboarding/next",
                 data={"step": str(step)},

@@ -94,23 +94,15 @@
             <button type="button"
                     class="onboarding__btn onboarding__btn--primary"
                     hx-post="/play/{{ link_uuid }}/onboarding/next"
-                    hx-vals='{"step": {{ step }}}'
+                    hx-vals='{"step": {{ onboarding_step }}}'
                     hx-target="#game-board"
                     hx-swap="morph:innerHTML"
                     aria-label="{% if step == total_steps %}Finish guide and start playing{% else %}Continue to next step{% endif %}">
                 {% if step == total_steps %}
-                    Let's Play!
+                    Let&rsquo;s Play!
                 {% else %}
                     Next &rarr;
                 {% endif %}
-            </button>
-            <button type="button"
-                    class="onboarding__btn onboarding__btn--skip"
-                    hx-post="/play/{{ link_uuid }}/onboarding/skip"
-                    hx-target="#game-board"
-                    hx-swap="morph:innerHTML"
-                    aria-label="Skip remaining guide steps">
-                Skip
             </button>
         </div>
     </div>
