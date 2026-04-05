@@ -1378,10 +1378,18 @@ async def submit_bid(
                 len(current_hand.auction),
                 pre_auction_count + 1,
             )
-            # Activate settle pause when hidden bids remain after auto-advance.
-            # When the human bids last (no hidden bids), settle stays True and
-            # play proceeds immediately — no extra click needed (#2134).
+            # Activate settle pause so the user can review the auction
+            # result before play begins.  Two cases:
+            # 1. Hidden bids remain (AI bid after the human) — reveal one
+            #    at a time, then show the settle interstitial.
+            # 2. No hidden bids but auction just completed (human bid last)
+            #    — still pause so the user sees who won and what was bid
+            #    before trick play starts (#2438).
+            # Redeals (all passed) skip the settle pause because the redeal
+            # interstitial already communicates the outcome.
             if _has_hidden_auction(current_hand):
+                current_hand.auction_settled = False
+            elif current_hand.phase != "auction" and current_hand.phase != "redeal":
                 current_hand.auction_settled = False
 
         # Log AI decisions captured during auto-advance
