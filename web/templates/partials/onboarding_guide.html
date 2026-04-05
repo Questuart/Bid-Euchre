@@ -92,6 +92,15 @@
         {# ---- Navigation buttons ---- #}
         <div class="onboarding__actions">
             <button type="button"
+                    class="onboarding__btn onboarding__btn--back"
+                    hx-post="/play/{{ link_uuid }}/onboarding/next"
+                    hx-vals='{"step": {{ onboarding_step - 2 }}}'
+                    hx-target="#game-board"
+                    hx-swap="morph:innerHTML"
+                    aria-label="Back to previous step">
+                &larr; Back
+            </button>
+            <button type="button"
                     class="onboarding__btn onboarding__btn--primary"
                     hx-post="/play/{{ link_uuid }}/onboarding/next"
                     hx-vals='{"step": {{ onboarding_step }}}'

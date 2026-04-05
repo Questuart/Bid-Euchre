@@ -1937,8 +1937,9 @@ main {
 /* Action buttons */
 .onboarding__actions {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 0.5rem;
+    justify-content: center;
     align-items: center;
 }
 
@@ -1960,6 +1961,19 @@ main {
 
 .onboarding__btn--primary:hover {
     background: var(--color-legal-glow);
+}
+
+.onboarding__btn--back {
+    background: transparent;
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-text-muted);
+    min-width: auto;
+    padding: 0.6rem 1.2rem;
+}
+
+.onboarding__btn--back:hover {
+    color: var(--color-text);
+    border-color: var(--color-text);
 }
 
 .onboarding__btn--skip {
