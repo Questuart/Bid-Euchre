@@ -31,11 +31,10 @@ from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine, sort_hand_for
 from bid_euchre.strategy.bidding import BidAction
 
 from .ai_manager import AIManager
-from .cleanup import expire_player_stale_matches
+from .cleanup import abandon_player_active_matches
 from .db import Comment, Decision, Hand, InviteCode, Match, Player
 from .leaderboard import METRIC_DEFINITIONS, format_metric, get_leaderboard
 from .middleware import (
-    check_match_limit,
     get_player_link_from_cookie,
     get_request_id,
     lookup_active_match,
@@ -1018,25 +1017,20 @@ async def game_page(request: Request, link_uuid: str):
                 )
             )
 
-        # Prefer the most recent *active* match so the reconnect prompt
-        # on the landing page and the game page agree.  Fall back to a
-        # *complete* match when no active match exists so the player can
-        # see the result screen / "Play Again".  Abandoned matches are
-        # excluded — they would render a stale board whose POST handlers
-        # reject non-active state with 404.  (#2056, #2410)
+        # Find the most recently created non-abandoned match — active or
+        # complete.  Previous logic preferred active matches first, which
+        # returned a stale active match from an earlier session instead of
+        # the just-completed match the player was looking at (#2467).
+        # This now matches the ``next_hand`` POST handler pattern (#2446).
+        # Abandoned matches are excluded — they would render a stale board
+        # whose POST handlers reject non-active state with 404.  (#2056, #2410)
         match_row = (
             session.query(Match)
-            .filter_by(player_id=player.id, status="active")
+            .filter_by(player_id=player.id)
+            .filter(Match.status.in_(["active", "complete"]))
             .order_by(Match.created_at.desc())
             .first()
         )
-        if match_row is None:
-            match_row = (
-                session.query(Match)
-                .filter_by(player_id=player.id, status="complete")
-                .order_by(Match.created_at.desc())
-                .first()
-            )
 
         if match_row is None:
             # No usable match — show model selection
@@ -1266,17 +1260,13 @@ async def select_ai(
         if player is None:
             raise HTTPException(status_code=404, detail="Game not found")
 
-        # Clean up stale matches before the rate-limit check so orphaned
-        # matches from previous sessions don't permanently block the player
-        # from starting new games (#2211).
-        expire_player_stale_matches(session, player.id)
-
-        # Rate limit — max active matches per player
-        if not check_match_limit(session, player_id=player.id):
-            raise HTTPException(
-                status_code=429,
-                detail="Match limit reached — complete or abandon an existing match first",
-            )
+        # Abandon all active matches for this player before creating the
+        # new one.  This prevents stale active matches from shadowing the
+        # new match on page refresh (#2467).  It also subsumes the previous
+        # expire_player_stale_matches() call (#2211) — we no longer need an
+        # age threshold because starting a new match is an explicit signal
+        # that the player is done with prior matches.
+        abandon_player_active_matches(session, player.id)
 
         ai_manager = _get_ai_manager(request)
         try:

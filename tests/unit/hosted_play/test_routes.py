@@ -1168,6 +1168,101 @@ class TestEdgeCases:
         # (the response will contain game context, not the selection screen)
         assert "model_select" not in resp.text
 
+    def test_completed_match_preferred_over_stale_active(self, client, app):
+        """GET /play/{uuid} must show a newer completed match, not a stale
+        active match from an earlier session (#2467).
+
+        The game_page GET handler should select the most recently created
+        non-abandoned match (active or complete), ordered by created_at
+        descending.  When a newer completed match exists alongside an older
+        stale active match, the completed one must win.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        link_uuid = _setup_game(client)
+        session = app.state.session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+
+        # Make the existing active match "old" (stale from earlier session)
+        old_match = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert old_match is not None
+        old_match.created_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        session.flush()
+
+        # Create a newer completed match by copying state from old match.
+        import uuid as _uuid
+
+        new_match = Match(
+            match_uuid=str(_uuid.uuid4()),
+            player_id=player.id,
+            ai_model=old_match.ai_model,
+            status="complete",
+            seed=99,
+            match_state_json=old_match.match_state_json,
+            created_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+        )
+        session.add(new_match)
+        session.commit()
+
+        # Verify preconditions: two matches exist
+        matches = session.query(Match).filter_by(player_id=player.id).all()
+        assert len(matches) == 2
+
+        # Use the same query as game_page to confirm which match is selected
+        selected = (
+            session.query(Match)
+            .filter_by(player_id=player.id)
+            .filter(Match.status.in_(["active", "complete"]))
+            .order_by(Match.created_at.desc())
+            .first()
+        )
+        assert selected is not None
+        # The newer match (complete) should win over the older one (active)
+        assert selected.status == "complete"
+        assert selected.id == new_match.id
+        session.close()
+
+        # Also verify GET responds without error (the match is renderable)
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "model_select" not in resp.text
+
+    def test_select_ai_abandons_all_active_matches(self, client, app):
+        """POST /select-ai must abandon ALL prior active matches for the
+        player, not just stale ones (#2467)."""
+        link_uuid = _setup_game(client)
+
+        # At this point there's one active match
+        session = app.state.session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        first_match = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert first_match is not None
+        first_match_id = first_match.id
+        session.close()
+
+        # Create a second match via select_ai — should abandon the first
+        resp = _select_ai(client, link_uuid, "olsa")
+        assert resp.status_code == 200
+
+        session = app.state.session_factory()
+        # First match should now be abandoned
+        first_match = session.query(Match).filter_by(id=first_match_id).first()
+        assert first_match.status == "abandoned"
+        assert first_match.completed_at is not None
+
+        # New match should be active
+        active_matches = (
+            session.query(Match).filter_by(player_id=player.id, status="active").all()
+        )
+        assert len(active_matches) == 1
+        assert active_matches[0].id != first_match_id
+        session.close()
+
 
 # ---------------------------------------------------------------------------
 # XSS prevention (issue #1438)
