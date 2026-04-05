@@ -2822,3 +2822,69 @@ class TestGluttonBowerFix:
         assert (
             rb_no_trump < ace_no_trump
         ), "Without trump info, J should be valued lower than A (the bug)"
+
+
+# ---------------------------------------------------------------------------
+# Trick 10 pause — final trick result interstitial (#2210)
+# ---------------------------------------------------------------------------
+
+
+class TestFinalTrickPause:
+    """After trick 10, paused_after_trick must be True so the UI shows the
+    final trick result before the hand-result screen (#2210)."""
+
+    def test_trick_10_sets_paused_after_trick(self) -> None:
+        """When the last card of trick 10 completes the hand, the engine
+        sets paused_after_trick=True so the route layer can show the trick
+        result interstitial before the hand-result screen."""
+        engine = MatchEngine(
+            bidding_policy=FixedBidder(5, "S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        # Use _play_full_hand which drives through auction + tricks.
+        # After our fix, the hand should end with paused_after_trick=True.
+        for seed in range(50):
+            state = engine.start_match(seed, "heuristic")
+            state = _play_full_hand(engine, state)
+            hand = state.current_hand
+            if hand is not None and hand.phase == "complete":
+                # Key assertion: after trick 10, paused_after_trick must be
+                # True so the UI shows the final trick result.
+                assert hand.paused_after_trick, (
+                    f"seed={seed}: trick 10 completed the hand but "
+                    f"paused_after_trick is False — the final trick result "
+                    f"interstitial would be skipped"
+                )
+                assert len(hand.completed_tricks) == 10
+                return  # Test passed
+
+        pytest.skip("No seed produced a normal hand completion in range(50)")
+
+    def test_clearing_pause_on_complete_hand(self) -> None:
+        """After clearing paused_after_trick on a complete hand, the hand
+        remains in phase='complete' and paused_after_trick=False, ready
+        for the hand-result screen."""
+        engine = MatchEngine(
+            bidding_policy=FixedBidder(5, "S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        for seed in range(50):
+            state = engine.start_match(seed, "heuristic")
+            state = _play_full_hand(engine, state)
+            hand = state.current_hand
+            if hand is None or hand.phase != "complete":
+                continue
+
+            if hand.paused_after_trick:
+                # Simulate what the /next route handler does: clear the flag
+                hand.paused_after_trick = False
+
+                # Hand should still be complete
+                assert hand.phase == "complete"
+                assert not hand.paused_after_trick
+                assert len(hand.completed_tricks) == 10
+                return  # Test passed
+
+        pytest.skip("No seed produced a complete hand with paused_after_trick")

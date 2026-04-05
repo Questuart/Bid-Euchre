@@ -275,6 +275,7 @@ def _awaiting_next(hand) -> bool:
         or _has_pending_exchange(hand)
         or (hand.phase == "trick_play" and hand.paused_after_play)
         or (hand.phase == "trick_play" and hand.paused_after_trick)
+        or (hand.phase == "complete" and hand.paused_after_trick)
         or hand.phase == "redeal"
     )
 
@@ -302,6 +303,8 @@ def _next_reason(hand) -> str | None:
         return "Reveal the next card."
     if hand.phase == "trick_play" and hand.paused_after_trick:
         return "Continue to the next trick."
+    if hand.phase == "complete" and hand.paused_after_trick:
+        return "See the hand result."
     if hand.phase == "redeal":
         return "All players passed. Deal a new hand."
     return None
@@ -320,15 +323,26 @@ def _game_phase(state, *, force_match_result: bool = False) -> str:
         the match-result screen.  Used by the ``/next-hand`` handler after
         the player has already seen the final hand result (#2239).
     """
+    hand = state.current_hand
+
+    # Trick-result interstitial: when the last trick just completed and
+    # paused_after_trick is set (including trick 10 where hand.phase is
+    # already "complete"), show the trick_play board so the player sees
+    # the final trick result before advancing to hand_result (#2210).
+    if (
+        hand is not None
+        and hand.paused_after_trick
+        and hand.phase in ("trick_play", "complete")
+    ):
+        return "trick_play"
+
     if state.status == "complete":
         # Show the final hand result before the match-over screen so the
         # player can review the last hand (#2239).  The hand_result partial
         # renders a "See Match Results" CTA when match_status == "complete".
-        hand = state.current_hand
         if not force_match_result and hand is not None and hand.phase == "complete":
             return "hand_result"
         return "match_result"
-    hand = state.current_hand
     if hand is None:
         return "model_select"
     if hand.phase == "complete":
@@ -546,7 +560,15 @@ def _build_game_context(
         # trick-play turn after auto-advance, which is misleading during the
         # auction-settle interstitial (#2237).
         visible["current_seat"] = None
-    if hand is not None and hand.phase == "trick_play" and hand.paused_after_trick:
+    if (
+        hand is not None
+        and hand.paused_after_trick
+        and hand.phase
+        in (
+            "trick_play",
+            "complete",
+        )
+    ):
         visible["current_trick"] = None
 
     ctx: dict[str, Any] = {
@@ -1758,6 +1780,16 @@ async def next_step(
             .order_by(Match.created_at.desc())
             .first()
         )
+        # Fallback: when the final trick completed AND ended the match,
+        # the match is already "complete" in the DB but paused_after_trick
+        # still needs to be cleared for the trick-result interstitial (#2210).
+        if match_row is None:
+            match_row = (
+                session.query(Match)
+                .filter_by(player_id=player.id, status="complete")
+                .order_by(Match.created_at.desc())
+                .first()
+            )
         if match_row is None:
             raise HTTPException(status_code=404, detail="No active match")
 
@@ -1809,6 +1841,10 @@ async def next_step(
             # The engine will play one AI card (with per-card pacing),
             # reach the human's turn, or hit hand/match end.
             state = engine.resume_ai(state)
+        elif hand.phase == "complete" and hand.paused_after_trick:
+            # Final trick (trick 10) result dismissed — clear the pause
+            # flag so the game shows the hand-result screen (#2210).
+            hand.paused_after_trick = False
         elif hand.phase == "redeal":
             next_sub = "redeal"
             # All players passed — persist the terminal redeal hand,
