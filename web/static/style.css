@@ -431,7 +431,7 @@ main {
     gap: 0.25rem;
     flex-wrap: wrap;
     align-items: center;
-    font-size: 0.72rem;
+    font-size: 0.85rem;
     color: var(--color-text-muted);
     min-height: 1.4em;
 }
@@ -439,15 +439,18 @@ main {
 /* AI player names — default to AI team color for non-compass contexts */
 .ai-name {
     color: var(--team-ai);
+    font-weight: 600;
 }
 
 /* Team-colored player names — used on compass seats for team distinction (#2346) */
 .player-name--human {
     color: var(--team-human);
+    font-weight: 600;
 }
 
 .player-name--ai {
     color: var(--team-ai);
+    font-weight: 600;
 }
 
 .ai-hand-block--middle {
@@ -809,7 +812,7 @@ main {
     justify-content: center;
     align-items: center;
     gap: 0.25rem;
-    font-size: 0.72rem;
+    font-size: 0.85rem;
     color: var(--color-text-muted);
     margin-bottom: 0.15rem;
     flex-wrap: wrap;
@@ -969,7 +972,7 @@ main {
     font-weight: 600;
     padding: 0.2rem 0.35rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-    font-size: 0.72rem;
+    font-size: 0.78rem;
 }
 
 .trick-history__cell {
@@ -1067,8 +1070,8 @@ main {
 }
 
 .seat-label {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
     text-align: center;
 }
 
@@ -2346,7 +2349,7 @@ main {
 
     /* Side hands — compact labels */
     .ai-hand-block--vertical .ai-seat-label {
-        font-size: 0.6rem;
+        font-size: 0.7rem;
         min-height: 1em;
         writing-mode: vertical-lr;
         text-orientation: mixed;
@@ -2557,7 +2560,7 @@ main {
 
     /* Side hand labels — ultra-compact on small phones */
     .ai-hand-block--vertical .ai-seat-label {
-        font-size: 0.55rem;
+        font-size: 0.6rem;
     }
 
     /* Compass grid — tighter on small phones */
@@ -2593,7 +2596,7 @@ main {
     }
 
     .seat-label {
-        font-size: 0.58rem;
+        font-size: 0.65rem;
     }
 
     .trick-count {
@@ -2790,7 +2793,7 @@ main {
     }
 
     .human-seat-label {
-        font-size: 0.65rem;
+        font-size: 0.75rem;
         margin-bottom: 0.1rem;
     }
 
