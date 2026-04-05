@@ -64,25 +64,6 @@
         color: var(--color-legal-glow);
     }
 
-    .guide__icon-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.85rem;
-        margin: 0.5rem 0;
-    }
-
-    .guide__icon-table td {
-        padding: 0.35rem 0.5rem;
-        border-bottom: 1px solid var(--color-surface-light);
-        vertical-align: middle;
-    }
-
-    .guide__icon-table td:first-child {
-        width: 3rem;
-        text-align: center;
-        font-weight: 600;
-    }
-
     .guide__tip {
         background: var(--color-surface);
         border-radius: 6px;
@@ -183,39 +164,6 @@
             <li><strong>Defenders:</strong> The defending team always scores the number of tricks they won.</li>
             <li><strong>Match end:</strong> The match ends when a team reaches +52 (win) or drops to &minus;52 (loss). Expect 6&ndash;12 hands per match (about 10&ndash;20 minutes).</li>
         </ul>
-    </div>
-
-    {# ---- Icons & Indicators ---- #}
-    <div class="guide__section">
-        <h3 class="guide__section-title">Icons &amp; Indicators</h3>
-        <table class="guide__icon-table" role="table" aria-label="Game icon legend">
-            <tbody>
-                <tr>
-                    <td><span class="seat-marker seat-marker--dealer" aria-hidden="true">D</span></td>
-                    <td>Dealer &mdash; dealt the current hand</td>
-                </tr>
-                <tr>
-                    <td><span class="seat-marker seat-marker--declarer" aria-hidden="true">&#9733;</span></td>
-                    <td>Declarer &mdash; won the auction</td>
-                </tr>
-                <tr>
-                    <td><span class="seat-marker seat-marker--leader" aria-hidden="true">L</span></td>
-                    <td>Leader &mdash; led the current trick</td>
-                </tr>
-                <tr>
-                    <td><span class="seat-marker seat-marker--turn" aria-hidden="true">&#9654;</span></td>
-                    <td>Your turn &mdash; this player is next to act</td>
-                </tr>
-                <tr>
-                    <td><span class="seat-marker seat-marker--sitting-out" aria-hidden="true">SO</span></td>
-                    <td>Sitting out &mdash; partner sits out during a loner</td>
-                </tr>
-                <tr>
-                    <td><span style="display:inline-block;width:1.2rem;height:1.2rem;border:2px solid var(--color-legal-border);border-radius:3px;box-shadow:0 0 6px var(--color-legal-glow);" aria-hidden="true"></span></td>
-                    <td>Green glow &mdash; card is a legal play (click to select)</td>
-                </tr>
-            </tbody>
-        </table>
     </div>
 
     {# ---- Tips & Tricks ---- #}
