@@ -2101,6 +2101,51 @@ main {
     }
 }
 
+/* Dedication page — generous typography for a meaningful pause */
+.onboarding--dedication {
+    max-width: 560px;
+}
+
+.onboarding__card--dedication {
+    padding: 2.5rem 2rem;
+}
+
+.onboarding__dedication {
+    text-align: left;
+    margin-bottom: 2rem;
+}
+
+.onboarding__dedication p {
+    font-size: 1rem;
+    line-height: 1.8;
+    color: var(--color-text-muted);
+    margin: 0 0 1.25rem;
+}
+
+.onboarding__dedication .dedication__opening {
+    font-size: 1.15rem;
+    font-weight: 600;
+    font-style: italic;
+    color: var(--color-text);
+    margin-bottom: 1.5rem;
+}
+
+@media (max-width: 600px) {
+    .onboarding--dedication {
+        max-width: 100%;
+    }
+    .onboarding__card--dedication {
+        padding: 1.5rem 1rem;
+    }
+    .onboarding__dedication p {
+        font-size: 0.92rem;
+        line-height: 1.7;
+    }
+    .onboarding__dedication .dedication__opening {
+        font-size: 1.05rem;
+    }
+}
+
 /* --------------------------------------------------------------------------
    12b. Landing Page & Invite Code Form
    -------------------------------------------------------------------------- */

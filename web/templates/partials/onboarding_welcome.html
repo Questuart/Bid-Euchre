@@ -23,8 +23,7 @@
             </p>
             <p>
                 Before your first game, we'll walk you through the basics.
-                It only takes a minute &mdash; or you can skip ahead if you
-                already know how to play.
+                It only takes a minute.
             </p>
         </div>
 
@@ -35,16 +34,8 @@
                     hx-vals='{"step": 0}'
                     hx-target="#game-board"
                     hx-swap="morph:innerHTML"
-                    aria-label="Continue to game guide">
-                Show Me How to Play
-            </button>
-            <button type="button"
-                    class="onboarding__btn onboarding__btn--skip"
-                    hx-post="/play/{{ link_uuid }}/onboarding/skip"
-                    hx-target="#game-board"
-                    hx-swap="morph:innerHTML"
-                    aria-label="Skip guide and start playing">
-                I Know How to Play &mdash; Skip
+                    aria-label="Continue to dedication">
+                Continue
             </button>
         </div>
     </div>

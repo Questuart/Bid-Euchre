@@ -1,0 +1,93 @@
+{# Onboarding dedication page partial — meaningful pause in new player flow.
+   Shown after the welcome letter and before the How to Play guide.
+
+   Context variables:
+     - link_uuid: str — player's game link UUID
+#}
+<div id="onboarding" class="onboarding onboarding--dedication" role="region"
+     aria-label="Dedication">
+    <div class="onboarding__card onboarding__card--dedication">
+        <div class="onboarding__dedication">
+            <p class="dedication__opening">
+                This game is dedicated to Bud and Barbara.
+            </p>
+
+            <p>
+                After a long day turning vines in the field, my
+                grandparents&rsquo; dining table had a rhythm to it. Freshly
+                sliced cantaloupe, a couple of Oreos, and a card game that I
+                didn&rsquo;t fully understand yet but couldn&rsquo;t get enough
+                of. That game was Bid Euchre, and it belonged to my
+                grandparents, Bud and Barbara.
+            </p>
+
+            <p>
+                My family is funny. We know less about each other&rsquo;s lives
+                than we do about how each other plays cards. So-and-so always
+                bids conservative. So-and-so plays aggressive and then yells at
+                their partner when it goes sideways. Whether it&rsquo;s
+                Christmas, Thanksgiving, or a funeral, idle kitchen chit-chat
+                will eventually be broken up by hooting and hollering from the
+                other room. Somebody just shot the moon and made it.
+            </p>
+
+            <p>
+                I didn&rsquo;t realize how much this game meant to me until I
+                went home last Thanksgiving. Each time we sit down to play, I
+                think we all feel a little closer to Bud and Barbara.
+            </p>
+
+            <p>
+                This isn&rsquo;t the Euchre people play to pass an afternoon.
+                What makes this version different is the bidding round.
+                That&rsquo;s the part that separates the veterans from the
+                newcomers we swear we&rsquo;ll go easy on. As far as I can
+                tell, this exact ruleset is something only my family plays.
+                There are similar variants out there, but I haven&rsquo;t found
+                this one in the wild. I&rsquo;ll write up the full rules in a
+                future post.
+            </p>
+
+            <p>
+                For now, the game is here. Try it out, climb the leaderboard,
+                and leave a comment if you find bugs or anything that feels off.
+            </p>
+
+            <p>
+                The bots are real competition, but they&rsquo;re not perfect
+                yet. They&rsquo;ll make bad bids. They&rsquo;ll misplay a hand.
+                The best way to sharpen them is to put them up against real
+                people, and that&rsquo;s where you come in. Play the game. Yell
+                at the bot when it messed up, just like you would across the
+                table.
+            </p>
+
+            <p>
+                One thing worth knowing upfront: when you play, you&rsquo;re
+                helping me collect gameplay data, including hands, bids, plays,
+                and outcomes. The goal is to use that to improve the bots over
+                time, and eventually share some insights that might help us all
+                play a little better.
+            </p>
+
+            <p>
+                Have fun. My hope is that this becomes something we can all play
+                to stay connected, and something worth sharing with anyone
+                who&rsquo;s never had the pleasure of learning this silly,
+                wonderful game.
+            </p>
+        </div>
+
+        <div class="onboarding__actions">
+            <button type="button"
+                    class="onboarding__btn onboarding__btn--primary"
+                    hx-post="/play/{{ link_uuid }}/onboarding/next"
+                    hx-vals='{"step": 1}'
+                    hx-target="#game-board"
+                    hx-swap="morph:innerHTML"
+                    aria-label="Continue to game guide">
+                Continue
+            </button>
+        </div>
+    </div>
+</div>
