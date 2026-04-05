@@ -274,15 +274,18 @@ class TestDisplayConsistency:
 
     @pytest.mark.parametrize("case", MATRIX, ids=MATRIX_IDS)
     def test_banner_text(self, case: Case, jinja_env: jinja2.Environment) -> None:
-        """Correct banner (Made it! / Set! / Moon Made! / …) rendered."""
+        """Correct banner with team prefix rendered (#2439)."""
         html, _, _ = _render(jinja_env, case)
 
+        # Banner includes team prefix based on which team declared
+        team_prefix = "Your Team" if case.bidder_seat in (0, 2) else "Opponent"
         if case.bid_type == "moon":
-            expected = "Moon Made!" if case.outcome.made else "Moon Set!"
+            base = "Moon Made!" if case.outcome.made else "Moon Set!"
         elif case.bid_type == "loner":
-            expected = "Loner Made!" if case.outcome.made else "Loner Set!"
+            base = "Loner Made!" if case.outcome.made else "Loner Set!"
         else:
-            expected = "Made it!" if case.outcome.made else "Set!"
+            base = "Made It!" if case.outcome.made else "was Set!"
+        expected = f"{team_prefix} {base}"
 
         assert expected in html, f"Banner '{expected}' not found in HTML"
 

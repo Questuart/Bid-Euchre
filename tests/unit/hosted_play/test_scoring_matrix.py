@@ -311,7 +311,7 @@ class TestHandResultDisplay:
                 trump,
                 6,
                 7,
-                "Made it!",
+                "Made It!",
             )
         )
         DISPLAY_CASES.append(
@@ -321,7 +321,7 @@ class TestHandResultDisplay:
                 trump,
                 6,
                 5,
-                "Set!",
+                "was Set!",
             )
         )
 
@@ -402,8 +402,11 @@ class TestHandResultDisplay:
         )
         tmpl = env.get_template("partials/hand_result.html")
         html = tmpl.render(**ctx)
-        assert expected_banner in html, (
-            f"Expected '{expected_banner}' in HTML for "
+        # Banner includes team prefix based on which team declared (#2439)
+        team_prefix = "Your Team" if bidder_seat in (0, 2) else "Opponent"
+        full_banner = f"{team_prefix} {expected_banner}"
+        assert full_banner in html, (
+            f"Expected '{full_banner}' in HTML for "
             f"seat={bidder_seat} {bid_type}/{contract_type}"
         )
 
