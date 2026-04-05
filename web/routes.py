@@ -1803,22 +1803,17 @@ async def next_hand(
         if player is None:
             raise HTTPException(status_code=404, detail="Game not found")
 
-        # Look for an active match first; fall back to the most recent
-        # completed match so that a stale "Next Hand" click renders the
-        # match-result screen instead of a 404 (P2-005 defensive fix).
+        # Find the player's most recently created non-abandoned match.
+        # Previous logic prioritized active matches, which returned stale
+        # active matches from earlier sessions instead of the just-completed
+        # match the player is actually advancing from (#2446).
         match_row = (
             session.query(Match)
-            .filter_by(player_id=player.id, status="active")
+            .filter_by(player_id=player.id)
+            .filter(Match.status.in_(["active", "complete"]))
             .order_by(Match.created_at.desc())
             .first()
         )
-        if match_row is None:
-            match_row = (
-                session.query(Match)
-                .filter_by(player_id=player.id, status="complete")
-                .order_by(Match.created_at.desc())
-                .first()
-            )
         if match_row is None:
             raise HTTPException(status_code=404, detail="No active match")
 
