@@ -214,16 +214,16 @@ class TestGuideTemplate:
         assert "Tips" in html
         assert "Basic Strategies" in html
 
-    def test_icon_legend_present(self, env):
+    def test_icon_legend_removed(self, env):
+        """Icons & Indicators section was removed (icons removed from gameplay)."""
         tmpl = env.get_template("guide.html")
         html = tmpl.render(
             link_uuid="abc-123",
             current_page="guide",
             nickname="Alice",
         )
-        assert "Dealer" in html
-        assert "Declarer" in html
-        assert "Leader" in html
+        assert "Icons" not in html
+        assert "icon-table" not in html
 
     def test_back_link_uses_link_uuid(self, env):
         tmpl = env.get_template("guide.html")
