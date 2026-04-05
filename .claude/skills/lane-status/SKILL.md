@@ -130,7 +130,7 @@ done
 
 - ❌ Reading only `tail -8` or `tail -12` of pane capture (hits status bar)
 - ❌ Assuming idle prompt = lane is idle (status bar always shows `❯`)
-- ❌ Nudging a lane that's mid-`make check-quiet` (interrupts validation)
+- ❌ Nudging a lane that's mid-`make check-gated` (interrupts validation)
 - ❌ Treating "Sautéed for Xm" as idle without checking if a new tool call follows
 - ❌ Checking worktree state without checking pane state (dirty could mean mid-work)
 

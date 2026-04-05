@@ -34,7 +34,7 @@ file issues — you fix them.
 
 6. **Validate thoroughly.**
    - Tier 1: Run targeted tests for the affected module
-   - Tier 2: Run `make check-quiet` before opening the PR
+   - Tier 2: Run `make check-gated` before opening the PR
 
 7. **Use repair PR conventions.**
    - Title: `fix(repair): <short description>`
