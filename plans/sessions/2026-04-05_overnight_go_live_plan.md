@@ -50,7 +50,7 @@ User-facing quality issues that degrade experience but don't prevent play.
 | #2466 | Remove icon/indicators section from help guide | trivial | `web/templates/partials/guide_content.html` | Delete the `{# ---- Icons & Indicators ---- #}` section. ~20 lines. |
 | #2310 | Bid selector defaults to Pass instead of next bid | small | `web/routes.py`, `web/templates/partials/bid_panel.html`, `web/static/game.js` | **Routes.py overlap** — schedule in same wave as other routes changes or isolate to bid panel template/JS only. |
 | #2386 | AI pacing feels instant and unnatural | medium | `web/routes.py`, `web/static/game.js` | PR #2399 shipped delay system. This may be a tuning issue (delay too short?) or the delays aren't reaching the client. Investigate before coding. |
-| #2296 | Leaderboard drops inactive players | small | `web/leaderboard.py` | Query uses `min_hands=1` with no recency filter. Bug may be Render DB wipes (#2220) rather than code. Investigate DB state via `render_admin.py`. |
+| #2296 | Leaderboard drops inactive players | small | `web/leaderboard.py` | Query uses `min_hands=1` with no recency filter. Bug may be Render DB wipes (#2220) rather than code. Investigate DB state via `scripts/internal/render_admin.py`. |
 | #2346 | Player name styling (team colors, duplicates, card count) | small | `web/static/style.css`, `web/templates/partials/*.html` | CSS-only for colors. Template changes for duplicate removal. PR #2411 already removed orphaned CSS. |
 | #2470 | Back button on onboarding intro/dedication flow | small | `web/templates/partials/onboarding_*.html`, `web/routes.py` | Minor routes.py change (back navigation handler). |
 | #2303 | render_admin.py calls create_tables() on prod DB | small | `scripts/internal/render_admin.py` | Guard with `if not tables_exist()` or remove the call. No web/ overlap. |
@@ -201,7 +201,7 @@ in onboarding flow. Full match lifecycle proving passes.
 
 | Lane | Task | Notes |
 |------|------|-------|
-| brws-author-a | #2296 (leaderboard investigation) | Use `render_admin.py` to query Render DB. Check if player data still exists. May be Render DB wipe (#2220) not a code bug. If code fix needed: `web/leaderboard.py`. |
+| brws-author-a | #2296 (leaderboard investigation) | Use `scripts/internal/render_admin.py` to query Render DB. Check if player data still exists. May be Render DB wipe (#2220) not a code bug. If code fix needed: `web/leaderboard.py`. |
 | flex-a | Issue cleanup: close verified issues | Close #2288 (all items done), #2198 (skill shipped), #2238 (fix shipped), #2313 (policy shipped). Post evidence for each. |
 | flex-b | Final proving pass | Run go-live checklist Section D (full lifecycle) end-to-end. Report results. |
 
