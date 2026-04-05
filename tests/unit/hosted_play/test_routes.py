@@ -3252,6 +3252,77 @@ class TestMatchResultGuards:
         assert "match-result" in resp.text
         assert "You Lose" in resp.text
 
+    def test_next_hand_prefers_recent_match_over_stale_active(self, client, app):
+        """POST /next-hand finds the just-completed match, not a stale active one.
+
+        Regression test for #2446: when a completed match exists alongside a
+        stale active match from a previous session, /next-hand must return the
+        match-result screen for the recently completed match — not resume the
+        stale active match.
+        """
+        link_uuid = _setup_game(client)
+
+        session_factory = app.state.session_factory
+        session = session_factory()
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        assert player is not None
+
+        # The _setup_game helper created one active match.  Fetch it and force
+        # it to "complete" to simulate a finished match.
+        current_match = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        assert current_match is not None
+
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(current_match.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        state = engine.deserialize(json.loads(current_match.match_state_json))
+        state.status = "complete"
+        state.winner = "human"
+        state.score_human = 54
+        state.score_ai = 22
+        state.hands_played = 5
+        current_match.match_state_json = json.dumps(engine.serialize(state))
+        current_match.status = "complete"
+        session.commit()
+
+        # Now insert a *stale* active match with an older created_at to
+        # simulate a leftover from a previous session.
+        from datetime import datetime, timedelta, timezone
+
+        stale_match = Match(
+            match_uuid=str(uuid.uuid4()),
+            player_id=player.id,
+            ai_model=current_match.ai_model,
+            status="active",
+            seed=99,
+            match_state_json=current_match.match_state_json,  # content irrelevant
+            score_human=9,
+            score_ai=32,
+            hands_played=2,
+        )
+        session.add(stale_match)
+        session.flush()
+
+        # Force the stale match to have an older created_at.
+        stale_match.created_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        session.commit()
+        session.close()
+
+        # POST /next-hand should find the COMPLETED (most recent) match and
+        # render match-result — NOT the stale active match.
+        resp = client.post(f"/play/{link_uuid}/next-hand")
+        assert resp.status_code == 200
+        assert "match-result" in resp.text, (
+            "Expected match-result screen but got active match content; "
+            "stale active match was returned instead of the completed match"
+        )
+        assert "You Win" in resp.text
+
 
 # ---------------------------------------------------------------------------
 # Auction UX fixes (#2133, #2134)
