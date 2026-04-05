@@ -630,10 +630,9 @@ class TestIsExcludedTestPlayer:
         assert is_excluded_test_player("FlexBot-XYZ") is True
 
     def test_real_player_not_excluded(self):
-        assert is_excluded_test_player("TESTV2") is False
-        assert is_excluded_test_player("PHIL-TEST") is False
-        assert is_excluded_test_player("CINDY-TEST") is False
         assert is_excluded_test_player("Alice") is False
+        assert is_excluded_test_player("Phil") is False
+        assert is_excluded_test_player("Cindy") is False
 
     def test_case_sensitive(self):
         # Exact names are case-sensitive

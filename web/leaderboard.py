@@ -38,6 +38,11 @@ EXCLUDED_TEST_PLAYERS: frozenset[str] = frozenset(
         "TEST",
         "Claude-HTTP",
         "MEEKS-TEST",
+        "TEST3",
+        "TESTV2",
+        "PHIL-TEST",
+        "CINDY-TEST",
+        "GO-LIVE-TEST",
     }
 )
 
