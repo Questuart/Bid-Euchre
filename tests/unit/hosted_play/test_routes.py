@@ -4226,6 +4226,117 @@ class TestAuctionLogPersistence:
             ), f"Auction entry for {seat_label} missing from page refresh response"
 
 
+class TestAuctionLogPrematureWinner:
+    """Winner line must not appear during active auction (#2493)."""
+
+    def test_no_winner_line_during_active_auction(self, client, app):
+        """When AIs have bid but the human hasn't, 'wins auction' must not show.
+
+        Injects a mid-auction state where seat 2 has the current high bid but
+        the human (seat 0) has not yet bid.  The auction log must show only
+        the revealed bid entries — not the result line (#2493).
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Inject mid-auction state: 2 AIs have bid, human hasn't yet.
+        hand.phase = "auction"
+        hand.auction = [
+            {
+                "seat": 2,
+                "n": 5,
+                "action": "bid",
+                "contract": "H",
+                "bid_type": "regular",
+            },
+            {"seat": 3, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 2  # both AI actions visible
+        hand.auction_settled = True  # default (not yet set by bid handler)
+        hand.bidder_seat = 2
+        hand.winning_bid = 5
+        hand.current_high_bid = 5
+        hand.contract_type = "suit"
+        hand.trump = "H"
+        hand.current_seat = HUMAN_SEAT  # human's turn to bid
+
+        # Persist injected state
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        session.commit()
+        session.close()
+
+        # Render the game board — the result line must NOT appear.
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert "wins auction" not in resp.text, (
+            "Winner line shown during active auction (bidder_seat was set "
+            "but the auction is still in progress)"
+        )
+
+    def test_winner_line_appears_after_auction_settles(self, client, app):
+        """After the auction settles, the result line is shown normally."""
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Inject settled-auction state: all 4 bids in, auction complete.
+        hand.phase = "trick_play"
+        hand.auction = [
+            {
+                "seat": 2,
+                "n": 5,
+                "action": "bid",
+                "contract": "H",
+                "bid_type": "regular",
+            },
+            {"seat": 3, "n": 0, "action": "pass"},
+            {"seat": 0, "n": 0, "action": "pass"},
+            {"seat": 1, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 4
+        hand.auction_settled = True
+        hand.bidder_seat = 2
+        hand.winning_bid = 5
+        hand.current_high_bid = 5
+        hand.contract_type = "suit"
+        hand.trump = "H"
+        hand.current_seat = 2
+        hand.current_trick = TrickState(leader=2)
+
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        assert (
+            "wins auction" in resp.text
+        ), "Winner line missing after auction is settled and complete"
+
+
 # ===================================================================
 # Onboarding Flow Tests
 # ===================================================================

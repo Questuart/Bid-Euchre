@@ -450,7 +450,14 @@ def _build_action_rail(state) -> list[dict[str, str]]:
         )
 
     # Auction result — shown once the auction is settled and a winner exists.
-    if hand.auction_settled and hand.bidder_seat is not None:
+    # Guard on phase != "auction" so the result line does not appear
+    # prematurely when AIs have bid (setting bidder_seat) but the human
+    # hasn't taken their turn yet (#2493).
+    if (
+        hand.phase != "auction"
+        and hand.auction_settled
+        and hand.bidder_seat is not None
+    ):
         bidder = SEAT_LABELS.get(hand.bidder_seat, f"Seat {hand.bidder_seat}")
         bid_type = hand.bid_type
         if bid_type == "moon":
