@@ -26,11 +26,14 @@ the hosted web app. Logs observations per match for bug detection and research.
 
 ## Prerequisites
 
-1. **Invite code** -- obtain one from the operator or generate locally via:
+1. **Invite code** -- obtain one from the operator, or generate codes against
+   the **hosted** database:
    ```bash
-   bash scripts/internal/create_invite_codes.sh <count> <label>
+   DATABASE_URL="<hosted_db_url>" bash scripts/internal/create_invite_codes.sh <count> <label>
    ```
-   This runs against the local database (set `DATABASE_URL` for remote).
+   Without `DATABASE_URL`, the script writes to a local SQLite file, which
+   is only useful for local dev servers — those codes won't work on the
+   hosted deployment.
 2. **WebFetch tool** -- required for making HTTP requests to the game server
 3. **Game server running** -- the target URL must be reachable
 
