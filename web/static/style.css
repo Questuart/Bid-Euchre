@@ -3111,11 +3111,24 @@ main {
     color: var(--color-text-muted);
 }
 
-/* Card text in exchange summaries — rank stays default (white); suit icon
-   colored via .suit-icon utility (#2289). */
+/* Card text in exchange summaries and trick winner — rank stays default
+   (white); suit icon colored via .suit-icon utility where available (#2289).
+   Variant classes provide suit coloring for contexts where the suit symbol
+   is inline (e.g. trick.html "won with" text) rather than wrapped in a
+   .suit-icon span (#2441). */
 .card-text {
     font-weight: 700;
     white-space: nowrap;
+    color: var(--color-text);
+}
+
+.card-text--hearts,
+.card-text--diamonds {
+    color: var(--color-red);
+}
+
+.card-text--spades,
+.card-text--clubs {
     color: var(--color-text);
 }
 
