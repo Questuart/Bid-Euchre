@@ -29,11 +29,32 @@ fi
 
 # Check if the path targets .claude/runtime/
 # Handle both absolute and relative paths
+#
+# README.md exemption: only the 6 git-tracked schema docs are exempt.
+# An arbitrary new README.md under .claude/runtime/ is NOT exempt — the
+# allowlist must be updated when a new tracked README is added.
+# Tracked README.md files (as of PR #2425):
+#   .claude/runtime/README.md
+#   .claude/runtime/events/README.md
+#   .claude/runtime/scheduler/README.md
+#   .claude/runtime/session_metadata/README.md
+#   .claude/runtime/task_state/README.md
+#   .claude/runtime/worktree_registry/README.md
+_TRACKED_DIRS="events scheduler session_metadata task_state worktree_registry"
 case "$FILE_PATH" in
-  */.claude/runtime/*/README.md|.claude/runtime/*/README.md|*/.claude/runtime/README.md|.claude/runtime/README.md)
-    # Checked-in schema docs (README.md) are safe to edit — exempt them
+  */.claude/runtime/README.md|.claude/runtime/README.md)
+    # Top-level runtime README.md — tracked schema doc
     exit 0
     ;;
+esac
+for _dir in $_TRACKED_DIRS; do
+  case "$FILE_PATH" in
+    */.claude/runtime/"$_dir"/README.md|.claude/runtime/"$_dir"/README.md)
+      exit 0
+      ;;
+  esac
+done
+case "$FILE_PATH" in
   */.claude/runtime/*|.claude/runtime/*)
     cat <<BLOCK
 BLOCKED: Edit/Write to .claude/runtime/ is not allowed.

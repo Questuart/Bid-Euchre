@@ -55,6 +55,18 @@ class TestBlockedPaths:
         assert r.returncode == 2
         assert "BLOCKED" in r.stdout
 
+    def test_arbitrary_subdir_readme_blocked(self) -> None:
+        """README.md in an untracked subdirectory must be blocked (#2431)."""
+        r = _run_hook(".claude/runtime/arbitrary_new_dir/README.md")
+        assert r.returncode == 2
+        assert "BLOCKED" in r.stdout
+
+    def test_absolute_arbitrary_subdir_readme_blocked(self) -> None:
+        """Absolute path to README.md in untracked subdir must be blocked (#2431)."""
+        r = _run_hook("/home/user/project/.claude/runtime/unknown_dir/README.md")
+        assert r.returncode == 2
+        assert "BLOCKED" in r.stdout
+
 
 # ---------------------------------------------------------------------------
 # Exempt paths — checked-in README.md docs (exit 0)
