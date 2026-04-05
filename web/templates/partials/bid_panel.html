@@ -89,10 +89,10 @@
             <span id="bid-level-wrapper">
                 <label for="bid-level">Bid:</label>
                 <select id="bid-level" name="bid_n" aria-label="Bid level">
-                    <option value="0">Pass</option>
                     {% for n in range(current_high_bid + 1, 11) %}
                     <option value="{{ n }}"{% if loop.first %} selected{% endif %}>{{ n }}</option>
                     {% endfor %}
+                    <option value="0">Pass</option>
                 </select>
             </span>
 
