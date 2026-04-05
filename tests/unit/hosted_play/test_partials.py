@@ -2808,7 +2808,7 @@ STATIC_DIR = os.path.join(
 
 
 class TestAuctionLogJsToggle:
-    """Verify game.js resets stale sessionStorage on new-hand auction (#2471)."""
+    """Verify game.js auction log toggle logic (#2471, #2488)."""
 
     @pytest.fixture()
     def game_js(self):
@@ -2822,16 +2822,22 @@ class TestAuctionLogJsToggle:
     def test_save_function_exists(self, game_js):
         assert "function saveAuctionLogState()" in game_js
 
-    def test_new_hand_resets_stale_state(self, game_js):
-        """When previousPhase is non-auction and currentPhase is auction,
-        the JS must clear the stale AUCTION_LOG_KEY so the server-rendered
-        open attribute takes effect (#2471)."""
-        # Find the restoreAuctionLogState function body
+    def test_auction_phase_forces_open(self, game_js):
+        """During auction phase, restoreAuctionLogState must always force
+        the details element open, ignoring stale sessionStorage (#2488)."""
         fn_start = game_js.index("function restoreAuctionLogState()")
         fn_block = game_js[fn_start : fn_start + 1800]
-        # Must contain the new-hand reset logic
-        assert "previousPhase !== 'auction'" in fn_block
+        # Must force open during auction (not just conditionally clear)
+        assert "details.open = true" in fn_block
         assert "sessionStorage.removeItem(AUCTION_LOG_KEY)" in fn_block
+
+    def test_auto_collapse_on_phase_transition(self, game_js):
+        """When transitioning from auction to non-auction, the log should
+        auto-collapse and save the closed state."""
+        fn_start = game_js.index("function restoreAuctionLogState()")
+        fn_block = game_js[fn_start : fn_start + 1800]
+        assert "previousPhase === 'auction'" in fn_block
+        assert "details.open = false" in fn_block
 
     def test_auction_log_keys_defined(self, game_js):
         assert "AUCTION_LOG_KEY" in game_js
