@@ -588,7 +588,19 @@ def _build_game_context(
         # completes so the player doesn't have to click Next for every
         # single AI card.  Manual Next is still required for trick results
         # (paused_after_trick) and other interstitials (#2442, #2386).
-        if hand.phase == "trick_play" and hand.paused_after_play:
+        #
+        # Guard: suppress auto-advance during auction reveal/settle and
+        # moon-exchange interstitials.  After the human bids, the engine
+        # auto-advances into trick_play and may play an AI card (setting
+        # paused_after_play), but the auction reveal is still in progress.
+        # Without this guard the JS auto-fires Next and cascades through
+        # all hidden bid reveals + the settle pause (#2503).
+        if (
+            hand.phase == "trick_play"
+            and hand.paused_after_play
+            and not _auction_reveal_active(hand)
+            and not _has_pending_exchange(hand)
+        ):
             is_ai = last_seat is not None and last_seat != HUMAN_SEAT
             # AI cards: match the CSS animation duration (750ms) + buffer.
             # Human card: brief pause to see own card on the table.

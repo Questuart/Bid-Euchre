@@ -3974,6 +3974,211 @@ class TestAuctionRevealUX:
 
 
 # ---------------------------------------------------------------------------
+# Auto-advance suppressed during auction reveal/settle (#2503)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoAdvanceSuppressedDuringAuction:
+    """Auto-advance JS must NOT fire during auction reveal or settle (#2503).
+
+    After the human bids, the engine auto-advances into trick_play and may
+    play an AI card (paused_after_play=True).  If the auto_advance flag is
+    set in this state, the client JS auto-fires Next and cascades through
+    all hidden bid reveals + the settle pause, skipping the user's
+    opportunity to read each bid.
+    """
+
+    def test_no_auto_advance_during_settle_pause(self, client, app):
+        """During auction settle, auto-advance must be suppressed.
+
+        State: engine in trick_play with paused_after_play, but
+        auction_settled=False (settle pause active).  The rendered HTML
+        must NOT include data-auto-advance on the next-controls div.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Inject state: auction ended, settle pause active, engine in
+        # trick_play with paused_after_play (AI played a card).
+        hand.phase = "trick_play"
+        hand.auction = [
+            {
+                "seat": 1,
+                "n": 5,
+                "action": "bid",
+                "contract": "H",
+                "bid_type": "regular",
+            },
+            {"seat": 2, "n": 0, "action": "pass"},
+            {"seat": 3, "n": 0, "action": "pass"},
+            {"seat": 0, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 4  # all bids revealed
+        hand.auction_settled = False  # settle pause active
+        hand.contract_type = "suit"
+        hand.trump = "H"
+        hand.winning_bid = 5
+        hand.bidder_seat = 1
+        hand.current_high_bid = 5
+        hand.current_trick = TrickState(leader=1)
+        hand.current_trick.plays = [(1, Card("H", "A"))]
+        hand.current_seat = 2
+        hand.paused_after_play = True  # <-- would trigger auto_advance
+
+        # Persist
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Settle pause is shown
+        assert "Auction complete" in resp.text
+        # Auto-advance MUST NOT be present — the user must click manually
+        assert "data-auto-advance" not in resp.text
+
+    def test_no_auto_advance_during_hidden_auction_reveal(self, client, app):
+        """During hidden auction reveal, auto-advance must be suppressed.
+
+        State: engine in trick_play with paused_after_play, but hidden
+        bids remain.  The rendered HTML must NOT include data-auto-advance.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Inject state: human bid first, AI bids followed, still hidden.
+        hand.phase = "trick_play"
+        hand.auction = [
+            {"seat": 0, "n": 0, "action": "pass"},
+            {
+                "seat": 1,
+                "n": 4,
+                "action": "bid",
+                "contract": "S",
+                "bid_type": "regular",
+            },
+            {"seat": 2, "n": 0, "action": "pass"},
+            {"seat": 3, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 1  # only human's pass visible
+        hand.auction_settled = False
+        hand.contract_type = "suit"
+        hand.trump = "S"
+        hand.winning_bid = 4
+        hand.bidder_seat = 1
+        hand.current_high_bid = 4
+        hand.current_trick = TrickState(leader=1)
+        hand.current_trick.plays = [(1, Card("S", "A"))]
+        hand.current_seat = 2
+        hand.paused_after_play = True  # <-- would trigger auto_advance
+
+        # Persist
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Auction reveal step shown
+        assert "Reveal the next auction action" in resp.text
+        # Auto-advance MUST NOT be present
+        assert "data-auto-advance" not in resp.text
+
+    def test_auto_advance_still_works_during_trick_play(self, client, app):
+        """After auction is settled, auto-advance works normally for tricks.
+
+        State: auction_settled=True, phase=trick_play, paused_after_play.
+        data-auto-advance should be present.
+        """
+        link_uuid = _setup_game(client)
+
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, _, session = result
+
+        hand = state.current_hand
+        assert hand is not None
+
+        # Inject state: auction complete and settled, now in trick play.
+        hand.phase = "trick_play"
+        hand.auction = [
+            {
+                "seat": 1,
+                "n": 5,
+                "action": "bid",
+                "contract": "H",
+                "bid_type": "regular",
+            },
+            {"seat": 2, "n": 0, "action": "pass"},
+            {"seat": 3, "n": 0, "action": "pass"},
+            {"seat": 0, "n": 0, "action": "pass"},
+        ]
+        hand.revealed_auction_count = 4
+        hand.auction_settled = True  # settled — normal trick play
+        hand.contract_type = "suit"
+        hand.trump = "H"
+        hand.winning_bid = 5
+        hand.bidder_seat = 1
+        hand.current_high_bid = 5
+        hand.current_trick = TrickState(leader=1)
+        hand.current_trick.plays = [(1, Card("H", "A"))]
+        hand.current_seat = 2
+        hand.paused_after_play = True
+
+        # Persist
+        player = session.query(Player).filter_by(link_uuid=link_uuid).first()
+        match_row = (
+            session.query(Match).filter_by(player_id=player.id, status="active").first()
+        )
+        ai_manager = app.state.ai_manager
+        info = ai_manager.get_model_info(match_row.ai_model)
+        engine = MatchEngine(
+            bidding_policy=info.bidding_policy,
+            play_strategy=info.play_strategy,
+        )
+        match_row.match_state_json = json.dumps(engine.serialize(state))
+        session.commit()
+        session.close()
+
+        resp = client.get(f"/play/{link_uuid}")
+        assert resp.status_code == 200
+        # Auto-advance SHOULD be present during normal trick play
+        assert "data-auto-advance" in resp.text
+
+
+# ---------------------------------------------------------------------------
 # Corrupted match_state → POST returns redirect, not 500 (#2218)
 # ---------------------------------------------------------------------------
 
