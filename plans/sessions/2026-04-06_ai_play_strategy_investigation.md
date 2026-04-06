@@ -206,6 +206,114 @@ The bug is that the lead heuristic never cashes it. The discard logic
 is the responsible upstream contributor; the lead logic is the
 irresponsible downstream consumer.
 
+### Defect F — Suit-contract declarer interleaves off-suit leads with trump bowers (won't draw all trump first)
+
+> Surfaced by the operator's third evidence comment on #2506 (added
+> 2026-04-06): a Spades contract by Ace where Ace held both bowers
+> (J♣^LB and J♠^RB), played J♣^LB on trick 3 and J♠^RB on tricks 7
+> and 9, but **interleaved off-suit plays (A♥ on trick 6, J♥ on
+> trick 8) BEFORE drawing all opponent trump.** Deuce ruffed in
+> with K♠ on trick 6 and stole a side-suit winner. Ace barely made
+> the contract 6-4. The operator labels this a *new variant* in
+> the same bug family: "AI is not using bowers + high trump
+> systematically to clear opponent trump before cashing side
+> winners."
+
+This is a structurally distinct bug from Defects A, B, C in two ways:
+
+1. **Defect B** is "lead the *lowest* trump in step 2" — wrong
+   *which* trump card. Defect F is "play *off-suit* between trump
+   leads even though opponents still hold trump" — wrong *whether
+   to play trump at all* on the next lead.
+2. **Defect A** is "no sure-winner priority on lead." A side-suit
+   ace is a sure winner *only after* opponents are void in trump,
+   because until then any opponent trump can ruff in. So Defect F
+   is logically *upstream* of Defect A: until trump is drawn, the
+   side-suit ace is **not** a sure winner (one of its threats is
+   "any opponent trump"), and the cash-winners priority must
+   correctly recognize that a "ruff threat" exists.
+
+`_is_sure_winner()` already considers
+`cards_that_beat()` from `src/bid_euchre/core/cards.py`, which in
+suit contracts includes all higher trumps as threats to a non-trump
+card. So
+the existing helper is **already** logically correct for the
+"opponent might ruff" case: a side-suit A♥ in a Spades contract is
+not a sure winner if any unaccounted-for spade exists. The bug is
+not in `_is_sure_winner()`; the bug is that
+`_choose_lead()` for suit contracts has no priority that says
+*"if I am the declarer and opponents still hold trump and I have
+trump in hand, lead trump."* The current step 2 heuristic only
+fires when `trump_count >= 4`, and it picks lowest trump. Once the
+declarer has played a few trump and dropped below 4, step 2 stops
+firing and the strategy falls through to step 3 (longest non-trump
+suit, highest card) — which is exactly the off-suit ace lead in
+the trick log.
+
+**Concrete trace from the operator's #2506 evidence (Spades by Ace):**
+
+| # | You  | Slim  | Ace          | Deuce  | Won   |
+|---|------|-------|--------------|--------|-------|
+| 1 | K♣   | 10♠   | A♣           | 10♣    | Slim  |
+| 2 | 10♥  | A♥    | J♥           | Q♥     | Slim  |
+| 3 | Q♣   | K♠    | J♣^LB        | 10♣    | Ace   |
+| 4 | 10♦  | 10♥   | A♦           | J♦     | Ace   |
+| 5 | Q♦   | Q♦    | A♥           | J♦     | Ace   |
+| 6 | K♥   | 10♥   | A♥           | **K♠** | Deuce |
+| 7 | A♣   | A♠    | J♠^RB        | K♠     | Ace   |
+| 8 | K♥   | Q♥    | J♥           | 10♣    | You   |
+| 9 | K♦   | A♠    | J♠^RB        | Q♣     | Ace   |
+| 10| K♦   | J♣^LB | Q♠           | Q♣     | Slim  |
+
+After cashing the LB on trick 3, Ace holds the RB and high spades.
+On trick 5 he leads A♥ — but Slim and Deuce still hold spades
+(K♠, A♠ visible later). On trick 6 he leads A♥ again; Deuce ruffs
+with K♠ and wins a trick that should have been Ace's. The right
+play on trick 5 (or 4) is to lead the RB (or even another trump)
+to clear opponent trump before cashing side winners. The current
+step 3 heuristic picks longest non-trump → highest non-trump,
+which is exactly A♥, irrespective of outstanding opponent trump.
+
+**Why the existing fix proposal already partially addresses this:**
+
+Fix 1 (sure-winner lead priority) is the right place to encode
+the "side-suit ace is *not* a sure winner if opponents still
+hold trump" check, because `_is_sure_winner()` already returns
+False in that case. So adding the sure-winner-lead step *would*
+prevent leading A♥ when K♠/A♠ are still outstanding — but only if
+the AI also has *something else* to lead. In the trace above, Ace
+also holds the RB; Fix 1 would identify J♠^RB as a sure winner
+(only the LB beats it, and the LB is in Ace's own hand on trick 5)
+and lead it. Good.
+
+The remaining gap is the case where the AI has *no other sure
+winner to lead* but still has trump in hand and opponents still
+hold trump. In that case the strategy should lead trump to draw,
+even if its specific trump card isn't a sure winner. This is the
+"draw trump first" priority that the operator's evidence calls
+out and that classical bridge / Bid Euchre strategy guides
+recommend uniformly.
+
+**Fix scope implication:** Cash-A must add **two** layered priorities,
+not one. Fix 1 (sure-winner lead) is first. The new priority — call
+it Fix 1b — is "if I am declarer in a suit contract and I have
+trump in hand and at least one opponent might still hold trump
+(no inferred void in trump for both opponents), prefer to lead
+trump even if it isn't a sure winner." Fix 2 (draw trump from the
+top) then governs *which* trump to lead when Fix 1b fires.
+
+`_void_suits_by_seat` already tracks per-seat trump voids (it gets
+populated whenever a seat fails to follow trump on a trump lead),
+so the "might still hold trump" check is just `trump_suit not in
+self._void_suits_by_seat[opponent_seat]` for both opponent seats.
+The "I am declarer" check uses the existing `_player_index` /
+`bidder_seat` machinery that GluttonV2 will eventually thread via
+`on_hand_start`; until then, a conservative approximation is "I
+have ≥ 3 trump remaining and at least one opponent might still
+have trump" — which fires the same way regardless of who the
+actual declarer is (a non-declarer with ≥ 3 trump is also right
+to draw trump, just for different reasons).
+
 ## Why This Is A Distinct Investigation From Prior Glutton Work
 
 The existing
@@ -565,7 +673,7 @@ are the same file) and the proposed fix.
                  )
                  return right_bower_idx
 
-+            # 0.5 NEW (Cash-A): Cash established sure winners first.
++            # 0.5 NEW (Cash-A, Fix 1): Cash established sure winners first.
 +            # Gated by GluttonIsolatedStrategy.cash_winners_on_lead;
 +            # always enabled in production GluttonStrategy.
 +            if getattr(self, "cash_winners_on_lead", True):
@@ -582,6 +690,19 @@ are the same file) and the proposed fix.
 +                        return (suit_counts.get(eff, 0), -card_value(idx))
 +                    return min(sure_winner_leads, key=_sure_lead_priority)
 +
++            # 0.75 NEW (Cash-A, Fix 1b): Draw opponent trump before
++            # cashing side winners (Defect F). Suit contracts only.
++            # Gated by the same cash_winners_on_lead flag.
++            if (
++                getattr(self, "cash_winners_on_lead", True)
++                and self._contract_type == "suit"
++                and trump_indices
++                and self._opponents_might_hold_trump(
++                    seat=player_index
++                )
++            ):
++                return self._draw_trump_lead(trump_indices, hand)
++
              # 1. Look for non-trump Aces
              non_trump_aces = [
                  ...
@@ -595,14 +716,47 @@ are the same file) and the proposed fix.
                  if not (has_right and has_left):
 -                    # Lead lowest trump to draw trump without burning top cards
 -                    return min(trump_indices, key=card_value)
-+                    # FIX (Cash-A): lead highest trump to clear opponents'
-+                    # top trump ("draw trump from the top"). Gated by the
-+                    # same cash_winners_on_lead flag so Cash-A can be
-+                    # feature-isolated. Previous min() left master trump
-+                    # in hand until trick 9-10 (#2506).
++                    # FIX (Cash-A, Fix 2): lead highest trump to clear
++                    # opponents' top trump ("draw trump from the top").
++                    # Gated by the same cash_winners_on_lead flag so
++                    # Cash-A can be feature-isolated. Previous min()
++                    # left master trump in hand until trick 9-10 (#2506).
 +                    if getattr(self, "cash_winners_on_lead", True):
-+                        return max(trump_indices, key=card_value)
++                        return self._draw_trump_lead(trump_indices, hand)
 +                    return min(trump_indices, key=card_value)
++
++@@ new helper methods (Cash-A: shared by Fix 1b and Fix 2)
++
++    def _opponents_might_hold_trump(self, *, seat: int) -> bool:
++        """Return True if at least one opponent might still hold trump.
++
++        Reads `_void_suits_by_seat` (populated by observe_play) and
++        treats absence of an inferred trump void as "might hold trump."
++        Conservative: returns True on hand 1 before any trump trick has
++        been observed, which is the safe behavior (assume opponents
++        have trump until proven otherwise).
++        """
++        if self._trump_suit is None:
++            return False
++        opp_seats = ((seat + 1) % 4, (seat + 3) % 4)
++        return any(
++            self._trump_suit not in self._void_suits_by_seat.get(opp, set())
++            for opp in opp_seats
++        )
++
++    def _draw_trump_lead(self, trump_indices, hand):
++        """Lead the highest-ranking trump from the given indices.
++
++        Shared by Fix 1b and Fix 2. card_value_for_dump already ranks
++        bowers above non-bower trump above non-trump, so max naturally
++        picks RB > LB > A > K > Q > ... > 10.
++        """
++        return max(
++            trump_indices,
++            key=lambda i: card_value_for_dump(
++                hand[i], self._trump_suit, self._contract_type
++            ),
++        )
 
 @@ _choose_lead (high/low branch)
              if suit_counts:
@@ -742,7 +896,98 @@ branches on `contract_type` for rank order, trump/bower handling.
   remaining A♣/K♣ is a sure winner as a lead in clubs. Likewise after
   winning with RB, the LB becomes a sure winner when led as trump.
 
+### Fix 1b — `_choose_lead`: draw-trump-first priority (new step 0.75)
+
+Insert a second new priority layer between Fix 1 (sure-winner lead)
+and the existing step 1 (non-trump aces). This is the structural
+companion to Fix 1 surfaced by the operator's third evidence comment
+on #2506 (Defect F above): when the AI has trump in hand and at
+least one opponent might still hold trump, leading a side-suit ace
+exposes the trick to a ruff. The right play is to lead trump and
+draw the outstanding opponent trump first.
+
+```python
+# 0.75 NEW: Draw opponent trump before cashing side winners.
+#
+# Only fires in suit contracts where:
+#   - we still hold trump,
+#   - at least one opponent might still hold trump (not inferred
+#     void by observe_play),
+#   - we did not already short-circuit on a sure-winner lead in
+#     Fix 1 (which means there is nothing strictly safer to lead).
+if (
+    self._contract_type == "suit"
+    and trump_indices
+    and self._opponents_might_hold_trump(seat=self._player_index)
+):
+    # Defer to Fix 2 below for *which* trump card to lead.
+    # Fall through to step 2 by skipping ahead — implementation
+    # detail: re-enter the trump branch unconditionally instead
+    # of waiting for the >= 4-trump gate.
+    return self._draw_trump_lead(trump_indices, hand)
+```
+
+Where `_opponents_might_hold_trump(seat)` is a small helper that
+walks the two opponent seats relative to `seat` and returns
+`True` if `self._trump_suit not in self._void_suits_by_seat[opp]`
+for at least one opponent. `_void_suits_by_seat` is already
+populated by `observe_play` whenever a seat fails to follow trump
+on a trump lead, so no new bookkeeping is needed.
+
+`_draw_trump_lead(trump_indices, hand)` is the same "lead trump
+from the top" choice that Fix 2 below encodes — extracted into a
+helper so Fix 1b and Fix 2 share the policy:
+
+```python
+def _draw_trump_lead(self, trump_indices, hand):
+    # Lead the highest-ranking trump we hold.
+    # card_value_for_dump already ranks bowers > A > K > ... so
+    # max naturally picks RB > LB > A > K > Q > ... > 10.
+    return max(trump_indices, key=lambda i: card_value_for_dump(
+        hand[i], self._trump_suit, self._contract_type
+    ))
+```
+
+**Where it applies:** suit contracts only. High and low contracts
+have no trump and no ruff threat to side-suit aces, so Fix 1 alone
+already cashes them correctly.
+
+**What it fixes:**
+- **#2506 (third trace, Defect F):** On trick 5 (or 4) Ace would
+  no longer lead A♥ while K♠/A♠ are still outstanding. Instead Fix
+  1 cashes the RB (which is a sure winner because Ace also holds
+  the LB), and on the *next* lead Fix 1b would lead the LB itself
+  (now a sure winner per Fix 1), continuing to drain trump until
+  opponents are void. Only then does Fix 1 fall through to side-suit
+  aces (which are now genuine sure winners).
+- **#2506 (second trace, Defect B):** even if the AI doesn't hold
+  the LB, Fix 1b still fires whenever the AI has trump and an
+  opponent might too — preventing the off-suit-lead-while-trump-out
+  failure mode regardless of bower count.
+
+**Why both Fix 1 and Fix 1b are required:** Fix 1 alone is
+insufficient because the side-suit ace is *not* a sure winner
+until trump is drawn (Defect F observation: `_is_sure_winner`
+correctly returns False here). So Fix 1 will *not* lead it. But
+absent Fix 1b, control falls through to step 1 (non-trump ace
+lead) or step 3 (longest non-trump highest), both of which cheerfully
+lead the very ace that Fix 1 just refused. Fix 1b closes this loop
+by saying "if Fix 1 had nothing safe to lead and we still have
+trump and opponents might too, lead trump."
+
+**Why Fix 1b is gated by `cash_winners_on_lead`** (not a separate
+flag): both behaviors are part of the same lead-phase semantic
+("use your strongest cards in the right order"), and the operator
+explicitly groups them as one bug family. A/B isolation between
+Fix 1 and Fix 1b is achievable via unit test fixtures rather than
+a third experiment flag, which would explode the matrix from 4 to
+8 cells unnecessarily.
+
 ### Fix 2 — `_choose_lead` step 2: draw trump from the TOP
+
+Even with Fix 1b in place, the existing step 2 (`trump_count >= 4`,
+no-both-bowers) still fires in non-Fix-1b paths and currently picks
+the *lowest* trump. That is the original Defect B and remains wrong.
 
 ```python
 # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
@@ -753,19 +998,24 @@ if trump_count >= 4 and trump_indices:
         # from the top" principle). The previous behavior leading
         # the lowest trump left master cards unplayed until too
         # late (#2506).
-        return max(trump_indices, key=card_value)
+        return self._draw_trump_lead(trump_indices, hand)
 ```
 
 **What it fixes:** the left-bower-held-to-trick-9 failure mode in
-#2506 second trace. `card_value` correctly ranks `J♣^LB` higher than
-other trumps (`card_value_for_dump` adds +10 for trump and +4 for LB),
-so `max` picks the LB first, then RB (if present), then K, Q, and
-down.
+#2506 second trace. `_draw_trump_lead` (shared with Fix 1b) ranks
+`J♣^LB` higher than other trumps via `card_value_for_dump` (+10 for
+trump, +4 for LB), so `max` picks the LB first, then RB (if present),
+then K, Q, and down.
 
-**Interaction with Fix 1:** Fix 1 fires *before* step 2, so when the
-LB is a sure winner (all RBs accounted for), Fix 1 cashes it. Step 2
-only fires when trump >= 4 and we're in a weaker draw-trump state.
-Leading max in that state is still correct.
+**Interaction with Fix 1 and Fix 1b:** Fix 1 fires *before* step 2,
+so when the LB is a sure winner (all RBs accounted for), Fix 1
+cashes it. Fix 1b fires next, which means step 2 only ever runs
+in the narrow case of "Fix 1 had no sure winner *and* Fix 1b
+already cleared opponent trump (or we're not declarer with that
+read)." In practice, after Fix 1b lands, step 2 mostly serves as a
+defensive fallback and the `trump_count >= 4` gate becomes
+redundant — but it is left in place to minimize behavioral churn
+in the Cash-A PR.
 
 **Subtlety:** an argument can be made for "lead from the top of a
 sequence, not the absolute top" — e.g., don't burn an RB if the
@@ -844,32 +1094,63 @@ already does.
        4+ trump hand.
      - Suit contract: AI cashes remaining side-suit A after running
        opponents out (two-lead sequence).
+     - **Suit contract — draw-trump-first (Fix 1b, Defect F):** AI
+       holds trump and a side-suit ace; opponents have **not**
+       inferred-void in trump (per `_void_suits_by_seat`); AI must
+       lead trump, **not** the side-suit ace. Mirror the #2506
+       trick-5 fixture: Spades trump, AI declarer holds RB + A♥,
+       opponents still hold ≥1 spade visible-or-unaccounted. Assert
+       AI leads RB (or other trump), not A♥.
+     - **Suit contract — draw-trump-first opponents void:** same
+       fixture but seed `_void_suits_by_seat` to mark both opponents
+       void in trump. Assert AI now leads A♥ (Fix 1 sure-winner,
+       Fix 1b suppressed).
      - Equivalence test for `GluttonIsolatedStrategy` with
        `cash_winners_on_lead=False` and
        `cash_winners_on_follow=False`: identical behavior to pre-fix
        snapshot.
      - A/B isolation test: with only `cash_winners_on_lead=True`,
-       Cash-A behaviors fire but Cash-B does not (and vice versa).
+       Cash-A behaviors (Fix 1, Fix 1b, Fix 2) all fire but Cash-B
+       does not (and vice versa).
 3. **Regression test:** existing strategy test files pass unchanged:
    `tests/unit/test_greedy.py`, `tests/unit/test_glutton.py`,
    `tests/unit/test_strategy.py`, `tests/unit/test_strategy_correctness.py`,
    and `tests/unit/test_strategy_registry.py`.
-4. **Statistical proving (Tier 2 experiment):** a seeded
-   head-to-head run with pre-fix `GluttonIsolatedStrategy`
-   (both cash flags `False`) and post-fix `GluttonStrategy`
-   (both cash flags `True`) seated opposite each other on the
-   **same deals**, using the canonical runner in
-   `head_to_head_matrix` mode (the mode used by
-   `scripts/internal/run_arc_d_h2h_battery.py`), 50,000 deals
-   across the 6 contract × trump scenarios reused from
+4. **Statistical proving (Tier 2 experiment):** a seeded multi-strategy
+   self-play run with pre-fix `GluttonIsolatedStrategy`
+   (`cash_winners_on_lead=False`, `cash_winners_on_follow=False`) and
+   post-fix `GluttonIsolatedStrategy` (`cash_winners_on_lead=True`,
+   `cash_winners_on_follow=True`) declared as **two separate
+   strategies in the same experiment YAML**, executed across the 6
+   contract × trump scenarios reused from
    `plans/sessions/2026-03-27_glutton-strategy-revamp-experiment-design.md`
-   §Phase 1A. Because both strategies play the same matched deals,
-   post-hand analysis must compute **paired deltas** using the
-   `compute_paired_deltas` helper from
-   `src/bid_euchre/analysis/paired.py` and the `paired_t_ci` helper
-   from `src/bid_euchre/analysis/stats.py`. Post-fix must win or tie
-   on `avg_tricks_team0` (paired bootstrap, p < 0.05, 95% CI lower
-   bound ≥ 0).
+   §Phase 1A at 50,000 deals per scenario. The runner must use
+   `mode: self_play` (the default) with `pair_deals: true` so each
+   strategy plays the same physical deals on the same seed — this
+   yields one JSONL log per strategy under
+   `data/runs/<run_id>/logs/<run_id>_<strategy_name>.jsonl`, which
+   is the file shape `load_paired_data` expects (it globs
+   `*<strategy>.jsonl` per strategy name). `head_to_head_matrix`
+   mode is **not** suitable here because it emits a single JSONL
+   per matchup with `strategy_id=matchup_id`, which collapses both
+   sides into one log and breaks `load_paired_data`'s pairing key.
+
+   Post-hand analysis must use the actual API of
+   `compute_paired_deltas` from `src/bid_euchre/analysis/paired.py`:
+   `compute_paired_deltas(strategy_data, baseline_strategy=...,
+   comparison_strategy=..., scenario=None)` — which returns a dict
+   `{"deltas": [...], "deal_ids": [...], "baseline_tricks": [...],
+   "comparison_tricks": [...], "n_matched": ...}`, **not** a NumPy
+   array. The acceptance gate is a **paired bootstrap CI** computed
+   by `bootstrap_ci(paired["deltas"], statistic=np.mean,
+   n_bootstrap=10000, seed=42)` from
+   `src/bid_euchre/analysis/stats.py` (the t-CI helper `paired_t_ci`
+   is **not** a bootstrap and does not match the gate language).
+   Post-fix must win or tie on team-0 tricks per matched deal
+   (95% bootstrap CI lower bound ≥ 0 across the pooled scenario set,
+   and the same gate must pass per-scenario for at least 5 of the 6
+   scenarios). The exact executable form of this gate is documented
+   in §Validation Commands below.
 
 ## Validation Commands
 
@@ -880,36 +1161,110 @@ uv run python -m pytest tests/unit/test_greedy.py -x
 # Tier 2 (before PR)
 make check-gated
 
-# Tier 2 statistical proving — paired H2H matrix on matched deals.
+# Tier 2 statistical proving — paired self-play sweep on matched deals.
+#
 # Cash-A creates a new experiment config under experiments/configs/
-# (proposed filename stem: "glutton_sure_winner_h2h") that declares
-# both strategies seated across the 6 contract x trump scenarios and
-# sets mode: head_to_head_matrix. Replace <CONFIG_PATH> below:
+# (proposed filename stem: "glutton_cash_winners_paired") with the
+# following shape (mode: self_play is the default; pair_deals=true is
+# required so all scenarios reuse the seed and the same physical
+# deals are dealt to both strategies):
+#
+#   pair_deals: true
+#   strategies:
+#     - name: glutton_baseline
+#       class_name: GluttonIsolatedStrategy
+#       params:
+#         cash_winners_on_lead: false
+#         cash_winners_on_follow: false
+#     - name: glutton_cash_winners
+#       class_name: GluttonIsolatedStrategy
+#       params:
+#         cash_winners_on_lead: true
+#         cash_winners_on_follow: true
+#   scenarios:           # Reuse §Phase 1A from the GluttonV2 plan
+#     - { contract_type: high }
+#     - { contract_type: low }
+#     - { contract_type: suit, trump_suit: H }
+#     - { contract_type: suit, trump_suit: D }
+#     - { contract_type: suit, trump_suit: C }
+#     - { contract_type: suit, trump_suit: S }
+#
+# Run the sweep (replace <CONFIG_PATH>):
 #
 # uv run python experiments/run_experiment.py \
 #   --config <CONFIG_PATH> \
 #   --seed 42 --n_per 50000
 #
-# After the run completes, compute the paired bootstrap gate from
-# the emitted JSONL hand records (not from rollup.json):
+# This produces (per the strategy_id=policy.name path in
+# experiments/run_experiment.py:1031):
+#   data/runs/<RUN_ID>/logs/<RUN_ID>_glutton_baseline.jsonl
+#   data/runs/<RUN_ID>/logs/<RUN_ID>_glutton_cash_winners.jsonl
+#
+# Both files cover the same scenarios on the same deal seeds, so
+# load_paired_data + compute_paired_deltas can pair by (deal_id, seed).
+#
+# Compute the paired bootstrap gate from the emitted JSONL records:
 #
 # uv run python -c "
+# import numpy as np
 # from bid_euchre.analysis.paired import (
-#     load_paired_data, compute_paired_deltas,
+#     load_paired_data,
+#     compute_paired_deltas,
 # )
-# from bid_euchre.analysis.stats import paired_t_ci
+# from bid_euchre.analysis.stats import bootstrap_ci
 # run_dir = 'data/runs/<RUN_ID>'
-# data = load_paired_data(run_dir,
-#     ['glutton_isolated_baseline', 'glutton_cash_winners'])
-# deltas = compute_paired_deltas(data, metric='team0_tricks')
-# mean_d, lo, hi = paired_t_ci(deltas.tolist())
-# assert lo >= 0, f'Paired gate failed: CI=[{lo:.3f}, {hi:.3f}]'
-# print(f'mean_delta={mean_d:+.3f} 95% CI=[{lo:+.3f}, {hi:+.3f}]')
+# strategy_data = load_paired_data(
+#     run_dir,
+#     ['glutton_baseline', 'glutton_cash_winners'],
+# )
+# # Pooled across all scenarios:
+# paired = compute_paired_deltas(
+#     strategy_data,
+#     baseline_strategy='glutton_baseline',
+#     comparison_strategy='glutton_cash_winners',
+# )
+# deltas = paired['deltas']  # list[float], not a numpy array
+# n_matched = paired['n_matched']
+# assert n_matched > 0, 'Paired loader matched zero deals — check log shape'
+# mean_d, lo, hi = bootstrap_ci(
+#     deltas, statistic=np.mean, n_bootstrap=10000, seed=42
+# )
+# print(f'pooled n_matched={n_matched}')
+# print(f'pooled mean_delta={mean_d:+.3f} 95% bootstrap CI=[{lo:+.3f}, {hi:+.3f}]')
+# assert lo >= 0, f'Pooled paired gate failed: CI=[{lo:.3f}, {hi:.3f}]'
+# # Per-scenario gate (must pass for >= 5 of 6 scenarios):
+# scenarios = ['high', 'low', 'suit_H', 'suit_D', 'suit_C', 'suit_S']
+# passes = 0
+# for scen in scenarios:
+#     paired_scen = compute_paired_deltas(
+#         strategy_data,
+#         baseline_strategy='glutton_baseline',
+#         comparison_strategy='glutton_cash_winners',
+#         scenario=scen,
+#     )
+#     if paired_scen['n_matched'] == 0:
+#         print(f'  {scen}: SKIP (no matches)')
+#         continue
+#     m, lo_s, hi_s = bootstrap_ci(
+#         paired_scen['deltas'], statistic=np.mean,
+#         n_bootstrap=10000, seed=42,
+#     )
+#     status = 'PASS' if lo_s >= 0 else 'FAIL'
+#     print(f'  {scen}: n={paired_scen[\"n_matched\"]} '
+#           f'delta={m:+.3f} CI=[{lo_s:+.3f}, {hi_s:+.3f}] {status}')
+#     if lo_s >= 0:
+#         passes += 1
+# assert passes >= 5, f'Per-scenario gate: only {passes}/6 passed'
 # "
 #
 # NOTE: scripts/compare_runs.py is NOT suitable for this gate -- it
 # compares two independently-sampled runs on bootstrap distributions,
 # not paired per-deal deltas. Use the analysis.paired module instead.
+#
+# NOTE: head_to_head_matrix mode is NOT suitable -- it emits one JSONL
+# per matchup with strategy_id=matchup_id, collapsing both sides into
+# one file. load_paired_data would not find two separate strategies
+# to pair. Use mode: self_play with multiple strategies as shown above.
 
 # Tier 2 browser smoke (operator validation)
 # Manual playtest via the hosted game: play one Low, one High, and
@@ -923,6 +1278,8 @@ make check-gated
 |------|---------|-----------|
 | Sure-winner detection is expensive (O(hand × deck)) | LOW | `_is_sure_winner()` already exists and is called in partner-cover path without perf issue. Lead phase is called once per trick per player (≤ 40 calls/hand). |
 | Fix 2 (draw trump high) hurts strategies relying on low-trump draws | MEDIUM | Gate behind `GluttonIsolatedStrategy` flag and run feature isolation experiment (Phase 3C template in analyst-a's 2026-03-27 plan). |
+| Fix 1b (draw trump first) over-fires in non-declarer seats — a defender with 3 trump may not want to bleed his trump even if opponents still have trump | MEDIUM | The conservative approximation in Fix 1b ("≥ 3 trump remaining + opponents might have trump") will fire for both declarers and defenders. Mitigate by adding a per-scenario A/B unit test where the AI is on defense with 3 trump and verifying behavior is acceptable, AND by tracking the win-rate delta on defense in the paired self-play sweep separately from declarer hands. If defense regresses materially, narrow Fix 1b to declarers only (requires `bidder_seat` thread, deferred to GluttonV2). |
+| Fix 1b's `_void_suits_by_seat` read may return stale/empty on hand 1 (no plays yet) | LOW | On hand 1 the void map is empty, so `_opponents_might_hold_trump` returns True unconditionally — which is the safe behavior (assume opponents have trump until proven otherwise). |
 | Fix 3 (2nd-hand-low) regresses on hands where forced winning is correct | MEDIUM | Only applies when no sure winner exists among candidates; sure winners still win aggressively. Verify with feature isolation. |
 | Cascading effect on bidder-play pairs (OLSa/Bud Bot) | MEDIUM | Both browser models share GluttonStrategy — the fix uniformly lifts both. A/B via experiment config comparing pre/post for each bidder. |
 | Post-merge review may flag "why two files" for duplicated fix in `GluttonIsolatedStrategy` | LOW | Existing convention: `GluttonIsolatedStrategy` is a deliberate feature-flag twin. Follow-up refactor to share helpers is out of scope. |
@@ -936,8 +1293,8 @@ make check-gated
 
 | PR | Scope | Size | Validation | Depends on |
 |----|-------|------|-----------|-----------|
-| **Cash-A:** Sure-winner lead + draw trump high in `GluttonStrategy` + `GluttonIsolatedStrategy` (behind `cash_winners_on_lead` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py`, new `experiments/configs/` H2H YAML | ~150–250 LoC + ~20 test cases | `make check-gated`; unit tests; paired H2H on matched deals via `src/bid_euchre/analysis/paired.py` | none |
-| **Cash-B:** 2nd-hand-low / prefer-sure-winners in the follow phase (both classes, behind `cash_winners_on_follow` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py` | ~60–120 LoC + ~10 test cases | same as Cash-A + explicit 2nd-seat scenario tests; paired H2H reusing Cash-A config | Cash-A |
+| **Cash-A:** Sure-winner lead (Fix 1) + draw-trump-first (Fix 1b) + draw trump high (Fix 2) in `GluttonStrategy` + `GluttonIsolatedStrategy` (all three behind a single `cash_winners_on_lead` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py`, plus a new (Cash-A creates it) experiment config under `experiments/configs/` (proposed filename `glutton_cash_winners_paired.yaml`, multi-strategy `mode: self_play` with `pair_deals: true`) | ~200–300 LoC + ~25 test cases (includes the two new Defect F draw-trump-first fixtures) | `make check-gated`; unit tests; paired self-play sweep on matched deals via `src/bid_euchre/analysis/paired.py` + `bootstrap_ci` from `src/bid_euchre/analysis/stats.py`; pooled + per-scenario gate per §Validation Commands | none |
+| **Cash-B:** 2nd-hand-low / prefer-sure-winners in the follow phase (both classes, behind `cash_winners_on_follow` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py` | ~60–120 LoC + ~10 test cases | same as Cash-A + explicit 2nd-seat scenario tests; paired self-play sweep reusing Cash-A YAML | Cash-A |
 
 Both PRs deliberately keep the scope to
 `src/bid_euchre/strategy/greedy.py` and its tests.
@@ -967,24 +1324,50 @@ YAML config).
 
 ## Complexity & Risk Estimate
 
-- **Implementation complexity:** **Medium.** ~200–400 LoC total,
-  localized to one file, reusing existing utilities (`_is_sure_winner`,
-  `cards_that_beat`). No new dependencies. No schema changes.
-- **Test complexity:** **Medium.** ~30 new unit tests covering the
-  three bug scenarios × three contract types × edge cases. Fixtures
-  are straightforward (construct hand + plays_so_far + assert chosen
-  card).
-- **Review complexity:** **Medium.** Correctness reasoning requires
-  thinking through trick-play states and double-deck sure-winner
-  semantics. Codex review should catch any rank-inversion mistakes.
+- **Implementation complexity:** **Medium.** ~250–450 LoC total
+  (now including Fix 1b's `_opponents_might_hold_trump` helper and
+  the shared `_draw_trump_lead` extraction), localized to one
+  file, reusing existing utilities (`_is_sure_winner`,
+  `cards_that_beat`, `_void_suits_by_seat`). No new dependencies.
+  No schema changes.
+- **Test complexity:** **Medium.** ~35 new unit tests covering the
+  four bug scenarios (Defects A, B, C, F) × three contract types ×
+  edge cases. Fixtures are straightforward (construct hand +
+  plays_so_far + assert chosen card). The two new Defect F
+  draw-trump-first tests must explicitly seed `_void_suits_by_seat`
+  so the helper read is deterministic.
+- **Review complexity:** **Medium-High.** Correctness reasoning
+  requires thinking through trick-play states, double-deck
+  sure-winner semantics, **and** the layered priority interaction
+  between Fix 1 (sure winners), Fix 1b (draw trump), and Fix 2
+  (max trump). Codex review should catch any rank-inversion
+  mistakes and the priority-ordering interaction.
 - **Experimental complexity:** **Medium.** ~5 min per 50K deals
-  H2H × 3 matchups × 2 conditions ≈ 30 min compute. The paired
-  analysis stack is already scaffolded:
+  per strategy × 2 strategies × 6 scenarios ≈ 60 min compute on
+  the multi-strategy `mode: self_play` sweep with `pair_deals:
+  true`. The paired analysis stack is scaffolded:
   `src/bid_euchre/analysis/paired.py` provides
-  `compute_paired_deltas` and `src/bid_euchre/analysis/stats.py`
-  provides `paired_t_ci`. That is the correct path for matched-deal
-  comparison. `scripts/compare_runs.py` is **not** suitable — it
-  compares two independently-sampled runs, not paired deltas.
+  `load_paired_data(run_dir, strategies)` and
+  `compute_paired_deltas(strategy_data, baseline_strategy=...,
+  comparison_strategy=..., scenario=...)` returning a dict, and
+  `src/bid_euchre/analysis/stats.py` provides
+  `bootstrap_ci(data, statistic=np.mean, n_bootstrap=10000,
+  seed=42)` — a true bootstrap CI suitable for the paired-bootstrap
+  acceptance gate. `scripts/compare_runs.py` is **not** suitable —
+  it compares two independently-sampled runs on bootstrap
+  distributions of summary statistics, not per-deal paired deltas.
+  `experiments/run_experiment.py`'s `head_to_head_matrix` mode is
+  also **not** suitable — it emits one JSONL per matchup with
+  `strategy_id=matchup_id`, collapsing both strategies into one
+  log file and breaking `load_paired_data`'s per-strategy glob
+  (`*<strategy>.jsonl`). The correct mode is the multi-strategy
+  `self_play` (default) path with `pair_deals: true`, which the
+  runner emits as one JSONL per strategy (named after each strategy's
+  policy name attribute). The paired t-CI
+  helper `paired_t_ci` is also **not** the right gate — it
+  computes a t-distribution interval, not a bootstrap CI, and
+  does not match the "paired bootstrap, p < 0.05" language used
+  in §Acceptance Criteria item 4.
 - **Live-game risk:** **LOW–MEDIUM.** The browser game is post
   go-live with real players. The fix is a strict improvement in
   expected play quality (cashing winners is universally better
@@ -1103,29 +1486,56 @@ Handoffs that skip any of these steps are incomplete per AGENTS.md
 
 **Task packet skeletons:**
 
-1. **Cash-A:** *Sure-winner lead priority + draw trump from the top*
+1. **Cash-A:** *Sure-winner lead priority + draw trump first + draw trump from the top*
    - `scope_declared`: `src/bid_euchre/strategy/greedy.py`,
      `tests/unit/test_greedy.py`,
-     and a new paired H2H experiment YAML under
+     and a new paired self-play experiment YAML under
      `experiments/configs/` (proposed filename stem
-     "glutton_sure_winner_h2h" — Cash-A creates it, using
-     `mode: head_to_head_matrix` so both strategies play matched deals)
-   - `validation`: `make check-gated` then the H2H run and paired
-     bootstrap gate described in §Acceptance Criteria item 4 and
-     §Validation Commands. **Do not** use `scripts/compare_runs.py`
-     for the acceptance gate — it compares independent runs, not
-     paired per-deal deltas. Use the `compute_paired_deltas` helper
-     from `src/bid_euchre/analysis/paired.py` and the `paired_t_ci`
-     helper from `src/bid_euchre/analysis/stats.py` on the emitted
-     JSONL hand records.
-   - Reference: this doc §Fix 1, §Fix 2
+     `glutton_cash_winners_paired` — Cash-A creates it, using
+     `mode: self_play` (the default) with `pair_deals: true` and
+     **two strategies declared in the same config**:
+     `glutton_baseline` (`cash_winners_on_lead=False`,
+     `cash_winners_on_follow=False`) and `glutton_cash_winners`
+     (`cash_winners_on_lead=True`, `cash_winners_on_follow=True`)).
+     This emits one JSONL per strategy under
+     `data/runs/<RUN_ID>/logs/<RUN_ID>_<strategy_name>.jsonl`,
+     which is the file shape `load_paired_data` requires (it
+     globs `*<strategy>.jsonl`). **Do not** use
+     `mode: head_to_head_matrix` — that mode collapses both sides
+     into a single JSONL with `strategy_id=matchup_id` and breaks
+     the paired loader.
+   - `validation`: `make check-gated` then the paired self-play run
+     and paired-bootstrap gate described in §Acceptance Criteria
+     item 4 and §Validation Commands. **Do not** use
+     `scripts/compare_runs.py` for the acceptance gate — it
+     compares independent runs on summary statistics, not paired
+     per-deal deltas. Use `load_paired_data` +
+     `compute_paired_deltas(strategy_data,
+     baseline_strategy='glutton_baseline',
+     comparison_strategy='glutton_cash_winners')` from
+     `src/bid_euchre/analysis/paired.py` (returns a dict with key
+     `deltas`, **not** a NumPy array) and `bootstrap_ci(deltas,
+     statistic=np.mean, n_bootstrap=10000, seed=42)` from
+     `src/bid_euchre/analysis/stats.py` for the bootstrap CI gate.
+     **Do not** use `paired_t_ci` — it is a t-distribution
+     interval, not a bootstrap, and does not match the gate
+     language. The pooled gate (`lo >= 0`) and the per-scenario
+     gate (≥ 5 of 6) are both shown executable in §Validation
+     Commands.
+   - Reference: this doc §Fix 1, §Fix 1b, §Fix 2 — all three
+     priority layers ship in this PR behind the single
+     `cash_winners_on_lead` flag.
 
 2. **Cash-B:** *Sure-winner follow + 2nd-hand-low fallback*
    - `scope_declared`: `src/bid_euchre/strategy/greedy.py`,
      `tests/unit/test_greedy.py`
    - `validation`: `make check-gated` + unit tests covering 2nd-seat
-     false-winner scenario; regression paired H2H reusing Cash-A
-     config (same `src/bid_euchre/analysis/paired.py` gate)
+     false-winner scenario; regression paired self-play sweep
+     reusing Cash-A's `glutton_cash_winners_paired` YAML config
+     (same `load_paired_data` + `compute_paired_deltas` +
+     `bootstrap_ci` gate) — the same multi-strategy YAML works
+     because Cash-B simply flips `cash_winners_on_follow=True` on
+     the candidate strategy
    - Reference: this doc §Fix 3
    - **Blocked by:** Cash-A merged
 
