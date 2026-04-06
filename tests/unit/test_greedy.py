@@ -13,6 +13,7 @@ confirm that.
 
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy import GluttonStrategy, GreedyStrategy
+from bid_euchre.strategy.greedy import GluttonIsolatedStrategy
 
 
 class TestBowerValueGreedy:
@@ -193,3 +194,200 @@ class TestSimPathHooksAlreadyCorrect:
         glutton.observe_play(1, led_card, [(1, led_card)], "suit", "H")
         glutton.observe_play(2, off_card, [(1, led_card), (2, off_card)], "suit", "H")
         assert "C" in glutton._void_suits_by_seat[2]
+
+
+class TestCashWinnersOnLead:
+    """Cash-A: sure-winner lead + draw-trump-first + draw trump from the top.
+
+    All behavior is gated by ``cash_winners_on_lead`` which defaults to
+    ``False`` on both ``GluttonStrategy`` and ``GluttonIsolatedStrategy``.
+    Flag-off tests double as baseline regression guards for the operator
+    proving window before the flag flip.
+
+    See plans/sessions/2026-04-06_ai_play_strategy_investigation.md
+    §Recommended PR Decomposition for context.
+    """
+
+    def test_sure_winner_lead_high_contract(self):
+        """Fix 1 (high/low fallback): with flag on, AI leads a short-suit
+        sure winner (A♠ in high) instead of the longest-suit heuristic."""
+        hand = [
+            Card("S", "A"),  # idx 0 - sure winner in high (nothing beats A)
+            Card("C", "K"),  # idx 1 - longest-suit top card under baseline
+            Card("C", "Q"),  # idx 2
+            Card("C", "T"),  # idx 3
+        ]
+
+        # Baseline (flag off, the shipping default): longest-suit heuristic
+        # picks K♣ from the 3-card clubs run, ignoring A♠.
+        baseline = GluttonStrategy()
+        baseline.on_hand_start(hand, "high", None, player_index=0)
+        baseline_choice = baseline.choose_card(hand, [], "high", None, 0)
+        assert hand[baseline_choice] == Card(
+            "C", "K"
+        ), f"Baseline (flag off) should lead K♣, got {hand[baseline_choice]}"
+
+        # Cash-A (flag on): high/low fallback guard spots A♠ sure winner.
+        cash = GluttonStrategy(cash_winners_on_lead=True)
+        cash.on_hand_start(hand, "high", None, player_index=0)
+        cash_choice = cash.choose_card(hand, [], "high", None, 0)
+        assert hand[cash_choice] == Card(
+            "S", "A"
+        ), f"Cash-A (flag on) should lead A♠, got {hand[cash_choice]}"
+
+    def test_sure_winner_lead_low_contract(self):
+        """Fix 1 in low: with flag on, AI leads T♠ (sure winner in low)
+        instead of the longest-suit heuristic."""
+        hand = [
+            Card("S", "T"),  # idx 0 - sure winner in low (nothing beats T)
+            Card("C", "K"),  # idx 1
+            Card("C", "Q"),  # idx 2
+            Card("C", "J"),  # idx 3 - highest club value in low
+        ]
+
+        baseline = GluttonStrategy()
+        baseline.on_hand_start(hand, "low", None, player_index=0)
+        baseline_choice = baseline.choose_card(hand, [], "low", None, 0)
+        assert (
+            hand[baseline_choice] == Card("C", "J")
+        ), f"Baseline (flag off) should lead longest-suit J♣, got {hand[baseline_choice]}"
+
+        cash = GluttonStrategy(cash_winners_on_lead=True)
+        cash.on_hand_start(hand, "low", None, player_index=0)
+        cash_choice = cash.choose_card(hand, [], "low", None, 0)
+        assert hand[cash_choice] == Card(
+            "S", "T"
+        ), f"Cash-A (flag on) should lead sure-winner T♠, got {hand[cash_choice]}"
+
+    def test_draw_trump_first_on_suit(self):
+        """Fix 1b (Defect F): in a suit contract, with flag on, AI draws
+        trump from the top instead of burning a side-suit ace while
+        opponents might still hold trump."""
+        hand = [
+            Card("S", "K"),  # idx 0 - trump K (not a sure winner)
+            Card("H", "A"),  # idx 1 - side-suit ace
+            Card("H", "Q"),  # idx 2 - heart filler
+            Card("D", "T"),  # idx 3 - diamond filler
+        ]
+
+        # Baseline (flag off): non-trump-ace heuristic burns A♥ while
+        # trump is still out. This is the #2506 defect.
+        baseline = GluttonStrategy()
+        baseline.on_hand_start(hand, "suit", "S", player_index=0)
+        baseline_choice = baseline.choose_card(hand, [], "suit", "S", 0)
+        assert hand[baseline_choice] == Card(
+            "H", "A"
+        ), f"Baseline (flag off) should burn A♥, got {hand[baseline_choice]}"
+
+        # Cash-A (flag on): opponents not inferred-void in trump, so Fix
+        # 1b draws trump from the top (highest trump = K♠).
+        cash = GluttonStrategy(cash_winners_on_lead=True)
+        cash.on_hand_start(hand, "suit", "S", player_index=0)
+        cash_choice = cash.choose_card(hand, [], "suit", "S", 0)
+        assert hand[cash_choice] == Card(
+            "S", "K"
+        ), f"Cash-A (flag on) should draw trump K♠, got {hand[cash_choice]}"
+
+    def test_lead_highest_trump_when_drawing(self):
+        """Fix 2: with flag on, the ≥4-trump-no-both-bowers branch leads
+        the highest trump (LB here) instead of the lowest trump."""
+        hand = [
+            Card("S", "T"),  # idx 0 - trump (value 10)
+            Card("S", "Q"),  # idx 1 - trump (value 12)
+            Card("S", "K"),  # idx 2 - trump (value 13)
+            Card("C", "J"),  # idx 3 - LB, effective trump (value 15)
+            Card("D", "T"),  # idx 4 - offsuit filler
+        ]
+
+        # Seed opponent trump voids so Fix 1b is suppressed and Fix 2
+        # (step 2) is the branch under test. The baseline picks the
+        # lowest trump (T♠); Cash-A picks the highest (LB = J♣).
+        def _seed_voids(strategy):
+            strategy._void_suits_by_seat[1].add("S")
+            strategy._void_suits_by_seat[3].add("S")
+
+        baseline = GluttonStrategy()
+        baseline.on_hand_start(hand, "suit", "S", player_index=0)
+        _seed_voids(baseline)
+        baseline_choice = baseline.choose_card(hand, [], "suit", "S", 0)
+        assert (
+            hand[baseline_choice] == Card("S", "T")
+        ), f"Baseline (flag off) should draw lowest trump T♠, got {hand[baseline_choice]}"
+
+        cash = GluttonStrategy(cash_winners_on_lead=True)
+        cash.on_hand_start(hand, "suit", "S", player_index=0)
+        _seed_voids(cash)
+        cash_choice = cash.choose_card(hand, [], "suit", "S", 0)
+        assert (
+            hand[cash_choice] == Card("C", "J")
+        ), f"Cash-A (flag on) should draw highest trump LB (J♣), got {hand[cash_choice]}"
+
+    def test_default_flag_preserves_baseline_behavior(self):
+        """Explicit regression guard: ``GluttonStrategy()`` with no
+        constructor args must behave identically to pre-Cash-A in the
+        scenario Cash-A is designed to change. This protects the
+        operator proving window — merging Cash-A does not change
+        production behavior until the flag is flipped.
+        """
+        hand = [
+            Card("S", "K"),
+            Card("H", "A"),
+            Card("H", "Q"),
+            Card("D", "T"),
+        ]
+
+        default = GluttonStrategy()  # no flag
+        assert default.cash_winners_on_lead is False
+        default.on_hand_start(hand, "suit", "S", player_index=0)
+        default_choice = default.choose_card(hand, [], "suit", "S", 0)
+        # Pre-Cash-A behavior: non-trump ace heuristic leads A♥.
+        assert hand[default_choice] == Card("H", "A"), (
+            "Default GluttonStrategy() must preserve pre-Cash-A lead (A♥) "
+            f"— got {hand[default_choice]}"
+        )
+
+    def test_isolated_strategy_flag_off_by_default(self):
+        """``GluttonIsolatedStrategy`` defaults to flag off so baseline
+        comparison runs are unaffected."""
+        hand = [
+            Card("S", "K"),
+            Card("H", "A"),
+            Card("H", "Q"),
+            Card("D", "T"),
+        ]
+
+        isolated = GluttonIsolatedStrategy(smart_leads=True)
+        assert isolated.cash_winners_on_lead is False
+        isolated.on_hand_start(hand, "suit", "S", player_index=0)
+        choice = isolated.choose_card(hand, [], "suit", "S", 0)
+        # Pre-Cash-A smart-leads: non-trump ace.
+        assert hand[choice] == Card("H", "A"), (
+            "GluttonIsolatedStrategy with smart_leads=True and flag off "
+            f"must preserve baseline lead (A♥) — got {hand[choice]}"
+        )
+
+    def test_isolated_strategy_cash_winners_on_lead_enabled(self):
+        """``GluttonIsolatedStrategy`` with ``cash_winners_on_lead=True``
+        draws trump in the same Defect F scenario as ``GluttonStrategy``."""
+        hand = [
+            Card("S", "K"),
+            Card("H", "A"),
+            Card("H", "Q"),
+            Card("D", "T"),
+        ]
+
+        isolated = GluttonIsolatedStrategy(smart_leads=True, cash_winners_on_lead=True)
+        isolated.on_hand_start(hand, "suit", "S", player_index=0)
+        choice = isolated.choose_card(hand, [], "suit", "S", 0)
+        assert hand[choice] == Card("S", "K"), (
+            "GluttonIsolatedStrategy with cash_winners_on_lead=True must "
+            f"draw trump K♠ — got {hand[choice]}"
+        )
+
+    def test_version_bumped_to_0_8_0(self):
+        """Cash-A bumps GLUTTON_STRATEGY_VERSION from 0.7.0 → 0.8.0."""
+        from bid_euchre.strategy.greedy import GLUTTON_STRATEGY_VERSION
+
+        assert GLUTTON_STRATEGY_VERSION == "0.8.0"
+        assert GluttonStrategy.VERSION == "0.8.0"
+        assert GluttonIsolatedStrategy.VERSION == "0.8.0"

@@ -64,6 +64,7 @@ data/_deprecated/
 data/hand_logs/
 data/training/
 data/data/models/
+data/local_smoke/
 
 # Experiment outputs (keep experiment scripts tracked)
 experiments/output/
