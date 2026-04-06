@@ -52,8 +52,9 @@ strategy produced any given hosted-play hand:
 (Plus convention follow-ups in #2189 and #2199 which do not change behavior.)
 
 The hosted DB (`Match`, `Hand`, `Decision` tables in `web/db.py`) records
-the bidder identity (`Match.ai_model = 'olsa' | 'bud_bot'`) and a freeform
-`Decision.decision_source` (currently set to the same `ai_model` string at
+the bidder identity (the `Match` row's `ai_model` field, set to
+`'olsa'` or `'bud_bot'`) and a freeform `decision_source` column on
+the `Decision` table (currently set to the same `ai_model` string at
 `web/routes.py:2635`), but **nothing about which version of the play
 strategy was active**. As a result, hand-decision data captured during
 the pilot **mixes cohorts silently** — Olive Juice, Pete, Marg, and the
@@ -74,12 +75,13 @@ infrastructure landed **before** Cash-A so:
 - **The bidder artifacts (OLSa, Bud Bot) are already versioned implicitly**
   by their on-disk artifact filenames + the `arc_d_rung_bundle_v1` schema.
   `web/ai_manager.py:_try_load_olsa` and `_try_load_bud_bot` load each
-  artifact from a versioned filename (`hybrid_r{N}.json`,
-  `gbt_high.joblib`, etc.). Operator confirmed bidders do **not** need
+  artifact from a versioned on-disk filename pattern such as
+  hybrid_r{N}.json or gbt_high.joblib. Operator confirmed bidders do **not** need
   retraining for Cash-A — only the play strategy changes — so the
   versioning gap is exclusively on the play side.
 - **The research pipeline (`experiments/run_experiment.py`) already records
-  `git_sha`** in `meta.json` (`run_experiment.py:1193`, schema v2). Each
+  `git_sha`** in the run's meta.json file (`run_experiment.py:1193`,
+  schema v2). Each
   research run is one git_sha and the JSONL log's `strategy_id` field
   identifies the strategy. The research path is adequately versioned for
   its single-run cohort model. The gap is the **hosted path**, where hands
@@ -87,8 +89,8 @@ infrastructure landed **before** Cash-A so:
 
 ### What the existing infrastructure already provides
 
-- **`Match.ai_model`** identifies which bidder was active.
-- **`Match.seed`** identifies the deal seeding.
+- The `Match` row's `ai_model` column identifies which bidder was active.
+- The `Match` row's `seed` column identifies the deal seeding.
 - **`Decision.created_at`** + git history would let us reconstruct the
   active git_sha for each match by binary-searching deploy timestamps,
   but this is brittle and assumes one deployment per commit.
@@ -116,7 +118,8 @@ GLUTTON_STRATEGY_VERSION = "0.7.0"
 ```
 
 The constant is **read by the hosted match creation path** at
-`web/routes.py:_build_engine` and stamped onto `Match.play_strategy_version`
+`web/routes.py:_build_engine` and stamped onto the new
+`play_strategy_version` column on the `Match` row
 (see §1.2). It is **not** read by the strategy itself — there is no
 runtime branch on version. The constant exists purely for provenance.
 
@@ -133,13 +136,14 @@ class GluttonIsolatedStrategy(Strategy):
     ...
 ```
 
-This lets `MatchEngine` and `_build_engine` read
-`type(play_strategy).VERSION` polymorphically without importing the
-constant directly.
+This lets `MatchEngine` and `_build_engine` read the strategy class's
+`VERSION` attribute polymorphically — i.e., the
+type(play_strategy).VERSION expression —
+without importing the module-level constant directly.
 
 ### Semantic versioning rules
 
-The constant follows a relaxed `MAJOR.MINOR.PATCH` convention chosen to
+The constant follows a relaxed MAJOR.MINOR.PATCH convention chosen to
 match `pyproject.toml`'s `version = "0.1.0"` style and to keep humans (not
 tooling) in charge of bumps:
 
@@ -164,8 +168,8 @@ must include a `## Strategy Version` section (see §1.4) that states the
 old version, the new version, and a one-line justification. The reviewer
 checks that the bump category matches the actual change.
 
-> **Why no source-hash auto-bump?** A behavioral source-hash (e.g.,
-> `hashlib.sha256` over the AST of the decision-logic functions) was
+> **Why no source-hash auto-bump?** A behavioral source-hash computed via
+> the hashlib SHA-256 over the AST of the decision-logic functions was
 > considered. It is rejected for the MVP because:
 >
 > 1. It would auto-bump on cosmetic refactors that do not change behavior,
@@ -177,29 +181,33 @@ checks that the bump category matches the actual change.
 >    bump category matches the change.
 >
 > A future evolution could pair manual bumps with a CI lint that **fails**
-> any PR touching `greedy.py`'s decision functions without bumping
-> `GLUTTON_STRATEGY_VERSION`. That is in §2.6 (Future Research Methodology).
+> any PR touching `src/bid_euchre/strategy/greedy.py`'s decision functions
+> without bumping `GLUTTON_STRATEGY_VERSION`. That is in §2.6 (Future
+> Research Methodology).
 
 ### Backfill: how to handle the existing 7 unversioned edits
 
 The cleanest answer is also the cheapest: **call the current state v0.7.0
 and start fresh**. Concretely:
 
-- The constant lands on the next merge to `greedy.py` after this plan.
-  That merge is **Cash-A**.
+- The constant lands on the next merge to
+  `src/bid_euchre/strategy/greedy.py` after this plan. That merge is **Cash-A**.
 - Cash-A bumps `GLUTTON_STRATEGY_VERSION` from `"0.7.0"` (the constant
   introduced by the versioning PR itself) to `"0.8.0"` as part of its diff.
 - All hosted-play hands recorded **after** the versioning PR deploys are
   stamped with the actual version that produced them.
 - All hosted-play hands recorded **before** the versioning PR deploys
-  carry `Match.play_strategy_version = NULL`. The migration sets the
-  column nullable; any analysis that needs cohort boundaries on
-  pre-versioning data must reconstruct them via `Match.created_at` +
-  git deploy log (out of scope for the MVP — see deferred work register
-  §2.8).
+  carry a `NULL` value in the new `play_strategy_version` column on
+  the `matches` table. The migration sets the column nullable; any
+  analysis that needs cohort boundaries on pre-versioning data must
+  reconstruct them via the `Match` row's `created_at` timestamp plus
+  the git deploy log (out of scope for the MVP — see deferred work
+  register §2.8).
 
-> **Why not retroactively backfill `0.1.0` … `0.7.0`?** It would require
-> mapping each pre-versioning `Match.created_at` to a deploy timestamp,
+> **Why not retroactively backfill versions from `"0.1.0"` through
+> `"0.7.0"`?** It would require
+> mapping each pre-versioning `Match` row's `created_at` timestamp to a
+> deploy timestamp,
 > which assumes one deploy per behavioral PR. The pilot has had bursty
 > deploys (multiple PRs in a single Render redeploy window), so the
 > mapping is not 1-to-1. The `NULL` cohort marker is honest; a
@@ -209,12 +217,13 @@ and start fresh**. Concretely:
 ### File scope for the constant
 
 Single file: `src/bid_euchre/strategy/greedy.py`. No imports cross
-`web/`. The constant is read from `greedy.py` by name from
-`web/routes.py` (or via `type(play_strategy).VERSION` as noted above) —
-either is fine; the latter is preferred because it polymorphs to the
-isolated twin without an extra import.
+`web/`. The constant is read from `src/bid_euchre/strategy/greedy.py`
+by name from `web/routes.py` (or read polymorphically from the
+strategy class via the type(play_strategy).VERSION expression as noted
+above) — either is fine; the latter is preferred because it polymorphs
+to the isolated twin without an extra import.
 
-## 1.2 Hosted DB schema change — `Match.play_strategy_version`
+## 1.2 Hosted DB schema change — new `play_strategy_version` column on `matches`
 
 ### Why Match (not Hand or Decision)
 
@@ -226,10 +235,10 @@ column granularity is **per-match**, not per-hand and not per-decision.
 
 | Column granularity | Cost | Benefit |
 |--------------------|------|---------|
-| Per-match (`matches.play_strategy_version`) | 1 column add, 1 write per match | Captures exactly what the engine had |
-| Per-hand (`hands.play_strategy_version`) | 1 column add, 10x writes per match | No new info — version is constant within a match |
-| Per-decision (`decisions.play_strategy_version`) | 1 column add, ~30–50x writes per hand | No new info, plus bloats the densest table |
-| Reuse `decisions.decision_source` | 0 schema, but invasive parsing | Makes `decision_source` ambiguous |
+| Per-match — add `play_strategy_version` column on the `matches` table | 1 column add, 1 write per match | Captures exactly what the engine had |
+| Per-hand — add `play_strategy_version` column on the `hands` table | 1 column add, 10x writes per match | No new info — version is constant within a match |
+| Per-decision — add `play_strategy_version` column on the `decisions` table | 1 column add, ~30–50x writes per hand | No new info, plus bloats the densest table |
+| Reuse the existing `decision_source` column on the `decisions` table | 0 schema, but invasive parsing | Makes `decision_source` ambiguous |
 
 Per-match is the right answer.
 
@@ -335,24 +344,26 @@ match = Match(
 db.add(match)
 ```
 
-The `type(engine.play_strategy).VERSION` form polymorphs naturally to
-both `GluttonStrategy` and `GluttonIsolatedStrategy` and any future
-subclasses. If the strategy class lacks a `VERSION` attribute (e.g., a
+Reading the strategy instance's class and then its `VERSION` class
+attribute (i.e., type(engine.play_strategy).VERSION) polymorphs
+naturally to both `GluttonStrategy` and `GluttonIsolatedStrategy` and any
+future subclasses. If the strategy class lacks a `VERSION` attribute (e.g., a
 non-Glutton strategy in the future), the read raises `AttributeError`,
 which fail-loud-loud is the right behavior — better than silently
 recording `NULL`.
 
 ### Decision-level recording (NOT in MVP scope)
 
-The `Decision.decision_source` field is currently set to `ai_model`
+The `decision_source` column on the `Decision` table is currently set
+to `ai_model`
 (`web/routes.py:2635`) for AI plays. We **do not** modify this field in
 the MVP. If a future investigation needs per-decision version
 attribution, it can:
 
 1. Switch to a structured format like `f"{ai_model}@{play_strategy_version}"`,
    or
-2. Add a new `decisions.play_strategy_version` column (rejected above as
-   redundant).
+2. Add a new `play_strategy_version` column on the `decisions` table
+   (rejected above as redundant).
 
 This is documented in §2.8 (deferred work register) for the future-research
 phase.
@@ -375,8 +386,8 @@ with the following shape:
 
 | Field | Value |
 |-------|-------|
-| Old version | `0.7.0` |
-| New version | `0.8.0` |
+| Old version | "0.7.0" |
+| New version | "0.8.0" |
 | Bump category | MINOR (added sure-winner-lead priority) |
 | Behavior delta | <one paragraph: what plays change, in what game states, by how much> |
 | Affected functions | `_choose_lead`, `choose_card` |
@@ -389,8 +400,9 @@ for `## Strategy Version` sections) and the future ablation methodology
 (§2.6) which uses these blocks to label cohorts in retrospective analysis.
 
 The convention is enforced socially in code review for the MVP. A CI
-lint that fails any PR touching `greedy.py`'s decision functions without
-a `## Strategy Version` block is a §2.6 future enhancement.
+lint that fails any PR touching `src/bid_euchre/strategy/greedy.py`'s
+decision functions without a `## Strategy Version` block is a §2.6
+future enhancement.
 
 ### Where the convention is documented
 
@@ -405,7 +417,8 @@ Contents (≤ 50 lines):
 1. Why the version exists (one paragraph + link back to this plan).
 2. The semver rules from §1.1.
 3. The PR template snippet from §1.4.
-4. Which files trigger a bump (just `greedy.py` for now; expand later
+4. Which files trigger a bump (just
+   `src/bid_euchre/strategy/greedy.py` for now; expand later
    to other strategies as they get versioned).
 5. Pointer to `web/db.py` and `web/routes.py` for the DB capture path.
 
@@ -426,11 +439,11 @@ Cash-A is dispatched.
 - `web/schema.sql` — informative addition of the `play_strategy_version` column to the `matches` table
 - `web/db.py` — add `play_strategy_version` to the `Match` ORM model (nullable)
 - `web/app.py` — add the in-process `ALTER TABLE ... ADD COLUMN` block, modeled after the existing `onboarding_complete` migration at lines 118–139
-- `web/routes.py` — read `type(engine.play_strategy).VERSION` and stamp `Match.play_strategy_version` at match-create time
-- `tests/unit/hosted_play/test_db.py` — assert `Match.play_strategy_version` round-trips through the ORM
-- `tests/unit/hosted_play/test_app.py` — assert the migration is idempotent on a fresh DB and on a pre-existing DB
-- `tests/integration/hosted_play/test_data_capture.py` — assert a freshly created match records the current `GLUTTON_STRATEGY_VERSION`
-- `docs/02_agent/STRATEGY_VERSIONING.md` — new doc (≤ 50 lines per §1.4)
+- `web/routes.py` — read the strategy class's `VERSION` attribute and stamp it onto the new `play_strategy_version` column at match-create time
+- `tests/unit/hosted_play/test_db.py` — add round-trip test asserting the new `play_strategy_version` column survives ORM save/load
+- `tests/unit/hosted_play/test_app.py` — add migration idempotency test on a fresh DB and on a pre-existing DB
+- `tests/integration/hosted_play/test_data_capture.py` — add assertion that a freshly created match records the current `GLUTTON_STRATEGY_VERSION`
+- `docs/02_agent/STRATEGY_VERSIONING.md` — add new doc (≤ 50 lines per §1.4)
 
 **Validation (PR template fields):**
 - `make check-gated`
@@ -453,10 +466,10 @@ does **not** itself bump the version — it labels the existing state.
 - `src/bid_euchre/strategy/greedy.py` — Fix 1, Fix 1b, Fix 2 behind the
   `cash_winners_on_lead` flag, **plus** bump
   `GLUTTON_STRATEGY_VERSION` from `"0.7.0"` to `"0.8.0"`
-- `tests/unit/test_greedy.py` — new behavior tests
-- (Optional, per Cash-A plan) `experiments/configs/glutton_cash_winners_paired.yaml`
+- `tests/unit/test_greedy.py` — add new behavior tests
+- (Optional, per Cash-A plan) add new config file `experiments/configs/glutton_cash_winners_paired.yaml`
 
-**Behavior bump:** MINOR (`0.7.0` → `0.8.0`). Two new lead priorities
+**Behavior bump:** MINOR (`"0.7.0"` → `"0.8.0"`). Two new lead priorities
 introduced; one existing priority's tie-break direction reversed.
 
 **PR description:** must include the `## Strategy Version` block per §1.4
@@ -480,26 +493,27 @@ scoped condition. GluttonV2 (when it ships) bumps to `"0.9.0"` or
 | Lint | `make lint` | clean |
 | Unit (impacted) | `uv run python -m pytest tests/unit/hosted_play/ tests/unit/test_greedy.py -x` | all green |
 | Tier 2 | `make check-gated` | all green |
-| Migration idempotency | New test in `test_app.py`: run lifespan twice on the same SQLite file, assert no error and one column | green |
-| Round-trip | New test in `test_db.py`: create Match with `play_strategy_version="0.7.0"`, fetch, assert equality | green |
-| Manual smoke (post-deploy) | Create one match in the hosted app, query `matches.play_strategy_version` | returns `'0.7.0'` |
+| Migration idempotency | Add new test in `tests/unit/hosted_play/test_app.py`: run lifespan twice on the same SQLite file, assert no error and one column | green |
+| Round-trip | Add new test in `tests/unit/hosted_play/test_db.py`: create Match with `play_strategy_version="0.7.0"`, fetch, assert equality | green |
+| Manual smoke (post-deploy) | Create one match in the hosted app, query the new `play_strategy_version` column on the `matches` table | returns `'0.7.0'` |
 
 ## 1.7 Acceptance criteria (PR-1)
 
 1. `GLUTTON_STRATEGY_VERSION = "0.7.0"` exists in
    `src/bid_euchre/strategy/greedy.py` and is exposed as `VERSION` on
    both `GluttonStrategy` and `GluttonIsolatedStrategy`.
-2. `matches.play_strategy_version` column exists in `web/schema.sql`,
+2. The new `play_strategy_version` column on the `matches` table
+   exists in `web/schema.sql`,
    the ORM model, and is migrated in by `web/app.py` lifespan on existing
    databases.
 3. Every new `Match` row created via the hosted-app match-create route
-   has `play_strategy_version = '0.7.0'` (the value of
-   `type(engine.play_strategy).VERSION` at the time of construction).
+   has `play_strategy_version = '0.7.0'` (the value read from the strategy
+   class's `VERSION` attribute at the time of match construction).
 4. All existing `Match` rows have `play_strategy_version = NULL` (the
    honest "unknown cohort" marker per §1.1 backfill).
 5. `make check-gated` passes.
-6. `docs/02_agent/STRATEGY_VERSIONING.md` exists with the §1.1 semver
-   rules + the §1.4 PR template snippet.
+6. PR-1 adds `docs/02_agent/STRATEGY_VERSIONING.md` containing the
+   §1.1 semver rules + the §1.4 PR template snippet.
 7. Manual smoke: starting a match in `make web` and querying the DB
    returns `play_strategy_version = '0.7.0'` for the new row.
 
@@ -507,14 +521,14 @@ scoped condition. GluttonV2 (when it ships) bumps to `"0.9.0"` or
 
 | Risk | Severity | Mitigation |
 |------|---------|-----------|
-| `type(play_strategy).VERSION` raises `AttributeError` because a future strategy class forgets the attribute | LOW | Documented in `docs/02_agent/STRATEGY_VERSIONING.md`. Fail-loud is correct — silently recording `NULL` for new strategies would be worse. |
-| Render redeploy runs the migration on Postgres before the new code reaches all instances | LOW | The migration is `IF NOT EXISTS`-equivalent (we check via `inspector.get_columns` first). Mid-deploy reads from older instance pods see `Match.play_strategy_version` not exist on the model and ignore it. |
+| Reading the strategy class's `VERSION` attribute raises `AttributeError` because a future strategy class forgets to add it | LOW | Documented in the new `docs/02_agent/STRATEGY_VERSIONING.md` doc. Fail-loud is correct — silently recording `NULL` for new strategies would be worse. |
+| Render redeploy runs the migration on Postgres before the new code reaches all instances | LOW | The migration is `IF NOT EXISTS`-equivalent (we check via the SQLAlchemy inspector's column listing first). Mid-deploy reads from older instance pods see no column on the model and ignore it. |
 | Pre-versioning rows have `NULL` and confuse retrospective analysis | LOW (by design) | `NULL` is the honest marker. §2 ablation methodology reads this as "unknown cohort, exclude from per-version comparison." |
-| Operator misses the §1.4 changelog block on a future PR | MEDIUM | Documented in `docs/02_agent/STRATEGY_VERSIONING.md` and included in the PR template. Reviewer responsibility until §2.6 lint exists. |
+| Operator misses the §1.4 changelog block on a future PR | MEDIUM | Documented in the added `docs/02_agent/STRATEGY_VERSIONING.md` doc and included in the PR template. Reviewer responsibility until §2.6 lint exists. |
 | `_build_engine` gets a non-Glutton strategy and `VERSION` is wrong type | LOW | `play_strategy_version` is a `String` column; any non-string raises a SQLAlchemy `StatementError` at insert time. Fail-fast. |
-| Cash-A author lane forgets to bump the constant | MEDIUM | PR-1 adds the §1.4 doc *and* the §1.4 PR template snippet. The reviewing-changes hook can be enhanced to grep for `GLUTTON_STRATEGY_VERSION = ` in any diff that touches `greedy.py`'s decision functions (this is a §2.6 future enhancement). For now: dispatch packet for Cash-A explicitly cites the bump in `scope_declared`. |
+| Cash-A author lane forgets to bump the constant | MEDIUM | PR-1 adds the §1.4 doc *and* the §1.4 PR template snippet. The reviewing-changes hook can be enhanced to grep for `GLUTTON_STRATEGY_VERSION = ` in any diff that touches `src/bid_euchre/strategy/greedy.py`'s decision functions (a §2.6 future enhancement). For now: dispatch packet for Cash-A explicitly cites the bump in `scope_declared`. |
 | SQLite + Postgres syntax divergence on `ALTER TABLE` | LOW | Vanilla `ALTER TABLE … ADD COLUMN` works on both. The existing `onboarding_complete` migration is precedent. |
-| `web/routes.py` has multiple match-create paths and we miss one | MEDIUM | A grep for `Match(` in `web/routes.py` enumerates all construction sites. PR-1 must wire `play_strategy_version` at every site or refactor to a single helper. |
+| `web/routes.py` has multiple match-create paths and we miss one | MEDIUM | A grep for `Match(` in `web/routes.py` enumerates all construction sites. PR-1 must wire the new `play_strategy_version` column write at every site or refactor to a single helper. |
 
 ---
 
@@ -639,7 +653,8 @@ where versions match `GLUTTON_STRATEGY_VERSION` strings. One config per
 ablation comparison; commits are reproducible because the config + the
 seed + the pinned `GluttonIsolatedStrategy` flags fully describe the run.
 
-The runner emits one JSONL per strategy named after `policy.name` (see
+The runner emits one JSONL per strategy named after the `policy` object's
+`name` attribute (see
 `experiments/run_experiment.py:1031`), which produces the
 `<run_id>_<strategy_name>.jsonl` shape that `load_paired_data` requires.
 No code changes to the runner are needed.
@@ -666,12 +681,12 @@ Recommendation (when the framework lands):
 
 ## 2.6 Future enhancement — CI lint enforcing the version bump
 
-A `scripts/internal/lint_strategy_version.py` (or a hook in
-`scripts/internal/review_driver.py`) can implement:
+A new linter script (e.g., add `scripts/internal/lint_strategy_version.py`,
+or add a hook in `scripts/internal/review_driver.py`) can implement:
 
 1. Detect any PR that modifies one of the decision-logic functions in
-   `greedy.py` (`_choose_lead`, `_choose_discard`, `choose_card`,
-   `_is_sure_winner`, `observe_play`, `on_hand_start`).
+   `src/bid_euchre/strategy/greedy.py` (`_choose_lead`, `_choose_discard`,
+   `choose_card`, `_is_sure_winner`, `observe_play`, `on_hand_start`).
 2. Detect whether `GLUTTON_STRATEGY_VERSION` is also modified in the
    same diff.
 3. Detect whether the PR description contains a `## Strategy Version`
@@ -686,8 +701,8 @@ This is a §2 deferred enhancement because:
   acceptable for a 2-author cadence.
 - The lint requires identifying which functions are "decision logic" —
   a list that grows as new strategies get versioned. The MVP punts this
-  to a hand-written list in `STRATEGY_VERSIONING.md`; the lint would
-  formalize the list as a constant in the script.
+  to a hand-written list in the new strategy versioning doc; the lint
+  would formalize the list as a constant in the script.
 - Adding the lint to the pre-commit hook chain (`.claude/hooks/`) is
   cross-cutting work that should happen alongside other review-gate
   enhancements, not as part of the versioning landing.
@@ -697,8 +712,9 @@ This is a §2 deferred enhancement because:
 ### Notebook reproducibility
 
 `notebooks/` contains analysis notebooks that load JSONL logs and
-compute metrics. None of them currently filter by
-`Match.play_strategy_version` because the column does not exist. After
+compute metrics. None of them currently filter by the
+`play_strategy_version` column on the `matches` table because the
+column does not exist. After
 PR-1 lands:
 
 - New analysis notebooks targeting hosted-play data should include a
@@ -708,13 +724,13 @@ PR-1 lands:
 - Existing notebooks that read research data (`data/runs/...`) are
   unaffected — the research path is versioned by `meta.json:git_sha`.
 
-This is documented in `docs/02_agent/STRATEGY_VERSIONING.md` (PR-1
-deliverable) and is **not** a notebook code change in the MVP.
+This is documented in PR-1's added `docs/02_agent/STRATEGY_VERSIONING.md` and is **not** a notebook code change in the MVP.
 
 ### Promotion pipeline
 
 The promotion pipeline (`src/bid_euchre/validation/arc_d_gate.py`,
-`arc_d_bundle.py`) operates on bidder artifacts, not play strategies.
+`src/bid_euchre/validation/arc_d_bundle.py`) operates on bidder
+artifacts, not play strategies.
 It is **unaffected** by the play-strategy versioning. The Arc D rung
 bundle schema (`arc_d_rung_bundle_v1`) does not need a
 `play_strategy_version` field because rungs are about the bidder.
@@ -726,17 +742,19 @@ scope for the MVP.
 
 ### Post-merge review
 
-The post-merge review hook (`post-merge-review.sh`) runs an Explore
-agent on every merged PR. After PR-1 lands, the hook prompt could be
-extended to **specifically check** that PRs touching `greedy.py`
-include the §1.4 changelog block. This is a §2.6 enhancement, not a
-PR-1 deliverable.
+The post-merge review hook (`.claude/hooks/post-merge-review.sh`) runs
+an Explore agent on every merged PR. After PR-1 lands, the hook prompt
+could be
+extended to **specifically check** that PRs touching
+`src/bid_euchre/strategy/greedy.py` include the §1.4 changelog block.
+This is a §2.6 enhancement, not a PR-1 deliverable.
 
 ### Hosted-play export
 
 `web/export.py` (`export_decisions` CLI) emits JSONL of all hosted-play
 decisions for downstream analysis. After PR-1, the exporter should
-**include `match.play_strategy_version`** in its output records. This
+**add the new `play_strategy_version` value from the joined `Match`
+row** to each output record. This
 is a one-line change in the SELECT projection inside `web/export.py`
 and could either:
 
@@ -762,14 +780,14 @@ work items captured here so they don't have to be re-derived:
 
 | # | Item | Reason deferred | Source |
 |---|------|----------------|--------|
-| D1 | Build the ablation harness CLI (`scripts/run_ablation.py` wrapping the §2.4 config + §2.3 gates) | MVP narrowed by orchestrator 2026-04-06 to shipping Cash-A. | §2.4 |
-| D2 | Backfill `Match.play_strategy_version` for pre-versioning rows via deploy-timestamp reconstruction | Brittle (multi-PR deploys), and the `NULL` cohort marker is honest. | §1.1 backfill |
+| D1 | Build the ablation harness CLI (add new `scripts/run_ablation.py` wrapping the §2.4 config + §2.3 gates) | MVP narrowed by orchestrator 2026-04-06 to shipping Cash-A. | §2.4 |
+| D2 | Backfill the new `play_strategy_version` column on the `matches` table for pre-versioning rows via deploy-timestamp reconstruction | Brittle (multi-PR deploys), and the `NULL` cohort marker is honest. | §1.1 backfill |
 | D3 | CI lint enforcing `GLUTTON_STRATEGY_VERSION` bump on decision-logic edits | Social discipline acceptable for current cadence; lint is cross-cutting. | §2.6 |
-| D4 | Per-decision version recording via `decisions.play_strategy_version` or structured `decision_source` | Per-match granularity is sufficient because the engine binds one strategy per match. | §1.3 |
+| D4 | Per-decision version recording (add new `play_strategy_version` column on the `decisions` table, or a structured `decision_source`) | Per-match granularity is sufficient because the engine binds one strategy per match. | §1.3 |
 | D5 | Adopt Alembic for hosted-play schema migrations | In-process `ALTER TABLE` pattern is shipping; one-column migration does not justify the dependency. | §1.2 |
 | D6 | Extend `arc_d_rung_bundle_v1` schema with a `play_strategy_version` field | Promotion pipeline is bidder-side only; no current need. | §2.7 promotion |
-| D7 | Post-merge review prompt enhancement to check for `## Strategy Version` block on `greedy.py` PRs | Cross-cutting with other review-gate enhancements; lint precedes prompt. | §2.7 post-merge |
-| D8 | Notebook cohort-filter helper module (`bid_euchre.analysis.cohorts`) | No current notebook needs hosted-play cohort filtering. | §2.7 notebook |
+| D7 | Post-merge review prompt enhancement to check for `## Strategy Version` block on `src/bid_euchre/strategy/greedy.py` PRs | Cross-cutting with other review-gate enhancements; lint precedes prompt. | §2.7 post-merge |
+| D8 | Add new notebook cohort-filter helper module under `src/bid_euchre/analysis/` (working name: a `cohorts` submodule) | No current notebook needs hosted-play cohort filtering. | §2.7 notebook |
 | D9 | First retrospective ablation run (v0.7.0 vs v0.8.0) once Cash-A merges | Requires Cash-A landed AND the harness from D1. | §2.1 goal 1 |
 | D10 | Standard report template for `plans/sessions/<date>_glutton_ablation_*.md` | One-time when D9 runs. | §2.5 |
 
@@ -800,7 +818,7 @@ work items captured here so they don't have to be re-derived:
 - PR #2168 — `MatchEngine` deepcopy fix (the per-match isolation that
   makes per-match versioning correct)
 - `docs/01_core/DATA_CONTRACT.md` — JSONL log schema (research path)
-- `docs/01_core/REPRODUCIBILITY.md` — `meta.json` schema (research path)
+- `docs/01_core/REPRODUCIBILITY.md` — research-run meta.json schema
 - `.claude/rules/deferred/30_data_contract.md` — output policy
 - `.claude/rules/deferred/45_notebook_boundary.md` — committed-evidence rule
 - `.claude/rules/deferred/55_issue_closure.md` — Tier 2 verified-close
@@ -818,15 +836,16 @@ work items captured here so they don't have to be re-derived:
 to a single author lane (author-a or author-b) immediately. PR-1 is a
 ~150 LoC change with clear scope and tight validation. ETA: ~1.5 hours.
 
-**Required execution sequence (`AGENTS.md §12.4` / Implementation Handoff
-Protocol):** the receiving author lane must, in order:
+**Required execution sequence** (per `docs/02_agent/AGENTS.md` §12.4 and
+the Implementation Handoff Protocol): the receiving author lane must,
+in order:
 
 1. Refresh this plan plus the prior Cash-A plan
    (`plans/sessions/2026-04-06_ai_play_strategy_investigation.md`).
 2. Draft a concrete execution plan inline in the task packet (file list,
    exact diffs against `web/db.py`, `web/app.py`, `web/routes.py`,
-   `web/export.py`, `src/bid_euchre/strategy/greedy.py`, plus the new
-   `docs/02_agent/STRATEGY_VERSIONING.md`).
+   `web/export.py`, `src/bid_euchre/strategy/greedy.py`,
+   plus the new strategy versioning doc added at `docs/02_agent/STRATEGY_VERSIONING.md`).
 3. Spawn at least one reviewer agent to review the execution plan before
    editing `web/routes.py` (the densest file in scope).
 4. Create a TUI task list covering the column add, the migration, the
@@ -847,7 +866,7 @@ Handoff, with the additional explicit instruction in the task packet:
 
 > "Bump `GLUTTON_STRATEGY_VERSION` from `'0.7.0'` to `'0.8.0'` as part of
 > this PR. Include a `## Strategy Version` block in the PR description per
-> `docs/02_agent/STRATEGY_VERSIONING.md`."
+> the strategy versioning doc added by PR-1 at `docs/02_agent/STRATEGY_VERSIONING.md`."
 
 **Do not dispatch** the Section 2 Future Research Methodology work until
 the operator explicitly opens that track. The deferred work register
