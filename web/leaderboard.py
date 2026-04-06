@@ -28,15 +28,16 @@ HUMAN_TEAM = 0
 _LEADERBOARD_MATCH_STATUSES = ("active", "complete", "abandoned")
 
 # Nicknames excluded from leaderboard display (test/bot accounts).
-# Data remains in the DB — this only hides them from the public ranking.
+# Data remains in the DB — this only hides entries from the public ranking.
+# NOTE (#2497): nickname-based filtering is fragile — a real user could
+# pick one of these names and be hidden. A dedicated ``is_test`` / account
+# flag on the Player row is the long-term fix (tracked as a #2497 follow-up).
 EXCLUDED_TEST_PLAYERS: frozenset[str] = frozenset(
     {
         "QUE-TEST",
         "StratBot",
-        "Claude-PW",
         "CLAUDE",
         "TEST",
-        "Claude-HTTP",
         "MEEKS-TEST",
         "TEST3",
         "TESTV2",
@@ -47,7 +48,10 @@ EXCLUDED_TEST_PLAYERS: frozenset[str] = frozenset(
 )
 
 # Nickname prefixes excluded from leaderboard display.
-_EXCLUDED_PREFIXES: tuple[str, ...] = ("FlexBot",)
+# The ``Claude-`` prefix covers the Claude playtest family (Claude-HTTP,
+# Claude-HYB, Claude-PW, Claude-TRYHARD, and numbered variants) without
+# needing a new PR every session (#2497).
+_EXCLUDED_PREFIXES: tuple[str, ...] = ("FlexBot", "Claude-")
 
 
 # ---------------------------------------------------------------------------

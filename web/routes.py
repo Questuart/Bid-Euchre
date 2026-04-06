@@ -1268,9 +1268,9 @@ async def select_ai(
         # Abandon all active matches for this player before creating the
         # new one.  This prevents stale active matches from shadowing the
         # new match on page refresh (#2467).  It also subsumes the previous
-        # expire_player_stale_matches() call (#2211) — we no longer need an
-        # age threshold because starting a new match is an explicit signal
-        # that the player is done with prior matches.
+        # age-based per-player cleanup (#2211) — we no longer need an age
+        # threshold because starting a new match is an explicit signal that
+        # the player is done with prior matches.
         abandon_player_active_matches(session, player.id)
 
         ai_manager = _get_ai_manager(request)

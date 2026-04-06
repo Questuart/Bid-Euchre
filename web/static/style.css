@@ -289,8 +289,14 @@ main {
     animation: next-btn-appear 0.3s ease-out var(--ai-card-delay, 0.75s) forwards;
 }
 
-/* Auto-advancing: hide the Next button entirely — JS auto-submits */
-.next-controls--auto-advance {
+/* Auto-advancing: hide the Next button entirely — JS auto-submits.
+   Progressive enhancement (#2487): the button is only hidden when JS
+   has actively confirmed it is managing auto-advance by applying the
+   `js-auto-advance-active` class.  If JS is disabled or fails to load
+   (or the auto-advance request errors out), the class is absent and the
+   manual Next button remains visible as a fallback so play never gets
+   trapped. */
+.next-controls--auto-advance.js-auto-advance-active {
     opacity: 0;
     pointer-events: none;
     position: absolute;

@@ -115,27 +115,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# Maximum number of active matches a single player may have concurrently.
-MAX_ACTIVE_MATCHES_PER_PLAYER = 5
-
 # Cookie name used to remember the player's link_uuid across visits.
 PLAYER_COOKIE_NAME = "bid_euchre_player"
 
 # Cookie max-age: 30 days (seconds).
 PLAYER_COOKIE_MAX_AGE = 30 * 24 * 60 * 60
-
-
-def check_match_limit(session, player_id: int) -> bool:
-    """Return True if the player is within the active match limit.
-
-    Counts matches with ``status='active'`` for the given *player_id*.
-    Returns ``False`` (limit exceeded) when the count reaches or exceeds
-    :data:`MAX_ACTIVE_MATCHES_PER_PLAYER`.
-    """
-    active_count = (
-        session.query(Match).filter_by(player_id=player_id, status="active").count()
-    )
-    return active_count < MAX_ACTIVE_MATCHES_PER_PLAYER
 
 
 def get_player_link_from_cookie(request: Request) -> Optional[str]:
