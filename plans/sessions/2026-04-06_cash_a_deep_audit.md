@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | 1 | `_draw_trump_lead()` burns LB on trick 2 when the second RB is still unaccounted for | **CONFIRMED BUG** | `src/bid_euchre/strategy/greedy.py` `_draw_trump_lead()` (both Glutton classes) | **HIGH** — fires on both Fix 1b (step 0.75) and Fix 2 (step 2) paths, directly reproduces operator's observed failure. Must fix before flag flip. |
 | 2 | Cash-A step 0.5 `(suit_count, -card_value)` priority leads the shortest side-suit ace first, opening ruffing opportunities | **NOT A BUG** in Cash-A — but surfaces a **pre-existing** Step 1 behavior the operator may want to revisit separately | Pre-existing non-trump ace priority at `_choose_lead()` step 1 (line 366–381). Cash-A step 0.5 is correctly gated by `_is_sure_winner()` and does not fire in the scenario operator described. | LOW — Cash-A's sure-winner gating already prevents the described failure mode. |
-| 3 | Cash-A hardcodes "lead aces tricks 1-4" instead of sequence-winner detection in high/low | **NOT A BUG** | None. Current behavior already matches the operator's expectation exactly. Driven entirely by `_is_sure_winner()` with **no** trick-number references anywhere in `greedy.py`. | NONE |
+| 3 | Cash-A hardcodes "lead aces tricks 1-4" instead of sequence-winner detection in high/low | **NOT A BUG** | None. Current behavior already matches the operator's expectation exactly. Driven entirely by `_is_sure_winner()` with **no** trick-number references anywhere in the strategy module. | NONE |
 | 4 | Discard should dump A/K/Q/J in LOW (keep T) and T/J/Q/K in HIGH (keep A) | **NOT A BUG** | None. `_choose_discard()` already uses `min(..., key=card_value_for_dump)`, which via `rank_strength` inversion in LOW produces the exact order operator wants. | NONE |
 
 **Recommended action:** Dispatch a single implementation packet for Claim 1 (`_draw_trump_lead()` sure-winner-first fallback). Claims 2, 3, and 4 need no code change. Claim 2's tie-break direction for non-trump ace leads (Step 1) is a long-standing design call; if the operator wants to change it, it should be a separate, clearly-scoped task tracking its own test impact and experiment rerun cost.
@@ -47,7 +47,7 @@ def _draw_trump_lead(self, trump_indices: List[int], hand: List[Card]) -> int:
     )
 ```
 
-Mirror at `greedy.py:937-948` on `GluttonIsolatedStrategy`.
+Mirror at lines 937-948 of the same file on `GluttonIsolatedStrategy`.
 
 Relevant `card_value_for_dump` values for spade-trump (`src/bid_euchre/strategy/base.py:125-149`):
 
@@ -80,7 +80,7 @@ Walk through `_choose_lead()` for trick 2:
 | → `_draw_trump_lead` returns `max(trump_indices, key=card_value_for_dump)` = **LB (15)**. |
 
 The same `_draw_trump_lead` bug also fires via the Fix 2 path (step 2,
-`trump_count >= 4 and not (has_right and has_left)` at `greedy.py:385-395`)
+`trump_count >= 4 and not (has_right and has_left)` at lines 385-395 of the strategy module)
 whenever opponents have been inferred void in trump — e.g., after a trump
 round where both opponents ruffed offsuit or showed out.
 
@@ -150,7 +150,7 @@ HEAD (`origin/main` + branch `analyst/cash-a-deep-audit-2534`).
 #### 2.4 Proposed fix
 
 Concrete diff against `src/bid_euchre/strategy/greedy.py` for `GluttonStrategy`
-(mirror identically onto `GluttonIsolatedStrategy` at `greedy.py:937-948`):
+(mirror identically onto `GluttonIsolatedStrategy` at lines 937-948 of the same file):
 
 ```diff
 --- a/src/bid_euchre/strategy/greedy.py
@@ -200,7 +200,7 @@ Concrete diff against `src/bid_euchre/strategy/greedy.py` for `GluttonStrategy`
 ```
 
 Apply the same change to `GluttonIsolatedStrategy._draw_trump_lead()`
-(`greedy.py:937-948`).
+(lines 937-948 of `src/bid_euchre/strategy/greedy.py`).
 
 **Why this preserves operator intent:**
 
@@ -233,7 +233,7 @@ The fallback "lowest trump" is the correct feeler lead because:
 | `test_sure_winner_lead_low_contract` (line 238) | Low contract, no trump involvement. | Untouched. | **None.** |
 | `test_default_flag_preserves_baseline_behavior` (line 325) | Flag off — `_draw_trump_lead` not invoked. | Untouched. | **None.** |
 | `test_isolated_strategy_flag_off_by_default` (line 349) | Flag off. | Untouched. | **None.** |
-| `test_version_bumped_to_0_8_0` (line 387) | Checks the version constant. | Untouched. | **Version bump needed** — implementation packet should bump `GLUTTON_STRATEGY_VERSION` to `0.8.1` (PATCH per `docs/02_agent/STRATEGY_VERSIONING.md`: behavior change without config surface). Update this test to `"0.8.1"`. |
+| `test_version_bumped_to_0_8_0` (line 387) | Checks the version constant. | Untouched. | **Version bump needed** — implementation packet should bump `GLUTTON_STRATEGY_VERSION` to 0.8.1 (PATCH per `docs/02_agent/STRATEGY_VERSIONING.md`: behavior change without config surface). Update this test to match the new version constant. |
 
 **New tests to add (implementation packet scope):**
 
@@ -301,7 +301,7 @@ Cash-A chose: AD (idx 2)
 ```
 
 The code path that fires for this scenario is **Step 1** (non-trump aces)
-at `greedy.py:366-381`, **not** Cash-A Step 0.5. Step 1 is **pre-existing**
+at lines 366-381 of the strategy module, **not** Cash-A Step 0.5. Step 1 is **pre-existing**
 Glutton behavior — it predates Cash-A — and its `(suit_count, -card_value)`
 priority was not added by PR #2534.
 
@@ -352,7 +352,7 @@ LOW: `rank_strength` returns `{A:0, K:1, Q:2, J:3, T:4}`.
 | Q♠ | `{T♠, J♠}` (2 ids) | 2 + 2 | 0 | 0 + 0 = 0 | **Yes** |
 
 All five cards are sure winners immediately. `_choose_lead()` high/low
-branch (`greedy.py:432-440`):
+branch (lines 432-440 of the strategy module):
 
 ```python
 if self.cash_winners_on_lead:
@@ -398,7 +398,7 @@ code. The code is already doing what the operator wants.
 
 #### 2.1 Code lens
 
-`_choose_discard()` HIGH/LOW branch at `greedy.py:485-488`:
+`_choose_discard()` HIGH/LOW branch at lines 485-488 of the strategy module:
 
 ```python
 else:
@@ -434,7 +434,7 @@ HIGH hand [A,K,Q,J,T in S]:
 
 #### 2.3 Suit contract non-trump discard
 
-The suit contract branch at `greedy.py:465-483` dumps the cheapest non-trump
+The suit contract branch at lines 465-483 of the strategy module dumps the cheapest non-trump
 first, only falling back to trump when non-trump is empty. Repro:
 
 ```
@@ -454,14 +454,15 @@ non-trump, lower trump is preserved over aces only when trump is forced.
 
 ### File: `src/bid_euchre/strategy/greedy.py`
 
-**Two matching edits** — one on `GluttonStrategy._draw_trump_lead` (lines
-276–289) and one on `GluttonIsolatedStrategy._draw_trump_lead` (lines
-937–948). Both must be updated together because `GluttonIsolatedStrategy`
-is a behavior-equivalent twin of `GluttonStrategy` and the comparator
-experiment suites assume they agree on Cash-A paths.
+**Two matching edits** — one on the `_draw_trump_lead` method of
+`GluttonStrategy` (lines 276–289 of the strategy module) and one on the
+corresponding method of `GluttonIsolatedStrategy` (lines 937–948 of the
+same module). Both must be updated together because the isolated twin is
+behavior-equivalent to `GluttonStrategy` and the comparator experiment
+suites assume they agree on Cash-A paths.
 
 See §2.4 above for the exact diff against `GluttonStrategy`. Apply the
-identical body to `GluttonIsolatedStrategy._draw_trump_lead`.
+identical body to the isolated twin.
 
 ### File: `src/bid_euchre/strategy/greedy.py` — version bump
 
@@ -519,10 +520,10 @@ improvement on Cash-A cohort whenever the fix avoids the LB burn.
 
 Skipped per operator directive during this audit session. The deterministic
 Python repros in §2.3 and the engine code path analysis (identical call
-path: `MatchEngine._advance_ai` → `play_strategy.choose_card` at
-`src/bid_euchre/hosted_play/engine.py:685`) are strictly stronger evidence
-than a probabilistic live-game trace: they are reproducible in seconds,
-seed-free, and directly exercise the class the web app consumes.
+path through `MatchEngine` into the strategy's `choose_card`, seen in
+`src/bid_euchre/hosted_play/engine.py` at line 685) are strictly stronger
+evidence than a probabilistic live-game trace: they are reproducible in
+seconds, seed-free, and directly exercise the class the web app consumes.
 
 The running server at `http://localhost:8000` was confirmed up at the
 start of this audit and the operator's override of
