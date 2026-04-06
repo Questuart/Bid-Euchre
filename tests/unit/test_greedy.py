@@ -11,6 +11,8 @@ did not call on_hand_start, so GluttonStrategy defaulted to contract_type=high
 confirm that.
 """
 
+import pytest
+
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy import GluttonStrategy, GreedyStrategy
 from bid_euchre.strategy.greedy import GluttonIsolatedStrategy
@@ -288,9 +290,15 @@ class TestCashWinnersOnLead:
             "S", "K"
         ), f"Cash-A (flag on) should draw trump K♠, got {hand[cash_choice]}"
 
-    def test_lead_highest_trump_when_drawing(self):
-        """Fix 2: with flag on, the ≥4-trump-no-both-bowers branch leads
-        the highest trump (LB here) instead of the lowest trump."""
+    def test_lead_lowest_trump_fallback_when_drawing(self):
+        """Fix 2 + Claim 1 fix: with flag on, the ≥4-trump-no-both-bowers
+        branch leads the *lowest* trump (T♠) when no trump is a sure winner.
+
+        Before Cash-A.1, this test asserted LB (J♣) — which was the
+        Claim 1 bug (burns LB while second RB is still unaccounted).
+        Now the sure-winner-first fallback returns the lowest trump to
+        feel out the trump shape.
+        """
         hand = [
             Card("S", "T"),  # idx 0 - trump (value 10)
             Card("S", "Q"),  # idx 1 - trump (value 12)
@@ -300,8 +308,8 @@ class TestCashWinnersOnLead:
         ]
 
         # Seed opponent trump voids so Fix 1b is suppressed and Fix 2
-        # (step 2) is the branch under test. The baseline picks the
-        # lowest trump (T♠); Cash-A picks the highest (LB = J♣).
+        # (step 2) is the branch under test. No trump is a sure winner
+        # (both RBs unaccounted), so the fallback leads the lowest trump.
         def _seed_voids(strategy):
             strategy._void_suits_by_seat[1].add("S")
             strategy._void_suits_by_seat[3].add("S")
@@ -319,8 +327,8 @@ class TestCashWinnersOnLead:
         _seed_voids(cash)
         cash_choice = cash.choose_card(hand, [], "suit", "S", 0)
         assert (
-            hand[cash_choice] == Card("C", "J")
-        ), f"Cash-A (flag on) should draw highest trump LB (J♣), got {hand[cash_choice]}"
+            hand[cash_choice] == Card("S", "T")
+        ), f"Cash-A (flag on) should lead lowest trump T♠ (Claim 1 fix), got {hand[cash_choice]}"
 
     def test_default_flag_preserves_baseline_behavior(self):
         """Explicit regression guard: ``GluttonStrategy()`` with no
@@ -384,10 +392,113 @@ class TestCashWinnersOnLead:
             f"draw trump K♠ — got {hand[choice]}"
         )
 
-    def test_version_bumped_to_0_8_0(self):
-        """Cash-A bumps GLUTTON_STRATEGY_VERSION from 0.7.0 → 0.8.0."""
+    def test_version_bumped_to_0_8_1(self):
+        """Cash-A.1 bumps GLUTTON_STRATEGY_VERSION from 0.8.0 → 0.8.1."""
         from bid_euchre.strategy.greedy import GLUTTON_STRATEGY_VERSION
 
-        assert GLUTTON_STRATEGY_VERSION == "0.8.0"
-        assert GluttonStrategy.VERSION == "0.8.0"
-        assert GluttonIsolatedStrategy.VERSION == "0.8.0"
+        assert GLUTTON_STRATEGY_VERSION == "0.8.1"
+        assert GluttonStrategy.VERSION == "0.8.1"
+        assert GluttonIsolatedStrategy.VERSION == "0.8.1"
+
+    # ---- Cash-A.1 new tests (sure-winner-first fallback) ----
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_draw_trump_lowest_fallback_when_masters_unseen(self, cls, kwargs):
+        """Claim 1 repro: hand has LB + non-bower trump, second RB still
+        unaccounted. _draw_trump_lead must return the lowest trump (T♠),
+        not LB. Mirrors the operator's trick-2 failure scenario."""
+        hand = [
+            Card("C", "J"),  # LB (value 15, but NOT a sure winner)
+            Card("S", "A"),  # trump A (value 14)
+            Card("S", "K"),  # trump K (value 13)
+            Card("S", "T"),  # trump T (value 10) — expected lead
+            Card("H", "A"),  # offsuit
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "suit", "S", player_index=0)
+        # Mark one RB as seen (trick 1), second RB still out.
+        strat._seen_counts[Card("S", "J")] = 1
+
+        choice = strat.choose_card(hand, [], "suit", "S", 0)
+        assert hand[choice] == Card("S", "T"), (
+            f"{cls.__name__}: should lead lowest trump T♠ when second RB "
+            f"is unaccounted — got {hand[choice]}"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_draw_trump_prefers_sure_winner_when_masters_accounted(self, cls, kwargs):
+        """Both RBs seen → LB is a sure winner. _draw_trump_lead must
+        lead LB (highest sure-winner trump), not the lowest trump."""
+        hand = [
+            Card("C", "J"),  # LB — sure winner now (both RBs gone)
+            Card("S", "A"),  # trump A — also sure winner
+            Card("S", "K"),  # trump K
+            Card("S", "T"),  # trump T
+            Card("H", "A"),  # offsuit
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "suit", "S", player_index=0)
+        # Both RBs accounted for (played in earlier tricks).
+        strat._seen_counts[Card("S", "J")] = 2
+
+        choice = strat.choose_card(hand, [], "suit", "S", 0)
+        assert hand[choice] == Card("C", "J"), (
+            f"{cls.__name__}: should lead LB (sure winner) when both RBs "
+            f"are accounted for — got {hand[choice]}"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_draw_trump_trump_dominant_hand_cashes_top(self, cls, kwargs):
+        """Trump-dominant hand: A♠, K♠, Q♠, T♠ with both RBs + both LBs
+        seen. All trump are sure winners — must lead A♠ (highest value)."""
+        hand = [
+            Card("S", "A"),  # trump A (value 14) — expected lead
+            Card("S", "K"),  # trump K (value 13)
+            Card("S", "Q"),  # trump Q (value 12)
+            Card("S", "T"),  # trump T (value 10)
+            Card("H", "A"),  # offsuit
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "suit", "S", player_index=0)
+        # All bowers accounted for.
+        strat._seen_counts[Card("S", "J")] = 2
+        strat._seen_counts[Card("C", "J")] = 2
+
+        choice = strat.choose_card(hand, [], "suit", "S", 0)
+        assert hand[choice] == Card("S", "A"), (
+            f"{cls.__name__}: should lead A♠ (highest sure winner) in "
+            f"trump-dominant hand — got {hand[choice]}"
+        )
