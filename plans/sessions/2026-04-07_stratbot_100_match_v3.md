@@ -97,8 +97,8 @@ additions are:
 
 ### Offense Refinement (small tweak, bounded risk)
 
-7. **Slightly lower bid 6 floor** — V2 used `bid 6 at eval 6.0–7.0`;
-   V3 uses `bid 6 at eval 5.8–7.0`. V2 bid 6 profit was still strong
+7. **Slightly lower bid 6 floor** — V2 bid 6 on evaluations in the
+   range 6.0 to 7.0; V3 bids 6 on 5.8 to 7.0. V2 bid 6 profit was still strong
    at +1.34/hand with 20.6% set rate. A 0.2-point shift captures a
    small population of borderline 5.8–6.0 hands as bid 6 instead of
    bid 5. V2 bid 5 profit was only +0.09/hand, so moving these hands
