@@ -12,6 +12,12 @@ from ..core.cards import Card, cards_that_beat, effective_suit
 from ..core.rules import get_legal_indices, trick_winner
 from .base import Strategy, card_value_for_dump
 
+# Module-level version constant — bump on every behavior change to
+# GluttonStrategy or GluttonIsolatedStrategy. See
+# docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
+# changelog template.
+GLUTTON_STRATEGY_VERSION = "0.7.0"
+
 
 class GreedyStrategy(Strategy):
     """
@@ -103,6 +109,13 @@ class GluttonStrategy(Strategy):
     - Deterministic (no randomness for variety)
     - No multi-trick lookahead beyond "sure winner" logic
     """
+
+    # Version of the play strategy's decision logic. Read polymorphically
+    # via ``type(strategy).VERSION`` by ``web/routes.py`` at match-create
+    # time and stamped onto the ``matches.play_strategy_version`` column
+    # for per-match cohort tracking. See
+    # ``docs/02_agent/STRATEGY_VERSIONING.md`` for bump rules.
+    VERSION = GLUTTON_STRATEGY_VERSION
 
     def __init__(self, name: str = "glutton", debug: bool = False):
         super().__init__(name)
@@ -639,6 +652,12 @@ class GluttonIsolatedStrategy(Strategy):
 
     With all features disabled, this behaves identically to GreedyStrategy.
     """
+
+    # Shares the GluttonStrategy version — the isolated twin runs the
+    # same decision logic paths, just gated by feature flags. Any
+    # behavior change in one class counts as a bump for both. See
+    # ``docs/02_agent/STRATEGY_VERSIONING.md``.
+    VERSION = GLUTTON_STRATEGY_VERSION
 
     def __init__(
         self,

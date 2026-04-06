@@ -81,6 +81,12 @@ class Match(Base):
         nullable=False,
     )
     ai_model = Column(String, nullable=False)
+    # Version of the play strategy (src/bid_euchre/strategy/greedy.py's
+    # GLUTTON_STRATEGY_VERSION) active at match-create time. Nullable so
+    # rows written before the versioning infrastructure landed retain an
+    # honest "unknown cohort" marker (NULL) rather than a fabricated value.
+    # See docs/02_agent/STRATEGY_VERSIONING.md.
+    play_strategy_version = Column(String, nullable=True)
     status = Column(
         String,
         CheckConstraint("status IN ('active', 'complete', 'abandoned')"),
