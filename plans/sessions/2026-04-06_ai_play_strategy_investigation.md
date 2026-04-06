@@ -51,7 +51,8 @@ opponents in the live game simultaneously.
 The sibling class `GluttonIsolatedStrategy` replicates the same lead /
 discard heuristics behind feature flags, so any fix must land in both
 locations (the two files are parallel — the investigation confirms the
-divergence risk is contained to that one file, `greedy.py`).
+divergence risk is contained to that one file,
+`src/bid_euchre/strategy/greedy.py`).
 
 ## Evidence — Code-Level Root Cause
 
@@ -400,9 +401,10 @@ already does.
    across the 6 contract × trump scenarios reused from
    `plans/sessions/2026-03-27_glutton-strategy-revamp-experiment-design.md`
    §Phase 1A. Because both strategies play the same matched deals,
-   post-hand analysis must compute **paired deltas** via
-   `bid_euchre.analysis.paired.compute_paired_deltas` +
-   `bid_euchre.analysis.stats.paired_t_ci`. Post-fix must win or tie
+   post-hand analysis must compute **paired deltas** using the
+   `compute_paired_deltas` helper from
+   `src/bid_euchre/analysis/paired.py` and the `paired_t_ci` helper
+   from `src/bid_euchre/analysis/stats.py`. Post-fix must win or tie
    on `avg_tricks_team0` (paired bootstrap, p < 0.05, 95% CI lower
    bound ≥ 0).
 
@@ -471,10 +473,11 @@ make check-gated
 
 | PR | Scope | Size | Validation | Depends on |
 |----|-------|------|-----------|-----------|
-| **Cash-A:** Sure-winner lead + draw trump high in `GluttonStrategy` + `GluttonIsolatedStrategy` (behind `cash_winners_on_lead` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py`, new `experiments/configs/` H2H YAML | ~150–250 LoC + ~20 test cases | `make check-gated`; unit tests; paired H2H on matched deals via `analysis.paired` | none |
+| **Cash-A:** Sure-winner lead + draw trump high in `GluttonStrategy` + `GluttonIsolatedStrategy` (behind `cash_winners_on_lead` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py`, new `experiments/configs/` H2H YAML | ~150–250 LoC + ~20 test cases | `make check-gated`; unit tests; paired H2H on matched deals via `src/bid_euchre/analysis/paired.py` | none |
 | **Cash-B:** 2nd-hand-low / prefer-sure-winners in the follow phase (both classes, behind `cash_winners_on_follow` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py` | ~60–120 LoC + ~10 test cases | same as Cash-A + explicit 2nd-seat scenario tests; paired H2H reusing Cash-A config | Cash-A |
 
-Both PRs deliberately keep the scope to `greedy.py` and its tests.
+Both PRs deliberately keep the scope to
+`src/bid_euchre/strategy/greedy.py` and its tests.
 Neither PR touches `web/`, the hosted_play engine, the bidding
 policies, or the experiment runner itself (only adds a new experiment
 YAML config).
@@ -513,11 +516,12 @@ YAML config).
   semantics. Codex review should catch any rank-inversion mistakes.
 - **Experimental complexity:** **Medium.** ~5 min per 50K deals
   H2H × 3 matchups × 2 conditions ≈ 30 min compute. The paired
-  analysis stack (`bid_euchre.analysis.paired.compute_paired_deltas`
-  + `bid_euchre.analysis.stats.paired_t_ci`) is already scaffolded
-  and is the correct path for matched-deal comparison.
-  `scripts/compare_runs.py` is **not** suitable — it compares two
-  independently-sampled runs, not paired deltas.
+  analysis stack is already scaffolded:
+  `src/bid_euchre/analysis/paired.py` provides
+  `compute_paired_deltas` and `src/bid_euchre/analysis/stats.py`
+  provides `paired_t_ci`. That is the correct path for matched-deal
+  comparison. `scripts/compare_runs.py` is **not** suitable — it
+  compares two independently-sampled runs, not paired deltas.
 - **Live-game risk:** **LOW–MEDIUM.** The browser game is post
   go-live with real players. The fix is a strict improvement in
   expected play quality (cashing winners is universally better
@@ -618,7 +622,8 @@ writing any production code:
 2. Draft or refine a concrete execution plan inline in the task
    (scope, file list, test list, H2H config shape, acceptance gate).
 3. Spawn at least one reviewer agent to review that execution plan
-   before making substantive edits to `greedy.py`.
+   before making substantive edits to
+   `src/bid_euchre/strategy/greedy.py`.
 4. Create a TUI task list covering implementation, unit tests, Tier 2
    paired H2H run, paired-bootstrap gate, and PR shipment.
 5. Assess the work for safe parallelism — Cash-A and Cash-B are
@@ -646,10 +651,10 @@ Handoffs that skip any of these steps are incomplete per AGENTS.md
      bootstrap gate described in §Acceptance Criteria item 4 and
      §Validation Commands. **Do not** use `scripts/compare_runs.py`
      for the acceptance gate — it compares independent runs, not
-     paired per-deal deltas. Use
-     `bid_euchre.analysis.paired.compute_paired_deltas` +
-     `bid_euchre.analysis.stats.paired_t_ci` on the emitted JSONL
-     hand records.
+     paired per-deal deltas. Use the `compute_paired_deltas` helper
+     from `src/bid_euchre/analysis/paired.py` and the `paired_t_ci`
+     helper from `src/bid_euchre/analysis/stats.py` on the emitted
+     JSONL hand records.
    - Reference: this doc §Fix 1, §Fix 2
 
 2. **Cash-B:** *Sure-winner follow + 2nd-hand-low fallback*
@@ -657,7 +662,7 @@ Handoffs that skip any of these steps are incomplete per AGENTS.md
      `tests/unit/test_greedy.py`
    - `validation`: `make check-gated` + unit tests covering 2nd-seat
      false-winner scenario; regression paired H2H reusing Cash-A
-     config (same `analysis.paired` gate)
+     config (same `src/bid_euchre/analysis/paired.py` gate)
    - Reference: this doc §Fix 3
    - **Blocked by:** Cash-A merged
 
