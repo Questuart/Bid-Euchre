@@ -11,9 +11,10 @@
 > `src/bid_euchre/strategy/bidding.py`, `web/ai_manager.py`,
 > `tests/unit/test_greedy.py`.
 >
-> **Inputs deferred:**
-> `plans/sessions/2026-04-06_glutton_gbt_quicksim_experiment.md`
-> (analyst-d) — **not yet landed** at the time of writing. The GBT
+> **Inputs deferred:** the analyst-d quick-sim experiment doc
+> (filename 2026-04-06_glutton_gbt_quicksim_experiment.md, intended
+> location `plans/sessions/`) — **not yet landed** at the time of
+> writing. The GBT
 > Enhancement A and B sections (§3, §4) are written as **stubs with a
 > defined fill-in protocol** so they can be completed in a single
 > follow-up edit once analyst-d's experiment design + filter specs
@@ -61,7 +62,8 @@ The dependency graph is **strictly serial across waves**, but **parallel
 within Wave 1** (1a and 1b can be drafted in parallel — author lane for
 1a, operator-owned 1b — though 1b must NOT merge before 1a) and
 **parallel within Wave 4** (4a and 4b are independent if no shared
-filter module; serial if they share `bidding_filters.py` infrastructure).
+filter module; serial if they share a new bidding_filters module
+under `src/bid_euchre/strategy/`).
 
 The single-file rollback for everything Cash-A is the **flag-flip
 revert** (Wave 1b inverse): change `cash_winners_on_lead=True` back to
@@ -111,16 +113,18 @@ to keep the changelog block in greedy.py and the doc in lockstep.)
 - `web/ai_manager.py` — the flag flip is a separate Wave 1b PR (§5).
 - `src/bid_euchre/strategy/base.py` — `card_value_for_dump` is unchanged.
 - Any `experiments/configs/*.yaml` — the existing
-  `glutton_cash_winners_paired.yaml` (if present) is unaffected.
+  glutton_cash_winners_paired YAML (if present in
+  `experiments/configs/`) is unaffected.
 - Any browser-side template, CSS, or route handler.
 
 ### 2.4 The exact diff (transcribed from analyst-c §2.4)
 
-Apply this diff to **both** `GluttonStrategy._draw_trump_lead`
-(`greedy.py:276-289`) and `GluttonIsolatedStrategy._draw_trump_lead`
-(`greedy.py:937-948`). The two implementations must remain
-behavior-equivalent because the comparator experiment suites assume
-they agree on Cash-A paths.
+Apply this diff to **both** the `_draw_trump_lead` method on
+`GluttonStrategy` (`src/bid_euchre/strategy/greedy.py` lines 276–289)
+and the same-named method on `GluttonIsolatedStrategy`
+(`src/bid_euchre/strategy/greedy.py` lines 937–948). The two
+implementations must remain behavior-equivalent because the
+comparator experiment suites assume they agree on Cash-A paths.
 
 ```diff
 --- a/src/bid_euchre/strategy/greedy.py
@@ -169,8 +173,9 @@ they agree on Cash-A paths.
 +        return min(trump_indices, key=value)
 ```
 
-Mirror onto `GluttonIsolatedStrategy._draw_trump_lead` at lines
-937–948.
+Mirror onto the `_draw_trump_lead` method on
+`GluttonIsolatedStrategy` (`src/bid_euchre/strategy/greedy.py` lines
+937–948).
 
 ### 2.5 Version bump (REQUIRED)
 
@@ -190,7 +195,7 @@ The change qualifies as PATCH (not MINOR) because:
 - It fires only when the cohort flag `cash_winners_on_lead=True` is
   set — pre-flag baseline cohort is unaffected.
 
-Diff for the changelog block in `greedy.py`:
+Diff for the changelog block in `src/bid_euchre/strategy/greedy.py`:
 
 ```diff
  # Changelog:
@@ -311,7 +316,7 @@ fix(strategy): _draw_trump_lead sure-winner-first fallback (Cash-A.1)
 - Validation Performed section listing:
   - `uv run python -m pytest tests/unit/test_greedy.py -v` (all green)
   - `make check-gated` (all green)
-  - Optional smoke: `uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/quick_test.yaml`
+  - Optional smoke: `experiments/run_experiment.py` invocation with --seed 42 against `experiments/configs/quick_test.yaml`
 
 ## Acceptance criteria
 
@@ -344,7 +349,7 @@ DESC
 |---|---|---|
 | Tier 1 — during dev | `uv run python -m pytest tests/unit/test_greedy.py -v` | All green; new tests assert the new behavior. |
 | Tier 2 — pre-PR | `make check-gated` | All green. |
-| Optional smoke | `uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/quick_test.yaml` | Same delta as today (flag is still off in production). |
+| Optional smoke | `experiments/run_experiment.py` with --seed 42 against `experiments/configs/quick_test.yaml` | Same delta as today (flag is still off in production). |
 | Operator deterministic repro | The Python snippet in audit §2.3 against the post-fix tree | Output should NOT print "CONFIRMED: burns LB"; should print the lowest-trump fallback (e.g., `Cash-A trick 2 lead: TC` or `TS`). |
 
 ### 2.9 Risk register (transcribed from analyst-c §2.6)
@@ -367,16 +372,17 @@ DESC
   faster than reverting the Claim 1 fix because it does not need a
   re-deploy of the strategy module — only of `web/ai_manager.py`.
 - **Cohort cleanup:** mark the 0.8.1 cohort as quarantined in
-  `matches.play_strategy_version`-driven analysis (no code change,
-  just an analysis-time filter). The cohort boundary is honest because
-  the version constant captured the change.
+  analysis driven by the `play_strategy_version` column on `matches`
+  (no code change, just an analysis-time filter). The cohort boundary
+  is honest because the version constant captured the change.
 
 ## 3. GBT Enhancement A — "Don't overbid as last bidder" (STUB — pending analyst-d)
 
 > **Status:** Skeleton only. analyst-d's experiment design and the
-> precise filter spec live in
-> `plans/sessions/2026-04-06_glutton_gbt_quicksim_experiment.md`,
-> which has **not yet landed** at the time of writing. The fields
+> precise filter spec live in the analyst-d quick-sim experiment doc
+> (filename 2026-04-06_glutton_gbt_quicksim_experiment.md, intended
+> location `plans/sessions/`), which has **not yet landed** at the
+> time of writing. The fields
 > marked **TODO(analyst-d)** must be filled in by the operator or by a
 > follow-up analyst-a edit once that file lands. The skeleton is
 > structured so the only edits needed are populating those fields and
@@ -402,8 +408,8 @@ threshold T", with T = TODO(analyst-d).
 
 **Recommended:** `author-b` or `author-c` (platform pool).
 
-The change touches `src/bid_euchre/strategy/bidding.py` (and possibly
-introduces a new `src/bid_euchre/strategy/bidding_filters.py` module).
+The change touches `src/bid_euchre/strategy/bidding.py` (and may also
+add a new bidding_filters module under `src/bid_euchre/strategy/`).
 Same pool as Cash-A.1 — but use a **different lane** to keep the two
 in flight in parallel without scope-lock contention.
 
@@ -417,8 +423,8 @@ tests/unit/test_bidding_filters.py                # NEW (if generic)
 ```
 
 If analyst-d's spec turns out to be small enough to inline directly
-into `GBTActionValueBidder.choose_bid()`, drop the
-`bidding_filters.py` files from scope and inline. Decision happens at
+into `GBTActionValueBidder.choose_bid()`, drop the proposed
+bidding_filters files from scope and inline. Decision happens at
 fill-in time, not at packet-creation time.
 
 **Files explicitly NOT in scope:**
@@ -431,9 +437,9 @@ fill-in time, not at packet-creation time.
 - `src/bid_euchre/features/` — no new features extracted from the
   observation.
 
-### 3.4 Implementation seam (read from `bidding.py`)
+### 3.4 Implementation seam (read from `src/bid_euchre/strategy/bidding.py`)
 
-`GBTActionValueBidder.choose_bid()` is at `bidding.py:2515-2550`.
+`GBTActionValueBidder.choose_bid()` lives at `src/bid_euchre/strategy/bidding.py` lines 2515-2550.
 Today the method:
 
 1. Enumerates legal actions via `enumerate_legal_actions(obs, …)`.
@@ -445,7 +451,7 @@ and step 3 (returning the argmax)**. Concretely, after the loop builds
 a list of `(action, value)` pairs, apply a filter that:
 
 1. Detects "last bidder" via the `auction_transcript` and `dealer_seat`
-   fields on `BiddingObservation` (`bidding.py:227-246`).
+   fields on `BiddingObservation` (`src/bid_euchre/strategy/bidding.py` lines 227-246).
 2. Computes the raise candidates and the pass candidate.
 3. For each raise candidate, if the raise's value minus the pass
    value is below threshold T, demote the raise (e.g., set its
@@ -466,7 +472,7 @@ the experiment may indicate the filter is GBT-specific.
 `GLUTTON_STRATEGY_VERSION` exists for the play strategy. The bidder
 classes (`ActionValueBidder`, `GBTActionValueBidder`) currently have
 **no analog** — the bidder is implicitly versioned by its on-disk
-artifact filename (`hybrid_r3.json`, `gbt_action_value.json`, etc.)
+artifact filename (the hybrid_r3 model file, the gbt_action_value model file, etc.)
 plus the schema version inside the artifact.
 
 A behavioral filter that fires *outside* the model invalidates this
@@ -475,7 +481,7 @@ before vs. after the filter ships. Operator-facing question for the
 implementation packet:
 
 - **Option A:** Add `BIDDING_POLICY_VERSION` constant to
-  `bidding.py`, expose as `VERSION` on `GBTActionValueBidder` (and
+  `src/bid_euchre/strategy/bidding.py`, expose as `VERSION` on `GBTActionValueBidder` (and
   `ActionValueBidder`), and capture it on the `Match` row analogously
   to `play_strategy_version`. Schema change: `bidding_policy_version
   TEXT NULL` on `matches`. Migration: in-process `ALTER TABLE` per
@@ -579,13 +585,15 @@ DESC
 
 ### 3.8 Fill-in protocol (when analyst-d's file lands)
 
-1. Read `plans/sessions/2026-04-06_glutton_gbt_quicksim_experiment.md`
-   §"Enhancement A spec" (or equivalently named section).
-2. Replace every `TODO(analyst-d)` token in §3.1, §3.4, §3.6, and §3.7
+1. Read analyst-d's quick-sim doc (filename
+   2026-04-06_glutton_gbt_quicksim_experiment.md, intended location
+   `plans/sessions/`), §"Enhancement A spec" (or equivalently named
+   section).
+2. Replace every TODO(analyst-d) token in §3.1, §3.4, §3.6, and §3.7
    above with the concrete value from analyst-d's doc.
-3. Replace `TODO(analyst-d-quicksim-config).yaml` with the actual
-   experiment config path (likely
-   `experiments/configs/glutton_gbt_quicksim.yaml` or similar).
+3. Replace the TODO(analyst-d-quicksim-config) YAML placeholder with
+   the actual experiment config path (likely a
+   glutton_gbt_quicksim YAML under `experiments/configs/` or similar).
 4. Re-audit the §3.6 scenario table for completeness against
    analyst-d's spec; add any missing rows.
 5. Decide the symmetry question (mirror to OLSa's `ActionValueBidder`?
@@ -616,13 +624,13 @@ against partner's actual capability rather than adding real value.
 ### 4.2 Target lane
 
 **Recommended:** `author-b` or `author-c`. **Serial dependency** on
-Enhancement A *iff* both share `bidding_filters.py` infrastructure. If
+Enhancement A *iff* both share the proposed bidding_filters module. If
 Enhancement A inlines into `choose_bid()` (no shared module), then
 Enhancement B can ship in parallel on a different lane.
 
 | Decision | Author lane | Sequencing |
 |---|---|---|
-| Shared `bidding_filters.py` module | Same lane as Enhancement A (e.g., `author-b`) | Serial: A merges first, B rebases onto post-A main |
+| Shared bidding_filters module | Same lane as Enhancement A (e.g., `author-b`) | Serial: A merges first, B rebases onto post-A main |
 | Inlined per-class | Different lane from Enhancement A | Parallel — independent scope |
 
 The default in this plan is **shared module → serial**. This is the
@@ -634,7 +642,7 @@ lanes is the worst kind of merge accident.
 
 Same as §3.3 — same files, same NOT-in-scope list. If serial on
 Enhancement A, the scope is identical and the diff is purely additive
-(new filter function in `bidding_filters.py`, new wire-up in
+(new filter function in the bidding_filters module, new wire-up in
 `choose_bid()`).
 
 ### 4.4 Implementation seam
@@ -903,7 +911,7 @@ Each wave-to-wave gate is an **operator-controlled signal**:
   If the quick-sim shows no positive delta, the enhancements are
   dropped and Wave 4-5 collapse.
 - **Wave 4a and 4b are parallel-or-serial** depending on whether they
-  share `bidding_filters.py` (see §4.2 decision matrix).
+  share the bidding_filters module (see §4.2 decision matrix).
 - **Wave 5 (proving) before Wave 6 (deploy)** is a hard rule on every
   AI behavior change. The operator must see the new behavior in the
   browser before pinning to the public traffic.
@@ -915,8 +923,8 @@ Each wave-to-wave gate is an **operator-controlled signal**:
 | Wave 1a (Cash-A.1) | `tests/unit/test_greedy.py::test_lead_highest_trump_when_drawing` (rewrite), `test_version_bumped_to_0_8_0` (rename + retarget) | `test_draw_trump_lowest_fallback_when_masters_unseen`, `test_draw_trump_prefers_sure_winner_when_masters_accounted`, `test_draw_trump_trump_dominant_hand_cashes_top` (×2 for both Glutton classes = 6 total tests) | author-a/b implements |
 | Wave 1b (flag flip) | `tests/unit/hosted_play/test_ai_manager.py` (existing model-construction tests) | None required (the kwarg passes through cleanly; existing test asserts roster loads). Optionally add `test_olsa_uses_cash_winners_on_lead` and `test_bud_bot_uses_cash_winners_on_lead` to assert the flag is True on each instance. | brws-author-a implements |
 | Wave 2 (experiment) | n/a (analyst-d's experiment is a script run, not a code change) | n/a | analyst-d / experiment runner |
-| Wave 4a (GBT Enh A) | TODO(analyst-d): list per-scenario test names from the experiment doc | New `test_bidding_filters.py` (if module split) covering the §3.6 scenarios. At minimum: 5 scenarios × 1-2 test functions = 5-10 new tests. | author-b/c implements |
-| Wave 4b (GBT Enh B) | Same module as 4a | New tests in `test_bidding_filters.py` covering the §4.6 scenarios. At minimum 6 scenarios × 1-2 = 6-12 new tests. | author-b/c implements |
+| Wave 4a (GBT Enh A) | TODO(analyst-d): list per-scenario test names from the experiment doc | New test_bidding_filters module (if module split) covering the §3.6 scenarios. At minimum: 5 scenarios × 1-2 test functions = 5-10 new tests. | author-b/c implements |
+| Wave 4b (GBT Enh B) | Same module as 4a | New tests in the test_bidding_filters module covering the §4.6 scenarios. At minimum 6 scenarios × 1-2 = 6-12 new tests. | author-b/c implements |
 
 **Coverage gate for the operator:** every new behavior must have at
 least one positive test (filter fires when expected) AND at least one
@@ -974,28 +982,29 @@ This plan does **not** cover, and the implementation packets must
 
 - **Cash-B (sure-winner follow phase).** Tracked separately as per
   analyst-b's 2026-04-06 investigation. When Cash-B is queued, it
-  bumps to `0.8.2` (this plan re-targets Cash-B from the originally
-  projected `0.8.1` because Wave 1a takes the 0.8.1 slot).
+  bumps the strategy version to 0.8.2 (this plan re-targets Cash-B
+  from the originally projected 0.8.1 because Wave 1a takes the
+  0.8.1 slot).
 - **Bid-aware GluttonV2.** Tracked in analyst-a's 2026-03-27 plan;
   not in this scope.
 - **Retraining OLSa or Bud Bot artifacts.** The GBT enhancements are
-  post-model filters — the model files (`hybrid_r3.json`,
-  `gbt_action_value.json`, etc.) are unchanged.
+  post-model filters — the model artifacts (the hybrid_r3 file,
+  the gbt_action_value file, etc.) are unchanged.
 - **Non-trump ace tie-break direction (Claim 2 in analyst-c audit).**
   Optional separate issue. The audit already documented why this is
   a long-standing design call rather than a bug.
 - **Alembic adoption for hosted DB migrations.** The strategy
   versioning plan §1.5 already noted Alembic as a deferred
   nice-to-have. If §3.5 picks Option A (BIDDING_POLICY_VERSION
-  schema column), the migration uses the same in-process `ALTER
-  TABLE` pattern from `web/app.py:118-139`.
+  schema column), the migration uses the same in-process ALTER
+  TABLE pattern from `web/app.py` lines 118-139.
 - **StratBot V3 proving run.** Independent track — flex-a is
   responsible. No dependency on this plan.
 - **Per-decision version stamping** on the `decisions` table. Strategy
   versioning plan §1.3 explicitly defers this. Out of scope.
-- **CI lint that fails PRs touching `greedy.py` decision functions
-  without a version bump.** Strategy versioning plan §2.6 future
-  enhancement. Out of scope.
+- **CI lint that fails PRs touching `src/bid_euchre/strategy/greedy.py`
+  decision functions without a version bump.** Strategy versioning
+  plan §2.6 future enhancement. Out of scope.
 
 ## 10. Success Criteria for This Plan
 
