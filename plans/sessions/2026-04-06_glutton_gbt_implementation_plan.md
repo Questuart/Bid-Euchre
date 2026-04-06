@@ -311,8 +311,7 @@ fix(strategy): _draw_trump_lead sure-winner-first fallback (Cash-A.1)
 - Validation Performed section listing:
   - `uv run python -m pytest tests/unit/test_greedy.py -v` (all green)
   - `make check-gated` (all green)
-  - Optional smoke: `uv run python experiments/run_experiment.py
-    --seed 42 --config experiments/configs/quick_test.yaml`
+  - Optional smoke: `uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/quick_test.yaml`
 
 ## Acceptance criteria
 
