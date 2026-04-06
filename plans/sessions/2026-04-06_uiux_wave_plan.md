@@ -63,9 +63,10 @@ declared an operator policy that still governs this wave:
 | **UX-4** | High Bid display — contract type suit icon | **Fixes #2539** | brws-author-a | S (~25 LoC, 2 files) | UX-3 merged | **NO** |
 | **UX-5** | Auction pane row differentiation + Pass button blue | **Fixes #2545** | brws-author-a | M (~60 LoC, 2 files) | UX-4 merged | **NO** |
 
-**File overlap matrix** (shows why this is a serial chain):
+**File overlap matrix** (shows why this is a serial chain). Column
+headers use the basename only for table width; full paths in §4.
 
-| PR \ File | `style.css` | `accessibility.css` | `bid_panel.html` | `trick.html` | `routes.py` | tests |
+| PR \ File | style | a11y | bid panel | trick | routes | tests |
 |---|---|---|---|---|---|---|
 | UX-1 | ✏️ |  |  |  |  |  |
 | UX-2 |  |  |  |  | ✏️ | ✏️ |
@@ -73,9 +74,10 @@ declared an operator policy that still governs this wave:
 | UX-4 | ✏️ |  | ✏️ |  | ✏️ | ✏️ |
 | UX-5 | ✏️ | ✏️ | ✏️ |  |  | ✏️ (Playwright check) |
 
-Three of the 5 PRs touch `style.css` and three touch `routes.py` /
-`bid_panel.html`. This is the strict-serial constraint: dispatching any two
-in parallel risks rebase conflicts that re-validate the entire chain.
+Three of the 5 PRs touch `web/static/style.css` and three touch
+`web/routes.py` / `web/templates/partials/bid_panel.html`. This is the
+strict-serial constraint: dispatching any two in parallel risks rebase
+conflicts that re-validate the entire chain.
 
 ---
 
@@ -109,10 +111,11 @@ Wave 5  UX-5 (auction row + Pass button)     → CLOSES #2545
 
 **Why a single lane?** Every PR rebases on the previous PR's `main`. If two
 PRs ran in parallel on `brws-author-a` and `brws-author-b`, they would both
-diverge from main and the second would hit a `style.css`/`bid_panel.html`
-conflict during the mandatory pre-PR rebase (per `/start-task` Phase 2b).
-Serializing on one lane eliminates that risk entirely and matches the lane's
-existing scope-lock discipline.
+diverge from main and the second would hit a `web/static/style.css` /
+`web/templates/partials/bid_panel.html` conflict during the mandatory
+pre-PR rebase (per `/start-task` Phase 2b). Serializing on one lane
+eliminates that risk entirely and matches the lane's existing scope-lock
+discipline.
 
 **Why brws-author-a?** It is already the lane that historically takes
 auction-form scope (#2521 items 2/3/4 → PR #2531). Choosing the same lane
@@ -122,13 +125,14 @@ orchestrator picks based on lane idle state at dispatch time.
 
 **Parallelism opportunities (none, but documented for clarity):**
 - UX-4 and UX-5 are functionally independent of the jitter chain (no animation
-  interaction). However, both touch `bid_panel.html` and `style.css`, which
-  the jitter chain also touches (UX-3's slot-reset-fade lives in `style.css`
-  too). Parallel dispatch to a second brws lane saves wall time but creates
-  guaranteed merge conflicts on every interleave. **Recommendation:
-  reject the parallelism.** If wall time is critical, the operator can
-  reorder Wave 4/5 ahead of Wave 1-3 (UX-4 and UX-5 do not depend on jitter
-  fixes), but they must still ship serial within `brws-author-a`.
+  interaction). However, both touch `web/templates/partials/bid_panel.html`
+  and `web/static/style.css`, which the jitter chain also touches (UX-3's
+  slot-reset-fade lives in `web/static/style.css` too). Parallel dispatch
+  to a second brws lane saves wall time but creates guaranteed merge
+  conflicts on every interleave. **Recommendation: reject the
+  parallelism.** If wall time is critical, the operator can reorder Wave
+  4/5 ahead of Wave 1-3 (UX-4 and UX-5 do not depend on jitter fixes),
+  but they must still ship serial within `brws-author-a`.
 
 ---
 
@@ -160,10 +164,10 @@ orchestrator picks based on lane idle state at dispatch time.
 2. Add a compound `.card--winning.card--ai-delayed` rule with chained
    `animation-name: ai-card-reveal, winning-card-pulse;` and matching
    longhand lists for duration/delay/iteration-count/fill-mode.
-3. Add a compound `.trick-slot--winner .card--ai-delayed` rule per Risk R4
-   in the jitter report — the descendant selector
-   `.trick-slot--winner .card` has higher specificity (0,2,0) than
-   `.card--ai-delayed` (0,1,0) and would otherwise win the cascade for the
+3. Add a compound `trick-slot--winner card--ai-delayed` (descendant)
+   rule per Risk R4 in the jitter report — the descendant selector
+   `trick-slot--winner card` has higher specificity (0,2,0) than
+   `card--ai-delayed` (0,1,0) and would otherwise win the cascade for the
    trick-closing card.
 4. Add baseline transitions to `.card--played` so the entry of any played
    card (human or AI) blends rather than pops:
@@ -178,15 +182,15 @@ orchestrator picks based on lane idle state at dispatch time.
    elements would lag hand-card selection feedback.
 
 **Acceptance criteria:**
-- `getComputedStyle(card_div, 'animation-name')` on a card with both
-  `.card--winning` and `.card--ai-delayed` returns
-  `ai-card-reveal, winning-card-pulse` (not just `ai-card-reveal`).
-- The same assertion on a card under `.trick-slot--winner` returns the
-  composed list (per R4 fix).
-- `.card--played` elements have a non-zero `transition-duration` for
-  `opacity`.
-- No regression on `.card--legal` hover responsiveness (manual eyeball).
-- Mobile viewport unchanged at `@media (max-width: 600px)`.
+- Calling getComputedStyle for animation-name on a card div carrying both
+  the `card--winning` and `card--ai-delayed` classes returns the composed
+  list `ai-card-reveal, winning-card-pulse` (not just `ai-card-reveal`).
+- The same assertion on a card under a `trick-slot--winner` parent returns
+  the same composed list (per R4 fix).
+- Elements carrying `card--played` have a non-zero `transition-duration`
+  for `opacity`.
+- No regression on `card--legal` hover responsiveness (manual eyeball).
+- Mobile viewport unchanged at the 600px max-width media query.
 
 **Validation:**
 - **Tier 1 targeted:**
@@ -231,7 +235,7 @@ orchestrator picks based on lane idle state at dispatch time.
 | **Lane** | `brws-author-a` |
 | **Plan reference** | `plans/sessions/2026-04-06_card_jitter_investigation.md` §3 Fix 2 |
 | **Closes** | (none — `Refs #2538`) |
-| **Depends on** | UX-1 merged (file conflict avoidance on `routes.py`/CSS interactions) |
+| **Depends on** | UX-1 merged (file conflict avoidance on `web/routes.py` / CSS interactions) |
 | **Auto-merge** | **NO** (changes which cards animate on the trick-closing AI play — visible behavior) |
 
 **Scope (declared):**
@@ -254,12 +258,13 @@ orchestrator picks based on lane idle state at dispatch time.
    )
    ```
 2. **Routes — helper fallback at `_last_played_seat`:**
-   - During `paused_after_trick`, the active trick has been moved to
-     `completed_tricks` and `hand.current_trick.plays` may be empty.
-   - Add a fallback: if the active trick has no plays AND
-     `hand.completed_tricks` is non-empty, return
-     `hand.completed_tricks[-1].plays[-1][0]` (the seat of the last play in
-     the most recent completed trick).
+   - During `paused_after_trick`, the active trick has been moved to the
+     completed-tricks list and the current trick's plays attribute may be
+     empty.
+   - Add a fallback: if the active trick has no plays AND the
+     completed-tricks list is non-empty, return the seat of the last play
+     in the most recent completed trick (i.e. the trailing play tuple's
+     seat element).
 3. **Unit test:**
    - Construct a hand state in `paused_after_trick` with a known
      completed trick and no active trick plays.
@@ -337,10 +342,12 @@ orchestrator picks based on lane idle state at dispatch time.
    }
    ```
 2. **Playwright smoke test (new):**
-   - File: `tests/integration/web/test_card_animations.py`
+   - New test file at tests/integration/web/test_card_animations.py
+     (the lane creates the `tests/integration/web/` directory as part of
+     this PR — it does not exist yet on main)
    - Test: `test_trick_boundary_no_layout_jitter`
-   - Boots a local FastAPI test client (or uses existing
-     `tests/integration/hosted_play/conftest.py` fixtures), navigates to a
+   - Boots a local FastAPI test client (or reuses the existing fixtures
+     from `tests/unit/hosted_play/conftest.py`), navigates to a
      trick-result screen, clicks `Next`, asserts that no card-slot or
      trick-area element has a layout shift greater than **4 px** within
      **300 ms** post-swap. (Use Playwright's
@@ -349,9 +356,10 @@ orchestrator picks based on lane idle state at dispatch time.
      `getBoundingClientRect()` snapshots before/after.)
 3. **`prefers-reduced-motion` consideration:**
    - The existing `@media (prefers-reduced-motion: reduce)` block at
-     `web/static/style.css:3118` already covers `.card--winning` and
-     `.trick-slot--winner .card`. Extend it to set
-     `.card-slot--empty { animation: none; }` per Risk R5.
+     `web/static/style.css:3118` already covers the `card--winning`
+     class and the `trick-slot--winner card` descendant rule. Extend it
+     to also set animation:none on the `card-slot--empty` rule per
+     Risk R5.
 
 **Acceptance criteria:**
 - The new Playwright test passes locally and in CI.
@@ -402,7 +410,7 @@ fix" checklist (see §4.6).**
 | **Lane** | `brws-author-a` |
 | **Plan reference** | This plan §4.4; issue body of #2539 |
 | **Closes** | **`Fixes #2539`** |
-| **Depends on** | UX-3 merged (file overlap on `bid_panel.html`/CSS) |
+| **Depends on** | UX-3 merged (file overlap on `web/templates/partials/bid_panel.html` / CSS) |
 | **Auto-merge** | **NO** (visible UI change — operator must verify the icon renders correctly with red/light color coding for all 6 contract types) |
 
 **Scope (declared):**
@@ -419,8 +427,9 @@ fix" checklist (see §4.6).**
 **Implementation summary:**
 
 1. **Routes — new context variable:**
-   The engine already tracks `hand.contract_type` ("suit" / "high" / "low")
-   and `hand.trump` (one of "S", "H", "D", "C") at the high bid (see
+   The engine already tracks the hand's contract type attribute
+   (`"suit"` / `"high"` / `"low"`) and the trump attribute (one of `"S"`,
+   `"H"`, `"D"`, `"C"`) at the high bid (see
    `src/bid_euchre/hosted_play/engine.py` line 794-795). Pass them to
    the partial as a single normalized variable:
    ```python
@@ -503,18 +512,20 @@ fix" checklist (see §4.6).**
 - **Playwright smoke:**
   - Reach an auction state where one player has bid 6♠
   - Screenshot at `data/local_smoke/UX-4/high-bid-spades.png`
-  - Repeat for hearts (`high-bid-hearts.png`) and HIGH
-    (`high-bid-high.png`)
+  - Repeat for hearts (saved to
+    `data/local_smoke/UX-4/high-bid-hearts.png`) and HIGH (saved to
+    `data/local_smoke/UX-4/high-bid-high.png`)
   - Mobile viewport screenshot
 
 **Known risks:**
-- **R-UX4-A** — the contract type column is `hand.contract_type` which is
-  `None` until the auction starts having bids. Guard the new context var
-  with `current_high_bid > 0` to avoid stale display.
-- **R-UX4-B** — `.suit-icon--clubs` color rule applies the same `--color-text`
-  as `.suit-icon--spades`. On `accessibility.css` (high-contrast theme), if
-  any override exists, ensure it still resolves to a visible color. Verify
-  Playwright with the high-contrast media query or system preference.
+- **R-UX4-A** — the hand's contract-type attribute is `None` until the
+  auction starts having bids. Guard the new context var with
+  `current_high_bid > 0` to avoid stale display.
+- **R-UX4-B** — the `suit-icon--clubs` rule applies the same
+  `--color-text` token as `suit-icon--spades`. On the
+  `web/static/css/accessibility.css` high-contrast theme, if any override
+  exists, ensure it still resolves to a visible color. Verify Playwright
+  with the high-contrast media query or system preference.
 - **R-UX4-C** — the Moon/Loner badge logic must remain unchanged. Run a
   separate Playwright pass against a Moon-bid auction to confirm the
   badge still renders.
@@ -532,7 +543,7 @@ fix" checklist (see §4.6).**
 | **Lane** | `brws-author-a` |
 | **Plan reference** | This plan §4.5; issue body of #2545 |
 | **Closes** | **`Fixes #2545`** |
-| **Depends on** | UX-4 merged (overlap on `bid_panel.html`/CSS) |
+| **Depends on** | UX-4 merged (overlap on `web/templates/partials/bid_panel.html` / CSS) |
 | **Auto-merge** | **NO** (visible UI change — operator must approve the chosen palette option) |
 
 **Scope (declared):**
@@ -597,12 +608,14 @@ team colors, and the gold winning glow).
      decision in the PR body.
 
 3. **Test (Playwright):**
-   - Extend `tests/integration/web/test_card_animations.py` with a new
-     test `test_auction_panel_visual_distinction`:
+   - Extend the new card-animations Playwright file (created in UX-3,
+     under `tests/integration/web/`) with a new test
+     `test_auction_panel_visual_distinction`:
      - Reach the auction phase
-     - `getComputedStyle('.bid-row').background` differs from the panel
-       background AND between adjacent rows
-     - `getComputedStyle('.pass-btn').borderColor` is the blue value
+     - `getComputedStyle` of a `bid-row` element returns a `background`
+       that differs from the panel background AND from adjacent rows
+     - `getComputedStyle` of the `pass-btn` element returns a
+       `borderColor` matching the new blue value
      - Mobile viewport — same assertions
 
 **Acceptance criteria:**
@@ -613,7 +626,7 @@ team colors, and the gold winning glow).
   button preserved, null contract default preserved, Submit Bid still
   disabled until contract picked.
 - Mobile viewport (iPhone 14 Pro emulation) — all controls remain tap-target
-  ≥ 44px (per `accessibility.css:103-106`).
+  ≥ 44px (per `web/static/css/accessibility.css` lines 103-106).
 - No conflict with team-color blue in the score bar (verify by viewing the
   score bar and Pass button in the same screenshot).
 
@@ -639,15 +652,16 @@ team colors, and the gold winning glow).
   Team A color). Mitigation: the blue is an outline, not a fill, and is
   visually anchored to the form rather than the score bar. Smoke-test by
   viewing both elements in the same screenshot.
-- **R-UX5-B** — `.bid-row` background change interacts with the
-  `.bid-row label` styling (currently muted-text color). If the surface
+- **R-UX5-B** — the `bid-row` background change interacts with the
+  `bid-row label` styling (currently muted-text color). If the surface
   elevation makes the label unreadable, raise the label color to
   `var(--color-text)`.
-- **R-UX5-C** — `accessibility.css` has its own focus-visible rules at
-  line 67-70 for `.pass-btn`. The new `border: 2px solid blue` must not
-  conflict with the focus-visible outline. Test by tabbing to Pass.
+- **R-UX5-C** — `web/static/css/accessibility.css` has its own
+  focus-visible rules at lines 67-70 for the `pass-btn` class. The new
+  `border: 2px solid blue` must not conflict with the focus-visible
+  outline. Test by tabbing to Pass.
 - **R-UX5-D** — `prefers-reduced-motion` is unaffected (no animation
-  changes), but `prefers-color-scheme: light` (if ever supported) is
+  changes), and `prefers-color-scheme: light` (if ever supported) is
   unaffected; the hosted app is dark-only so no light-theme regression
   testing required.
 
@@ -836,18 +850,18 @@ no PR ships without the discipline.
 
 | # | Risk | Severity | PR | Mitigation |
 |---|---|---|---|---|
-| RW-1 | CSS regression on mobile viewports — any of UX-1, UX-3, UX-5 changes a `style.css` rule that affects mobile layout | MEDIUM | UX-1, UX-3, UX-5 | Each PR's Playwright smoke includes an iPhone 14 Pro / iPhone 13 viewport screenshot. The acceptance criteria explicitly require "mobile viewport unchanged." |
+| RW-1 | CSS regression on mobile viewports — any of UX-1, UX-3, UX-5 changes a `web/static/style.css` rule that affects mobile layout | MEDIUM | UX-1, UX-3, UX-5 | Each PR's Playwright smoke includes an iPhone 14 Pro / iPhone 13 viewport screenshot. The acceptance criteria explicitly require "mobile viewport unchanged." |
 | RW-2 | Animation timing race with auto-advance (PR #2486) — UX-1 + UX-2 change which cards animate, and the auto-advance timer at 850 ms could fire mid-reveal | MEDIUM | UX-1, UX-2 | UX-1's compound rule sequences the gold pulse to start AFTER the 750 ms reveal; auto-advance at 850 ms gives a 100 ms buffer (per existing `web/routes.py:600` constant). UX-2 only broadens the gate; it doesn't change timing. The Playwright smoke covers this by playing 2 full tricks. |
-| RW-3 | New compound rules collide with `prefers-reduced-motion` media query | LOW | UX-1, UX-3 | The existing `@media (prefers-reduced-motion: reduce)` block at `style.css:3118` is extended in UX-3 to cover `.card-slot--empty`. UX-1 inherits the existing `.card--winning { animation: none; }` rule. Verify in Playwright with `page.emulateMedia({reducedMotion: 'reduce'})`. |
+| RW-3 | New compound rules collide with `prefers-reduced-motion` media query | LOW | UX-1, UX-3 | The existing `@media (prefers-reduced-motion: reduce)` block at `web/static/style.css` line 3118 is extended in UX-3 to cover the `card-slot--empty` rule. UX-1 inherits the existing `card--winning { animation: none; }` rule. Verify in Playwright with `page.emulateMedia({reducedMotion: 'reduce'})`. |
 | RW-4 | Pass button blue (UX-5) conflicts with team-color blue in the score bar | MEDIUM | UX-5 | Pass button uses an OUTLINE blue (border + text), the score bar uses a FILL blue (background). The visual distinction is treatment, not hue. Smoke-test by capturing both elements in one screenshot. If clash persists, fall back to a different blue shade (e.g., `#0d47a1` instead of `#1565c0`). |
 | RW-5 | Merge conflicts if any of the 5 PRs land out of order | HIGH | All | **Eliminated by single-lane serial dispatch.** Each PR rebases on `main` immediately before opening, and the next PR cannot start until the previous is merged. The orchestrator must enforce this — do NOT dispatch UX-2 until UX-1 is MERGED, etc. |
 | RW-6 | Auto-merge incident recurs (a Track B PR auto-merges before operator proving) | HIGH | All | Four-layer defense in §6 §"Auto-merge incident mitigation" — convert to draft, disable auto-merge, label, comment. Orchestrator verifies all four before moving on. |
 | RW-7 | UX-3's Playwright smoke test (4 px / 300 ms layout shift) is flaky in CI | LOW | UX-3 | Test retries once before failing. The threshold is generous (4 px) — most legitimate fixes will pass with margin. Document the threshold in the test docstring so future tightening is intentional. |
-| RW-8 | UX-4's new `current_high_bid_contract` context variable causes a Jinja `UndefinedError` on partials that don't get the new var (e.g., the bid_recap or comments partials) | LOW | UX-4 | The variable is only consumed in `bid_panel.html`. Other partials don't reference it. The route handler always sets it (to `None` when no high bid). Add a defensive `{% if current_high_bid_contract is defined %}` guard if the lane is uncertain. |
+| RW-8 | UX-4's new `current_high_bid_contract` context variable causes a Jinja `UndefinedError` on partials that don't get the new var (e.g., the bid_recap or comments partials) | LOW | UX-4 | The variable is only consumed in `web/templates/partials/bid_panel.html`. Other partials don't reference it. The route handler always sets it (to `None` when no high bid). Add a defensive `{% if current_high_bid_contract is defined %}` guard if the lane is uncertain. |
 | RW-9 | UX-5 row surface elevation reduces contrast on `.bid-row label` text (currently `--color-text-muted`) | LOW | UX-5 | If smoke-test shows poor readability, raise the label color to `var(--color-text)` in the same PR. |
 | RW-10 | Playwright MCP browser flakes mid-smoke — screenshot or evaluate fails | LOW | All | Screenshots are evidence, not gating. If Playwright fails, the lane records the failure in the PR body and marks the smoke as `degraded`. The operator decides during AM proving whether to merge or revert. |
 | RW-11 | The wave's serial nature means a single-PR failure blocks the entire chain | MEDIUM | All | The orchestrator can re-dispatch any failed PR (idempotent task packets). UX-4 and UX-5 are functionally independent of UX-1/2/3 — if the jitter chain blocks, the orchestrator MAY reorder to ship UX-4/5 first (still serial, still single-lane). Document the reorder in the AM handoff. |
-| RW-12 | UX-2 unit test for `_last_played_seat` uses a `MatchState` fixture that does not match the actual engine's state machine | LOW | UX-2 | Lane reads `src/bid_euchre/hosted_play/engine.py` lines 728-740 (the `_advance_ai` branch that sets `paused_after_trick`) and constructs the fixture by calling the actual `engine.submit_human_card` / `engine.advance_ai` methods rather than synthesizing a state from scratch. |
+| RW-12 | UX-2 unit test for `_last_played_seat` uses a `MatchState` fixture that does not match the actual engine's state machine | LOW | UX-2 | Lane reads `src/bid_euchre/hosted_play/engine.py` lines 728-740 (the `_advance_ai` branch that sets `paused_after_trick`) and constructs the fixture by calling the actual engine entry points (`submit_human_card` / `advance_ai`) rather than synthesizing a state from scratch. |
 | RW-13 | UX-4's icon span breaks the `aria-live="polite"` announcement (screen reader reads "♥" as nothing or as "heart symbol") | LOW | UX-4 | The icon is supplementary; keep the textual "High Bid: 6" content as the screen reader's anchor. Add `aria-hidden="true"` on the `<span class="suit-icon">` to prevent double-announcement. |
 
 ---
