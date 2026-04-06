@@ -457,19 +457,18 @@ class TestStartupCleanup:
 # ===================================================================
 # 4. Prior-match cleanup on select-ai (#2211, superseded by #2467)
 # ===================================================================
-#
-# Historical note: #2211 added an age-based per-player cleanup
-# (``expire_player_stale_matches``) that ran before the per-player rate
-# limit check.  #2467 then replaced both the rate limit and the age
-# threshold with an unconditional ``abandon_player_active_matches`` call
-# in ``select_ai``.  The dead helpers were removed in a follow-up
-# (#2500); this integration test continues to prove the end-to-end
-# behavior: a player with many pre-existing active matches can still
-# successfully start a new one.
 
 
 class TestSelectAiRecoversFromPriorActiveMatches:
-    """select_ai recovers from pre-existing active matches (#2211, #2467)."""
+    """select_ai recovers from pre-existing active matches (#2211, #2467).
+
+    Historical note: #2211 added an age-based per-player cleanup that
+    ran before the per-player rate limit check. #2467 replaced both
+    with an unconditional ``abandon_player_active_matches`` call, and
+    the dead helpers were removed in #2500. This integration test
+    continues to prove the end-to-end behavior: a player with many
+    pre-existing active matches can still start a new one.
+    """
 
     def test_select_ai_succeeds_with_many_prior_active_matches(self, tmp_path):
         """Select-ai succeeds even when the player has many prior active matches."""

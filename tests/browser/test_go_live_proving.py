@@ -153,27 +153,17 @@ def test_auction_log_repositions_during_gameplay(
         """)
         assert is_open is True, "During auction, action-rail <details> should be open"
 
-        # #2484 — Wait for the human bid panel to actually materialize
-        # before trying the Pass path.  The auction phase detection above
-        # is independent of the bid panel (#2462), so we may enter this
-        # block while AI opponents are still bidding.  Click Pass only
-        # when the Pass button is visible; otherwise fall through to the
-        # trick-play phase-2 loop which will advance Next steps as
-        # needed.
+        # #2484 — Wait for the human bid panel before clicking Pass.
+        # The auction detection above is bid-panel-independent (#2462),
+        # so we may be inside the block while AI opponents are still
+        # bidding. Fall through to the phase-2 loop if Pass never shows.
         if _wait_for_human_bid_turn(page, timeout_ms=8000):
             page.click("#bid-panel button.pass-btn")
-            # #2463 — After Pass the game may:
-            #   (a) advance into trick play (directly or via Next reveal),
-            #   (b) return a hand/match result,
-            #   (c) trigger a REDEAL if everyone passed, re-entering the
-            #       auction phase with a fresh hand, or
-            #   (d) fall back into a subsequent auction round after a
-            #       hidden-auction reveal.
-            # Wait for any of those states so the test does not race
-            # the server.  Note that ``#action-rail[data-phase='auction']``
-            # covers both the trick_play transition and the redeal
-            # re-entry because the action-rail is re-rendered with the
-            # new phase value on each swap.
+            # #2463 — After Pass: transition to trick play, hand/match
+            # result, Next reveal button, or (if all passed) a redeal
+            # that re-enters the auction phase. The selector list below
+            # covers every one of those states so the test does not
+            # race the server.
             page.wait_for_selector(
                 "#trick-area, #hand-result, #match-result, "
                 "button.btn--next-step, "
