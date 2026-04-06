@@ -1160,25 +1160,6 @@ main {
     color: rgba(255, 255, 255, 0.3);
 }
 
-/* Collapsed hand details dropdown */
-.hand-details {
-    width: 100%;
-    font-size: 0.8rem;
-    color: var(--color-text-muted);
-}
-
-.hand-details__summary {
-    cursor: pointer;
-    font-size: 0.78rem;
-    color: var(--color-text-muted);
-    user-select: none;
-}
-
-.hand-details__content {
-    padding: 0.25rem 0 0 1rem;
-    font-size: 0.78rem;
-    color: var(--color-text-muted);
-}
 
 /* Compact on-board icon legend — quick-glance badge reference */
 .icon-legend {
@@ -2643,18 +2624,6 @@ main {
     .score-bar .score-separator,
     .score-bar .info-separator {
         margin: 0 0.12rem;
-    }
-
-    main {
-        /* Budget extra space for hand-details <details> expansion (#2283) */
-        padding-bottom: 5.5rem;
-    }
-
-    /* Cap hand-details height inside the fixed score footer so it
-       doesn't push content off-screen when expanded (#2283). */
-    .hand-details__content {
-        max-height: 3rem;
-        overflow-y: auto;
     }
 
     #bid-panel {

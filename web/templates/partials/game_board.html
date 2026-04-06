@@ -177,7 +177,7 @@
     {# Score bar — outside compass grid, always at bottom #}
     {% include "partials/score.html" %}
 
-    {# Auction log — repositioned below hand details during gameplay.
+    {# Auction log — repositioned below score bar during gameplay.
        During auction it appears in the compass center (see above). #}
     {% if phase != "auction" %}
         {% include "partials/action_rail.html" %}

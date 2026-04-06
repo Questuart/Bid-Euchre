@@ -1,16 +1,10 @@
 {# Simplified score bar — "Current Game Score" only.
    Contract, declarer, and tricks info removed (shown in contract bar and trick area).
-   Hand details available in a collapsed dropdown.
 
    Context variables:
      - score_human: int — human team's total match score
      - score_ai: int — AI team's total match score
-     - hands_played: int — number of completed hands
-     - dealer_seat: int — seat number of the dealer
-     - phase: str — current hand phase
 #}
-{% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
-
 <div id="score-bar" class="score-bar" role="status" aria-label="Current game score: Your Team {{ score_human }}, Opponent {{ score_ai }}" aria-live="polite">
     <div class="score-section" aria-label="Current game score: Your Team {{ score_human }}, Opponent {{ score_ai }}">
         <span class="score-header">Current Game Score:</span>
@@ -24,15 +18,4 @@
             {{ score_ai }}
         </span>
     </div>
-
-    <details class="hand-details">
-        <summary class="hand-details__summary">Hand Details</summary>
-        <div class="hand-details__content">
-            <span>Hand {{ hands_played + 1 }}</span>
-            <span class="info-separator" aria-hidden="true">&middot;</span>
-            <span>Dealer: {% if dealer_seat != 0 %}<span class="ai-name player-name--{{ 'human' if dealer_seat == 2 else 'ai' }}">{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>{% else %}<span class="player-name--human">{{ seat_labels.get(dealer_seat, "Seat " ~ dealer_seat) }}</span>{% endif %}</span>
-            <span class="info-separator" aria-hidden="true">&middot;</span>
-            <span>First to 52 wins &middot; &minus;52 = loss</span>
-        </div>
-    </details>
 </div>

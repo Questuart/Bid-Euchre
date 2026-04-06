@@ -943,7 +943,7 @@ class TestScore:
     """Score bar shows only 'Current Game Score' per #2200 UI cleanup.
 
     Contract, declarer, tricks info removed (shown in contract bar and trick area).
-    Hand details available in collapsed dropdown.
+    Hand details dropdown removed per #2509 (cluttered).
     """
 
     def test_renders_scores(self, env):
@@ -951,48 +951,24 @@ class TestScore:
         html = tmpl.render(
             score_human=15,
             score_ai=-3,
-            hands_played=4,
-            dealer_seat=3,
-            phase="trick_play",
         )
         assert "15" in html
         assert "-3" in html
         assert "Current Game Score" in html
         assert "Your Team:" in html
         assert "Opponent:" in html
-        # Hand details in collapsed dropdown
-        assert "Hand 5" in html
-        assert "Hand Details" in html
 
-    def test_hand_details_in_collapsed_dropdown(self, env):
+    def test_no_hand_details_dropdown(self, env):
+        """Hand details dropdown removed per #2509."""
         tmpl = env.get_template("partials/score.html")
         html = tmpl.render(
             score_human=0,
             score_ai=0,
-            hands_played=0,
-            dealer_seat=0,
-            phase="auction",
         )
-        assert "Hand 1" in html
-        assert "hand-details" in html
-        assert "<details" in html
-        assert "<summary" in html
-
-    def test_dealer_shown_in_hand_details(self, env):
-        """Dealer info moved to collapsed hand details section."""
-        tmpl = env.get_template("partials/score.html")
-        html = tmpl.render(
-            score_human=10,
-            score_ai=5,
-            hands_played=2,
-            dealer_seat=2,
-            phase="trick_play",
-        )
-        assert "Dealer:" in html
-        assert "Ace" in html
-        # AI dealer name with team color class (#2288.4, #2346)
-        # Seat 2 is partner (human team)
-        assert "player-name--human" in html
+        assert "hand-details" not in html
+        assert "<details" not in html
+        assert "<summary" not in html
+        assert "Hand Details" not in html
 
     def test_no_contract_info_in_score_bar(self, env):
         """Contract info removed from score bar (shown in contract bar instead)."""
@@ -1000,9 +976,6 @@ class TestScore:
         html = tmpl.render(
             score_human=10,
             score_ai=5,
-            hands_played=2,
-            dealer_seat=2,
-            phase="trick_play",
         )
         # Contract info should NOT appear in score bar
         assert "contract-info" not in html
@@ -2867,9 +2840,6 @@ class TestAccessibilityScore:
         html = tmpl.render(
             score_human=10,
             score_ai=5,
-            hands_played=2,
-            dealer_seat=0,
-            phase="auction",
         )
         assert 'role="status"' in html
 
@@ -2878,9 +2848,6 @@ class TestAccessibilityScore:
         html = tmpl.render(
             score_human=15,
             score_ai=-3,
-            hands_played=4,
-            dealer_seat=3,
-            phase="auction",
         )
         assert "Current game score: Your Team 15, Opponent -3" in html
 
