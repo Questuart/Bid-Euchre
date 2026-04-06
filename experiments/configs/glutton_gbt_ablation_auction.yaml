@@ -1,0 +1,197 @@
+# Glutton + GBT paired ablation (AUCTION sub-matrix)
+#
+# Purpose
+# -------
+# Isolate the individual contribution of the two GBT bidder enhancements
+# on top of the Claim-1-fixed Glutton play strategy from
+# `glutton_gbt_ablation_play.yaml`:
+#
+#   (a) GBT Enhancement A — "don't overbid as last bidder"
+#       On the dealer seat, if the raw GBT choice is a bid but the table
+#       is already at a tricks level that satisfies the team's contract
+#       need, suppress the raise and pass instead. This targets the
+#       overbid mode documented in issue #2149 (live game: Ace bid 5S as
+#       last bidder, took 4, got set).
+#
+#   (b) GBT Enhancement B — "don't bump partner's bid by +1 in the same
+#       suit as last bidder". On the dealer seat, if partner has an open
+#       bid and the raw GBT choice is a minimum overcall (partner_bid +
+#       1) in the same trump suit, suppress to a pass. The +1 "nudge" is
+#       almost never an upgrade over partner's information and usually
+#       forfeits partner's declaring advantage.
+#
+# This is the "B sub-matrix" companion to the play-side ablation in
+# `experiments/configs/glutton_gbt_ablation_play.yaml`. Cells C3/C4 of
+# the task matrix live here. Cells Baseline/C1/C2 live on the play side.
+#
+# Why split play from auction:
+# ----------------------------
+# Cash-A and the Claim-1 fix are pure PLAY edits — they only affect
+# `GluttonStrategy.play_card`. The cleanest comparison surface for them
+# is `mode: self_play` with `pair_deals: true` and a pre-declared trump
+# scenario, where the bidder is never invoked.
+#
+# GBT Enhancements A and B are pure BIDDING edits — they only wrap
+# `GBTActionValueBidder.choose_bid`. They are completely inert in a
+# bidless self_play run. The cleanest comparison surface for them is
+# `mode: self_play` with `contract_type: null` (auction mode), where the
+# bidder drives contract discovery on every deal.
+#
+# Forcing both axes into a single 5-cell matrix would require either a
+# bidless run (which inactivates the GBT filters) or an auction run
+# (which introduces bid-contract variance that muddies the play-side
+# Cash-A comparison). Splitting keeps each contrast clean.
+#
+# See the design report for the full rationale and expected deltas:
+#   plans/sessions/2026-04-06_glutton_gbt_quicksim_experiment.md
+#
+# Prerequisites (must land before running this config):
+# -----------------------------------------------------
+# 1. The Claim 1 fix from
+#    `plans/sessions/2026-04-06_cash_a_deep_audit.md` §2.4 must be
+#    implemented on `GluttonStrategy._draw_trump_lead`. `GluttonStrategy`
+#    is what gets wired in as the play strategy for all three cells here,
+#    so the fix must be on the production class — not just the Isolated
+#    variant used by the play sub-matrix.
+# 2. `GLUTTON_STRATEGY_VERSION` is bumped to `"0.8.1"`.
+# 3. A new `FilteredGBTBidder` wrapper class must be implemented in
+#    `src/bid_euchre/strategy/bidding.py`:
+#
+#       class FilteredGBTBidder(BiddingPolicy):
+#           def __init__(
+#               self,
+#               artifact_path: str,
+#               enable_dont_overbid_last: bool = False,
+#               enable_dont_nudge_partner: bool = False,
+#           ):
+#               self._inner = GBTActionValueBidder(artifact_path=artifact_path)
+#               self._flag_a = enable_dont_overbid_last
+#               self._flag_b = enable_dont_nudge_partner
+#
+#           def choose_bid(self, obs: BiddingObservation) -> BidAction:
+#               raw = self._inner.choose_bid(obs)
+#               if raw.is_pass():
+#                   return raw
+#               is_last = (obs.seat == obs.dealer_seat)
+#               if not is_last:
+#                   return raw
+#               if self._flag_a and _would_overbid_last(obs, raw):
+#                   return BidAction.pass_bid()
+#               if self._flag_b and _would_nudge_partner(obs, raw):
+#                   return BidAction.pass_bid()
+#               return raw
+#
+#    The helper predicates `_would_overbid_last` and
+#    `_would_nudge_partner` are specified in the design report §7/§8.
+#    `FilteredGBTBidder` must also be registered in
+#    `src/bid_euchre/experiments/config.py::BIDDER_CLASSES` and in the
+#    `REQUIRED_PARAMS` map alongside `GBTActionValueBidder`.
+# 4. The artifact at `data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json`
+#    must exist on disk. The local checkout may ship the artifact at
+#    `web/models/training_artifact_gbt_av.json` instead — if so, copy or
+#    symlink it into the canonical data/artifacts path, or override the
+#    three `artifact_path` params below with the local path.
+#
+# Compute budget
+# --------------
+# 3 cells * 1 auction scenario * 5000 deals = 15,000 hands. At an
+# observed throughput of ~100 hands/sec for GBT-driven auction runs on
+# local machines (see arc_d_v2 r3 comparator runs), this completes in
+# ~2.5 min wall clock. Combined with the play sub-matrix (~20 s), the
+# full 6-cell ablation fits inside a 5 min wall budget, well under the
+# 60 min constraint.
+#
+# Expected MDE at n=5000 on net_points_team0 per paired deal, assuming
+# paired SD ~4 on net_points from arc_d_v2 r3 bootstrap artifacts, is
+# ~0.11 net_points/deal at 95% CI. Enhancement A is expected to move the
+# mean by ~0.15 to ~0.30 net_points/deal in the overbid cohort (issue
+# #2149 magnitude); Enhancement B is expected to move it by ~0.05 to
+# ~0.10.
+#
+# Run
+# ---
+#   uv run python experiments/run_experiment.py \
+#     --config experiments/configs/glutton_gbt_ablation_auction.yaml \
+#     --seed 42
+
+experiment_name: glutton_gbt_ablation_auction
+
+# Single auction scenario — contract is discovered by bidding, not
+# pre-declared. pair_deals pins the same 5000 physical deals across all
+# three cells, and the bidder wrapper is the only thing that varies, so
+# a `(deal_id, seed)` join on the per-cell JSONL logs isolates bidder
+# contribution with variance already controlled for deal identity.
+scenarios:
+  - name: auction
+    contract_type: null
+
+# Three bidder cells — same inner GBT model, differing filter flags.
+# The runner will emit one JSONL log per cell under
+# `data/runs/<run_id>/logs/<run_id>_<cell-name>.jsonl` and
+# `src/bid_euchre/analysis/paired.py::load_paired_data` will match them
+# on (deal_id, seed).
+bidding_policies:
+  # Cell B0 — Raw GBT. This is the vanilla `GBTActionValueBidder` as it
+  # ships in v0.8.0 (and as Bud Bot uses it in the browser game). No
+  # filter. This is the "ground" for the auction contrast — any gain in
+  # B1/B2 must beat this baseline by more than the n=5000 MDE to be
+  # considered real.
+  - name: b0_gbt_vanilla
+    class_name: GBTActionValueBidder
+    params:
+      artifact_path: data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json
+
+  # Cell B1 — GBT + Enhancement A only. Wraps the same inner model with
+  # the "don't overbid as last bidder" filter. This isolates Enhancement
+  # A's contribution against the raw baseline.
+  - name: b1_gbt_enh_a
+    class_name: FilteredGBTBidder
+    params:
+      artifact_path: data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json
+      enable_dont_overbid_last: true
+      enable_dont_nudge_partner: false
+
+  # Cell B2 — GBT + Enhancement A + Enhancement B. Wraps the same inner
+  # model with both filters. B2 - B1 isolates Enhancement B's additional
+  # contribution on top of A; B2 - B0 measures the combined effect. The
+  # matrix intentionally does NOT include a "B-only" cell (Enhancement B
+  # without A) because the live-game evidence (#2149) points at the
+  # overbid mode as the dominant failure, and we want to lock A in first.
+  # If the report shows B is not additive beyond A, the follow-up is to
+  # drop Enhancement B rather than add a separate isolation cell.
+  - name: b2_gbt_enh_ab
+    class_name: FilteredGBTBidder
+    params:
+      artifact_path: data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json
+      enable_dont_overbid_last: true
+      enable_dont_nudge_partner: true
+
+# Single Glutton play strategy shared across all three bidder cells.
+# This is the "Cash-A fixed" state — Cash-A flag ON and Claim 1 fix
+# applied. By holding play strategy constant, any delta between cells
+# is attributable to the bidder wrapper alone.
+#
+# NOTE: This uses the production `GluttonStrategy` class, not
+# `GluttonIsolatedStrategy`. The Claim 1 fix must be applied to
+# `GluttonStrategy._draw_trump_lead` (see prerequisite 1 above), not
+# only to the Isolated variant.
+strategies:
+  - name: cash_a_fixed
+    class_name: GluttonStrategy
+    params:
+      cash_winners_on_lead: true
+
+parameters:
+  n_per: 5000
+  seed: 42
+  # hand_end records are required by
+  # src/bid_euchre/analysis/paired.py::load_paired_data.
+  log_level: hand
+  mode: self_play
+  # Same physical deals across all three cells -> paired bootstrap on
+  # matched (deal_id, seed) keys. With pair_deals on, the only source of
+  # variance between cells is the bidder wrapper.
+  pair_deals: true
+  # Pin the Glutton play strategy for all cells. The runner wires it in
+  # as the play policy for whichever `bidding_policies` entry is active.
+  play_strategy: cash_a_fixed
