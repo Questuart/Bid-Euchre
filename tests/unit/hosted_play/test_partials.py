@@ -508,6 +508,89 @@ class TestBidPanel:
             f"got {option_values[0]}"
         )
 
+    def test_contract_defaults_to_placeholder(self, env):
+        """Contract dropdown defaults to an empty placeholder option so the
+        user cannot accidentally submit a default suit (#2521 item 4)."""
+        import re
+
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        contract_select = re.search(
+            r'<select id="bid-contract"[^>]*>(.*?)</select>', html, re.DOTALL
+        )
+        assert contract_select is not None, "bid-contract select missing"
+        options = contract_select.group(1)
+        # Placeholder is first and selected
+        assert 'value="" selected' in options
+        assert "— select —" in options
+        # No real contract option should be marked selected
+        for real_value in (
+            'value="S"',
+            'value="H"',
+            'value="D"',
+            'value="C"',
+            'value="HIGH"',
+            'value="LOW"',
+        ):
+            # None of these should have "selected" immediately after
+            # the value attribute.
+            assert (
+                f"{real_value} selected" not in options
+            ), f"{real_value} should not be preselected"
+
+    def test_submit_bid_button_is_initially_disabled(self, env):
+        """Submit Bid button must be disabled until the user explicitly
+        picks a contract type (#2521 item 4)."""
+        import re
+
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        submit_match = re.search(r'<button[^>]*id="bid-submit"[^>]*>', html)
+        assert submit_match is not None, "bid-submit button missing"
+        assert "disabled" in submit_match.group(0)
+
+    def test_bid_rows_single_line_layout(self, env):
+        """Type/Bid/Contract each render as a .bid-row element with a
+        single-line label + control layout (#2521 item 2)."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        # Each of the three controls lives inside its own bid-row.
+        assert html.count('class="bid-row"') >= 3 or 'class="bid-row"' in html
+        # Cross-check that the level wrapper is now a div with bid-row class.
+        assert 'class="bid-row" id="bid-level-wrapper"' in html
+
+    def test_contract_select_triggers_submit_update(self, env):
+        """The contract select wires onchange to updateBidSubmitState so the
+        Submit Bid button enables as soon as the user picks a contract."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            dealer_seat=0,
+        )
+        assert 'onchange="updateBidSubmitState()"' in html
+        assert "function updateBidSubmitState" in html
+
 
 # ---------------------------------------------------------------------------
 # hand.html

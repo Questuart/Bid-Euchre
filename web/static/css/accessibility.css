@@ -292,10 +292,16 @@ html[data-text-size="large"] .text-size-toggle {
 
 .bid-pass {
     margin-top: 0.5rem;
+    /* Full-width container so .pass-btn spans the bid-panel (#2521 item 3). */
+    width: 100%;
 }
 
 .pass-btn {
-    padding: 0.5rem 1.25rem;
+    /* Full-width to match Submit Bid, both visually and tap-target wise
+       (#2521 item 3). */
+    display: block;
+    width: 100%;
+    padding: 0.6rem 1.25rem;
     border: 2px solid var(--color-text-muted, #bdbdbd);
     border-radius: 4px;
     background: transparent;

@@ -1214,9 +1214,28 @@ main {
 
 .bid-controls {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: 0.5rem;
+}
+
+/* Single-line rows for Type/Bid/Contract — label left, control right (#2521 item 2) */
+.bid-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.bid-row label {
+    flex: 0 0 auto;
+    min-width: 4.5rem;
+}
+
+.bid-row select {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .bid-controls label {
@@ -1247,6 +1266,29 @@ main {
 
 .bid-controls button:hover {
     background: var(--color-legal-glow);
+}
+
+/* Submit Bid button spans the full bid-panel width so it stays consistent
+   with the Pass button below (#2521 items 2 & 3). */
+.bid-controls button[type="submit"],
+.bid-submit-btn {
+    display: block;
+    width: 100%;
+    padding: 0.6rem 1.25rem;
+}
+
+/* Disabled state — visibly greyed out until a contract is picked (#2521 item 4) */
+.bid-controls button[type="submit"]:disabled,
+.bid-submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--color-surface-light);
+    color: var(--color-text-muted);
+}
+
+.bid-controls button[type="submit"]:disabled:hover,
+.bid-submit-btn:disabled:hover {
+    background: var(--color-surface-light);
 }
 
 .bid-info {
