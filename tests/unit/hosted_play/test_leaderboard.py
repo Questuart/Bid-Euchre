@@ -629,10 +629,27 @@ class TestIsExcludedTestPlayer:
         assert is_excluded_test_player("FlexBot-D") is True
         assert is_excluded_test_player("FlexBot-XYZ") is True
 
+    def test_claude_playtest_prefix_excluded(self):
+        # The Claude- prefix covers the full family of Claude playtest
+        # bots without needing an explicit entry per suffix (#2497).
+        assert is_excluded_test_player("Claude-HTTP") is True
+        assert is_excluded_test_player("Claude-HTTP2") is True
+        assert is_excluded_test_player("Claude-HTTP3") is True
+        assert is_excluded_test_player("Claude-HYB") is True
+        assert is_excluded_test_player("Claude-HYB2") is True
+        assert is_excluded_test_player("Claude-HYB3") is True
+        assert is_excluded_test_player("Claude-PW") is True
+        assert is_excluded_test_player("Claude-PW2") is True
+        assert is_excluded_test_player("Claude-TRYHARD") is True
+        assert is_excluded_test_player("Claude-TRYHARD3") is True
+
     def test_real_player_not_excluded(self):
         assert is_excluded_test_player("Alice") is False
         assert is_excluded_test_player("Phil") is False
         assert is_excluded_test_player("Cindy") is False
+        # "Claude" without a trailing dash is not a prefix match — it is
+        # below the prefix threshold and is not in the exact list.
+        assert is_excluded_test_player("Claude") is False
 
     def test_case_sensitive(self):
         # Exact names are case-sensitive

@@ -1,7 +1,7 @@
 """Tests for B8 pilot launch hardening features.
 
 Covers:
-1. Rate limiting on match creation (max 5 active per player)
+1. Abandon-on-create for prior active matches (#2467)
 2. Custom error pages (404, 500)
 3. Session cleanup (expire stale matches)
 4. Enhanced /health endpoint (metrics)
@@ -20,9 +20,7 @@ from tests.unit.hosted_play.conftest import make_hosted_play_test_config
 from web.app import _run_self_test, create_app
 from web.cleanup import (
     DEFAULT_MAX_MATCH_AGE,
-    PLAYER_STALE_MATCH_AGE,
     abandon_player_active_matches,
-    expire_player_stale_matches,
     expire_stale_matches,
 )
 from web.db import (
@@ -32,7 +30,11 @@ from web.db import (
     init_engine,
     make_session_factory,
 )
-from web.middleware import MAX_ACTIVE_MATCHES_PER_PLAYER, check_match_limit
+
+# Number of prior active matches to create in tests that verify the
+# abandon-on-create behavior (historically tied to the removed
+# MAX_ACTIVE_MATCHES_PER_PLAYER constant; now a plain test constant).
+_PRIOR_ACTIVE_MATCHES = 5
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -87,61 +89,26 @@ def _create_match(session, player_id: int, status: str = "active", **kw) -> Matc
 
 
 # ===================================================================
-# 1. Rate Limiting — check_match_limit
+# 1. Abandon-on-create for prior active matches (#2467)
 # ===================================================================
 
 
-class TestMatchRateLimit:
-    """Rate limiting: max 5 active matches per player."""
-
-    def test_under_limit_returns_true(self, app, client):
-        """Player with fewer than MAX active matches is allowed."""
-        session = app.state.session_factory()
-        try:
-            player = _create_player(session)
-            for _ in range(MAX_ACTIVE_MATCHES_PER_PLAYER - 1):
-                _create_match(session, player.id)
-            session.commit()
-            assert check_match_limit(session, player.id) is True
-        finally:
-            session.close()
-
-    def test_at_limit_returns_false(self, app, client):
-        """Player with MAX active matches is rejected."""
-        session = app.state.session_factory()
-        try:
-            player = _create_player(session)
-            for _ in range(MAX_ACTIVE_MATCHES_PER_PLAYER):
-                _create_match(session, player.id)
-            session.commit()
-            assert check_match_limit(session, player.id) is False
-        finally:
-            session.close()
-
-    def test_completed_matches_not_counted(self, app, client):
-        """Completed matches don't count toward the limit."""
-        session = app.state.session_factory()
-        try:
-            player = _create_player(session)
-            for _ in range(MAX_ACTIVE_MATCHES_PER_PLAYER):
-                _create_match(session, player.id, status="complete")
-            session.commit()
-            assert check_match_limit(session, player.id) is True
-        finally:
-            session.close()
+class TestSelectAiAbandonsPriorMatches:
+    """select_ai abandons all prior active matches (#2467)."""
 
     def test_select_ai_abandons_prior_active_matches(self, client, app):
         """POST /play/{uuid}/select-ai abandons all active matches and
-        creates a new one instead of returning 429 (#2467).
+        creates a new one (#2467).
 
-        The rate limit check was removed because select_ai now abandons
-        all active matches before creating the new match — there can never
-        be more than one active match per player.
+        The historical per-player rate limit (``check_match_limit`` /
+        ``MAX_ACTIVE_MATCHES_PER_PLAYER``) was removed because select_ai
+        now abandons all active matches before creating the new match —
+        there can never be more than one active match per player.
         """
         session = app.state.session_factory()
         try:
             player = _create_player(session)
-            for _ in range(MAX_ACTIVE_MATCHES_PER_PLAYER):
+            for _ in range(_PRIOR_ACTIVE_MATCHES):
                 _create_match(session, player.id)
             session.commit()
             link_uuid = player.link_uuid
@@ -171,7 +138,7 @@ class TestMatchRateLimit:
                 .filter_by(player_id=player.id, status="abandoned")
                 .all()
             )
-            assert len(abandoned) == MAX_ACTIVE_MATCHES_PER_PLAYER
+            assert len(abandoned) == _PRIOR_ACTIVE_MATCHES
         finally:
             session.close()
 
@@ -488,82 +455,34 @@ class TestStartupCleanup:
 
 
 # ===================================================================
-# 4. Per-Player Stale Match Cleanup (#2211)
+# 4. Prior-match cleanup on select-ai (#2211, superseded by #2467)
 # ===================================================================
+#
+# Historical note: #2211 added an age-based per-player cleanup
+# (``expire_player_stale_matches``) that ran before the per-player rate
+# limit check.  #2467 then replaced both the rate limit and the age
+# threshold with an unconditional ``abandon_player_active_matches`` call
+# in ``select_ai``.  The dead helpers were removed in a follow-up
+# (#2500); this integration test continues to prove the end-to-end
+# behavior: a player with many pre-existing active matches can still
+# successfully start a new one.
 
 
-class TestPlayerStaleMatchCleanup:
-    """Per-player stale match cleanup on match creation."""
+class TestSelectAiRecoversFromPriorActiveMatches:
+    """select_ai recovers from pre-existing active matches (#2211, #2467)."""
 
-    def test_expire_player_stale_matches_basic(self):
-        """Stale matches for a specific player are abandoned."""
-        engine = init_engine("sqlite:///:memory:")
-        create_tables(engine)
-        sf = make_session_factory(engine)
-        session = sf()
-
-        player = _create_player(session)
-        # Create a stale match (3 hours old — exceeds 2h threshold)
-        stale = _create_match(session, player.id)
-        stale.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
-        # Create a fresh match (30 min old — within threshold)
-        fresh = _create_match(session, player.id)
-        fresh.created_at = datetime.now(timezone.utc) - timedelta(minutes=30)
-        session.commit()
-
-        count = expire_player_stale_matches(session, player.id)
-        session.commit()
-
-        assert count == 1
-        session.refresh(stale)
-        session.refresh(fresh)
-        assert stale.status == "abandoned"
-        assert fresh.status == "active"
-        session.close()
-
-    def test_expire_player_stale_only_affects_own_matches(self):
-        """Cleanup only affects the target player's matches."""
-        engine = init_engine("sqlite:///:memory:")
-        create_tables(engine)
-        sf = make_session_factory(engine)
-        session = sf()
-
-        player_a = _create_player(session)
-        player_b = _create_player(session)
-        # Both have stale matches
-        stale_a = _create_match(session, player_a.id)
-        stale_a.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
-        stale_b = _create_match(session, player_b.id)
-        stale_b.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
-        session.commit()
-
-        # Expire only player_a's matches
-        count = expire_player_stale_matches(session, player_a.id)
-        session.commit()
-
-        assert count == 1
-        session.refresh(stale_a)
-        session.refresh(stale_b)
-        assert stale_a.status == "abandoned"
-        assert stale_b.status == "active"  # Untouched
-        session.close()
-
-    def test_player_cleanup_default_threshold(self):
-        """Default threshold is 2 hours."""
-        assert PLAYER_STALE_MATCH_AGE == timedelta(hours=2)
-
-    def test_cleanup_runs_before_rate_limit_on_select_ai(self, tmp_path):
-        """Stale matches are cleaned up before rate limit check in select_ai (#2211)."""
+    def test_select_ai_succeeds_with_many_prior_active_matches(self, tmp_path):
+        """Select-ai succeeds even when the player has many prior active matches."""
         db_path = tmp_path / "test.db"
         db_url = f"sqlite:///{db_path}"
 
-        # Pre-populate: create a player with MAX active matches, all stale
+        # Pre-populate: create a player with several prior active matches.
         db_engine = init_engine(db_url)
         create_tables(db_engine)
         sf = make_session_factory(db_engine)
         session = sf()
         player = _create_player(session)
-        for _ in range(MAX_ACTIVE_MATCHES_PER_PLAYER):
+        for _ in range(_PRIOR_ACTIVE_MATCHES):
             m = _create_match(session, player.id)
             m.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
         session.commit()
@@ -571,8 +490,8 @@ class TestPlayerStaleMatchCleanup:
         session.close()
         db_engine.dispose()
 
-        # Start the app and try to select AI — should succeed because stale
-        # matches are cleaned up before the rate limit check.
+        # Start the app and try to select AI — should succeed because
+        # abandon_player_active_matches clears the prior matches first.
         config = make_hosted_play_test_config(tmp_path, database_url=db_url)
         app = create_app(config=config)
         with TestClient(app) as client:

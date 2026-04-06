@@ -28,15 +28,25 @@ HUMAN_TEAM = 0
 _LEADERBOARD_MATCH_STATUSES = ("active", "complete", "abandoned")
 
 # Nicknames excluded from leaderboard display (test/bot accounts).
-# Data remains in the DB — this only hides them from the public ranking.
+#
+# NOTE (#2497): This is a fragile, nickname-based filter.  Because
+# nicknames are user-settable strings, a real player who happens to pick
+# one of these names would be silently hidden.  The long-term fix is to
+# track a dedicated ``is_test`` / ``account_type`` column on the Player
+# row and filter on that instead — that migration is tracked as a
+# follow-up to #2497.  Until then, this list is kept narrow and
+# conservative: exact matches are for well-known hand-crafted test
+# accounts only, and automated playtest bots are matched via the
+# ``_EXCLUDED_PREFIXES`` tuple below (see ``Claude-`` and ``FlexBot``).
+#
+# Data remains in the DB — this only hides entries from the public
+# ranking.
 EXCLUDED_TEST_PLAYERS: frozenset[str] = frozenset(
     {
         "QUE-TEST",
         "StratBot",
-        "Claude-PW",
         "CLAUDE",
         "TEST",
-        "Claude-HTTP",
         "MEEKS-TEST",
         "TEST3",
         "TESTV2",
@@ -47,7 +57,16 @@ EXCLUDED_TEST_PLAYERS: frozenset[str] = frozenset(
 )
 
 # Nickname prefixes excluded from leaderboard display.
-_EXCLUDED_PREFIXES: tuple[str, ...] = ("FlexBot",)
+#
+# Any nickname starting with one of these prefixes is treated as a test
+# or automated-bot account.  The ``Claude-`` prefix covers the running
+# family of Claude playtest nicknames (Claude-HTTP, Claude-HYB,
+# Claude-PW, Claude-TRYHARD, and their numbered variants such as
+# Claude-HTTP2, Claude-HYB3, etc.) without requiring a new PR every time
+# a playtest session picks a new suffix.  Real players who choose a
+# nickname starting with ``Claude-`` will be collateral damage here —
+# see the NOTE above for the planned account-flag migration.
+_EXCLUDED_PREFIXES: tuple[str, ...] = ("FlexBot", "Claude-")
 
 
 # ---------------------------------------------------------------------------

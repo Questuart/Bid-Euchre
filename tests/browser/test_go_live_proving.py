@@ -11,6 +11,7 @@ Issues proven:
 - #2331 — Auction log repositions below hand details during gameplay
 - #2462 — Detect auction state independently of human bid panel
 - #2463 — Handle auction reveal/redeal after test submits Pass
+- #2484 — Require the bid panel before taking the Pass path
 """
 
 from __future__ import annotations
@@ -36,6 +37,37 @@ def _advance_next_steps(page: Page, max_steps: int = 8) -> None:
             return
         next_button.first.click()
         page.wait_for_timeout(250)
+
+
+def _in_auction_phase(page: Page) -> bool:
+    """Return True if the server says the current phase is ``auction``.
+
+    Uses the ``data-phase`` attribute on ``#action-rail`` which is always
+    rendered during a match, regardless of whether it is the human's
+    turn to bid.  This is independent of ``#bid-panel`` visibility so
+    auction detection works even while AI opponents are bidding (#2462).
+    """
+    return page.locator("#action-rail[data-phase='auction']").count() > 0
+
+
+def _wait_for_human_bid_turn(page: Page, timeout_ms: int = 8000) -> bool:
+    """Wait for the human bid panel (with Pass button) to become visible.
+
+    Returns ``True`` if the bid panel materialized within *timeout_ms*,
+    ``False`` if the auction ended (phase transitioned away from
+    ``auction``) or the timeout elapsed without the panel appearing
+    (e.g. the hand resolved before it was the human's turn).
+    """
+    deadline = time.monotonic() + (timeout_ms / 1000.0)
+    while time.monotonic() < deadline:
+        pass_btn = page.locator("#bid-panel button.pass-btn")
+        if pass_btn.count() > 0 and pass_btn.first.is_visible():
+            return True
+        # Auction may have ended via redeal/reveal/trick_play transition.
+        if not _in_auction_phase(page):
+            return False
+        page.wait_for_timeout(200)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -87,8 +119,7 @@ def test_auction_log_repositions_during_gameplay(
 
     # Detect auction phase via the action-rail data attribute — this is
     # independent of the human bid panel visibility (#2462).
-    action_rail_auction = page.locator("#action-rail[data-phase='auction']")
-    auction_caught = action_rail_auction.count() > 0
+    auction_caught = _in_auction_phase(page)
 
     if auction_caught:
         # During auction: action-rail should be INSIDE .compass-layout
@@ -122,18 +153,35 @@ def test_auction_log_repositions_during_gameplay(
         """)
         assert is_open is True, "During auction, action-rail <details> should be open"
 
-        # Submit a pass bid to advance past auction.
-        # After Pass, the game may show an auction reveal (Next button),
-        # transition to trick play, or trigger a redeal if all players
-        # passed — wait for any of these states (#2463).
-        page.click("button.pass-btn")
-        page.wait_for_selector(
-            "#trick-area, #hand-result, #match-result, "
-            "button.btn--next-step, "
-            "#action-rail[data-phase='trick_play']",
-            timeout=10000,
-        )
-        _advance_next_steps(page)
+        # #2484 — Wait for the human bid panel to actually materialize
+        # before trying the Pass path.  The auction phase detection above
+        # is independent of the bid panel (#2462), so we may enter this
+        # block while AI opponents are still bidding.  Click Pass only
+        # when the Pass button is visible; otherwise fall through to the
+        # trick-play phase-2 loop which will advance Next steps as
+        # needed.
+        if _wait_for_human_bid_turn(page, timeout_ms=8000):
+            page.click("#bid-panel button.pass-btn")
+            # #2463 — After Pass the game may:
+            #   (a) advance into trick play (directly or via Next reveal),
+            #   (b) return a hand/match result,
+            #   (c) trigger a REDEAL if everyone passed, re-entering the
+            #       auction phase with a fresh hand, or
+            #   (d) fall back into a subsequent auction round after a
+            #       hidden-auction reveal.
+            # Wait for any of those states so the test does not race
+            # the server.  Note that ``#action-rail[data-phase='auction']``
+            # covers both the trick_play transition and the redeal
+            # re-entry because the action-rail is re-rendered with the
+            # new phase value on each swap.
+            page.wait_for_selector(
+                "#trick-area, #hand-result, #match-result, "
+                "button.btn--next-step, "
+                "#action-rail[data-phase='trick_play'], "
+                "#action-rail[data-phase='auction']",
+                timeout=10000,
+            )
+            _advance_next_steps(page)
 
     # --- Phase 2: Verify auction log position during trick play ---
 

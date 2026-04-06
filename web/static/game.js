@@ -320,15 +320,28 @@
             var previousPhase = sessionStorage.getItem(AUCTION_LOG_PHASE_KEY);
             sessionStorage.setItem(AUCTION_LOG_PHASE_KEY, currentPhase);
 
-            // During auction phase: always force open.
-            // Server renders <details open> during auction, and JS must
-            // not override that based on stale sessionStorage.  Previous
-            // attempts (#2459, #2475) to selectively clear stale state
-            // still left edge cases where saved '0' closed the log.
-            // The authoritative rule is simple: auction → open.  (#2488)
+            // Auction phase rules (#2488, #2492):
+            //
+            // 1. Entering the auction (previous phase != 'auction'): force
+            //    the log open and clear any stale saved state from a prior
+            //    auction so the user sees it as expected on first render.
+            // 2. Already inside the same auction (subsequent HTMX swaps or
+            //    page reloads while the server still says 'auction'): honor
+            //    the user's explicit toggle recorded in sessionStorage.  A
+            //    saved '0' means the user closed it deliberately during the
+            //    current auction and we must not stomp that choice.
             if (currentPhase === 'auction') {
-                details.open = true;
-                sessionStorage.removeItem(AUCTION_LOG_KEY);
+                if (previousPhase !== 'auction') {
+                    details.open = true;
+                    sessionStorage.removeItem(AUCTION_LOG_KEY);
+                } else {
+                    var auctionSaved = sessionStorage.getItem(AUCTION_LOG_KEY);
+                    if (auctionSaved === '0') {
+                        details.open = false;
+                    } else {
+                        details.open = true;
+                    }
+                }
                 return;
             }
 
@@ -649,6 +662,32 @@
      * --------------------------------------------------------------- */
 
     var _autoAdvanceTimer = null;
+    // Marker class applied to .next-controls when JS has taken over the
+    // auto-advance flow.  The CSS hide rule keys off this class so the
+    // manual Next button stays visible as a fallback if JS never runs or
+    // an auto-advance request fails (#2487).
+    var AUTO_ADVANCE_ACTIVE_CLASS = 'js-auto-advance-active';
+
+    function getAutoAdvanceControls() {
+        return document.querySelector('.next-controls[data-auto-advance]');
+    }
+
+    function markAutoAdvanceHidden(nextControls) {
+        if (nextControls) {
+            nextControls.classList.add(AUTO_ADVANCE_ACTIVE_CLASS);
+        }
+    }
+
+    function revealManualNextFallback(nextControls) {
+        // Drop the JS-applied hidden marker so the manual Next button
+        // becomes visible and clickable again (#2487 fallback).
+        if (!nextControls) {
+            nextControls = getAutoAdvanceControls();
+        }
+        if (nextControls) {
+            nextControls.classList.remove(AUTO_ADVANCE_ACTIVE_CLASS);
+        }
+    }
 
     function cancelAutoAdvance() {
         if (_autoAdvanceTimer !== null) {
@@ -660,7 +699,7 @@
     function scheduleAutoAdvance() {
         cancelAutoAdvance();
 
-        var nextControls = document.querySelector('.next-controls[data-auto-advance]');
+        var nextControls = getAutoAdvanceControls();
         if (!nextControls) {
             return;
         }
@@ -675,12 +714,24 @@
             return;
         }
 
+        // JS is taking over: hide the manual button via the progressive
+        // enhancement class.  If anything below fails the class is
+        // removed and the manual button reappears (#2487).
+        markAutoAdvanceHidden(nextControls);
+
         _autoAdvanceTimer = setTimeout(function () {
             _autoAdvanceTimer = null;
             // Only auto-advance if the form still exists in the DOM
             // (HTMX may have swapped it out if the user clicked manually)
-            if (document.body.contains(form)) {
+            if (!document.body.contains(form)) {
+                return;
+            }
+            try {
                 htmx.trigger(form, 'submit');
+            } catch (_) {
+                // If HTMX is unavailable or the trigger throws, restore
+                // the manual Next button so the user can recover.
+                revealManualNextFallback(nextControls);
             }
         }, delayMs);
     }
@@ -706,6 +757,23 @@
             }
             cancelAutoAdvance();
         });
+
+        // If the auto-advance request itself fails (network error,
+        // timeout, 4xx/5xx), reveal the manual Next button so the
+        // player is not trapped waiting for an auto-advance that will
+        // never succeed (#2487).
+        function handleNextFormFailure(event) {
+            var detail = event.detail || {};
+            var elt = detail.elt;
+            if (!elt || elt.id !== 'next-step-form') {
+                return;
+            }
+            cancelAutoAdvance();
+            revealManualNextFallback();
+        }
+        document.body.addEventListener('htmx:responseError', handleNextFormFailure);
+        document.body.addEventListener('htmx:sendError', handleNextFormFailure);
+        document.body.addEventListener('htmx:timeout', handleNextFormFailure);
     }
 
     function initialize() {
