@@ -1,0 +1,128 @@
+# Glutton Cash-A + Claim-1-fix paired ablation (PLAY sub-matrix)
+#
+# Purpose
+# -------
+# Isolate the individual contribution of:
+#   (a) Cash-A flag flip (cash_winners_on_lead: False -> True) on the
+#       v0.8.0 code as merged in PR #2534 — "C1" in the task matrix.
+#   (b) Claim 1 fix on `_draw_trump_lead` (sure-winner-first fallback)
+#       on top of Cash-A — "C2" in the task matrix.
+#
+# Why a separate play-side sub-matrix:
+# ------------------------------------
+# Cash-A and the Claim 1 fix are pure PLAY-strategy edits. The cleanest
+# comparison surface is `mode: self_play` with `pair_deals: true` across
+# the canonical 6 pre-declared scenarios (high, low, suit x {H,D,C,S}),
+# which holds contract/trump constant and lets `load_paired_data` index by
+# (deal_id, seed). GBT bidder enhancements (cells C3/C4 in the task
+# matrix) are inert in bidless mode because the bidder is never invoked.
+# They are covered by a companion auction-mode config:
+# `experiments/configs/glutton_gbt_ablation_auction.yaml`.
+#
+# See the design report:
+#   plans/sessions/2026-04-06_glutton_gbt_quicksim_experiment.md
+#
+# Prerequisites (must land before running this config):
+# -----------------------------------------------------
+# 1. The Claim 1 fix from
+#    `plans/sessions/2026-04-06_cash_a_deep_audit.md` §2.4 must be
+#    implemented on `GluttonStrategy._draw_trump_lead` AND
+#    `GluttonIsolatedStrategy._draw_trump_lead`.
+# 2. A temporary research-only flag must be added to
+#    `GluttonIsolatedStrategy.__init__`:
+#      `draw_trump_lead_legacy: bool = False`
+#    When True, `_draw_trump_lead` uses the pre-fix `max(...)` logic for
+#    the buggy cohort. When False (default), the new sure-winner-first
+#    fallback is used. This flag is research-only — it must NOT be added
+#    to the production `GluttonStrategy` class, and a follow-up cleanup
+#    PR removes it after this ablation signs off.
+# 3. `GLUTTON_STRATEGY_VERSION` is bumped to `"0.8.1"`.
+#
+# Compute budget
+# --------------
+# 3 cells * 6 scenarios * 5000 deals = 90,000 hands. At ~5,000 hands/sec
+# bidless throughput this completes in ~20 s. Expected MDE at n=5000 on
+# tricks_team0 per paired deal is ~0.014 tricks at 95% CI.
+#
+# Run
+# ---
+#   uv run python experiments/run_experiment.py \
+#     --config experiments/configs/glutton_gbt_ablation_play.yaml \
+#     --seed 42
+
+experiment_name: glutton_gbt_ablation_play
+
+parameters:
+  n_per: 5000
+  seed: 42
+  # hand_end records are required by
+  # src/bid_euchre/analysis/paired.py::load_paired_data.
+  log_level: hand
+  mode: self_play
+  # Same physical deals across all scenarios and all cells -> paired
+  # bootstrap analysis on matched (deal_id, seed) keys.
+  pair_deals: true
+
+# Three cells of the PLAY sub-matrix. Each cell is a separate
+# `GluttonIsolatedStrategy` instance with a distinct `name`, which
+# causes the runner to emit one JSONL log per cell under
+# `data/runs/<run_id>/logs/<run_id>_<cell-name>.jsonl`. That is the
+# file shape `load_paired_data` globs on.
+strategies:
+  # Cell P0 — Baseline. Current production default: Cash-A flag OFF.
+  # Reproduces the on-disk behavior of v0.8.0 before PR #2534's flag
+  # flip is considered.
+  - name: p0_baseline_flag_off
+    class_name: GluttonIsolatedStrategy
+    params:
+      cash_winners_on_lead: false
+      # draw_trump_lead_legacy is irrelevant when the flag is off, but
+      # pin it defensively so the baseline is absolutely unchanged by
+      # the research flag's existence.
+      draw_trump_lead_legacy: false
+
+  # Cell P1 — Cash-A ON, Claim 1 NOT fixed.
+  # Reproduces PR #2534's v0.8.0 code path end-to-end, including the
+  # `_draw_trump_lead` LB-burn bug confirmed in the Cash-A deep audit
+  # (`plans/sessions/2026-04-06_cash_a_deep_audit.md` §Claim 1).
+  - name: p1_cash_a_buggy
+    class_name: GluttonIsolatedStrategy
+    params:
+      cash_winners_on_lead: true
+      # Force the pre-fix behavior via the research flag.
+      draw_trump_lead_legacy: true
+
+  # Cell P2 — Cash-A ON, Claim 1 fixed. This is the candidate state
+  # for the operator's Cash-A flag flip.
+  - name: p2_cash_a_fixed
+    class_name: GluttonIsolatedStrategy
+    params:
+      cash_winners_on_lead: true
+      draw_trump_lead_legacy: false
+
+# Canonical 6-scenario comparison surface.
+# See plans/sessions/2026-03-27_glutton-strategy-revamp-experiment-design.md
+# and plans/sessions/2026-04-06_ai_play_strategy_investigation.md for
+# the same layout.
+scenarios:
+  - name: suit_C
+    contract_type: suit
+    trump_suit: C
+
+  - name: suit_D
+    contract_type: suit
+    trump_suit: D
+
+  - name: suit_H
+    contract_type: suit
+    trump_suit: H
+
+  - name: suit_S
+    contract_type: suit
+    trump_suit: S
+
+  - name: high
+    contract_type: high
+
+  - name: low
+    contract_type: low
