@@ -1434,7 +1434,12 @@ async def submit_bid(
         if bid_n == 0:
             bid = BidAction.pass_bid()
         else:
-            if bid_contract is None:
+            # Treat both None and empty string as "no contract selected" —
+            # the bid form now defaults the contract dropdown to an empty
+            # placeholder option (#2521 item 4), so the submitted form may
+            # include bid_contract="" if the client bypasses the disabled
+            # Submit Bid button.
+            if not bid_contract:
                 return HTMLResponse(
                     _render_game_board(
                         request,

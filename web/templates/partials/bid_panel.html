@@ -27,22 +27,24 @@
         <input type="hidden" name="turn_number" value="{{ turn_number }}">
 
         <div class="bid-controls">
-            {# Bid type selector #}
-            <label for="bid-type">Type:</label>
-            <select id="bid-type" name="bid_type"
-                    aria-label="Bid type"
-                    onchange="updateBidControls(this.value)">
-                <option value="regular"
-                    {% if bid_type|default("regular") not in ["regular"] %}disabled{% endif %}
-                >Regular</option>
-                <option value="moon"
-                    {% if bid_type|default("regular") == "loner" %}disabled{% endif %}
-                >Moon (20)</option>
-                <option value="loner">Loner (40)</option>
-            </select>
+            {# Bid type selector — single-line row (#2521 item 2) #}
+            <div class="bid-row">
+                <label for="bid-type">Type:</label>
+                <select id="bid-type" name="bid_type"
+                        aria-label="Bid type"
+                        onchange="updateBidControls(this.value)">
+                    <option value="regular"
+                        {% if bid_type|default("regular") not in ["regular"] %}disabled{% endif %}
+                    >Regular</option>
+                    <option value="moon"
+                        {% if bid_type|default("regular") == "loner" %}disabled{% endif %}
+                    >Moon (20)</option>
+                    <option value="loner">Loner (40)</option>
+                </select>
+            </div>
 
-            {# Bid level — only for regular bids #}
-            <span id="bid-level-wrapper">
+            {# Bid level — single-line row; only for regular bids #}
+            <div class="bid-row" id="bid-level-wrapper">
                 <label for="bid-level">Bid:</label>
                 <select id="bid-level" name="bid_n" aria-label="Bid level">
                     {% for n in range(current_high_bid + 1, 11) %}
@@ -50,22 +52,29 @@
                     {% endfor %}
                     <option value="0">Pass</option>
                 </select>
-            </span>
+            </div>
 
-            <label for="bid-contract">Contract:</label>
-            <select id="bid-contract" name="bid_contract" aria-label="Contract suit">
-                <option value="S">♠ Spades</option>
-                <option value="H">♥ Hearts</option>
-                <option value="D">♦ Diamonds</option>
-                <option value="C">♣ Clubs</option>
-                <option value="HIGH">High (no trump)</option>
-                <option value="LOW">Low (no trump)</option>
-            </select>
+            {# Contract — defaults to placeholder; Submit Bid stays disabled
+               until the user explicitly picks a suit (#2521 item 4). #}
+            <div class="bid-row">
+                <label for="bid-contract">Contract:</label>
+                <select id="bid-contract" name="bid_contract" aria-label="Contract suit"
+                        onchange="updateBidSubmitState()">
+                    <option value="" selected>— select —</option>
+                    <option value="S">♠ Spades</option>
+                    <option value="H">♥ Hearts</option>
+                    <option value="D">♦ Diamonds</option>
+                    <option value="C">♣ Clubs</option>
+                    <option value="HIGH">High (no trump)</option>
+                    <option value="LOW">Low (no trump)</option>
+                </select>
+            </div>
 
-            <button type="submit" aria-label="Submit bid">Submit Bid</button>
+            <button type="submit" id="bid-submit" class="bid-submit-btn"
+                    aria-label="Submit bid" disabled>Submit Bid</button>
         </div>
 
-        {# Pass button — always visible as a quick action #}
+        {# Pass button — always visible as a quick action, full-width (#2521 item 3) #}
         <div class="bid-pass">
             <button type="button"
                     onclick="submitPass(this)"
@@ -101,12 +110,30 @@ function updateBidControls(bidType) {
     }
 }
 
+// Enable Submit Bid only when a contract is explicitly selected (#2521 item 4)
+function updateBidSubmitState() {
+    var contractSelect = document.getElementById('bid-contract');
+    var submitBtn = document.getElementById('bid-submit');
+    if (!contractSelect || !submitBtn) return;
+    submitBtn.disabled = !contractSelect.value;
+}
+
 function submitPass(btn) {
     var form = btn.closest('form');
     // Set form fields for a pass
     form.querySelector('[name="bid_n"]').value = '0';
     form.querySelector('[name="bid_type"]').value = 'regular';
+    // Pass doesn't need a contract — clear it so server takes pass_bid() branch
+    var contractSelect = form.querySelector('[name="bid_contract"]');
+    if (contractSelect) contractSelect.value = '';
     // Trigger HTMX submission
     htmx.trigger(form, 'submit');
+}
+
+// Initialize submit state on load (template renders with disabled by default
+// and contract placeholder selected; this is a no-op unless the browser
+// autofilled a value from cache).
+if (typeof updateBidSubmitState === 'function') {
+    updateBidSubmitState();
 }
 </script>

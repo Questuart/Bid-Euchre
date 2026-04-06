@@ -240,6 +240,56 @@ class TestSubmitBid:
                 )
             session2.close()
 
+    def test_submit_bid_rejects_empty_contract_for_non_pass(self, client, app):
+        """Non-pass bids with an empty contract must be rejected (#2521 item 4).
+
+        The bid form now defaults the contract dropdown to an empty
+        placeholder option. If a client bypasses the disabled Submit Bid
+        button, the server must still reject the submission.
+        """
+        link_uuid = _setup_game(client)
+        advance_pending_reveals(client, app, link_uuid)
+
+        # Drive the hand to the human's auction turn regardless of the AI's
+        # natural schedule — we need to exercise the server validation path.
+        result = get_match_state(app, link_uuid)
+        assert result is not None
+        state, match_row, session = result
+        hand = state.current_hand
+        assert hand is not None
+        hand.phase = "auction"
+        hand.current_seat = HUMAN_SEAT
+        # Reset auction so any bid (>=1) is a legal opening bid.
+        hand.auction = []
+        hand.current_high_bid = 0
+        match_row.match_state_json = json.dumps(state.to_dict())
+        session.commit()
+        turn = hand.turn_number
+        session.close()
+
+        # POST a non-pass bid with an empty contract string.
+        resp = client.post(
+            f"/play/{link_uuid}/bid",
+            data={
+                "turn_number": turn,
+                "bid_n": 3,
+                "bid_contract": "",
+                "bid_type": "regular",
+            },
+        )
+        assert resp.status_code == 200
+        assert "Please select a contract type" in resp.text
+
+        # State must not have advanced past the human's turn.
+        result2 = get_match_state(app, link_uuid)
+        assert result2 is not None
+        state2, _, session2 = result2
+        hand2 = state2.current_hand
+        assert hand2 is not None
+        assert hand2.current_seat == HUMAN_SEAT
+        assert hand2.turn_number == turn
+        session2.close()
+
 
 # ---------------------------------------------------------------------------
 # Test 4a: Unified next-step reveal flow
