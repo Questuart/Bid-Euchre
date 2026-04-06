@@ -21,7 +21,7 @@ of moon hands with exchanged cards highlighted.
 ### Exchange Data Flow
 
 The moon exchange is a 2-card swap (not 3 as the issue mentions; the code
-uses `n_cards=2` throughout `sim/exchange.py`). The mooner gives their
+uses `n_cards=2` throughout `src/bid_euchre/sim/exchange.py`). The mooner gives their
 2 worst cards to partner, and receives partner's 2 best.
 
 **Exchange data storage** (`src/bid_euchre/hosted_play/state.py:102-107`):
@@ -34,25 +34,25 @@ exchange_phase: str | None = None                 # "selecting" during interacti
 
 All exchange fields are stored **from the mooner's perspective**, serialized
 correctly in `to_dict()`/`from_dict()`, and exposed in `get_visible_state()`
-(`engine.py:495-497`).
+(`src/bid_euchre/hosted_play/engine.py:495-497`).
 
 ### Key Discovery: Partner's Hand is Available at End of Hand
 
 **Moon trick play uses 3-player tricks.** The mooner's partner sits out:
 
 ```python
-# engine.py:378-380, 870-872
+# src/bid_euchre/hosted_play/engine.py:378-380, 870-872
 hand.sitting_out_seat = (hand.bidder_seat + 2) % _NUM_PLAYERS
 ```
 
 Cards are `.pop()`-ed from `hand.hands[seat]` during trick play
-(`engine.py:946`). Since the partner sits out and plays zero cards, their
+(`src/bid_euchre/hosted_play/engine.py:946`). Since the partner sits out and plays zero cards, their
 10-card post-exchange hand **remains intact** in `hand.hands[sitting_out_seat]`
 at end of hand. No reconstruction or snapshot field is needed.
 
 ### Current End-of-Hand UI
 
-The `hand_result.html` template (`web/templates/partials/hand_result.html`)
+The `web/templates/partials/hand_result.html` template
 already renders a moon exchange summary section (lines 115-127):
 
 ```jinja2
@@ -69,16 +69,16 @@ full hand with visual card components and highlight styling.
 
 ### Template Context Pipeline
 
-1. `engine.get_visible_state()` (`engine.py:465-523`) builds the visible
-   state dict. Currently exposes `human_hand` (line 489) but **explicitly
-   excludes other players' hands** (line 470 docstring).
+1. `engine.get_visible_state()` (`src/bid_euchre/hosted_play/engine.py:465-523`)
+   builds the visible state dict. Currently exposes `human_hand` (line 489) but
+   **explicitly excludes other players' hands** (line 470 docstring).
 
-2. `_build_game_context()` (`routes.py:489-643`) merges visible state into
+2. `_build_game_context()` (`web/routes.py:489-643`) merges visible state into
    the Jinja2 context dict. The `hand_result` phase is dispatched by
-   `_game_phase()` (`routes.py:347-348`) when `hand.phase == "complete"`.
+   `_game_phase()` (`web/routes.py:347-348`) when `hand.phase == "complete"`.
 
-3. `game_content.html` (line 33-34) includes `partials/hand_result.html`
-   when `phase == "hand_result"`.
+3. `web/templates/partials/game_content.html` (line 33-34) includes
+   `web/templates/partials/hand_result.html` when `phase == "hand_result"`.
 
 ### Exchange Perspective Mapping
 
@@ -110,7 +110,7 @@ is minimal. Conditionally gate on `bid_type == "moon"` only.
 
 ### Change 1: Expose partner's hand in visible state (engine.py)
 
-In `get_visible_state()` (`engine.py:465-523`), when the hand is complete
+In `get_visible_state()` (`src/bid_euchre/hosted_play/engine.py:465-523`), when the hand is complete
 and was a moon bid, include the sitting-out seat's hand:
 
 ```python
@@ -134,8 +134,8 @@ existing code reads these fields, so no regression path.
 
 ### Change 2: Render partner's hand in hand_result.html
 
-Expand the existing exchange section in `hand_result.html` (after line 127)
-to render partner's full hand with card components:
+Expand the existing exchange section in `web/templates/partials/hand_result.html`
+(after line 127) to render partner's full hand with card components:
 
 ```jinja2
 {% set partner_hand = partner_exchange_hand | default([], true) %}
@@ -181,9 +181,10 @@ nothing for non-moon hands or when partner hand is not available.
 ### Change 3: CSS for partner hand section
 
 Add styles for `.result-partner-hand` and the exchange highlight classes.
-Reuse existing `.card--exchange-received` styles from `moon_exchange.html`.
+Reuse existing `.card--exchange-received` styles from
+`web/templates/partials/moon_exchange.html`.
 
-**File:** `web/static/css/game.css` (or wherever card styles live)
+**File:** `web/static/style.css`
 **Risk:** Low. Additive CSS only.
 
 ### Change 4: Tests
@@ -213,14 +214,14 @@ description: |
   Add partner's full hand reveal to the hand result screen after moon hands.
   The partner (who sits out during trick play) has their 10-card post-exchange
   hand intact in state. Expose it through get_visible_state() and render it
-  in hand_result.html with visual highlights on exchanged cards.
+  in web/templates/partials/hand_result.html with visual highlights on exchanged cards.
 
   Plan: plans/sessions/2026-04-06_moon_exchange_reveal_plan.md
 
 scope_declared:
   - src/bid_euchre/hosted_play/engine.py     # get_visible_state() — add partner_exchange_hand
   - web/templates/partials/hand_result.html   # render partner hand section
-  - web/static/css/game.css                   # additive CSS for partner hand display
+  - web/static/style.css                       # additive CSS for partner hand display
   - tests/unit/hosted_play/test_partials.py   # template tests
   - tests/unit/hosted_play/test_engine.py     # visible state tests
 
@@ -251,9 +252,9 @@ domain: browser-game
 The issue #2554 body says "3-card exchange" but the implementation uses
 **2-card exchange** throughout:
 
-- `sim/exchange.py:200-264` — `perform_exchange()` swaps 2 cards each way
-- `engine.py:317-318` — validation requires exactly 2 card indices
-- `exchange.py:238-239` — `_select_mooner_discards` and `_select_partner_gifts`
+- `src/bid_euchre/sim/exchange.py:200-264` — `perform_exchange()` swaps 2 cards each way
+- `src/bid_euchre/hosted_play/engine.py:317-318` — validation requires exactly 2 card indices
+- `src/bid_euchre/sim/exchange.py:238-239` — `_select_mooner_discards` and `_select_partner_gifts`
   both use `n_cards=2`
 
 The acceptance criteria in the issue that reference "3 cards" should be
@@ -267,7 +268,7 @@ description error.
 | Double-deck card matching in template (same card appears twice) | Medium | Use list containment check `[suit, rank] in exchange_given_cards` — works for double deck since both copies would match |
 | Partner hand empty at end of hand | Very Low | Only possible if partner was NOT sitting out, which contradicts `bid_type == "moon"`. Gate on `sitting_out_seat is not None` |
 | Existing exchange tests break | Very Low | New section is additive, gated on new template variable. Existing tests don't set `partner_exchange_hand` |
-| CSS conflicts with moon_exchange.html styles | Low | Reuse existing `.card--exchange-received` class, scope new styles under `.result-partner-hand` |
+| CSS conflicts with `web/templates/partials/moon_exchange.html` styles | Low | Reuse existing `.card--exchange-received` class, scope new styles under `.result-partner-hand` |
 
 ## Out of Scope
 
