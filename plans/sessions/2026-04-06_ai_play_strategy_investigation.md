@@ -356,12 +356,23 @@ already does.
 
 ## Acceptance Criteria
 
-1. **Code:** all three fixes landed in `GluttonStrategy` and gated
-   behind a new `sure_winner_cashing` feature flag in
-   `GluttonIsolatedStrategy`.
+1. **Code:** all three fixes landed in `GluttonStrategy`, and
+   `GluttonIsolatedStrategy` exposes **two independent feature flags**
+   so Cash-A and Cash-B can be isolated in A/B experiments even after
+   both PRs ship:
+   - `cash_winners_on_lead` — gates Fix 1 (sure-winner lead priority)
+     and Fix 2 (draw trump from the top). Shipped by Cash-A.
+   - `cash_winners_on_follow` — gates Fix 3 (sure-winner follow +
+     2nd-hand-low fallback). Shipped by Cash-B.
+
+   Both default to `True` on `GluttonStrategy` (production behavior)
+   and default to `False` on `GluttonIsolatedStrategy` (baseline
+   behavior, overridable per experiment). This lets the experiment
+   matrix enumerate all four combinations:
+   `(lead=False, follow=False)`, `(lead=True, follow=False)`,
+   `(lead=False, follow=True)`, `(lead=True, follow=True)`.
 2. **Unit tests:**
-   - New tests in `tests/unit/strategy/test_greedy.py`
-     (or `tests/unit/test_greedy.py` — confirm path during implementation):
+   - New tests in `tests/unit/test_greedy.py`:
      - Low contract: AI leads preserved T once opponents void.
      - High contract: 2nd-seat Slim dumps low instead of burning J
        when A is still held.
@@ -370,32 +381,70 @@ already does.
      - Suit contract: AI cashes remaining side-suit A after running
        opponents out (two-lead sequence).
      - Equivalence test for `GluttonIsolatedStrategy` with
-       `sure_winner_cashing=False`: identical behavior to pre-fix
+       `cash_winners_on_lead=False` and
+       `cash_winners_on_follow=False`: identical behavior to pre-fix
        snapshot.
-3. **Regression test:** existing `tests/unit/test_greedy.py` and
-   `tests/unit/strategy/test_*` pass unchanged.
-4. **Statistical proving (Tier 2 experiment):** a seeded bidless
-   self-play head-to-head comparison between pre-fix and post-fix
-   `GluttonStrategy`, 50,000 deals across 6 contract × trump
-   scenarios (reusing the matrix from
+     - A/B isolation test: with only `cash_winners_on_lead=True`,
+       Cash-A behaviors fire but Cash-B does not (and vice versa).
+3. **Regression test:** existing strategy test files pass unchanged:
+   `tests/unit/test_greedy.py`, `tests/unit/test_glutton.py`,
+   `tests/unit/test_strategy.py`, `tests/unit/test_strategy_correctness.py`,
+   and `tests/unit/test_strategy_registry.py`.
+4. **Statistical proving (Tier 2 experiment):** a seeded
+   head-to-head run with pre-fix `GluttonIsolatedStrategy`
+   (both cash flags `False`) and post-fix `GluttonStrategy`
+   (both cash flags `True`) seated opposite each other on the
+   **same deals**, using the canonical runner in
+   `head_to_head_matrix` mode (the mode used by
+   `scripts/internal/run_arc_d_h2h_battery.py`), 50,000 deals
+   across the 6 contract × trump scenarios reused from
    `plans/sessions/2026-03-27_glutton-strategy-revamp-experiment-design.md`
-   §Phase 1A). Post-fix must win or tie (paired bootstrap
-   `avg_tricks_team0`, p < 0.05, 95% CI not negative).
+   §Phase 1A. Because both strategies play the same matched deals,
+   post-hand analysis must compute **paired deltas** via
+   `bid_euchre.analysis.paired.compute_paired_deltas` +
+   `bid_euchre.analysis.stats.paired_t_ci`. Post-fix must win or tie
+   on `avg_tricks_team0` (paired bootstrap, p < 0.05, 95% CI lower
+   bound ≥ 0).
 
 ## Validation Commands
 
 ```bash
 # Tier 1 (during implementation)
-uv run python -m pytest tests/unit/strategy/test_greedy.py -x
-uv run python -m pytest tests/unit/test_greedy.py -x  # confirm path
+uv run python -m pytest tests/unit/test_greedy.py -x
 
 # Tier 2 (before PR)
 make check-gated
 
-# Tier 2 statistical proving (new experiment config)
-uv run python experiments/run_experiment.py \
-  --config experiments/configs/glutton_sure_winner_h2h.yaml \
-  --seed 42 --n_per 50000
+# Tier 2 statistical proving — paired H2H matrix on matched deals.
+# Cash-A creates a new experiment config under experiments/configs/
+# (proposed filename stem: "glutton_sure_winner_h2h") that declares
+# both strategies seated across the 6 contract x trump scenarios and
+# sets mode: head_to_head_matrix. Replace <CONFIG_PATH> below:
+#
+# uv run python experiments/run_experiment.py \
+#   --config <CONFIG_PATH> \
+#   --seed 42 --n_per 50000
+#
+# After the run completes, compute the paired bootstrap gate from
+# the emitted JSONL hand records (not from rollup.json):
+#
+# uv run python -c "
+# from bid_euchre.analysis.paired import (
+#     load_paired_data, compute_paired_deltas,
+# )
+# from bid_euchre.analysis.stats import paired_t_ci
+# run_dir = 'data/runs/<RUN_ID>'
+# data = load_paired_data(run_dir,
+#     ['glutton_isolated_baseline', 'glutton_cash_winners'])
+# deltas = compute_paired_deltas(data, metric='team0_tricks')
+# mean_d, lo, hi = paired_t_ci(deltas.tolist())
+# assert lo >= 0, f'Paired gate failed: CI=[{lo:.3f}, {hi:.3f}]'
+# print(f'mean_delta={mean_d:+.3f} 95% CI=[{lo:+.3f}, {hi:+.3f}]')
+# "
+#
+# NOTE: scripts/compare_runs.py is NOT suitable for this gate -- it
+# compares two independently-sampled runs on bootstrap distributions,
+# not paired per-deal deltas. Use the analysis.paired module instead.
 
 # Tier 2 browser smoke (operator validation)
 # Manual playtest via the hosted game: play one Low, one High, and
@@ -422,8 +471,8 @@ uv run python experiments/run_experiment.py \
 
 | PR | Scope | Size | Validation | Depends on |
 |----|-------|------|-----------|-----------|
-| **Cash-A:** Sure-winner lead + draw trump high in `GluttonStrategy` + `GluttonIsolatedStrategy` (behind flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/**/test_greedy.py`, optionally `tests/unit/strategy/` | ~150–250 LoC + ~20 test cases | `make check-gated`; unit tests; bidless 50K H2H comparator | none |
-| **Cash-B:** 2nd-hand-low / prefer-sure-winners in the follow phase (both classes) | same files | ~60–120 LoC + ~10 test cases | same as Cash-A + explicit 2nd-seat scenario tests | Cash-A |
+| **Cash-A:** Sure-winner lead + draw trump high in `GluttonStrategy` + `GluttonIsolatedStrategy` (behind `cash_winners_on_lead` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py`, new `experiments/configs/` H2H YAML | ~150–250 LoC + ~20 test cases | `make check-gated`; unit tests; paired H2H on matched deals via `analysis.paired` | none |
+| **Cash-B:** 2nd-hand-low / prefer-sure-winners in the follow phase (both classes, behind `cash_winners_on_follow` flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py` | ~60–120 LoC + ~10 test cases | same as Cash-A + explicit 2nd-seat scenario tests; paired H2H reusing Cash-A config | Cash-A |
 
 Both PRs deliberately keep the scope to `greedy.py` and its tests.
 Neither PR touches `web/`, the hosted_play engine, the bidding
@@ -464,8 +513,11 @@ YAML config).
   semantics. Codex review should catch any rank-inversion mistakes.
 - **Experimental complexity:** **Medium.** ~5 min per 50K deals
   H2H × 3 matchups × 2 conditions ≈ 30 min compute. The paired
-  bootstrap comparator (`scripts/compare_runs.py`) is already
-  scaffolded.
+  analysis stack (`bid_euchre.analysis.paired.compute_paired_deltas`
+  + `bid_euchre.analysis.stats.paired_t_ci`) is already scaffolded
+  and is the correct path for matched-deal comparison.
+  `scripts/compare_runs.py` is **not** suitable — it compares two
+  independently-sampled runs, not paired deltas.
 - **Live-game risk:** **LOW–MEDIUM.** The browser game is post
   go-live with real players. The fix is a strict improvement in
   expected play quality (cashing winners is universally better
@@ -504,8 +556,10 @@ The smoke tests should happen post-merge, with a dedicated issue
   #1917 / 2026-03-27 plan). This fix is strictly about mechanical
   card selection and must stay orthogonal.
 - **Do not retire `GluttonIsolatedStrategy`.** It is actively used in
-  feature isolation experiments. Add a new `sure_winner_cashing` flag;
-  do not fold the two classes together.
+  feature isolation experiments. Add the two independent flags
+  `cash_winners_on_lead` and `cash_winners_on_follow` as described in
+  §Acceptance Criteria item 1; do not fold the two classes together
+  and do not collapse the flags into one.
 - **Do not change `card_value_for_dump` or `rank_strength`.** Those
   utilities are correct; the bug is in the strategy logic that
   consumes them.
@@ -555,22 +609,55 @@ only after operator smoke validation.
 to a single author lane (author-a or author-b). Each PR is a
 1–3 hour unit.
 
+**Required execution sequence (AGENTS.md §12.4):** The receiving author
+lane must, for each task packet, do the following in order before
+writing any production code:
+
+1. Refresh this plan plus the relevant governing-plan context
+   (browser game expansion + any active GluttonV2 notes).
+2. Draft or refine a concrete execution plan inline in the task
+   (scope, file list, test list, H2H config shape, acceptance gate).
+3. Spawn at least one reviewer agent to review that execution plan
+   before making substantive edits to `greedy.py`.
+4. Create a TUI task list covering implementation, unit tests, Tier 2
+   paired H2H run, paired-bootstrap gate, and PR shipment.
+5. Assess the work for safe parallelism — Cash-A and Cash-B are
+   sequential (B is blocked by A); within each PR the unit tests and
+   experiment config work on disjoint files and can run in parallel.
+6. Execute the work end to end autonomously: implement → unit tests →
+   `make check-gated` → H2H run → paired bootstrap → commit → open PR
+   → include `Validation Performed` evidence (paired mean delta and
+   95% CI per scenario, unit test output, `make check-gated` summary)
+   in the PR body.
+
+Handoffs that skip any of these steps are incomplete per AGENTS.md
+§12.4.
+
 **Task packet skeletons:**
 
 1. **Cash-A:** *Sure-winner lead priority + draw trump from the top*
    - `scope_declared`: `src/bid_euchre/strategy/greedy.py`,
-     `tests/unit/**/test_greedy.py`,
-     (new) `experiments/configs/glutton_sure_winner_h2h.yaml`
-   - `validation`: `make check-gated` then
-     `uv run python experiments/run_experiment.py --config experiments/configs/glutton_sure_winner_h2h.yaml --seed 42 --n_per 50000`
-     and compare pre/post with `scripts/compare_runs.py`
+     `tests/unit/test_greedy.py`,
+     and a new paired H2H experiment YAML under
+     `experiments/configs/` (proposed filename stem
+     "glutton_sure_winner_h2h" — Cash-A creates it, using
+     `mode: head_to_head_matrix` so both strategies play matched deals)
+   - `validation`: `make check-gated` then the H2H run and paired
+     bootstrap gate described in §Acceptance Criteria item 4 and
+     §Validation Commands. **Do not** use `scripts/compare_runs.py`
+     for the acceptance gate — it compares independent runs, not
+     paired per-deal deltas. Use
+     `bid_euchre.analysis.paired.compute_paired_deltas` +
+     `bid_euchre.analysis.stats.paired_t_ci` on the emitted JSONL
+     hand records.
    - Reference: this doc §Fix 1, §Fix 2
 
 2. **Cash-B:** *Sure-winner follow + 2nd-hand-low fallback*
    - `scope_declared`: `src/bid_euchre/strategy/greedy.py`,
-     `tests/unit/**/test_greedy.py`
+     `tests/unit/test_greedy.py`
    - `validation`: `make check-gated` + unit tests covering 2nd-seat
-     false-winner scenario; regression H2H reusing Cash-A config
+     false-winner scenario; regression paired H2H reusing Cash-A
+     config (same `analysis.paired` gate)
    - Reference: this doc §Fix 3
    - **Blocked by:** Cash-A merged
 
