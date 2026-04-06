@@ -187,8 +187,6 @@
       "Bash(python -m pytest *)",
       "Bash(python scripts/*)",
       "Bash(python experiments/*)",
-      "Bash(python -c *)",
-      "Bash(python3 -c *)",
       "Bash(sleep *)",
       "Bash(tmux send-keys *)",
       "Bash(tmux capture-pane *)",
