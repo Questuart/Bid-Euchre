@@ -384,22 +384,6 @@ class TestBidPanel:
         assert "Moon (10)" not in html
         assert "Loner (10)" not in html
 
-    def test_auction_transcript_shows_entries(self, env):
-        tmpl = env.get_template("partials/bid_panel.html")
-        html = tmpl.render(
-            link_uuid="x",
-            turn_number=2,
-            auction=[
-                {"seat": 1, "n": 0, "action": "pass"},
-                {"seat": 2, "n": 3, "action": "bid", "contract": "S"},
-            ],
-            current_high_bid=3,
-            dealer_seat=0,
-        )
-        assert "Pass" in html
-        # Spade symbol in transcript
-        assert "\u2660" in html  # ♠
-
     def test_form_targets_correct_route(self, env):
         tmpl = env.get_template("partials/bid_panel.html")
         html = tmpl.render(
@@ -433,66 +417,6 @@ class TestBidPanel:
             dealer_seat=0,
         )
         assert "Loner (40)" in html
-
-    def test_moon_bid_in_transcript_has_emphasis(self, env):
-        """Moon bids in the auction transcript get CSS class and badge."""
-        tmpl = env.get_template("partials/bid_panel.html")
-        html = tmpl.render(
-            link_uuid="x",
-            turn_number=2,
-            auction=[
-                {
-                    "seat": 1,
-                    "n": 10,
-                    "action": "bid",
-                    "contract": "H",
-                    "bid_type": "moon",
-                },
-            ],
-            current_high_bid=10,
-            dealer_seat=0,
-        )
-        assert "bid--moon" in html
-        assert "bid-type-badge--moon" in html
-        assert "Moon" in html
-
-    def test_loner_bid_in_transcript_has_emphasis(self, env):
-        """Loner bids in the auction transcript get CSS class and badge."""
-        tmpl = env.get_template("partials/bid_panel.html")
-        html = tmpl.render(
-            link_uuid="x",
-            turn_number=2,
-            auction=[
-                {
-                    "seat": 0,
-                    "n": 10,
-                    "action": "bid",
-                    "contract": "S",
-                    "bid_type": "loner",
-                },
-            ],
-            current_high_bid=10,
-            dealer_seat=3,
-        )
-        assert "bid--loner" in html
-        assert "bid-type-badge--loner" in html
-        assert "Loner" in html
-
-    def test_regular_bid_no_emphasis_class(self, env):
-        """Regular bids do not get moon/loner CSS classes."""
-        tmpl = env.get_template("partials/bid_panel.html")
-        html = tmpl.render(
-            link_uuid="x",
-            turn_number=2,
-            auction=[
-                {"seat": 2, "n": 5, "action": "bid", "contract": "D"},
-            ],
-            current_high_bid=5,
-            dealer_seat=0,
-        )
-        assert "bid--moon" not in html
-        assert "bid--loner" not in html
-        assert "bid-type-badge" not in html
 
     def test_current_high_bid_shows_moon_badge(self, env):
         """The current high bid info line shows a moon badge when bid_type is moon."""
@@ -2617,7 +2541,7 @@ class TestAccessibilityBidPanel:
             dealer_seat=0,
         )
         assert 'role="region"' in html
-        assert 'aria-label="Auction panel"' in html
+        assert 'aria-label="Bid controls"' in html
 
     def test_bid_form_has_aria_label(self, env):
         tmpl = env.get_template("partials/bid_panel.html")

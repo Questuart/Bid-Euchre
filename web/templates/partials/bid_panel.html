@@ -2,63 +2,19 @@
    Context variables:
      - link_uuid: str — player's game link UUID
      - turn_number: int — current turn for idempotency
-     - auction: list[dict] — auction transcript entries
-       Each entry: {seat, n, action, contract? (if action == "bid"), bid_type?}
      - current_high_bid: int — highest bid so far (0 if no bids yet)
      - dealer_seat: int — seat number of the dealer
      - bid_type: str — current winning bid type ("regular", "moon", or "loner")
+
+   Note: Auction bid history is shown by the Auction Log (action_rail.html),
+   not duplicated here. This partial contains only the bid form controls.
 #}
 {% set suit_symbols = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"} %}
-{% set suit_classes = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
 {% set seat_labels = seat_labels | default({0: "You", 1: "Slim", 2: "Ace", 3: "Deuce"}) %}
 {% set bid_type_labels = {"regular": "", "moon": " Moon", "loner": " Loner"} %}
 
-<div id="bid-panel" role="region" aria-label="Auction panel">
-    <h3 id="auction-heading">Auction</h3>
-
-    {# Show auction transcript so far #}
-    {% if auction %}
-    <div class="auction-transcript" aria-label="Bidding history" aria-live="polite">
-        <table class="auction-table" aria-describedby="auction-heading">
-            <thead>
-                <tr>
-                    <th scope="col">Player</th>
-                    <th scope="col">Bid</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for entry in auction %}
-                {% set entry_bid_type = entry.get("bid_type", "regular") %}
-                <tr{% if entry_bid_type == "moon" %} class="bid--moon"{% elif entry_bid_type == "loner" %} class="bid--loner"{% endif %}>
-                    <td>{% if entry.seat != 0 %}<span class="ai-name player-name--{{ 'human' if entry.seat == 2 else 'ai' }}">{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}</span>{% else %}<span class="player-name--human">{{ seat_labels.get(entry.seat, "Seat " ~ entry.seat) }}</span>{% endif %}</td>
-                    <td>
-                        {% if entry.action == "pass" %}
-                            Pass
-                        {% else %}
-                            {% if entry_bid_type == "moon" %}
-                                <span aria-hidden="true">🌙</span> Moon
-                                <span class="bid-type-badge bid-type-badge--moon">Moon</span>
-                            {% elif entry_bid_type == "loner" %}
-                                <span aria-hidden="true">🃏</span> Loner
-                                <span class="bid-type-badge bid-type-badge--loner">Loner</span>
-                            {% else %}
-                                {{ entry.n }}
-                            {% endif %}
-                            {% if entry.contract in suit_symbols %}
-                                <span class="suit-icon suit-icon--{{ suit_classes.get(entry.contract, 'spades') }}">{{ suit_symbols[entry.contract] }}</span>
-                            {% elif entry.contract == "HIGH" %}
-                                High
-                            {% elif entry.contract == "LOW" %}
-                                Low
-                            {% endif %}
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
+<div id="bid-panel" role="region" aria-label="Bid controls">
+    <h3>Your Bid</h3>
 
     {# Bid form — only shown when it's the human's turn #}
     <form method="post"
