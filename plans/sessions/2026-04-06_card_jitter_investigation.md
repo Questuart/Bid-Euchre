@@ -89,7 +89,7 @@ slot (not only AI plays). No engine/state changes needed.
 - `#trick-area` has `trick-area--ai-revealing` class added (server computed
   `ai_just_played=False` for the human, but the class is gated on
   `ai_just_played` so — wait, this class is NOT added for a human play, see
-  `trick.html` line 85).
+  `web/templates/partials/trick.html` line 85).
 
 **Event B — ~850 ms later, auto-advance fires `/next`; AI plays next card:**
 - Server renders with `ai_just_played=True` and `last_played_seat=1` (Slim).
@@ -103,9 +103,9 @@ slot (not only AI plays). No engine/state changes needed.
 
 **Event C — Last AI card of the trick completes the trick:**
 - Server sets `paused_after_trick = True`, NOT `paused_after_play` (see
-  `engine.py` line 733-735).
-- Therefore `routes.py` computes `ai_just_played = False` because the
-  condition at line 579-584 requires `hand.paused_after_play`:
+  `src/bid_euchre/hosted_play/engine.py` line 733-735).
+- Therefore `web/routes.py` computes `ai_just_played = False` because the
+  condition at line 579-584 requires the `paused_after_play` flag:
   ```python
   ctx["ai_just_played"] = (
       hand.phase == "trick_play"
@@ -119,13 +119,15 @@ slot (not only AI plays). No engine/state changes needed.
   This is a pre-existing gap — issue #2386 / #2442 fixed per-card reveal but
   the trick-closing card falls outside the `paused_after_play` branch.
 - Simultaneously, the winning slot gains `trick-slot--winner`, which triggers
-  `winner-card-glow 1.5s ease-in-out 2` on `.trick-slot--winner .card`. This
-  glow **does** play, but on the already-present card (the one that had been
-  `card--winning` a moment ago), not on the trick-closing card.
-- `.card--winning` (line 261-265 style.css) is dropped from the
-  previously-winning card because `current_trick` is now `None`
-  (trick.html line 60: `is_winning` requires `current_trick is not none`),
-  interrupting its `winning-card-pulse` animation mid-iteration.
+  the `winner-card-glow` 1.5 s animation on the descendant card (CSS selector
+  `trick-slot--winner card`, space-separated compound). This glow **does**
+  play, but on the already-present card (the one that had been `card--winning`
+  a moment ago), not on the trick-closing card.
+- `card--winning` (lines 261-265 in `web/static/style.css`) is dropped from
+  the previously-winning card because `current_trick` is now `None`
+  (template `web/templates/partials/trick.html` line 60: `is_winning` requires
+  `current_trick is not none`), interrupting its `winning-card-pulse`
+  animation mid-iteration.
 
 **Event D — User clicks `Next` on trick-result screen; new trick lead:**
 - Server calls `resume_ai`, `_advance_ai` runs the trick winner's lead card
@@ -143,9 +145,9 @@ slot (not only AI plays). No engine/state changes needed.
     trick 2 winner) → `card card--spades card--played card--winning
     card--ai-delayed` (A♠ trick 3 lead). The card's **text content** changes
     simultaneously. The `.card__rank` span's text node is mutated in place.
-  - Because `.card--ai-delayed` is declared AFTER `.card--winning` in
-    `style.css` (line 268 vs line 261) and both use the shorthand
-    `animation:` property, **`.card--winning` loses its cascade battle**:
+  - Because `card--ai-delayed` is declared AFTER `card--winning` in
+    `web/static/style.css` (line 268 vs line 261) and both use the shorthand
+    `animation:` property, **`card--winning` loses its cascade battle**:
     the computed `animation` on the element becomes `ai-card-reveal 0.75s
     ease-out both`. The `winning-card-pulse 2s infinite` is **never applied**
     while `card--ai-delayed` is present. **This is Bug A.**
@@ -164,16 +166,16 @@ slot (not only AI plays). No engine/state changes needed.
   card played in this request, so their hand cascades too.
 - Auto-advance fires 850 ms later; but if the next player is the human,
   `_advance_ai` returns immediately at the "current_seat == HUMAN_SEAT" check
-  (engine.py line 619-621) **without** re-setting `paused_after_play` — so
-  `resume_after_play` cleared it, the loop returns, and the response has
-  `paused_after_play = False`, `ai_just_played = False`, `show_next = False`,
-  legal hand shown. Morph removes `card--ai-delayed` from the lead card
-  mid-reveal-animation if the 750 ms reveal hasn't finished. Since 850 ms >
-  750 ms the reveal usually does complete, but the subsequent morph then
-  triggers a fresh animation handoff: the element gains back its implicit
-  `winning-card-pulse` (because `card--ai-delayed` is gone and `.card--winning`
-  is still present), starting a new 2 s animation from t=0. The gold glow
-  "snaps on."
+  (`src/bid_euchre/hosted_play/engine.py` lines 619-621) **without** re-setting
+  `paused_after_play` — so `resume_after_play` cleared it, the loop returns,
+  and the response has `paused_after_play = False`, `ai_just_played = False`,
+  `show_next = False`, legal hand shown. Morph removes `card--ai-delayed` from
+  the lead card mid-reveal-animation if the 750 ms reveal hasn't finished.
+  Since 850 ms > 750 ms the reveal usually does complete, but the subsequent
+  morph then triggers a fresh animation handoff: the element gains back its
+  implicit `winning-card-pulse` (because `card--ai-delayed` is gone and
+  `card--winning` is still present), starting a new 2 s animation from t=0.
+  The gold glow "snaps on."
 
 ### Summary of observed jitter sources
 
@@ -200,7 +202,7 @@ slot (not only AI plays). No engine/state changes needed.
 | `web/static/style.css` | 245-250 | `.card--played` — no animation baseline, no `opacity` transition |
 | `web/static/style.css` | 260-265 | `.card--winning` — `animation: winning-card-pulse 2s ease-in-out infinite` |
 | `web/static/style.css` | 267-281 | `.card--ai-delayed` — `animation: ai-card-reveal 0.75s ease-out both` **(cascade wins over `.card--winning`)** |
-| `web/static/style.css` | 935-940 | `.trick-slot--winner .card` — `animation: winner-card-glow 1.5s ease-in-out 2` |
+| `web/static/style.css` | 935-940 | `trick-slot--winner` descendant card selector — `animation: winner-card-glow 1.5s ease-in-out 2` |
 | `web/templates/partials/trick.html` | 55-78 | `card_slot` macro — renders `card-slot--empty` OR `card card--played ...` on the same parent slot element |
 | `web/templates/partials/trick.html` | 60-62 | `is_winning` depends on `current_trick is not none` — drops `card--winning` at trick boundary |
 | `web/templates/partials/trick.html` | 85 | `trick-area--ai-revealing` class — conditional on `ai_just_played`, which is False on `paused_after_trick` |
@@ -216,7 +218,7 @@ slot (not only AI plays). No engine/state changes needed.
 
 ### The cascade bug (Bug A)
 
-`style.css` lines 261-281:
+From `web/static/style.css` lines 261-281:
 
 ```css
 .card--winning {
@@ -258,7 +260,8 @@ card--played ...`, the browser sees:
 2. New computed `animation-name` = the value from `.card--played`. But
    `.card--played` has **no** `animation` property. So no animation fires.
 
-`.card` itself (line 183-199 in `style.css`) only has:
+The base `card` class itself (lines 183-199 in `web/static/style.css`) only
+has:
 ```css
 transition: transform 0.15s ease, box-shadow 0.15s ease;
 ```
@@ -266,14 +269,14 @@ Neither `opacity`, `transform` from a hidden initial state, nor a default
 `animation` is declared. So the card just **appears** — it's there in the
 next paint frame, with no fade-in.
 
-The only path to a reveal animation is via `.card--ai-delayed`, which is
-gated in `trick.html` line 61-62 on `ai_just_played AND last_played_seat ==
-seat`. That gate **excludes** human cards AND the trick-closing AI card (see
-Bug C below).
+The only path to a reveal animation is via `card--ai-delayed`, which is
+gated in `web/templates/partials/trick.html` lines 61-62 on `ai_just_played
+AND last_played_seat == seat`. That gate **excludes** human cards AND the
+trick-closing AI card (see Bug C below).
 
 ### The `paused_after_trick` gap (Bug C, design gap)
 
-`routes.py` lines 579-584:
+From `web/routes.py` lines 579-584:
 
 ```python
 ctx["ai_just_played"] = (
@@ -284,11 +287,12 @@ ctx["ai_just_played"] = (
 )
 ```
 
-When the AI plays the 4th card of a trick, `engine._advance_ai` sets
-`paused_after_trick = True`, NOT `paused_after_play` (engine.py line 733-735).
-Because `ai_just_played` requires `paused_after_play`, the trick-closing
-AI card is rendered **without** `card--ai-delayed` → no reveal animation.
-The card just pops into the last empty slot.
+When the AI plays the 4th card of a trick, the `_advance_ai` loop in
+`src/bid_euchre/hosted_play/engine.py` sets `paused_after_trick = True`, NOT
+`paused_after_play` (engine lines 733-735). Because `ai_just_played` requires
+`paused_after_play`, the trick-closing AI card is rendered **without**
+`card--ai-delayed` → no reveal animation. The card just pops into the last
+empty slot.
 
 This is a pre-existing mis-match between the engine's pacing state machine
 and the template's "reveal" condition. Fixing it requires either:
@@ -425,18 +429,19 @@ appearance is a gentle re-fade rather than an instant swap.
 Introduce an explicit **choreography step** at the trick-boundary morph by
 adding a brief `hx-swap` transition class hook:
 
-- `web/templates/partials/game_board.html` or `trick.html`: wrap the trick
-  area in a container that gets a `data-transitioning` attribute when
-  `paused_after_trick` is being cleared.
+- `web/templates/partials/game_board.html` or
+  `web/templates/partials/trick.html`: wrap the trick area in a container that
+  gets a `data-transitioning` attribute when `paused_after_trick` is being
+  cleared.
 - `web/static/game.js` `htmx:beforeSwap` handler: add a `trick-area--fade-out`
   class on `#trick-area` 150 ms before the swap, let it fade the old cards,
   then let HTMX perform the morph. After the morph, `htmx:afterSwap` drops
   the class and adds `trick-area--fade-in`. CSS transitions handle the rest.
 
-This is a heavier lift (touches game.js, trick.html, and style.css), but it
-would give the trick boundary a proper cinematic handoff instead of a
-simultaneous mutation. **Defer to a follow-up issue** unless the primary
-recommendation falls short in smoke testing.
+This is a heavier lift (touches `web/static/game.js`, the trick partial, and
+`web/static/style.css`), but it would give the trick boundary a proper
+cinematic handoff instead of a simultaneous mutation. **Defer to a follow-up
+issue** unless the primary recommendation falls short in smoke testing.
 
 ### Recommendation NOT to take
 
@@ -452,9 +457,9 @@ use it.
 
 | Scope | Files touched | LoC | Risk |
 |---|---|---|---|
-| Primary recommendation | `style.css`, `routes.py` (+ maybe `_last_played_seat`) | ~30 LoC | Low |
-| + Optional Fix 3 (slot fade) | above + `style.css` | ~40 LoC | Low |
-| Secondary recommendation (choreography) | `style.css`, `game.js`, `trick.html` | ~80–120 LoC | Medium |
+| Primary recommendation | `web/static/style.css`, `web/routes.py` (+ maybe `_last_played_seat`) | ~30 LoC | Low |
+| + Optional Fix 3 (slot fade) | above + `web/static/style.css` | ~40 LoC | Low |
+| Secondary recommendation (choreography) | `web/static/style.css`, `web/static/game.js`, `web/templates/partials/trick.html` | ~80–120 LoC | Medium |
 
 **Total estimated complexity for the primary fix: SMALL.**
 
@@ -471,16 +476,16 @@ Risk section).
 
 | # | Risk | Mitigation |
 |---|---|---|
-| R1 | Adding `transition` to `.card` may inadvertently animate **hand card selection** highlighting (`.card--selected`, `.card--legal` hover states), making selection feel sluggish | Scope the new transition to `.card--played` only, not all `.card`. Alternatively, verify existing `.card--legal` hover is already covered by the 0.15 s transform/box-shadow transition and only add `opacity` / `border-color` transitions. |
-| R2 | The compound `.card--winning.card--ai-delayed` rule's chained animation delays the gold pulse for 750 ms. Users may perceive the winning highlight as "slow to kick in" | This is arguably an improvement (sequenced = more polished). Validate in the smoke test by timing the start of `winning-card-pulse` relative to the reveal. If negative feedback, reduce `ai-card-reveal` to 0.5 s and update `auto_advance_delay_ms` from 850 → 600 ms. |
-| R3 | Broadening `ai_just_played` to include `paused_after_trick` may apply `card--ai-delayed` to the **wrong slot** if `_last_played_seat` doesn't correctly return the 4th card's seat during that state | Verify `_last_played_seat` behavior in both `paused_after_play` and `paused_after_trick` states. Add a fallback to `completed_tricks[-1].plays[-1][0]` in the helper if needed. Cover with a unit test in `tests/unit/hosted_play/` (or wherever existing routes tests live). |
-| R4 | `card--ai-delayed` will start being applied on the trick-closing card, which is animated AND has the `trick-slot--winner` parent simultaneously. The `.trick-slot--winner .card` selector has higher specificity (0,2,0) than `.card--ai-delayed` (0,1,0) — the WINNING slot's glow animation (`winner-card-glow`) will **win** the cascade over `ai-card-reveal`, meaning the trick-closing card may revert to "no reveal animation" anyway | Add another compound rule: `.trick-slot--winner .card--ai-delayed { ... }` with the composed animation list. Or reorder cascade so `.card--ai-delayed` wins on the trick-closing card. Test all four slot positions. |
-| R5 | The `slot-reset-fade` animation (optional Fix 3) will fire on **every** render where a slot is empty, including the first render of a new trick for the 3 non-lead slots — which is correct — but also on initial page load. Fresh page load will show slots fading in. | Acceptable; matches polish elsewhere on the board. If objectionable, gate the animation class behind a `is_transition` flag computed server-side only when coming from `paused_after_trick`. |
-| R6 | HTMX/idiomorph `morph:innerHTML` may not apply the new class mutation atomically with the text-content mutation, creating a one-frame gap where the old class's animation has been removed but the new animation hasn't started. This is existing behavior (and is part of what causes the current jitter) | The primary fix mitigates this by ensuring `.card--winning` and `.card--ai-delayed` are **composable**, so removing one without the other doesn't stop the other's animation. Also add `transition: opacity 0.2s` to `.card` so any one-frame gap manifests as a soft blend rather than a hard pop. |
-| R7 | The auto-advance timer (`scheduleAutoAdvance` in `game.js` line 699-737) triggers at 850 ms, but the new compound animation is 750 ms `ai-card-reveal` + 2 s `winning-card-pulse` starting at 0.75 s. If auto-advance fires during the pulse, the pulse stops mid-cycle (current behavior) | Expected; the pulse is infinite until trick end, so mid-cycle stops are normal. The fix is to make the STOP smoother via the new `transition: box-shadow 0.2s ease` on `.card`. |
+| R1 | Adding a `transition` to the base `card` class may inadvertently animate **hand card selection** highlighting (`card--selected`, `card--legal` hover states), making selection feel sluggish | Scope the new transition to `card--played` only, not all cards. Alternatively, verify the existing `card--legal` hover is already covered by the 0.15 s transform/box-shadow transition and only add `opacity` / `border-color` transitions. |
+| R2 | The compound `card--winning.card--ai-delayed` rule's chained animation delays the gold pulse for 750 ms. Users may perceive the winning highlight as "slow to kick in" | This is arguably an improvement (sequenced = more polished). Validate in the smoke test by timing the start of `winning-card-pulse` relative to the reveal. If negative feedback, reduce `ai-card-reveal` to 0.5 s and update `auto_advance_delay_ms` from 850 → 600 ms. |
+| R3 | Broadening `ai_just_played` to include `paused_after_trick` may apply `card--ai-delayed` to the **wrong slot** if the `_last_played_seat` helper doesn't correctly return the 4th card's seat during that state | Verify `_last_played_seat` behavior in both `paused_after_play` and `paused_after_trick` states. Add a fallback to `completed_tricks[-1].plays[-1][0]` in the helper if needed. Cover with a new unit test in `tests/unit/hosted_play/` (or wherever existing routes tests live). |
+| R4 | `card--ai-delayed` will start being applied on the trick-closing card, which is animated AND has the `trick-slot--winner` parent simultaneously. The compound `trick-slot--winner card` descendant selector has higher specificity (0,2,0) than `card--ai-delayed` (0,1,0) — the WINNING slot's glow animation (`winner-card-glow`) will **win** the cascade over `ai-card-reveal`, meaning the trick-closing card may revert to "no reveal animation" anyway | Add another compound rule: `trick-slot--winner card--ai-delayed` with the composed animation list. Or reorder cascade so `card--ai-delayed` wins on the trick-closing card. Test all four slot positions. |
+| R5 | The `slot-reset-fade` animation (optional Fix 3) will fire on **every** render where a slot is empty, including the first render of a new trick for the 3 non-lead slots — which is correct — but also on initial page load. Fresh page load will show slots fading in. | Acceptable; matches polish elsewhere on the board. If objectionable, gate the animation class behind an `is_transition` flag computed server-side only when coming from `paused_after_trick`. |
+| R6 | HTMX/idiomorph `morph:innerHTML` may not apply the new class mutation atomically with the text-content mutation, creating a one-frame gap where the old class's animation has been removed but the new animation hasn't started. This is existing behavior (and is part of what causes the current jitter) | The primary fix mitigates this by ensuring `card--winning` and `card--ai-delayed` are **composable**, so removing one without the other doesn't stop the other's animation. Also add `transition: opacity 0.2s` to the base card class so any one-frame gap manifests as a soft blend rather than a hard pop. |
+| R7 | The auto-advance timer (`scheduleAutoAdvance` in `web/static/game.js` lines 699-737) triggers at 850 ms, but the new compound animation is 750 ms `ai-card-reveal` + 2 s `winning-card-pulse` starting at 0.75 s. If auto-advance fires during the pulse, the pulse stops mid-cycle (current behavior) | Expected; the pulse is infinite until trick end, so mid-cycle stops are normal. The fix is to make the STOP smoother via the new `transition: box-shadow 0.2s ease` on the base card class. |
 | R8 | Hand card cascade (IDs `hand-card-N` getting remapped on play) has no fix in this recommendation. The human's hand still instantly reshuffles when a card is played | Out of scope for this fix — addressed in a follow-up. Low priority because this is the human's own action and the "pop" feels responsive rather than jittery. |
 | R9 | Playwright visual regression tests for animations are flaky | Use `@keyframes` start/end state assertions rather than pixel-diff. Assert computed-style `animation-name` and `animation-delay` at specific times relative to the swap. Or use `browser_console_messages` with performance marks. |
-| R10 | Mobile viewport behavior not verified in this investigation | The recommendation does not change mobile layout. Existing `@media (max-width: 600px)` rules in style.css are unaffected. Smoke-test on mobile viewport in Playwright. |
+| R10 | Mobile viewport behavior not verified in this investigation | The recommendation does not change mobile layout. Existing `@media (max-width: 600px)` rules in `web/static/style.css` are unaffected. Smoke-test on mobile viewport in Playwright. |
 
 ---
 
@@ -520,35 +525,35 @@ This is an investigation-only PR. If the fix proceeds from this report, it
 should be decomposed as follows:
 
 1. **PR A — CSS cascade + transition baseline (small, ~20 LoC).**
-   - Update `.card--ai-delayed` to longhand animation properties.
-   - Add `.card--winning.card--ai-delayed` compound rule.
-   - Add `.trick-slot--winner .card--ai-delayed` compound rule (R4).
-   - Add `.card--played { transition: ... }` baseline.
-   - Playwright smoke test: verify `getComputedStyle(card).animationName`
-     is `ai-card-reveal, winning-card-pulse` on the lead card of a new
-     trick when AI leads.
+   - Update the `card--ai-delayed` rule to use longhand animation properties.
+   - Add a `card--winning.card--ai-delayed` compound rule.
+   - Add a `trick-slot--winner card--ai-delayed` compound rule (per R4).
+   - Add a `card--played { transition: ... }` baseline.
+   - Playwright smoke test: verify the computed animation-name on the lead
+     card of a new trick is `ai-card-reveal, winning-card-pulse` when AI
+     leads (assert via `getComputedStyle`).
    - Refs #2538 (does not close it).
 
 2. **PR B — `ai_just_played` gate broadening + `_last_played_seat` fallback
    (small, ~10 LoC + 1 unit test).**
-   - `routes.py` line 579-584: include `paused_after_trick` in the gate.
-   - `routes.py` line 282-287: fallback to `completed_tricks[-1].plays[-1][0]`
-     when active trick is empty.
-   - Unit test in `tests/unit/web/test_routes.py` (or
-     `tests/integration/hosted_play/test_render_context.py` depending on
-     existing conventions) verifying `ai_just_played` and `last_played_seat`
-     during both pause states.
+   - `web/routes.py` lines 579-584: include `paused_after_trick` in the gate.
+   - `web/routes.py` lines 282-287: fallback to `completed_tricks[-1].plays[-1][0]`
+     when the active trick is empty.
+   - Create a new unit test in `tests/unit/web/` (or
+     `tests/integration/hosted_play/`, depending on existing conventions) to
+     add coverage for `ai_just_played` and `last_played_seat` during both
+     pause states.
    - Refs #2538.
 
 3. **PR C — Trick-boundary slot fade + smoke test (small-medium, ~30 LoC).**
-   - Add `slot-reset-fade` keyframe and apply to `.card-slot--empty`.
+   - Add a new `slot-reset-fade` keyframe and apply it to `card-slot--empty`.
    - Playwright visual test: navigate through a full trick, click Next on
      trick-result, assert no layout shift > 4 px within 300 ms post-swap.
    - `Fixes #2538` (closes the issue assuming smoke test passes).
 
 4. **PR D — Follow-up: trick-boundary choreography (medium, deferred).**
    - Introduce `htmx:beforeSwap` / `htmx:afterSwap` choreography in
-     `game.js`.
+     `web/static/game.js`.
    - Optional; file as a new issue referencing #2538 and citing this report.
 
 Estimated PR A + B + C total: **2–3 hours of dev time**, including
