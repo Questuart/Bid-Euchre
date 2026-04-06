@@ -231,6 +231,469 @@ solid cashing). This investigation fixes the *downward* layer (cashing
 itself). Shipping cash-winners first actually makes the GluttonV2
 work easier to measure because the cashing baseline will be higher.
 
+## Three-Way Comparison — Research vs Deployment vs Proposed Fix
+
+> **Scope note.** The orchestrator asked for a three-way comparison of
+> (1) the "research" Glutton, (2) the "deployment" Glutton used by the
+> hosted browser game, and (3) the proposed fix — with explicit diffs
+> showing how the fix differs from both baselines. The key finding
+> surfaced by the investigation is that **there is no separate
+> deployment-side class**: both the research and deployment code paths
+> load the same `GluttonStrategy` class from
+> `src/bid_euchre/strategy/greedy.py`. What diverges is the
+> **invocation pattern and instance lifecycle**, not the card-selection
+> logic. That divergence matters because the proposed fix's correctness
+> depends on `observe_play` / `on_hand_start` having produced a valid
+> `_seen_counts` table by the time `choose_card` is invoked, and the
+> two code paths populate that state very differently.
+
+### A. Research invocation (experiment runner)
+
+**Entry point:** `src/bid_euchre/sim/simulation.py::play_hand` (the
+canonical loop used by `experiments/run_experiment.py` and
+`scripts/run_suite.py`).
+
+**Per-seat resolution** (`src/bid_euchre/sim/simulation.py:71–79`):
+
+```python
+if strategies is not None:
+    if len(strategies) != 4:
+        raise ValueError(f"`strategies` must have length 4 (got {len(strategies)})")
+    seat_strategies = strategies
+else:
+    if strategy is None:
+        strategy = GreedyStrategy()
+    seat_strategies = [strategy, strategy, strategy, strategy]
+```
+
+Research can be **either**:
+
+- *Heterogeneous* — each seat gets its own strategy instance (e.g., a
+  head-to-head matrix where seats 0/2 run pre-fix and seats 1/3 run
+  post-fix), or
+- *Self-play* — a single instance shared across all four seats (the
+  `seat_strategies = [strategy] * 4` fallback when `strategy` is
+  passed instead of `strategies`).
+
+**`on_hand_start` dedup loop** (`src/bid_euchre/sim/simulation.py:556–584`):
+
+```python
+# CRITICAL: De-duplicate by instance identity to avoid calling hooks multiple times
+# when a single strategy instance is shared across seats (common in self-play)
+seen_strategy_ids: set = set()
+unique_strategies = []
+for s in seat_strategies:
+    if id(s) not in seen_strategy_ids:
+        seen_strategy_ids.add(id(s))
+        unique_strategies.append(s)
+
+hand_start_targets = [
+    s
+    for s in unique_strategies
+    if type(s).on_hand_start is not Strategy.on_hand_start
+]
+for s in hand_start_targets:
+    for seat_idx, seat_strat in enumerate(seat_strategies):
+        if seat_strat is s:
+            s.on_hand_start(
+                starting_hand=list(starting_hands[seat_idx]),
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+                player_index=seat_idx,
+            )
+            break
+```
+
+The dedup is important: in a self-play run, a single shared instance
+would otherwise receive four `on_hand_start` calls (one per seat),
+overwriting its `starting_hand` and `player_index` each time. The
+loop picks the **first matching seat** per unique instance, so a
+shared instance believes it is seated at the lowest-numbered seat it
+occupies.
+
+**`observe_play` firing** (`src/bid_euchre/sim/simulation.py:586–650`):
+
+```python
+observe_play_targets = [
+    s
+    for s in unique_strategies
+    if type(s).observe_play is not Strategy.observe_play
+]
+# ...
+for player in play_order:
+    # ... choose_card ...
+    for s in observe_play_targets:
+        s.observe_play(
+            player_index=player,
+            card=card,
+            trick_plays=list(plays),
+            contract_type=contract_type,
+            trump_suit=trump_suit,
+        )
+```
+
+Note that `observe_play` fires for **every** card played to **every**
+unique strategy instance, regardless of which seat that instance is
+assigned to. So in a heterogeneous run where seats 0/2 hold instance
+A and seats 1/3 hold instance B, both A and B see every card and
+update their own private `_seen_counts` / `_void_suits_by_seat`.
+
+**`choose_card` invocation** (`src/bid_euchre/sim/simulation.py:610–628`):
+
+```python
+strat = seat_strategies[player]
+card_index = strat.choose_card(
+    hand=hand,
+    plays_so_far=plays,
+    contract_type=contract_type,
+    trump_suit=trump_suit,
+    player_index=player,
+)
+```
+
+**Instance lifecycle.** Each `play_hand` call reuses the strategy
+object across all 10 tricks of the same hand, but the dedup loop
+fires `on_hand_start` at the start of every hand, which resets
+`_seen_counts` and `_void_suits_by_seat`. Each experiment in a suite
+typically constructs fresh strategy instances per trial (see
+`experiments/run_experiment.py` factory), so stale state across
+hands is not a risk in the normal research path.
+
+### B. Deployment invocation (hosted browser game)
+
+**Entry point:** `src/bid_euchre/hosted_play/engine.py::MatchEngine`
+holds exactly **one** `play_strategy` instance per match (seats 1/2/3
+— seat 0 is the human).
+
+**Strategy wiring** (`web/ai_manager.py:141` and `web/ai_manager.py:177`):
+
+```python
+play_strategy=GluttonStrategy(),
+```
+
+Both hosted models (OLSa and Bud Bot) load `GluttonStrategy` from
+`src/bid_euchre/strategy/greedy.py`. There is no subclass, no
+wrapper, and no production-specific override.
+
+**Per-match deepcopy** (`web/routes.py:111–123`, fix from #2168):
+
+```python
+def _build_engine(ai_manager: AIManager, model_id: str) -> MatchEngine:
+    """Instantiate a MatchEngine for the given *model_id*.
+
+    The play strategy is deep-copied so each match gets its own mutable
+    state (seen_counts, void_suits, contract context).  Without this,
+    concurrent matches sharing a single GluttonStrategy instance would
+    contaminate each other's tracking state.  See #2168.
+    """
+    info = ai_manager.get_model_info(model_id)
+    return MatchEngine(
+        bidding_policy=info.bidding_policy,
+        play_strategy=copy.deepcopy(info.play_strategy),
+    )
+```
+
+So every hosted match gets a fresh `GluttonStrategy` instance, but
+that single instance is then **shared across all three AI seats**
+within that match.
+
+**`on_hand_start` firing** (`src/bid_euchre/hosted_play/engine.py:895–915`):
+
+```python
+def _fire_on_hand_start(self, hand: HandState) -> None:
+    """Notify the play strategy of a new hand's contract info."""
+    if type(self.play_strategy).on_hand_start is not Strategy.on_hand_start:
+        # Pick any active AI seat (not human seat 0, not sitting out).
+        ai_seat = 1
+        for s in (1, 2, 3):
+            if s != hand.sitting_out_seat:
+                ai_seat = s
+                break
+        self.play_strategy.on_hand_start(
+            starting_hand=list(hand.hands[ai_seat]),
+            contract_type=hand.contract_type or "high",
+            trump_suit=hand.trump,
+            player_index=ai_seat,
+        )
+```
+
+The single shared instance is told its player_index is the **first
+active AI seat** (usually seat 1). Its starting_hand is that seat's
+hand. When the AI then plays for seats 2 and 3, the strategy's
+internal _player_index attribute still says seat 1 — it does not
+match the seat calling `choose_card`. Any logic that branches on
+the instance's stored player index (e.g., partner-awareness
+reasoning) computes against the wrong seat for two out of three AI
+plays per trick.
+
+**`observe_play` firing** (`src/bid_euchre/hosted_play/engine.py:917–931`):
+
+```python
+def _fire_observe_play(self, hand: HandState, seat: int, card: Card) -> None:
+    """Notify the play strategy that a card was played."""
+    if type(self.play_strategy).observe_play is not Strategy.observe_play:
+        assert hand.current_trick is not None
+        self.play_strategy.observe_play(
+            player_index=seat,
+            card=card,
+            trick_plays=list(hand.current_trick.plays),
+            contract_type=hand.contract_type or "high",
+            trump_suit=hand.trump,
+        )
+```
+
+This fires for every card played (human and AI), and correctly
+passes the actual playing seat — so `_seen_counts` and
+`_void_suits_by_seat` are updated consistently across all four seats.
+
+**`choose_card` invocation** (`src/bid_euchre/hosted_play/engine.py:685–691`):
+
+```python
+card_idx = self.play_strategy.choose_card(
+    hand.hands[seat],
+    hand.current_trick.plays,
+    hand.contract_type,
+    hand.trump,
+    seat,
+)
+```
+
+`choose_card` is called with the *actual* seat (1, 2, or 3) as
+the `player_index` argument. So even though the instance's
+internal _player_index attribute is stale from the `on_hand_start`
+call, the argument passed to `choose_card` is authoritative for
+that invocation.
+
+**Defense-in-depth reset** (`src/bid_euchre/strategy/greedy.py:445–463`,
+fixes from PR #2141 / PR #2175):
+
+```python
+# Defense-in-depth: clear stale inference when contract changes.
+if contract_type != self._contract_type or trump_suit != self._trump_suit:
+    self._seen_counts = {}
+    self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
+self._contract_type = contract_type
+self._trump_suit = trump_suit
+
+# Fallback reset if on_hand_start wasn't called (backward compat).
+if len(hand) == 10 and not plays_so_far:
+    self._seen_counts = {}
+    self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
+    self._contract_type = contract_type
+    self._trump_suit = trump_suit
+    self._player_index = player_index
+```
+
+These two guards paper over the most dangerous failure modes of the
+deployment invocation pattern (stale contract, missed `on_hand_start`),
+but they do **not** re-synchronize `_seen_counts` when the shared
+instance is reused across seats mid-hand. That is fine because the
+`_seen_counts` data is a **global** card-tracking table — it should
+accumulate across all seats, which is exactly what `_fire_observe_play`
+does.
+
+### C. Divergence table
+
+The research path lives in `src/bid_euchre/sim/simulation.py` and
+the deployment path lives in `src/bid_euchre/hosted_play/engine.py`.
+
+| Dimension | Research (sim/simulation.py) | Deployment (hosted_play/engine.py) |
+|-----------|-------------------------------|-------------------------------------|
+| Class | `GluttonStrategy` from `src/bid_euchre/strategy/greedy.py` | **Same class, no subclass or override** |
+| Instance per seat | 1 distinct instance per unique Python id (dedup loop) | **1 shared instance** across seats 1/2/3 |
+| Instance lifetime | Typically fresh per experiment trial | Fresh per hosted match (deepcopy from `copy` per PR #2168) |
+| on_hand_start starting_hand | First seat matching the instance's Python id | `hand.hands[ai_seat]` where `ai_seat` = first non-sitting-out AI seat (usually 1) |
+| on_hand_start player_index | Seat index of first matching seat | First active AI seat (1 unless that seat is sitting out) |
+| Stored _player_index accuracy at `choose_card` time | Correct for the seat whose strategy is being called | **Stale** — still reflects the `on_hand_start` seat, not the current seat |
+| player_index argument passed to `choose_card` | Actual seat of the play | Actual seat of the play (1, 2, or 3) |
+| `observe_play` firing | Every card, to every unique strategy instance | Every card (human + AI), to the single shared instance |
+| _seen_counts scope | Per-instance (matches intended design) | Shared across all AI seats (matches intended design — card tracking is global) |
+| _void_suits_by_seat scope | Per-instance | Shared across all AI seats |
+| Contract-change reset | Implicit — fresh `on_hand_start` each hand | Explicit — defense-in-depth guard in `choose_card` + `on_hand_start` on auction end |
+
+**Key risk surfaced by this table.** Any new logic in `choose_card`
+that relies on the instance's stored _player_index attribute will
+be wrong for 2 out of 3 AI seats in the deployment path. It must
+instead use the `player_index` argument passed to `choose_card`,
+which is the authoritative seat for that invocation. Conversely,
+any logic that relies on _seen_counts / _void_suits_by_seat works
+correctly in **both** paths because both paths populate those
+fields through `observe_play` across all plays.
+
+### D. Where the proposed fix touches each path
+
+All three fixes modify `src/bid_euchre/strategy/greedy.py` **only**.
+Neither code path (research or deployment) requires any change to
+its invocation sequence. The same source diff therefore lands in
+both paths simultaneously.
+
+Because the class is shared, the diff **against research** is
+identical to the diff **against deployment** — there is only one
+class to patch. But the fix must be validated under *both*
+invocation patterns because they stress different pieces of the
+same class:
+
+- **Research path** stresses per-seat `_is_sure_winner` correctness
+  (a fresh instance per seat means `_seen_counts` is scoped to the
+  plays that seat actually observed — which is all of them, since
+  `observe_play` fires on every play to every unique instance, so
+  the scope ends up being the full trick history).
+- **Deployment path** stresses the shared-instance invariant that
+  `_seen_counts` is globally correct across seats (any fix that
+  accidentally clears `_seen_counts` mid-hand in the shared instance
+  would be observable only in the deployment path, because the
+  research path would then appear to work correctly on the next
+  hand when `on_hand_start` fires a reset anyway).
+
+### E. Unified diff — proposed fix vs both baselines
+
+The following is the same source diff applied against
+`src/bid_euchre/strategy/greedy.py`. It is the entire delta between
+*both* current baselines (research Glutton and deployment Glutton
+are the same file) and the proposed fix.
+
+```diff
+--- a/src/bid_euchre/strategy/greedy.py
++++ b/src/bid_euchre/strategy/greedy.py
+@@ _choose_lead (suit branch)
+             if has_right and has_left and trump_count >= 5:
+                 # Lead the right bower to draw out opponent trump
+                 right_bower_idx = next(
+                     idx
+                     for idx in trump_indices
+                     if is_right_bower(hand[idx], self._trump_suit)
+                 )
+                 return right_bower_idx
+
++            # 0.5 NEW (Cash-A): Cash established sure winners first.
++            # Gated by GluttonIsolatedStrategy.cash_winners_on_lead;
++            # always enabled in production GluttonStrategy.
++            if getattr(self, "cash_winners_on_lead", True):
++                sure_winner_leads = [
++                    idx
++                    for idx in legal_indices
++                    if self._is_sure_winner(hand[idx], [], hand)
++                ]
++                if sure_winner_leads:
++                    def _sure_lead_priority(idx: int) -> Tuple[int, int]:
++                        eff = effective_suit(
++                            hand[idx], self._trump_suit, self._contract_type
++                        )
++                        return (suit_counts.get(eff, 0), -card_value(idx))
++                    return min(sure_winner_leads, key=_sure_lead_priority)
++
+             # 1. Look for non-trump Aces
+             non_trump_aces = [
+                 ...
+             ]
+             if non_trump_aces:
+                 ...
+                 return min(non_trump_aces, key=ace_priority)
+
+             # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
+             if trump_count >= 4 and trump_indices:
+                 if not (has_right and has_left):
+-                    # Lead lowest trump to draw trump without burning top cards
+-                    return min(trump_indices, key=card_value)
++                    # FIX (Cash-A): lead highest trump to clear opponents'
++                    # top trump ("draw trump from the top"). Gated by the
++                    # same cash_winners_on_lead flag so Cash-A can be
++                    # feature-isolated. Previous min() left master trump
++                    # in hand until trick 9-10 (#2506).
++                    if getattr(self, "cash_winners_on_lead", True):
++                        return max(trump_indices, key=card_value)
++                    return min(trump_indices, key=card_value)
+
+@@ _choose_lead (high/low branch)
+             if suit_counts:
+                 longest_suit = max(
+                     suit_counts.keys(), key=lambda s: suit_counts.get(s, 0)
+                 )
+                 longest_suit_indices = [
+                     idx for idx in legal_indices if hand[idx].suit == longest_suit
+                 ]
+                 if longest_suit_indices:
+                     return select(longest_suit_indices, key=card_value)
+
++            # Cash-A fallback guard: in high/low, the longest-suit heuristic
++            # may skip a sure winner in a short suit. Re-check sure winners
++            # before falling through to the catch-all.
++            if getattr(self, "cash_winners_on_lead", True):
++                sure_winner_leads = [
++                    idx
++                    for idx in legal_indices
++                    if self._is_sure_winner(hand[idx], [], hand)
++                ]
++                if sure_winner_leads:
++                    return max(sure_winner_leads, key=card_value)
++
+             return select(legal_indices, key=card_value)
+
+@@ choose_card (following branch)
+         # If we have any card that is currently winning, play the cheapest winner
+         if winning_candidates:
+-            choice = min(winning_candidates, key=card_value)
++            # Cash-B: prefer sure winners over provisional winners and
++            # fall back to 2nd-hand-low when no sure winner exists.
++            if getattr(self, "cash_winners_on_follow", True):
++                sure_winning_candidates = [
++                    idx
++                    for idx in winning_candidates
++                    if self._is_sure_winner(hand[idx], plays_so_far, hand)
++                ]
++                if sure_winning_candidates:
++                    choice = min(sure_winning_candidates, key=card_value)
++                elif len(plays_so_far) == 1:
++                    # 2nd seat with no sure winner: dump cheap instead of
++                    # burning a false winner. Let partner decide in 3rd/4th.
++                    choice = self._choose_discard(hand, legal_indices)
++                else:
++                    # 3rd and 4th seat: retain current behavior.
++                    choice = min(winning_candidates, key=card_value)
++            else:
++                choice = min(winning_candidates, key=card_value)
+             ...
+```
+
+A parallel diff lands on `GluttonIsolatedStrategy` (same file, lines
+623–1077). The only difference in that twin is that
+`cash_winners_on_lead` and `cash_winners_on_follow` default to
+`False` there instead of `True`, so the isolated strategy can be
+used to measure the pre-fix baseline.
+
+### F. Test-coverage implications of the divergence
+
+Because the deployment path reuses one `GluttonStrategy` instance
+across seats 1/2/3, the new unit tests must cover **both**
+invocation patterns, not just the per-seat-per-instance research
+pattern:
+
+1. **Per-seat-isolated scenario** (matches research):
+   Fresh `GluttonStrategy()` per seat; `on_hand_start` fires once
+   per seat with the correct `starting_hand`; `choose_card` is
+   called with the strategy's own `player_index`. This is the easy
+   case and covers most existing tests in `tests/unit/test_greedy.py`.
+
+2. **Shared-instance scenario** (matches deployment):
+   One `GluttonStrategy()` shared across three seats; `on_hand_start`
+   fires **once** with `player_index=1` and `starting_hand=hand_1`;
+   `choose_card` is called in turn for seats 1, 2, 3 with their own
+   `player_index` argument but against the same `self`. Assert
+   that the Cash-A and Cash-B fixes produce correct leads/follows
+   for seats 2 and 3 despite the stale `self._player_index=1`.
+
+3. **`observe_play` integrity test:**
+   Fire `observe_play` for all plays from all seats (including
+   the human seat 0) into a single shared instance, then confirm
+   `_is_sure_winner` returns the correct answer for the AI seat
+   whose turn it now is. This catches any regression where the
+   fix accidentally ties `_seen_counts` to the wrong seat.
+
+The Cash-A and Cash-B acceptance test files should include at least
+one scenario in each category per fix (so Cash-A has at least one
+shared-instance test per acceptance scenario in §Acceptance Criteria
+item 2; Cash-B likewise).
+
 ## Proposed Fix — "Cash Winners" Heuristic Bundle
 
 Three targeted changes, all in `src/bid_euchre/strategy/greedy.py`,
