@@ -583,12 +583,16 @@ def _build_game_context(
             and last_seat != HUMAN_SEAT
         )
 
-        # Auto-advance — when paused_after_play (mid-trick reveal), the
-        # client JS auto-triggers the Next endpoint after the animation
-        # completes so the player doesn't have to click Next for every
-        # single AI card.  Manual Next is still required for trick results
-        # (paused_after_trick) and other interstitials (#2442, #2386).
-        if hand.phase == "trick_play" and hand.paused_after_play:
+        # Auto-advance — JS auto-triggers Next after AI card animations
+        # so the player doesn't click for every AI card (#2442, #2386).
+        # Suppressed during auction reveal/settle and moon-exchange so the
+        # JS doesn't cascade through hidden bid reveals (#2503).
+        if (
+            hand.phase == "trick_play"
+            and hand.paused_after_play
+            and not _auction_reveal_active(hand)
+            and not _has_pending_exchange(hand)
+        ):
             is_ai = last_seat is not None and last_seat != HUMAN_SEAT
             # AI cards: match the CSS animation duration (750ms) + buffer.
             # Human card: brief pause to see own card on the table.
