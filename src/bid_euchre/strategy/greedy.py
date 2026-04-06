@@ -16,7 +16,13 @@ from .base import Strategy, card_value_for_dump
 # GluttonStrategy or GluttonIsolatedStrategy. See
 # docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
 # changelog template.
-GLUTTON_STRATEGY_VERSION = "0.7.0"
+#
+# Changelog:
+#   0.7.0 — Initial versioned baseline (PR #2529)
+#   0.8.0 — Cash-A: sure-winner lead priority, draw-trump-first,
+#           draw trump from the top (behind ``cash_winners_on_lead``
+#           flag, default False). Category: MINOR.
+GLUTTON_STRATEGY_VERSION = "0.8.0"
 
 
 class GreedyStrategy(Strategy):
@@ -117,9 +123,20 @@ class GluttonStrategy(Strategy):
     # ``docs/02_agent/STRATEGY_VERSIONING.md`` for bump rules.
     VERSION = GLUTTON_STRATEGY_VERSION
 
-    def __init__(self, name: str = "glutton", debug: bool = False):
+    def __init__(
+        self,
+        name: str = "glutton",
+        debug: bool = False,
+        cash_winners_on_lead: bool = False,
+    ):
         super().__init__(name)
         self.debug = debug
+        # Cash-A feature flag. Default ``False`` is deliberate: merging
+        # Cash-A must not change production behavior. The operator will
+        # flip this to ``True`` after a manual proving run. See
+        # plans/sessions/2026-04-06_ai_play_strategy_investigation.md
+        # §"Recommended PR Decomposition" and the Wave 2-A task packet.
+        self.cash_winners_on_lead: bool = cash_winners_on_lead
         self.decision_log: List[dict] = []
         # Double-deck aware tracking (each card exists 0-2 times)
         self._seen_counts: Dict[Card, int] = {}
@@ -239,12 +256,47 @@ class GluttonStrategy(Strategy):
             counts[eff] = counts.get(eff, 0) + 1
         return counts
 
+    def _opponents_might_hold_trump(self, *, seat: int) -> bool:
+        """Return True if at least one opponent might still hold trump.
+
+        Reads ``_void_suits_by_seat`` (populated by ``observe_play``)
+        and treats "not inferred void in trump" as "might still hold
+        trump." Conservative on hand start: before any trump lead has
+        forced a reveal, the helper returns True (assume opponents have
+        trump until proven otherwise). Cash-A, Fix 1b.
+        """
+        if self._trump_suit is None:
+            return False
+        opp_seats = ((seat + 1) % 4, (seat + 3) % 4)
+        return any(
+            self._trump_suit not in self._void_suits_by_seat.get(opp, set())
+            for opp in opp_seats
+        )
+
+    def _draw_trump_lead(self, trump_indices: List[int], hand: List[Card]) -> int:
+        """Lead the highest-ranking trump from the given indices.
+
+        Shared by Cash-A Fix 1b (draw trump first) and Fix 2 (draw
+        trump from the top). ``card_value_for_dump`` already ranks
+        bowers above non-bower trump above non-trump, so ``max``
+        naturally picks RB > LB > A > K > Q > ... > 10.
+        """
+        return max(
+            trump_indices,
+            key=lambda i: card_value_for_dump(
+                hand[i], self._contract_type, self._trump_suit
+            ),
+        )
+
     def _choose_lead(
         self,
         hand: List[Card],
         legal_indices: List[int],
+        player_index: Optional[int] = None,
     ) -> int:
         """Choose which card to lead with human-like heuristics."""
+        if player_index is None:
+            player_index = self._player_index
 
         def card_value(idx: int) -> int:
             return card_value_for_dump(hand[idx], self._contract_type, self._trump_suit)
@@ -279,6 +331,37 @@ class GluttonStrategy(Strategy):
                 )
                 return right_bower_idx
 
+            # 0.5 NEW (Cash-A, Fix 1): Cash established sure winners first.
+            # Gated by ``cash_winners_on_lead`` (default False on both
+            # Glutton classes). Picks the sure winner from the shortest
+            # effective suit to free up length for future leads, breaking
+            # ties on highest card value.
+            if self.cash_winners_on_lead:
+                sure_winner_leads = [
+                    idx
+                    for idx in legal_indices
+                    if self._is_sure_winner(hand[idx], [], hand)
+                ]
+                if sure_winner_leads:
+
+                    def _sure_lead_priority(idx: int) -> Tuple[int, int]:
+                        eff = effective_suit(
+                            hand[idx], self._trump_suit, self._contract_type
+                        )
+                        return (suit_counts.get(eff, 0), -card_value(idx))
+
+                    return min(sure_winner_leads, key=_sure_lead_priority)
+
+            # 0.75 NEW (Cash-A, Fix 1b): Draw opponent trump before
+            # cashing side winners (Defect F). Suit contracts only.
+            # Gated by the same ``cash_winners_on_lead`` flag.
+            if (
+                self.cash_winners_on_lead
+                and trump_indices
+                and self._opponents_might_hold_trump(seat=player_index)
+            ):
+                return self._draw_trump_lead(trump_indices, hand)
+
             # 1. Look for non-trump Aces
             non_trump_aces = [
                 idx
@@ -301,6 +384,13 @@ class GluttonStrategy(Strategy):
             # (trump_count, trump_indices, has_right, has_left computed in Step 0)
             if trump_count >= 4 and trump_indices:
                 if not (has_right and has_left):
+                    # Cash-A, Fix 2: lead highest trump to clear opponents'
+                    # top trump ("draw trump from the top"). Gated by the
+                    # same ``cash_winners_on_lead`` flag so Cash-A can be
+                    # feature-isolated. Previous ``min()`` left master
+                    # trump in hand until tricks 9-10 (#2506).
+                    if self.cash_winners_on_lead:
+                        return self._draw_trump_lead(trump_indices, hand)
                     # Lead lowest trump to draw trump without burning top cards
                     return min(trump_indices, key=card_value)
 
@@ -335,7 +425,29 @@ class GluttonStrategy(Strategy):
                     idx for idx in legal_indices if hand[idx].suit == longest_suit
                 ]
                 if longest_suit_indices:
+                    # Cash-A fallback guard: the longest-suit heuristic
+                    # may skip a sure winner in a short suit. Re-check
+                    # sure winners before falling through when the flag
+                    # is set.
+                    if self.cash_winners_on_lead:
+                        sure_winner_leads = [
+                            idx
+                            for idx in legal_indices
+                            if self._is_sure_winner(hand[idx], [], hand)
+                        ]
+                        if sure_winner_leads:
+                            return max(sure_winner_leads, key=card_value)
                     return select(longest_suit_indices, key=card_value)
+
+            # Cash-A fallback guard for the empty-suit-counts path too.
+            if self.cash_winners_on_lead:
+                sure_winner_leads = [
+                    idx
+                    for idx in legal_indices
+                    if self._is_sure_winner(hand[idx], [], hand)
+                ]
+                if sure_winner_leads:
+                    return max(sure_winner_leads, key=card_value)
 
             # Fallback
             return select(legal_indices, key=card_value)
@@ -482,7 +594,10 @@ class GluttonStrategy(Strategy):
 
         # SPECIAL CASE: When leading, use smart lead selection
         if not plays_so_far:
-            choice = self._choose_lead(hand, legal_indices)
+            # Pass player_index so Cash-A Fix 1b reads the correct seat
+            # even in the shared-instance deployment path where
+            # self._player_index can lag on_hand_start for seats 2/3.
+            choice = self._choose_lead(hand, legal_indices, player_index=player_index)
             if self.debug:
                 self.decision_log.append(
                     {
@@ -673,6 +788,7 @@ class GluttonIsolatedStrategy(Strategy):
         trump_gating: bool = False,
         probabilistic_trump_in: bool = False,
         lead_bower: Optional[bool] = None,
+        cash_winners_on_lead: bool = False,
     ):
         super().__init__(name)
         self.debug = debug
@@ -690,6 +806,11 @@ class GluttonIsolatedStrategy(Strategy):
         # Default lead_bower to smart_leads when not explicitly set,
         # so existing configs with smart_leads=True keep bower leads (#2201).
         self._lead_bower = lead_bower if lead_bower is not None else smart_leads
+        # Cash-A feature flag: defaults False here so the isolated twin
+        # preserves baseline behavior for A/B isolation experiments. See
+        # plans/sessions/2026-04-06_ai_play_strategy_investigation.md
+        # §"Acceptance Criteria" item 1.
+        self.cash_winners_on_lead: bool = cash_winners_on_lead
 
         # Double-deck aware tracking (each card exists 0-2 times)
         self._seen_counts: Dict[Card, int] = {}
@@ -799,12 +920,42 @@ class GluttonIsolatedStrategy(Strategy):
             counts[eff] = counts.get(eff, 0) + 1
         return counts
 
+    def _opponents_might_hold_trump(self, *, seat: int) -> bool:
+        """Return True if at least one opponent might still hold trump.
+
+        Mirror of :meth:`GluttonStrategy._opponents_might_hold_trump`.
+        Cash-A, Fix 1b.
+        """
+        if self._trump_suit is None:
+            return False
+        opp_seats = ((seat + 1) % 4, (seat + 3) % 4)
+        return any(
+            self._trump_suit not in self._void_suits_by_seat.get(opp, set())
+            for opp in opp_seats
+        )
+
+    def _draw_trump_lead(self, trump_indices: List[int], hand: List[Card]) -> int:
+        """Lead the highest-ranking trump from the given indices.
+
+        Mirror of :meth:`GluttonStrategy._draw_trump_lead`. Shared by
+        Cash-A Fix 1b and Fix 2.
+        """
+        return max(
+            trump_indices,
+            key=lambda i: card_value_for_dump(
+                hand[i], self._contract_type, self._trump_suit
+            ),
+        )
+
     def _choose_lead_smart(
         self,
         hand: List[Card],
         legal_indices: List[int],
+        player_index: Optional[int] = None,
     ) -> int:
         """Choose which card to lead with human-like heuristics."""
+        if player_index is None:
+            player_index = self._player_index
 
         def card_value(idx: int) -> int:
             return card_value_for_dump(hand[idx], self._contract_type, self._trump_suit)
@@ -838,6 +989,32 @@ class GluttonIsolatedStrategy(Strategy):
                 )
                 return right_bower_idx
 
+            # 0.5 NEW (Cash-A, Fix 1): Cash established sure winners first.
+            if self.cash_winners_on_lead:
+                sure_winner_leads = [
+                    idx
+                    for idx in legal_indices
+                    if self._is_sure_winner(hand[idx], [], hand)
+                ]
+                if sure_winner_leads:
+
+                    def _sure_lead_priority(idx: int) -> Tuple[int, int]:
+                        eff = effective_suit(
+                            hand[idx], self._trump_suit, self._contract_type
+                        )
+                        return (suit_counts.get(eff, 0), -card_value(idx))
+
+                    return min(sure_winner_leads, key=_sure_lead_priority)
+
+            # 0.75 NEW (Cash-A, Fix 1b): Draw opponent trump before
+            # cashing side winners. Suit contracts only.
+            if (
+                self.cash_winners_on_lead
+                and trump_indices
+                and self._opponents_might_hold_trump(seat=player_index)
+            ):
+                return self._draw_trump_lead(trump_indices, hand)
+
             # 1. Look for non-trump Aces
             non_trump_aces = [
                 idx
@@ -859,6 +1036,9 @@ class GluttonIsolatedStrategy(Strategy):
             # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
             if trump_count >= 4 and trump_indices:
                 if not (has_right and has_left):
+                    # Cash-A, Fix 2: lead highest trump when flagged on.
+                    if self.cash_winners_on_lead:
+                        return self._draw_trump_lead(trump_indices, hand)
                     return min(trump_indices, key=card_value)
 
             # 3. Lead from longest non-trump suit
@@ -886,7 +1066,27 @@ class GluttonIsolatedStrategy(Strategy):
                     idx for idx in legal_indices if hand[idx].suit == longest_suit
                 ]
                 if longest_suit_indices:
+                    # Cash-A fallback guard in high/low.
+                    if self.cash_winners_on_lead:
+                        sure_winner_leads = [
+                            idx
+                            for idx in legal_indices
+                            if self._is_sure_winner(hand[idx], [], hand)
+                        ]
+                        if sure_winner_leads:
+                            return max(sure_winner_leads, key=card_value)
                     return max(longest_suit_indices, key=card_value)
+
+            # Cash-A fallback guard for the empty-suit-counts path.
+            if self.cash_winners_on_lead:
+                sure_winner_leads = [
+                    idx
+                    for idx in legal_indices
+                    if self._is_sure_winner(hand[idx], [], hand)
+                ]
+                if sure_winner_leads:
+                    return max(sure_winner_leads, key=card_value)
+
             return max(legal_indices, key=card_value)
 
     def _choose_discard_smart(
@@ -994,7 +1194,9 @@ class GluttonIsolatedStrategy(Strategy):
         # LEADING
         if not plays_so_far:
             if self._smart_leads:
-                return self._choose_lead_smart(hand, legal_indices)
+                return self._choose_lead_smart(
+                    hand, legal_indices, player_index=player_index
+                )
             else:
                 # Greedy: highest value card
                 return max(legal_indices, key=card_value)
