@@ -1228,29 +1228,6 @@ main {
     font-size: 1rem;
 }
 
-.auction-transcript {
-    margin-bottom: 1rem;
-    max-height: 160px;
-    overflow-y: auto;
-}
-
-.auction-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-}
-
-.auction-table th,
-.auction-table td {
-    padding: 0.25rem 0.5rem;
-    text-align: left;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.auction-table th {
-    color: var(--color-text-muted);
-    font-weight: 600;
-}
 
 .bid-controls {
     display: flex;
@@ -2395,14 +2372,6 @@ main {
         padding: 0.75rem;
     }
 
-    .auction-transcript {
-        max-height: 120px;
-    }
-
-    .auction-table {
-        font-size: 0.8rem;
-    }
-
     /* Score bar — compact single-column */
     .score-bar {
         padding: 0.5rem 0.75rem;
@@ -2579,12 +2548,6 @@ main {
         font-size: 0.85rem;
     }
 
-    .auction-table th,
-    .auction-table td {
-        padding: 0.2rem 0.35rem;
-        font-size: 0.75rem;
-    }
-
     /* Bid recap — compact for small screens */
     .bid-recap {
         font-size: 0.72rem;
@@ -2661,18 +2624,6 @@ main {
         padding: 0.5rem;
         max-height: 170px;
         overflow: auto;
-    }
-
-    .auction-transcript {
-        max-height: 58px;
-        margin-bottom: 0.5rem;
-        overflow-y: auto;
-    }
-
-    .auction-table th,
-    .auction-table td {
-        padding: 0.12rem 0.3rem;
-        font-size: 0.7rem;
     }
 
     .trick-area h3 {
