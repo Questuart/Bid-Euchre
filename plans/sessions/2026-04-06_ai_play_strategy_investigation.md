@@ -50,8 +50,9 @@ opponents in the live game simultaneously.
 
 The sibling class `GluttonIsolatedStrategy` replicates the same lead /
 discard heuristics behind feature flags, so any fix must land in both
-locations (the two files are parallel — the investigation confirms the
-divergence risk is contained to that one file, `greedy.py`).
+locations (the two classes are parallel within one file — the
+investigation confirms the divergence risk is contained to
+`src/bid_euchre/strategy/greedy.py`).
 
 ## Evidence — Code-Level Root Cause
 
@@ -360,8 +361,7 @@ already does.
    behind a new `sure_winner_cashing` feature flag in
    `GluttonIsolatedStrategy`.
 2. **Unit tests:**
-   - New tests in `tests/unit/strategy/test_greedy.py`
-     (or `tests/unit/test_greedy.py` — confirm path during implementation):
+   - New tests in `tests/unit/test_greedy.py`:
      - Low contract: AI leads preserved T once opponents void.
      - High contract: 2nd-seat Slim dumps low instead of burning J
        when A is still held.
@@ -386,16 +386,17 @@ already does.
 
 ```bash
 # Tier 1 (during implementation)
-uv run python -m pytest tests/unit/strategy/test_greedy.py -x
-uv run python -m pytest tests/unit/test_greedy.py -x  # confirm path
+uv run python -m pytest tests/unit/test_greedy.py -x
 
 # Tier 2 (before PR)
 make check-gated
 
-# Tier 2 statistical proving (new experiment config)
-uv run python experiments/run_experiment.py \
-  --config experiments/configs/glutton_sure_winner_h2h.yaml \
-  --seed 42 --n_per 50000
+# Tier 2 statistical proving (requires new experiment config to be
+# created by Cash-A as `glutton_sure_winner_h2h` under
+# `experiments/configs/`). Replace <CONFIG_PATH> below.
+# uv run python experiments/run_experiment.py \
+#   --config <CONFIG_PATH> \
+#   --seed 42 --n_per 50000
 
 # Tier 2 browser smoke (operator validation)
 # Manual playtest via the hosted game: play one Low, one High, and
@@ -422,10 +423,11 @@ uv run python experiments/run_experiment.py \
 
 | PR | Scope | Size | Validation | Depends on |
 |----|-------|------|-----------|-----------|
-| **Cash-A:** Sure-winner lead + draw trump high in `GluttonStrategy` + `GluttonIsolatedStrategy` (behind flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/**/test_greedy.py`, optionally `tests/unit/strategy/` | ~150–250 LoC + ~20 test cases | `make check-gated`; unit tests; bidless 50K H2H comparator | none |
+| **Cash-A:** Sure-winner lead + draw trump high in `GluttonStrategy` + `GluttonIsolatedStrategy` (behind flag) | `src/bid_euchre/strategy/greedy.py`, `tests/unit/test_greedy.py` | ~150–250 LoC + ~20 test cases | `make check-gated`; unit tests; bidless 50K H2H comparator | none |
 | **Cash-B:** 2nd-hand-low / prefer-sure-winners in the follow phase (both classes) | same files | ~60–120 LoC + ~10 test cases | same as Cash-A + explicit 2nd-seat scenario tests | Cash-A |
 
-Both PRs deliberately keep the scope to `greedy.py` and its tests.
+Both PRs deliberately keep the scope to `src/bid_euchre/strategy/greedy.py`
+and its unit tests.
 Neither PR touches `web/`, the hosted_play engine, the bidding
 policies, or the experiment runner itself (only adds a new experiment
 YAML config).
@@ -559,16 +561,18 @@ to a single author lane (author-a or author-b). Each PR is a
 
 1. **Cash-A:** *Sure-winner lead priority + draw trump from the top*
    - `scope_declared`: `src/bid_euchre/strategy/greedy.py`,
-     `tests/unit/**/test_greedy.py`,
-     (new) `experiments/configs/glutton_sure_winner_h2h.yaml`
+     `tests/unit/test_greedy.py`,
+     and a new H2H experiment YAML to be added under
+     `experiments/configs/` (proposed filename stem
+     "glutton_sure_winner_h2h" — Cash-A creates it)
    - `validation`: `make check-gated` then
-     `uv run python experiments/run_experiment.py --config experiments/configs/glutton_sure_winner_h2h.yaml --seed 42 --n_per 50000`
+     `uv run python experiments/run_experiment.py --config <NEW_CONFIG> --seed 42 --n_per 50000`
      and compare pre/post with `scripts/compare_runs.py`
    - Reference: this doc §Fix 1, §Fix 2
 
 2. **Cash-B:** *Sure-winner follow + 2nd-hand-low fallback*
    - `scope_declared`: `src/bid_euchre/strategy/greedy.py`,
-     `tests/unit/**/test_greedy.py`
+     `tests/unit/test_greedy.py`
    - `validation`: `make check-gated` + unit tests covering 2nd-seat
      false-winner scenario; regression H2H reusing Cash-A config
    - Reference: this doc §Fix 3
