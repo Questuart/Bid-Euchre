@@ -22,6 +22,7 @@ pytestmark = pytest.mark.integration
 from starlette.testclient import TestClient
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
+from bid_euchre.strategy.greedy import GLUTTON_STRATEGY_VERSION
 from tests.unit.hosted_play.conftest import (
     advance_pending_reveals,
     get_match_state,
@@ -188,6 +189,13 @@ class TestDataCapturePipeline:
             assert match_row.status == "active"
             assert match_row.ai_model == "olsa"
             assert match_row.seed is not None
+
+            # Play strategy version is stamped at match-create time from
+            # type(engine.play_strategy).VERSION — see
+            # docs/02_agent/STRATEGY_VERSIONING.md.  New matches must
+            # record the current GLUTTON_STRATEGY_VERSION so cohort
+            # boundaries are recoverable from the DB alone.
+            assert match_row.play_strategy_version == GLUTTON_STRATEGY_VERSION
 
             # Hand row exists (first hand is dealt on match creation)
             hand_row = session.query(Hand).filter_by(match_id=match_row.id).first()

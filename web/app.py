@@ -138,6 +138,17 @@ async def lifespan(app: FastAPI):
             )
         logger.info("Migration: added onboarding_complete column to players")
 
+    # 1c. Migrate: add play_strategy_version column for existing databases.
+    # Rows created before this migration carry NULL as the honest
+    # "unknown cohort" marker — see docs/02_agent/STRATEGY_VERSIONING.md.
+    match_cols = {c["name"] for c in inspector.get_columns("matches")}
+    if "play_strategy_version" not in match_cols:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE matches " "ADD COLUMN play_strategy_version TEXT")
+            )
+        logger.info("Migration: added play_strategy_version column to matches")
+
     # 2. Auto-seed invite code on fresh database (atomic: skip if another
     #    instance already seeded between our check and insert)
     seed_session = session_factory()

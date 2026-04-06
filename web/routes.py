@@ -1291,10 +1291,21 @@ async def select_ai(
         engine_ms = round((time.monotonic() - t_engine) * 1000, 1)
 
         match_uuid = str(uuid.uuid4())
+        # Stamp the play strategy's version onto the match row for cohort
+        # tracking.  Read polymorphically via ``type(...).VERSION`` so any
+        # future Glutton subclass — or an entirely different strategy —
+        # contributes its own version without extra wiring.  Raises
+        # AttributeError if the strategy forgot to declare VERSION, which
+        # is the correct fail-loud behavior (see
+        # docs/02_agent/STRATEGY_VERSIONING.md).  The attribute is not on
+        # the Strategy base class today, so the static type:ignore is
+        # required until every strategy declares one.
+        play_strategy_version = type(engine.play_strategy).VERSION  # type: ignore[attr-defined]
         match_row = Match(
             match_uuid=match_uuid,
             player_id=player.id,
             ai_model=model_id,
+            play_strategy_version=play_strategy_version,
             status="active",
             seed=seed,
             match_state_json=_serialize_state(engine, state),

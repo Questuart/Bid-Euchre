@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS matches (
     match_uuid TEXT NOT NULL UNIQUE,
     player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     ai_model TEXT NOT NULL,
+    -- Version of the play strategy (src/bid_euchre/strategy/greedy.py's
+    -- GLUTTON_STRATEGY_VERSION) active at match-create time. Nullable so
+    -- pre-versioning rows retain an honest "unknown cohort" marker.
+    -- See docs/02_agent/STRATEGY_VERSIONING.md.
+    play_strategy_version TEXT,
     status TEXT NOT NULL CHECK (status IN ('active', 'complete', 'abandoned')),
     seed INTEGER NOT NULL,
     score_human INTEGER NOT NULL DEFAULT 0,

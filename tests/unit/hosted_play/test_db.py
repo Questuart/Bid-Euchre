@@ -72,6 +72,7 @@ class TestSchemaCreation:
             "match_uuid",
             "player_id",
             "ai_model",
+            "play_strategy_version",
             "status",
             "seed",
             "score_human",
@@ -83,6 +84,16 @@ class TestSchemaCreation:
             "completed_at",
         }
         assert expected <= cols
+
+    def test_play_strategy_version_is_nullable(self, engine):
+        """Pre-versioning rows must remain NULL — no NOT NULL constraint."""
+        inspector = inspect(engine)
+        col = next(
+            c
+            for c in inspector.get_columns("matches")
+            if c["name"] == "play_strategy_version"
+        )
+        assert col["nullable"] is True
 
     def test_hands_columns(self, engine):
         inspector = inspect(engine)
@@ -252,6 +263,41 @@ class TestMatchCRUD:
         session.add(match)
         with pytest.raises(Exception):
             session.flush()
+
+    def test_play_strategy_version_round_trip(self, session):
+        """Writing and reading back ``play_strategy_version`` preserves the value."""
+        player = self._make_player(session)
+        match = Match(
+            match_uuid=str(uuid.uuid4()),
+            player_id=player.id,
+            ai_model="heuristic",
+            play_strategy_version="0.7.0",
+            status="active",
+            seed=42,
+            match_state_json="{}",
+        )
+        session.add(match)
+        session.flush()
+
+        fetched = session.query(Match).filter_by(id=match.id).one()
+        assert fetched.play_strategy_version == "0.7.0"
+
+    def test_play_strategy_version_defaults_to_none(self, session):
+        """Omitting ``play_strategy_version`` leaves it NULL (pre-versioning cohort)."""
+        player = self._make_player(session)
+        match = Match(
+            match_uuid=str(uuid.uuid4()),
+            player_id=player.id,
+            ai_model="heuristic",
+            status="active",
+            seed=42,
+            match_state_json="{}",
+        )
+        session.add(match)
+        session.flush()
+
+        fetched = session.query(Match).filter_by(id=match.id).one()
+        assert fetched.play_strategy_version is None
 
 
 # ---------------------------------------------------------------------------

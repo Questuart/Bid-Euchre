@@ -459,3 +459,108 @@ class TestOnboardingMigration:
             engine = app.state.engine
             cols = {c["name"] for c in sa_inspect(engine).get_columns("players")}
             assert "onboarding_complete" in cols
+
+
+class TestPlayStrategyVersionMigration:
+    """Tests for the play_strategy_version startup migration (lifespan step 1c).
+
+    The migration in ``web/app.lifespan()`` detects whether the ``matches``
+    table is missing the ``play_strategy_version`` column and, if so,
+    ALTER TABLEs to add it (nullable TEXT).  Pre-versioning rows remain
+    NULL — the honest "unknown cohort" marker per
+    ``docs/02_agent/STRATEGY_VERSIONING.md``.
+    """
+
+    def test_fresh_db_already_has_column(self, tmp_path):
+        """On a brand-new DB, create_tables includes play_strategy_version;
+        migration is a no-op and no errors occur."""
+        app = _make_app(tmp_path)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = {c["name"] for c in sa_inspect(engine).get_columns("matches")}
+            assert "play_strategy_version" in cols
+
+    def test_migration_adds_column_to_legacy_db(self, tmp_path):
+        """Starting the app against a legacy DB (no play_strategy_version
+        column on matches) adds the column via ALTER TABLE."""
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        # Sanity: the legacy fixture must not already have the column
+        pre_engine = create_engine(db_url)
+        pre_cols = {c["name"] for c in sa_inspect(pre_engine).get_columns("matches")}
+        assert "play_strategy_version" not in pre_cols
+        pre_engine.dispose()
+
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = {c["name"] for c in sa_inspect(engine).get_columns("matches")}
+            assert "play_strategy_version" in cols
+
+    def test_migration_leaves_existing_rows_null(self, tmp_path):
+        """Pre-existing match rows must carry NULL after migration — no
+        fabricated cohort labels."""
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        # Insert a player + a pre-versioning match
+        engine = create_engine(db_url)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO players (link_uuid, nickname) "
+                    "VALUES ('uuid-legacy', 'Legacy')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO matches ("
+                    "  match_uuid, player_id, ai_model, status, seed,"
+                    "  match_state_json"
+                    ") VALUES ("
+                    "  'legacy-match', "
+                    "  (SELECT id FROM players WHERE link_uuid = 'uuid-legacy'),"
+                    "  'olsa', 'active', 42, '{}'"
+                    ")"
+                )
+            )
+        engine.dispose()
+
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with TestClient(app):
+            session = app.state.session_factory()
+            try:
+                row = session.execute(
+                    text(
+                        "SELECT play_strategy_version FROM matches "
+                        "WHERE match_uuid = 'legacy-match'"
+                    )
+                ).fetchone()
+                assert row is not None
+                assert row[0] is None
+            finally:
+                session.close()
+
+    def test_migration_idempotent_on_second_startup(self, tmp_path):
+        """Running the app twice on the same DB does not fail or duplicate
+        the column (second run is a no-op)."""
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        # First startup — triggers both migrations
+        config1 = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app1 = create_app(config=config1)
+        with TestClient(app1):
+            pass  # lifespan runs migration
+
+        # Second startup — column already present, migration skipped
+        config2 = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app2 = create_app(config=config2)
+        with TestClient(app2):
+            engine = app2.state.engine
+            cols = [c["name"] for c in sa_inspect(engine).get_columns("matches")]
+            # Column should exist exactly once (no duplicate)
+            assert cols.count("play_strategy_version") == 1
