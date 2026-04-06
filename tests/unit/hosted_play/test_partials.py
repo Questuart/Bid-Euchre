@@ -460,6 +460,54 @@ class TestBidPanel:
         )
         assert "bid-type-badge--loner" in html
 
+    def test_pass_option_ordered_after_numeric_bids(self, env):
+        """Pass option must follow numeric bid options in the bid-level select (#2499).
+
+        PR #2482 moved <option value="0">Pass</option> from the first position
+        to the last position so the browser's default selection is the lowest
+        legal bid (combined with {% if loop.first %} selected{% endif %}).
+        This test guards against regression where a future edit moves Pass
+        back to the top, which would silently restore the old "default to
+        Pass" behavior even though the selected attribute still lands on the
+        first numeric option.
+        """
+        import re
+
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=5,
+            dealer_seat=3,
+        )
+        bid_select = re.search(
+            r'<select id="bid-level"[^>]*>(.*?)</select>', html, re.DOTALL
+        )
+        assert bid_select is not None
+        bid_options = bid_select.group(1)
+
+        # Extract the list of option values in document order.
+        option_values = re.findall(r'<option value="([^"]+)"', bid_options)
+        assert option_values, "bid-level select should contain options"
+
+        # Numeric bids (non-zero) must precede the Pass option (value="0").
+        assert "0" in option_values, "Pass option must be present"
+        pass_index = option_values.index("0")
+        numeric_indices = [i for i, v in enumerate(option_values) if v != "0"]
+        assert numeric_indices, "bid-level select should contain numeric bid options"
+        assert all(i < pass_index for i in numeric_indices), (
+            f"Pass option (value=0) must appear AFTER all numeric bids, "
+            f"got order: {option_values}"
+        )
+
+        # First option must be a non-zero numeric bid so the browser default
+        # (and the loop.first selected marker) lands on a real bid.
+        assert option_values[0] != "0", (
+            f"First option must be a numeric bid, not Pass (value=0); "
+            f"got {option_values[0]}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # hand.html
@@ -4113,3 +4161,129 @@ class TestMatchStatusDataAttribute:
             link_uuid="x",
         )
         assert 'data-match-status="setup"' in html
+
+
+# ---------------------------------------------------------------------------
+# onboarding_guide.html / onboarding_dedication.html
+# ---------------------------------------------------------------------------
+
+
+class TestOnboardingGuideBackButton:
+    """Tests for the onboarding guide back button arithmetic (#2498).
+
+    PR #2483 added a back button to the onboarding guide that navigates
+    backward by posting ``step = onboarding_step - 2`` to
+    ``/onboarding/next``. The route maps ``step`` to ``next_step = step + 1``,
+    so subtracting 2 on the client produces ``next_step = onboarding_step - 1``
+    — i.e. the previous onboarding step. These tests lock that arithmetic so
+    a future edit to the template (e.g. renumbering steps) cannot silently
+    route the back button to the wrong page.
+
+    Context semantics (from ``web/routes.py``):
+      - onboarding_step == 2 → guide step 1; Back → step=0 → dedication
+      - onboarding_step == 3 → guide step 2; Back → step=1 → guide step 1
+      - onboarding_step == 4 → guide step 3; Back → step=2 → guide step 2
+    """
+
+    @staticmethod
+    def _render(env, onboarding_step: int, guide_step: int):
+        tmpl = env.get_template("partials/onboarding_guide.html")
+        return tmpl.render(
+            link_uuid="guide-uuid",
+            nickname="Alice",
+            step=guide_step,
+            total_steps=3,
+            onboarding_step=onboarding_step,
+        )
+
+    @staticmethod
+    def _extract_back_button(html: str) -> str:
+        import re
+
+        match = re.search(
+            r"<button[^>]*onboarding__btn--back[^>]*>.*?</button>",
+            html,
+            re.DOTALL,
+        )
+        assert match is not None, "back button not found in rendered guide partial"
+        return match.group(0)
+
+    def test_back_button_from_guide_step_1_targets_dedication(self, env):
+        """Guide step 1 (onboarding_step=2) → Back posts step=0 (dedication)."""
+        html = self._render(env, onboarding_step=2, guide_step=1)
+        back_btn = self._extract_back_button(html)
+        assert "hx-vals='{\"step\": 0}'" in back_btn
+
+    def test_back_button_from_guide_step_2_targets_guide_step_1(self, env):
+        """Guide step 2 (onboarding_step=3) → Back posts step=1 (guide step 1)."""
+        html = self._render(env, onboarding_step=3, guide_step=2)
+        back_btn = self._extract_back_button(html)
+        assert "hx-vals='{\"step\": 1}'" in back_btn
+
+    def test_back_button_from_guide_step_3_targets_guide_step_2(self, env):
+        """Guide step 3 (onboarding_step=4) → Back posts step=2 (guide step 2)."""
+        html = self._render(env, onboarding_step=4, guide_step=3)
+        back_btn = self._extract_back_button(html)
+        assert "hx-vals='{\"step\": 2}'" in back_btn
+
+    def test_back_button_posts_to_onboarding_next_route(self, env):
+        """Back button submits to the same /onboarding/next route as Next."""
+        html = self._render(env, onboarding_step=2, guide_step=1)
+        back_btn = self._extract_back_button(html)
+        assert 'hx-post="/play/guide-uuid/onboarding/next"' in back_btn
+
+    def test_next_button_step_value_matches_onboarding_step(self, env):
+        """Next button posts step=onboarding_step (advance arithmetic unchanged)."""
+        import re
+
+        html = self._render(env, onboarding_step=3, guide_step=2)
+        # The Next button is the primary button (onboarding__btn--primary).
+        match = re.search(
+            r"<button[^>]*onboarding__btn--primary[^>]*>.*?</button>",
+            html,
+            re.DOTALL,
+        )
+        assert match is not None
+        next_btn = match.group(0)
+        assert "hx-vals='{\"step\": 3}'" in next_btn
+
+
+class TestOnboardingDedicationBackButton:
+    """Tests for the onboarding dedication back button (#2498).
+
+    PR #2483 added a back button that uses ``hx-get`` to ``/play/{link_uuid}``
+    to return to the welcome screen. This test locks the URL substitution so
+    a future edit cannot drop the ``link_uuid`` interpolation and produce a
+    broken relative URL.
+    """
+
+    def test_back_button_uses_link_uuid_in_get_url(self, env):
+        """Dedication back button targets /play/<link_uuid> via hx-get."""
+        import re
+
+        tmpl = env.get_template("partials/onboarding_dedication.html")
+        html = tmpl.render(link_uuid="dedication-uuid")
+        match = re.search(
+            r"<button[^>]*onboarding__btn--back[^>]*>.*?</button>",
+            html,
+            re.DOTALL,
+        )
+        assert match is not None, "back button not found in dedication partial"
+        back_btn = match.group(0)
+        assert 'hx-get="/play/dedication-uuid"' in back_btn
+
+    def test_back_button_swaps_game_board(self, env):
+        """Dedication back button swaps the game-board target so the welcome
+        screen replaces the dedication partial in place."""
+        import re
+
+        tmpl = env.get_template("partials/onboarding_dedication.html")
+        html = tmpl.render(link_uuid="xyz")
+        match = re.search(
+            r"<button[^>]*onboarding__btn--back[^>]*>.*?</button>",
+            html,
+            re.DOTALL,
+        )
+        assert match is not None
+        back_btn = match.group(0)
+        assert 'hx-target="#game-board"' in back_btn
