@@ -829,12 +829,14 @@ main {
     flex-wrap: wrap;
 }
 
-/* Lead suit indicator shown next to trick heading */
+/* Lead suit indicator shown next to trick heading.
+   font-variant-emoji: text — same iOS fix as .suit-icon (#2505). */
 .lead-suit {
     display: inline-block;
     margin-left: 0.35rem;
     font-size: 1.1em;
     vertical-align: middle;
+    font-variant-emoji: text;
 }
 
 .lead-suit--hearts,
@@ -3079,6 +3081,7 @@ main {
     font-weight: 700;
     white-space: nowrap;
     color: var(--color-text);
+    font-variant-emoji: text;
 }
 
 .card-text--hearts,
@@ -3095,9 +3098,14 @@ main {
    on dark backgrounds.  Red for hearts/diamonds, white (--color-text) for
    spades/clubs so they render as solid filled shapes, not invisible dark
    outlines (#2329).  Use `suit-icon suit-icon--hearts` (or
-   diamonds/spades/clubs) on a <span> wrapping ♠ ♥ ♦ ♣.  (#2235) */
+   diamonds/spades/clubs) on a <span> wrapping ♠ ♥ ♦ ♣.  (#2235)
+   font-variant-emoji: text forces text presentation on iOS/mobile where
+   suit symbols otherwise render as color emoji — black emoji ♠♣ are
+   invisible on dark backgrounds because CSS color has no effect on emoji
+   glyphs (#2505). */
 .suit-icon {
     white-space: nowrap;
+    font-variant-emoji: text;
 }
 
 .suit-icon--hearts,
