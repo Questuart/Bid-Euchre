@@ -520,6 +520,20 @@ class MatchEngine:
         ]
         result["tricks_team0"] = hand.tricks_team0
         result["tricks_team1"] = hand.tricks_team1
+
+        # Reveal partner's full hand at end of moon hands for exchange review.
+        # The partner sits out during trick play so their 10-card post-exchange
+        # hand remains intact in hand.hands[sitting_out_seat].  (#2554)
+        if (
+            hand.phase == "complete"
+            and hand.bid_type == "moon"
+            and hand.sitting_out_seat is not None
+        ):
+            result["partner_exchange_hand"] = [
+                [c.suit, c.rank] for c in hand.hands[hand.sitting_out_seat]
+            ]
+            result["partner_exchange_seat"] = hand.sitting_out_seat
+
         return result
 
     # ------------------------------------------------------------------

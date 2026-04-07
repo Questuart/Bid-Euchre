@@ -1543,6 +1543,119 @@ class TestHandResult:
 
 
 # ---------------------------------------------------------------------------
+# hand_result.html — Partner hand reveal (#2554)
+# ---------------------------------------------------------------------------
+
+
+class TestPartnerHandReveal:
+    """Tests for the partner hand section in hand_result after moon hands."""
+
+    # Base context shared by all tests in this class
+    _BASE_CTX = dict(
+        link_uuid="abc-123",
+        winning_bid=10,
+        bidder_seat=0,
+        contract_type="suit",
+        trump="S",
+        bid_type="moon",
+        tricks_team0=10,
+        tricks_team1=0,
+        points_team0=20,
+        points_team1=0,
+        score_human=20,
+        score_ai=0,
+        hands_played=1,
+        exchange_given=[["D", "10"], ["C", "J"]],
+        exchange_received=[["S", "A"], ["H", "K"]],
+    )
+
+    def test_moon_result_shows_partner_hand(self, env):
+        """Partner hand section renders with card components when present."""
+        html = env.get_template("partials/hand_result.html").render(
+            **self._BASE_CTX,
+            partner_exchange_hand=[
+                ["S", "K"],
+                ["S", "Q"],
+                ["H", "A"],
+                ["H", "Q"],
+                ["D", "10"],  # received from mooner (in exchange_given)
+                ["D", "A"],
+                ["D", "K"],
+                ["C", "J"],  # received from mooner (in exchange_given)
+                ["C", "A"],
+                ["C", "Q"],
+            ],
+            partner_exchange_seat=2,
+        )
+        assert "result-partner-hand" in html
+        assert "Ace" in html  # seat 2 label
+        assert "'s Hand" in html
+        assert "(after exchange)" in html
+        # Should render card components (not just text)
+        assert "card__rank" in html
+        assert "card__suit" in html
+
+    def test_moon_result_highlights_received_cards(self, env):
+        """Cards matching exchange_given get card--exchange-received CSS class."""
+        html = env.get_template("partials/hand_result.html").render(
+            **self._BASE_CTX,
+            partner_exchange_hand=[
+                ["S", "K"],
+                ["D", "10"],  # matches exchange_given
+                ["C", "J"],  # matches exchange_given
+                ["H", "A"],
+            ],
+            partner_exchange_seat=2,
+        )
+        # The exchange-received class should appear (for the highlighted cards)
+        assert "card--exchange-received" in html
+
+    def test_moon_result_shows_sent_cards(self, env):
+        """Cards partner sent to mooner (exchange_received) shown as text."""
+        html = env.get_template("partials/hand_result.html").render(
+            **self._BASE_CTX,
+            partner_exchange_hand=[
+                ["S", "K"],
+                ["H", "A"],
+                ["D", "10"],
+                ["C", "J"],
+            ],
+            partner_exchange_seat=2,
+        )
+        assert "result-partner-hand__sent" in html
+        assert "Sent to" in html
+        assert "You" in html  # bidder_seat=0 → "You"
+
+    def test_non_moon_no_partner_hand(self, env):
+        """Regular (non-moon) hands do not render partner hand section."""
+        html = env.get_template("partials/hand_result.html").render(
+            winning_bid=6,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            tricks_team0=7,
+            tricks_team1=3,
+            points_team0=7,
+            points_team1=3,
+            score_human=7,
+            score_ai=3,
+            hands_played=1,
+        )
+        assert "result-partner-hand" not in html
+
+    def test_partner_hand_missing_graceful(self, env):
+        """Template handles missing partner_exchange_hand gracefully."""
+        html = env.get_template("partials/hand_result.html").render(
+            **self._BASE_CTX,
+            # No partner_exchange_hand or partner_exchange_seat provided
+        )
+        # Should render without error — partner section simply not shown
+        assert "result-partner-hand" not in html
+        # But the exchange summary should still render
+        assert "result-exchange" in html
+
+
+# ---------------------------------------------------------------------------
 # moon_exchange.html
 # ---------------------------------------------------------------------------
 
