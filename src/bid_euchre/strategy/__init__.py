@@ -9,6 +9,8 @@ Organized into:
 - glutton: Greedy/glutton strategies with 1-trick lookahead
 """
 
+import sys
+
 # Base strategy class
 from .base import Strategy, card_value_for_dump
 
@@ -53,6 +55,11 @@ from .glutton import (
     choose_card_basic,
     choose_card_greedy,
 )
+
+# Backward-compat shim: preserve old bid_euchre.strategy.greedy module path
+# after rename to glutton.py (PR #2604). External code and configs referencing
+# "greedy" will continue to work via sys.modules alias.
+sys.modules[__name__ + ".greedy"] = sys.modules[__name__ + ".glutton"]
 
 # Regression strategies - REMOVED: RegressionBidder (legacy pickle path)
 
