@@ -62,8 +62,8 @@ a much richer bidder set:
 |-----------|-------------|----------|
 | **Bidder for "Bud Bot"** | `GBTActionValueBidder` (raw) | Can use `FilteredGBTBidder` with Enhancement A/B filters |
 | **Bidder for "OLSa"** | `ActionValueBidder` (net-points OLS) | Can also use `OLSaBidder` (tricks-won OLS) or `HybridOLSaBidder` (Gaussian EV) |
-| **Overbid mitigation** | **None** — raw GBT output passes through unfiltered | `FilteredGBTBidder.flag_a` suppresses dealer overcalls where team has no standing bid |
-| **Partner nudge mitigation** | **None** | `FilteredGBTBidder.flag_b` suppresses +1 same-suit partner bids |
+| **Overbid mitigation** | **None** — raw GBT output passes through unfiltered | `FilteredGBTBidder` with `flag_a=True` suppresses dealer overcalls where team has no standing bid |
+| **Partner nudge mitigation** | **None** | `FilteredGBTBidder` with `flag_b=True` suppresses +1 same-suit partner bids |
 | **Behavioral validation** | Skipped (`skip_behavioral_check=True`) | Run by default on experiment instantiation |
 | **Contract types** | Full game (suit/high/low/moon/loner) | Configurable per experiment — can force specific contract types |
 | **Artifact versioning** | Fixed at deploy time via env var | Experiment configs can point to any artifact |
@@ -71,7 +71,7 @@ a much richer bidder set:
 ### 1.4 The FilteredGBTBidder Gap
 
 The `FilteredGBTBidder` was designed in `plans/sessions/2026-04-06_glutton_gbt_quicksim_experiment.md`
-and implemented in PR #2559+. Its experiment configs (`glutton_gbt_ablation_auction.yaml`)
+and implemented in PR #2559+. Its experiment configs (`experiments/configs/glutton_gbt_ablation_auction.yaml`)
 test Enhancement A (don't overbid as last bidder) and Enhancement B (don't nudge
 partner's suit) against the raw GBT baseline.
 
@@ -110,7 +110,7 @@ All constructor defaults apply:
 The engine deep-copies the strategy per match (`web/routes.py:122`) so
 concurrent games don't share mutable card-tracking state.
 
-**Strategy version:** `GLUTTON_STRATEGY_VERSION = "0.8.1"` (greedy.py:28).
+**Strategy version:** `GLUTTON_STRATEGY_VERSION = "0.8.1"` (`src/bid_euchre/strategy/greedy.py:28`).
 
 ### 2.2 Research Framework Play Strategy
 
@@ -143,8 +143,8 @@ defaulted to False per the plan:
 > flip this to True after a manual proving run."
 > — `src/bid_euchre/strategy/greedy.py:137-141`
 
-The experiment configs `glutton_gbt_ablation_play.yaml` and
-`cash_a_h2h_auction.yaml` / `cash_a_h2h_per_contract.yaml` are designed to
+The experiment configs `experiments/configs/glutton_gbt_ablation_play.yaml` and
+`experiments/configs/cash_a_h2h_auction.yaml` / `experiments/configs/cash_a_h2h_per_contract.yaml` are designed to
 prove this flag before the production flip.
 
 ### 2.4 GluttonStrategy Feature Inventory
@@ -179,7 +179,7 @@ Features behind `cash_winners_on_lead` flag (**off in production**):
 
 | Issue | Title | Root Cause | Status | Addressed By |
 |-------|-------|-----------|--------|-------------|
-| **#2149** | AI overbids as last bidder | Raw GBT has no position-aware bid suppression | **Open** | `FilteredGBTBidder.flag_a` (not yet deployed to browser) |
+| **#2149** | AI overbids as last bidder | Raw GBT has no position-aware bid suppression | **Open** | `FilteredGBTBidder` with `flag_a=True` (not yet deployed to browser) |
 | **#2502** | AI misplays Low contracts — conserves 10s | `_choose_lead()` has no sure-winner priority (Defect A). Card valuation (`rank_strength`) is actually correct for Low. | **Open** | `cash_winners_on_lead=True` (not yet deployed) |
 | **#2504** | AI holds ace until last trick in High | Same Defect A — no sure-winner lead priority | **Open** | `cash_winners_on_lead=True` (not yet deployed) |
 | **#2506** | AI doesn't continue established suit | Defect A (no sure-winner priority) + Defect B (leads lowest trump) + Defect F (stops drawing trump mid-game) | **Open** | `cash_winners_on_lead=True` (not yet deployed) |
@@ -225,7 +225,7 @@ The bidding issue (#2149) is structurally independent — it's a property of
 | Cash-A code merged | PR #2534 | Added `cash_winners_on_lead` flag, sure-winner lead priority, draw-trump-first, draw trump from top | **Code merged, flag OFF** |
 | Claim 1 fix | PR #2559 | `_draw_trump_lead` sure-winner-first fallback (prevents burning LB when 2nd RB is out) | **Code merged, behind flag** |
 | Strategy versioning | PR #2529 | Added `GLUTTON_STRATEGY_VERSION` and `play_strategy_version` column for cohort tracking | **Yes** |
-| FilteredGBTBidder | PR #2559+ | `flag_a` / `flag_b` wrapper for GBT post-inference filters | **Code merged, not used in browser** |
+| FilteredGBTBidder | PR #2559+ | `flag_a=True` / `flag_b=True` wrapper for GBT post-inference filters | **Code merged, not used in browser** |
 
 ---
 
@@ -304,11 +304,11 @@ Bud Bot and OLSa.
 only gate is the experiment proving run.
 
 **Experiment needed:**
-- Run `experiments/configs/cash_a_h2h_auction.yaml` (EXP 2) to measure
+- Run EXP 2 (`experiments/configs/cash_a_h2h_auction.yaml`) to measure
   aggregate impact under realistic auction conditions.
-- Run `experiments/configs/cash_a_h2h_per_contract.yaml` (EXP 1) to
+- Run EXP 1 (`experiments/configs/cash_a_h2h_per_contract.yaml`) to
   confirm suit-contract signal dominates.
-- Run `experiments/configs/glutton_gbt_ablation_play.yaml` to isolate
+- Run the play ablation (`experiments/configs/glutton_gbt_ablation_play.yaml`) to isolate
   Cash-A flag flip vs Claim 1 fix contribution.
 
 **Acceptance criteria:** Statistically significant improvement (p < 0.05)
@@ -330,7 +330,7 @@ suppresses dealer overcalls when the team hasn't bid and there's a standing
 opponent contract.
 
 **Experiment needed:**
-- Run `experiments/configs/glutton_gbt_ablation_auction.yaml` to measure
+- Run the auction ablation (`experiments/configs/glutton_gbt_ablation_auction.yaml`) to measure
   Enhancement A's contribution against raw GBT baseline.
 - Consider EXP 2 (auction H2H) with `FilteredGBTBidder` to measure
   aggregate competitive impact.
@@ -342,8 +342,8 @@ paired deals with auction mode.
 **Risk:** Low. The filter only fires on the dealer seat and only when the
 team has no standing bid. It's a conservative post-inference guard.
 
-**Decision point:** Whether to also enable `flag_b` (partner nudge
-suppression). The experiment config includes a B2 cell (both flags) for
+**Decision point:** Whether to also enable the partner-nudge filter
+(partner bid suppression). The experiment config includes a B2 cell (both flags) for
 comparison.
 
 **Estimated effort:** 1 PR (bidder swap in `web/ai_manager.py`), gated on
@@ -408,10 +408,10 @@ could make play decisions informed by why the contract was chosen.
 
 | Config | Purpose | Status |
 |--------|---------|--------|
-| `glutton_gbt_ablation_play.yaml` | Cash-A flag flip + Claim 1 fix isolation | Ready (prereqs met: v0.8.1 code merged) |
-| `glutton_gbt_ablation_auction.yaml` | FilteredGBTBidder Enhancement A/B isolation | Ready (FilteredGBTBidder implemented) |
-| `cash_a_h2h_auction.yaml` | Cash-A aggregate impact under auction | Ready |
-| `cash_a_h2h_per_contract.yaml` | Cash-A per-contract-type impact | Ready |
+| `experiments/configs/glutton_gbt_ablation_play.yaml` | Cash-A flag flip + Claim 1 fix isolation | Ready (prereqs met: v0.8.1 code merged) |
+| `experiments/configs/glutton_gbt_ablation_auction.yaml` | FilteredGBTBidder Enhancement A/B isolation | Ready (FilteredGBTBidder implemented) |
+| `experiments/configs/cash_a_h2h_auction.yaml` | Cash-A aggregate impact under auction | Ready |
+| `experiments/configs/cash_a_h2h_per_contract.yaml` | Cash-A per-contract-type impact | Ready |
 
 ### 6.2 Configs Needed
 
@@ -460,7 +460,7 @@ When experiment results are available, the production deployment sequence is:
 | Cash-A flag flip changes Glutton behavior for ALL AI opponents simultaneously | Both Bud Bot and OLSa are affected | This is by design — both share GluttonStrategy. The improvement benefits all. |
 | FilteredGBTBidder may suppress valid bids | Could make Bud Bot too conservative | Enhancement A only fires when team has no standing bid and dealer overcalls into an opponent contract. Narrow scope. Monitor post-deploy set rates. |
 | Experiment infrastructure dependency | Can't deploy without proving runs | Experiment configs are ready to run. ~5 min total compute for all four configs. |
-| `GluttonIsolatedStrategy` divergence | Research twin must track production changes | Both classes are in the same file (`greedy.py`) and share version constant. The `draw_trump_lead_legacy` research flag is documented for cleanup. |
+| `GluttonIsolatedStrategy` divergence | Research twin must track production changes | Both classes are in the same file (`src/bid_euchre/strategy/greedy.py`) and share version constant. The `draw_trump_lead_legacy` research flag is documented for cleanup. |
 | Concurrent match deep-copy correctness | `GluttonStrategy(cash_winners_on_lead=True)` has same mutable state as False | Deep-copy in `web/routes.py:122` handles this. No architectural change needed. |
 
 ---
