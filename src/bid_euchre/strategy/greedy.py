@@ -16,7 +16,7 @@ from .base import Strategy, card_value_for_dump
 # GluttonStrategy or GluttonIsolatedStrategy. See
 # docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
 # changelog template.
-#
+
 # Changelog:
 #   0.7.0 — Initial versioned baseline (PR #2529)
 #   0.8.0 — Cash-A: sure-winner lead priority, draw-trump-first,
