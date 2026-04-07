@@ -1,6 +1,6 @@
 # Strategy Versioning
 
-`src/bid_euchre/strategy/greedy.py` is the live hosted-play strategy for
+`src/bid_euchre/strategy/glutton.py` is the live hosted-play strategy for
 both OLSa and Bud Bot. `GLUTTON_STRATEGY_VERSION` (exposed as `VERSION`
 on both `GluttonStrategy` and `GluttonIsolatedStrategy`) is the on-disk
 record of which behavior cohort produced any given hosted match.
@@ -26,7 +26,7 @@ lines, ruff cleanups, new helpers that are added but never called.
 
 ## PR changelog template
 
-Every PR that touches `src/bid_euchre/strategy/greedy.py`'s decision
+Every PR that touches `src/bid_euchre/strategy/glutton.py`'s decision
 logic must include the following block in its description:
 
 ```markdown
