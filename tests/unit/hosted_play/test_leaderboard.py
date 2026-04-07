@@ -651,10 +651,20 @@ class TestIsExcludedTestPlayer:
         # below the prefix threshold and is not in the exact list.
         assert is_excluded_test_player("Claude") is False
 
+    def test_stratbot_and_claude_unfiltered(self):
+        """StratBot and CLAUDE were removed from the exclusion list (#2547).
+
+        After renaming StratBot → Claude in the production DB, the player
+        should appear on the public leaderboard.
+        """
+        assert is_excluded_test_player("StratBot") is False
+        assert is_excluded_test_player("CLAUDE") is False
+        assert is_excluded_test_player("Claude") is False
+
     def test_case_sensitive(self):
         # Exact names are case-sensitive
         assert is_excluded_test_player("claude") is False
-        assert is_excluded_test_player("CLAUDE") is True
+        assert is_excluded_test_player("CLAUDE") is False  # removed from list (#2547)
         assert is_excluded_test_player("test") is False
         assert is_excluded_test_player("TEST") is True
 
@@ -699,7 +709,7 @@ class TestLeaderboardExcludesTestPlayers:
         rmatch = _make_match(db_session, real)
         _make_hand(db_session, rmatch)
 
-        for i, name in enumerate(["CLAUDE", "StratBot", "FlexBot-B"], start=1):
+        for i, name in enumerate(["TEST", "TEST3", "FlexBot-B"], start=1):
             p = _make_player(db_session, nickname=name)
             m = _make_match(db_session, p)
             _make_hand(db_session, m, hand_number=i)
