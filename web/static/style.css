@@ -1484,6 +1484,13 @@ main {
     overflow: auto;
 }
 
+/* During auction phase, show all bidder rows without truncation so all
+   four players are visible — no scrolling required (#2591). */
+.action-rail[data-phase="auction"] .action-rail__list {
+    max-height: none;
+    overflow: visible;
+}
+
 .action-rail__item {
     font-size: 0.74rem;
     padding: 0.2rem 0;
@@ -2362,6 +2369,12 @@ main {
 
     .action-rail[open] .action-rail__list {
         max-height: 80px;
+    }
+
+    /* During auction: show all bidder rows — no truncation on mobile (#2591). */
+    .action-rail[data-phase="auction"] .action-rail__list {
+        max-height: none;
+        overflow: visible;
     }
 
     .bid-controls {

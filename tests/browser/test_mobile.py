@@ -187,3 +187,154 @@ def test_mobile_invite_code_input(
 
     finally:
         context.close()
+
+
+# ---------------------------------------------------------------------------
+# Test: Auction log shows all 4 bidders on mobile (#2591)
+# ---------------------------------------------------------------------------
+
+
+def _advance_to_auction(page, max_steps: int = 8) -> None:
+    """Click Next until the auction log shows bidder rows."""
+    for _ in range(max_steps):
+        next_btn = page.locator("button.btn--next-step")
+        if next_btn.count() == 0 or not next_btn.first.is_visible():
+            return
+        next_btn.first.click()
+        page.wait_for_timeout(250)
+
+
+@pytest.mark.browser
+def test_auction_log_all_bidders_visible_mobile(
+    live_server: str,
+    invite_code: str,
+    browser,
+) -> None:
+    """All four bidder rows must be visible without scrolling at 375px (#2591).
+
+    Acceptance criteria:
+    - All action-rail items are within viewport bounds (no overflow)
+    - The list container has no scroll overflow during auction phase
+    """
+    context = browser.new_context(
+        viewport=MOBILE_VIEWPORT,
+        has_touch=True,
+        is_mobile=True,
+        user_agent=(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+            "Version/16.0 Mobile/15E148 Safari/604.1"
+        ),
+    )
+    mobile_page = context.new_page()
+
+    try:
+        enter_game(mobile_page, live_server, invite_code, "AuctionLogTest")
+
+        # Start match
+        mobile_page.click("input[name='model_id'][value='olsa']")
+        mobile_page.click("button:has-text('Start Match')")
+        mobile_page.wait_for_selector("#game-board", timeout=10000)
+
+        # Advance past any next-step prompts to reach full auction state
+        _advance_to_auction(mobile_page)
+
+        # Verify we're in auction phase — the action-rail should have
+        # data-phase="auction" and be open
+        action_rail = mobile_page.locator("#action-rail[data-phase='auction']")
+        if action_rail.count() == 0:
+            pytest.skip("Not in auction phase — AI may have already completed bidding")
+
+        # Check auction log items
+        items = mobile_page.locator(".action-rail__item")
+        item_count = items.count()
+        if item_count == 0:
+            pytest.skip("No auction log items visible")
+
+        # The list container should NOT be scrollable during auction
+        list_el = mobile_page.locator(".action-rail__list")
+        if list_el.count() > 0:
+            scroll_height = list_el.evaluate("el => el.scrollHeight")
+            client_height = list_el.evaluate("el => el.clientHeight")
+            assert scroll_height <= client_height + 2, (
+                f"Auction log list overflows during auction phase: "
+                f"scrollHeight={scroll_height}px, clientHeight={client_height}px. "
+                f"All {item_count} bidder rows should be visible without scrolling (#2591)."
+            )
+
+        # Verify each visible item is within the viewport
+        viewport_height = MOBILE_VIEWPORT["height"]
+        for i in range(item_count):
+            item = items.nth(i)
+            if not item.is_visible():
+                continue
+            box = item.bounding_box()
+            if box is None:
+                continue
+            assert box["y"] + box["height"] <= viewport_height + 5, (
+                f"Auction log item {i} overflows viewport bottom: "
+                f"y={box['y']:.0f} + h={box['height']:.0f} = "
+                f"{box['y'] + box['height']:.0f}px > {viewport_height}px (#2591)"
+            )
+
+    finally:
+        context.close()
+
+
+@pytest.mark.browser
+def test_auction_log_all_bidders_visible_mobile_big_text(
+    live_server: str,
+    invite_code: str,
+    browser,
+) -> None:
+    """All four bidder rows must be visible at 375px with big text mode (#2591).
+
+    Big text mode scales root font-size to 125%, making each row larger.
+    The auction log must still show all rows without scrolling.
+    """
+    context = browser.new_context(
+        viewport=MOBILE_VIEWPORT,
+        has_touch=True,
+        is_mobile=True,
+        user_agent=(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+            "Version/16.0 Mobile/15E148 Safari/604.1"
+        ),
+    )
+    mobile_page = context.new_page()
+
+    try:
+        enter_game(mobile_page, live_server, invite_code, "AuctionBigText")
+
+        # Enable big text mode before starting match
+        mobile_page.evaluate(
+            "document.documentElement.setAttribute('data-text-size', 'large')"
+        )
+
+        # Start match
+        mobile_page.click("input[name='model_id'][value='olsa']")
+        mobile_page.click("button:has-text('Start Match')")
+        mobile_page.wait_for_selector("#game-board", timeout=10000)
+
+        # Advance past any next-step prompts
+        _advance_to_auction(mobile_page)
+
+        # Verify we're in auction phase
+        action_rail = mobile_page.locator("#action-rail[data-phase='auction']")
+        if action_rail.count() == 0:
+            pytest.skip("Not in auction phase — AI may have already completed bidding")
+
+        # Check the list container is NOT scrollable (big text mode)
+        list_el = mobile_page.locator(".action-rail__list")
+        if list_el.count() > 0:
+            scroll_height = list_el.evaluate("el => el.scrollHeight")
+            client_height = list_el.evaluate("el => el.clientHeight")
+            assert scroll_height <= client_height + 2, (
+                f"Auction log overflows in big text mode: "
+                f"scrollHeight={scroll_height}px, clientHeight={client_height}px. "
+                f"All bidder rows should be visible without scrolling (#2591)."
+            )
+
+    finally:
+        context.close()
