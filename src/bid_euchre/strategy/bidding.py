@@ -2684,7 +2684,9 @@ class FilteredGBTBidder(BiddingPolicy):
 
         if self._flag_a and _would_overbid_cap(obs, raw):
             # Cap the bid to current_high_bid + 1, keeping the same contract.
-            return BidAction.bid(obs.current_high_bid + 1, raw.contract)
+            # Do NOT return early — the capped bid must still be evaluated
+            # against flag-B (it could be a same-suit +1 nudge of partner).
+            raw = BidAction.bid(obs.current_high_bid + 1, raw.contract)
 
         if self._flag_b and _would_nudge_partner(obs, raw):
             return BidAction.pass_bid()

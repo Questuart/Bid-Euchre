@@ -2241,6 +2241,49 @@ class TestFilteredGBTBidder:
         assert result.n == 5
         assert result.contract == "S"
 
+    def test_both_flags_capped_bid_triggers_flag_b(self):
+        """Both flags on: flag-A caps the bid, capped bid then triggers flag-B.
+
+        Scenario: partner bid 4S, raw bid 7S. Flag-A caps to 5S (high_bid + 1).
+        The capped 5S is partner's 4S + 1 in the same suit -> flag-B fires,
+        returning pass. Before the fix, the early return in flag-A skipped
+        the flag-B evaluation entirely.
+        """
+        transcript = (
+            {
+                "seat": 1,
+                "action": "PASS",
+                "tricks_bid": 0,
+                "contract_type": None,
+                "trump": None,
+            },
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "S",
+                "bid_type": "regular",
+            },
+            {
+                "seat": 3,
+                "action": "PASS",
+                "tricks_bid": 0,
+                "contract_type": None,
+                "trump": None,
+            },
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+
+        # Raw bid 7S: flag-A caps to 5S (4+1), then flag-B sees 5S is
+        # partner's 4S + 1 in the same suit -> pass.
+        inner = _make_mock_inner(BidAction.bid(7, "S"))
+        bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=True)
+        result = bidder.choose_bid(obs)
+        assert (
+            result.is_pass()
+        ), f"Expected pass (flag-B should fire on capped bid), got {result}"
+
     def test_construction_requires_inner_or_artifact(self):
         """Must provide either inner or artifact_path, not neither."""
         with pytest.raises(ValueError, match="requires either"):
