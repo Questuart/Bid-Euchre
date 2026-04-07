@@ -22,7 +22,7 @@ from bid_euchre.strategy.bidding import (
     StrictHellRaiser,
     StrictRaiserBidder,
     _would_nudge_partner,
-    _would_overbid_last,
+    _would_overbid_cap,
 )
 
 
@@ -1643,138 +1643,112 @@ def _obs(
     )
 
 
-class TestWouldOverbidLast:
-    """Tests for the _would_overbid_last predicate (Enhancement A)."""
+class TestWouldOverbidCap:
+    """Tests for the _would_overbid_cap predicate (Enhancement A v2)."""
 
-    def test_fires_when_team_has_not_bid_and_opponent_holds(self):
-        """Dealer overcall when team hasn't bid -> predicate fires."""
-        transcript = (
-            {
-                "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 3,
-                "action": "BID",
-                "tricks_bid": 4,
-                "contract_type": "suit",
-                "trump": "S",
-                "bid_type": "regular",
-            },
-        )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+    def test_fires_on_plus_two_jump(self):
+        """High=4, raw=6 -> predicate fires (jump of +2)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4)
+        raw = BidAction.bid(6, "S")
+        assert _would_overbid_cap(obs, raw) is True
+
+    def test_fires_on_plus_three_jump(self):
+        """High=3, raw=6 -> predicate fires (jump of +3)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=3)
+        raw = BidAction.bid(6, "H")
+        assert _would_overbid_cap(obs, raw) is True
+
+    def test_allows_plus_one(self):
+        """High=4, raw=5 -> predicate does NOT fire (exactly +1)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4)
         raw = BidAction.bid(5, "S")
-        assert _would_overbid_last(obs, raw) is True
+        assert _would_overbid_cap(obs, raw) is False
 
-    def test_skips_when_team_already_bid(self):
-        """Partner already bid -> predicate does NOT fire."""
-        transcript = (
-            {
-                "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
-                "action": "BID",
-                "tricks_bid": 3,
-                "contract_type": "suit",
-                "trump": "H",
-                "bid_type": "regular",
-            },
-            {
-                "seat": 3,
-                "action": "BID",
-                "tricks_bid": 4,
-                "contract_type": "suit",
-                "trump": "S",
-                "bid_type": "regular",
-            },
-        )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
-        raw = BidAction.bid(5, "S")
-        assert _would_overbid_last(obs, raw) is False
-
-    def test_skips_all_pass_auction(self):
-        """All-pass auction (current_high_bid=0) -> predicate does NOT fire."""
-        transcript = (
-            {
-                "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 3,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-        )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=0, transcript=transcript)
+    def test_skips_all_pass(self):
+        """High=0 (all-pass auction), raw=3 -> predicate does NOT fire."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=0)
         raw = BidAction.bid(3, "D")
-        assert _would_overbid_last(obs, raw) is False
+        assert _would_overbid_cap(obs, raw) is False
 
-    def test_skips_when_dealer_already_bid(self):
-        """Dealer already bid earlier (team has bid) -> predicate does NOT fire."""
+    def test_allows_moon_even_when_capped(self):
+        """High=4, raw=moon(10) -> predicate does NOT fire (moon exempt)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4)
+        raw = BidAction.moon("H")
+        assert _would_overbid_cap(obs, raw) is False
+
+    def test_allows_loner_even_when_capped(self):
+        """High=7, raw=loner(10) -> predicate does NOT fire (loner exempt)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=7)
+        raw = BidAction.loner("S")
+        assert _would_overbid_cap(obs, raw) is False
+
+    def test_allows_moon_at_nine(self):
+        """High=9, raw=moon(10) -> predicate does NOT fire (moon is +1, and exempt)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=9)
+        raw = BidAction.moon("C")
+        assert _would_overbid_cap(obs, raw) is False
+
+    def test_fires_regardless_of_team_bid_state(self):
+        """Partner bid 4D, opponent bid 5S, raw=7H -> fires (jump > +1)."""
         transcript = (
             {
                 "seat": 1,
-                "action": "BID",
-                "tricks_bid": 3,
-                "contract_type": "suit",
-                "trump": "H",
-                "bid_type": "regular",
-            },
-            {
-                "seat": 2,
                 "action": "PASS",
                 "tricks_bid": 0,
                 "contract_type": None,
                 "trump": None,
             },
             {
-                "seat": 3,
+                "seat": 2,
                 "action": "BID",
                 "tricks_bid": 4,
                 "contract_type": "suit",
-                "trump": "S",
+                "trump": "D",
                 "bid_type": "regular",
             },
             {
-                "seat": 0,
+                "seat": 3,
                 "action": "BID",
                 "tricks_bid": 5,
                 "contract_type": "suit",
-                "trump": "H",
+                "trump": "S",
                 "bid_type": "regular",
             },
         )
-        # Second round: dealer seat 0 is asked again
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=5, transcript=transcript)
+        raw = BidAction.bid(7, "H")
+        assert _would_overbid_cap(obs, raw) is True
+
+    def test_allows_regardless_of_team_bid_state(self):
+        """Partner bid 4D, opponent bid 5S, raw=6H -> does NOT fire (+1 ok)."""
+        transcript = (
+            {
+                "seat": 1,
+                "action": "PASS",
+                "tricks_bid": 0,
+                "contract_type": None,
+                "trump": None,
+            },
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "D",
+                "bid_type": "regular",
+            },
+            {
+                "seat": 3,
+                "action": "BID",
+                "tricks_bid": 5,
+                "contract_type": "suit",
+                "trump": "S",
+                "bid_type": "regular",
+            },
+        )
         obs = _obs(seat=0, dealer_seat=0, current_high_bid=5, transcript=transcript)
         raw = BidAction.bid(6, "H")
-        assert _would_overbid_last(obs, raw) is False
+        assert _would_overbid_cap(obs, raw) is False
 
 
 class TestWouldNudgePartner:
@@ -2010,67 +1984,20 @@ class TestWouldNudgePartner:
 class TestFilteredGBTBidder:
     """Integration tests for FilteredGBTBidder wrapper."""
 
-    def test_enh_a_fires_last_bidder_team_not_bid(self):
-        """Enh A: dealer is last bidder, team hasn't bid, opponent holds -> pass."""
-        transcript = (
-            {
-                "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 3,
-                "action": "BID",
-                "tricks_bid": 4,
-                "contract_type": "suit",
-                "trump": "S",
-                "bid_type": "regular",
-            },
-        )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+    def test_enh_a_caps_overbid_to_plus_one(self):
+        """Enh A: dealer bids +2 over high -> capped to high + 1."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4)
 
-        inner = _make_mock_inner(BidAction.bid(5, "S"))
+        inner = _make_mock_inner(BidAction.bid(6, "S"))
         bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
         result = bidder.choose_bid(obs)
-        assert result.is_pass()
+        assert not result.is_pass()
+        assert result.n == 5
+        assert result.contract == "S"
 
-    def test_enh_a_skips_when_team_already_bid(self):
-        """Enh A: partner already bid -> raw action preserved."""
-        transcript = (
-            {
-                "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
-                "action": "BID",
-                "tricks_bid": 3,
-                "contract_type": "suit",
-                "trump": "H",
-                "bid_type": "regular",
-            },
-            {
-                "seat": 3,
-                "action": "BID",
-                "tricks_bid": 4,
-                "contract_type": "suit",
-                "trump": "S",
-                "bid_type": "regular",
-            },
-        )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+    def test_enh_a_allows_plus_one(self):
+        """Enh A: dealer bids exactly +1 -> raw action preserved."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4)
 
         raw = BidAction.bid(5, "S")
         inner = _make_mock_inner(raw)
@@ -2078,21 +2005,11 @@ class TestFilteredGBTBidder:
         result = bidder.choose_bid(obs)
         assert result == raw
 
-    def test_enh_a_skips_not_last_bidder(self):
-        """Enh A: not the dealer -> raw action preserved."""
-        transcript = (
-            {
-                "seat": 3,
-                "action": "BID",
-                "tricks_bid": 4,
-                "contract_type": "suit",
-                "trump": "S",
-                "bid_type": "regular",
-            },
-        )
-        obs = _obs(seat=1, dealer_seat=0, current_high_bid=4, transcript=transcript)
+    def test_enh_a_skips_not_dealer(self):
+        """Enh A: not the dealer -> raw action preserved even if overbid."""
+        obs = _obs(seat=1, dealer_seat=0, current_high_bid=4)
 
-        raw = BidAction.bid(5, "H")
+        raw = BidAction.bid(7, "H")
         inner = _make_mock_inner(raw)
         bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
         result = bidder.choose_bid(obs)
@@ -2100,32 +2017,29 @@ class TestFilteredGBTBidder:
 
     def test_enh_a_skips_all_pass_auction(self):
         """Enh A: all-pass auction (no high bid) -> raw action preserved."""
-        transcript = (
-            {
-                "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 3,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-        )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=0, transcript=transcript)
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=0)
 
         raw = BidAction.bid(3, "D")
+        inner = _make_mock_inner(raw)
+        bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
+        result = bidder.choose_bid(obs)
+        assert result == raw
+
+    def test_enh_a_allows_moon_when_cap_would_fire(self):
+        """Enh A: dealer bids moon when high=4 -> allowed (moon exempt)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4)
+
+        raw = BidAction.moon("H")
+        inner = _make_mock_inner(raw)
+        bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
+        result = bidder.choose_bid(obs)
+        assert result == raw
+
+    def test_enh_a_allows_loner_when_cap_would_fire(self):
+        """Enh A: dealer bids loner when high=7 -> allowed (loner exempt)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=7)
+
+        raw = BidAction.loner("S")
         inner = _make_mock_inner(raw)
         bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
         result = bidder.choose_bid(obs)
@@ -2233,8 +2147,8 @@ class TestFilteredGBTBidder:
         assert result == raw
 
     def test_flag_independence_a_only(self):
-        """flag_a=True, flag_b=False: only Enh A fires, not Enh B."""
-        # Scenario where Enh B would fire but flag_b is off.
+        """flag_a=True, flag_b=False: Enh A caps, Enh B inactive."""
+        # Scenario: dealer overbids by +3, Enh B conditions met but flag_b off.
         transcript = (
             {
                 "seat": 1,
@@ -2261,49 +2175,26 @@ class TestFilteredGBTBidder:
         )
         obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
 
-        raw = BidAction.bid(5, "S")
-        inner = _make_mock_inner(raw)
+        # Raw bid 7S is +3 over high bid 4 -> Enh A caps to 5S.
+        inner = _make_mock_inner(BidAction.bid(7, "S"))
         bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
         result = bidder.choose_bid(obs)
-        # Enh A would NOT fire here because partner (seat 2) already bid
-        # -> team has bid, so the raw is preserved.
-        assert result == raw
+        assert result.n == 5
+        assert result.contract == "S"
 
     def test_flag_independence_b_only(self):
-        """flag_a=False, flag_b=True: only Enh B fires, not Enh A."""
-        # Scenario where Enh A would fire but flag_a is off.
-        transcript = (
-            {
-                "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 3,
-                "action": "BID",
-                "tricks_bid": 4,
-                "contract_type": "suit",
-                "trump": "S",
-                "bid_type": "regular",
-            },
-        )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        """flag_a=False, flag_b=True: Enh A inactive, only Enh B checked."""
+        # Scenario: dealer overbids by +2 AND also nudges partner.
+        # flag_a=False so cap doesn't fire. flag_b=True checks nudge.
+        # Here: no partner bid -> Enh B doesn't fire either.
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4)
 
-        raw = BidAction.bid(5, "H")
+        raw = BidAction.bid(6, "H")
         inner = _make_mock_inner(raw)
         bidder = FilteredGBTBidder(inner=inner, flag_a=False, flag_b=True)
         result = bidder.choose_bid(obs)
-        # Enh A would fire here (team hasn't bid, opponent holds), but
-        # flag_a=False so it doesn't. Enh B doesn't fire (no partner bid).
+        # Enh A would cap here (6 > 4+1) but flag_a=False.
+        # Enh B doesn't fire (no partner bid in same suit).
         assert result == raw
 
     def test_inner_pass_is_preserved(self):
@@ -2340,37 +2231,15 @@ class TestFilteredGBTBidder:
         assert result.is_pass()
 
     def test_both_flags_enh_a_fires_first(self):
-        """Both flags on, scenario triggers Enh A -> pass (A fires before B)."""
-        transcript = (
-            {
-                "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 3,
-                "action": "BID",
-                "tricks_bid": 4,
-                "contract_type": "suit",
-                "trump": "S",
-                "bid_type": "regular",
-            },
-        )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        """Both flags on, scenario triggers Enh A -> cap (A fires before B)."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4)
 
-        inner = _make_mock_inner(BidAction.bid(5, "S"))
+        # Raw bid 7S is +3 over high bid 4. Enh A fires first and caps to 5.
+        inner = _make_mock_inner(BidAction.bid(7, "S"))
         bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=True)
         result = bidder.choose_bid(obs)
-        assert result.is_pass()
+        assert result.n == 5
+        assert result.contract == "S"
 
     def test_construction_requires_inner_or_artifact(self):
         """Must provide either inner or artifact_path, not neither."""

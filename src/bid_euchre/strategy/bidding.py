@@ -2550,32 +2550,31 @@ class GBTActionValueBidder(BiddingPolicy):
         return best_action
 
 
-def _would_overbid_last(obs: BiddingObservation, raw: BidAction) -> bool:
-    """Enhancement A predicate: detect dealer overcall when team hasn't bid.
+def _would_overbid_cap(obs: BiddingObservation, raw: BidAction) -> bool:
+    """Enhancement A v2 predicate: dealer +1 overbid cap.
 
     Returns True when:
-    1. There is a standing bid (not an all-pass auction).
-    2. Neither the dealer nor their partner has bid yet — the dealer is
-       the "last chance" bidder for the team.
-    3. The raw action overcalls the opponent's standing bid.
+    1. There is a standing bid (current_high_bid > 0).
+    2. The raw bid is a regular bid (not moon/loner — those are always
+       allowed regardless of the current high bid).
+    3. The raw bid level exceeds current_high_bid + 1.
 
-    When all three hold, the filter suppresses the overcall to a pass.
+    When all three hold, the caller should cap the bid to
+    ``current_high_bid + 1`` in the same contract, rather than passing.
+
+    Note: the caller ensures this is only invoked for the dealer seat.
+    Moon/loner bids are exempt — they represent high-confidence all-or-nothing
+    commitments that the cap should not restrict.
     """
-    # All-pass auction (no high bid) is a redeal scenario, not an overbid.
+    # All-pass auction (no high bid) — nothing to cap against.
     if obs.current_high_bid <= 0:
         return False
 
-    # Check whether our team has bid already.
-    partner_seat = (obs.seat + 2) % 4
-    for entry in obs.auction_transcript:
-        if entry.get("action") != "BID":
-            continue
-        if entry.get("seat") in (obs.seat, partner_seat):
-            return False  # Team already committed — let the model decide.
+    # Moon/loner bids are exempt from the cap.
+    if raw.bid_type in {"moon", "loner"}:
+        return False
 
-    # Opponent holds the contract and our team has not bid.
-    # Any overcall by the dealer in this state is the failure mode we target.
-    return True
+    return raw.n > obs.current_high_bid + 1
 
 
 def _would_nudge_partner(obs: BiddingObservation, raw: BidAction) -> bool:
@@ -2626,8 +2625,9 @@ class FilteredGBTBidder(BiddingPolicy):
     Applies independently togglable behavioural filters after the inner
     bidder produces a raw action:
 
-    - **flag_a** (Enhancement A): Suppress dealer overcalls when the team
-      has not yet bid and there is a standing opponent contract.
+    - **flag_a** (Enhancement A — v2): Cap dealer bids to at most
+      ``current_high_bid + 1`` for regular bids.  Moon/loner bids are
+      exempt from the cap.
     - **flag_b** (Enhancement B): Suppress same-suit +1 nudge of partner's
       bid when the dealer is the last bidder.
 
@@ -2682,8 +2682,9 @@ class FilteredGBTBidder(BiddingPolicy):
         if obs.seat != obs.dealer_seat:
             return raw
 
-        if self._flag_a and _would_overbid_last(obs, raw):
-            return BidAction.pass_bid()
+        if self._flag_a and _would_overbid_cap(obs, raw):
+            # Cap the bid to current_high_bid + 1, keeping the same contract.
+            return BidAction.bid(obs.current_high_bid + 1, raw.contract)
 
         if self._flag_b and _would_nudge_partner(obs, raw):
             return BidAction.pass_bid()
