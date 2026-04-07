@@ -125,6 +125,25 @@
 
             {% if show_next %}
                 {% include "partials/next_controls.html" %}
+            {% elif auto_advance | default(false) %}
+                {# Hidden auto-advance trigger — no visible button during
+                   mid-trick AI card reveals.  JS auto-submits after the
+                   animation delay.  Eliminating the visible next-controls
+                   prevents the ~87px layout shift that causes card jitter
+                   (#2538). #}
+                <div class="next-controls next-controls--auto-advance"
+                     data-auto-advance="{{ auto_advance_delay_ms | default(850) }}"
+                     aria-hidden="true" hidden>
+                    <form id="next-step-form"
+                          method="post"
+                          action="/play/{{ link_uuid }}/next"
+                          hx-post="/play/{{ link_uuid }}/next"
+                          hx-target="#game-board"
+                          hx-swap="morph:innerHTML"
+                          hx-timeout="15000">
+                        <button type="submit">Next</button>
+                    </form>
+                </div>
             {% endif %}
 
             {# Bid panel — auction phase only, when it's the human's turn #}

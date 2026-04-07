@@ -577,6 +577,17 @@ def _build_game_context(
     # Fields only available from hand state (not in visible dict)
     if hand is not None:
         show_next = _awaiting_next(hand)
+        # During mid-trick card reveals (paused_after_play), suppress the
+        # visible Next button — auto-advance JS handles progression.
+        # Removing the visible DOM element eliminates the ~87px layout
+        # shift that causes card jitter during AI play sequences (#2538).
+        if (
+            hand.phase == "trick_play"
+            and hand.paused_after_play
+            and not _auction_reveal_active(hand)
+            and not _has_pending_exchange(hand)
+        ):
+            show_next = False
         ctx["show_next"] = show_next
         ctx["next_reason"] = _next_reason(hand)
         # Show "Skip" button when mid-trick per-card pacing is active
