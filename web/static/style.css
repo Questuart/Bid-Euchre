@@ -1359,6 +1359,35 @@ main {
     background: var(--color-surface-light);
 }
 
+/* Pass button — blue outlined, distinct from the green Submit Bid (#2545).
+   Core visual styling lives here so it doesn't depend on accessibility.css
+   load order or caching.  Accessibility-specific rules (focus ring, touch
+   targets) remain in accessibility.css. */
+.bid-pass {
+    margin-top: 0.5rem;
+    /* Full-width container so .pass-btn spans the bid-panel (#2521 item 3). */
+    width: 100%;
+}
+
+.pass-btn {
+    display: block;
+    width: 100%;
+    padding: 0.6rem 1.25rem;
+    border: 2px solid var(--color-pass-blue, #1565c0);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-pass-blue, #1565c0);
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.15s, color 0.15s;
+}
+
+.pass-btn:hover {
+    background: rgba(21, 101, 192, 0.12);
+    color: #ffffff;
+}
+
 .bid-info {
     margin: 0.5rem 0 0;
     font-size: 0.8rem;

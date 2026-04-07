@@ -285,35 +285,10 @@ html[data-text-size="large"] .text-size-toggle {
 }
 
 /* --------------------------------------------------------------------------
-   8. Pass Button Styling
+   8. Pass Button Accessibility
    --------------------------------------------------------------------------
-   The pass button is styled as a secondary action distinct from Submit Bid.
+   Core visual styling (.bid-pass, .pass-btn, .pass-btn:hover) lives in
+   style.css alongside other bid-panel rules so it doesn't depend on this
+   file's load order or caching (#2576).  Only accessibility-specific rules
+   (focus ring, touch targets in §3 above) remain here.
    -------------------------------------------------------------------------- */
-
-.bid-pass {
-    margin-top: 0.5rem;
-    /* Full-width container so .pass-btn spans the bid-panel (#2521 item 3). */
-    width: 100%;
-}
-
-.pass-btn {
-    /* Full-width to match Submit Bid, both visually and tap-target wise
-       (#2521 item 3).  Outlined blue to read as a distinct primary action
-       clearly differentiated from the green Submit Bid (#2545). */
-    display: block;
-    width: 100%;
-    padding: 0.6rem 1.25rem;
-    border: 2px solid var(--color-pass-blue, #1565c0);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--color-pass-blue, #1565c0);
-    font-weight: 600;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: background 0.15s, color 0.15s;
-}
-
-.pass-btn:hover {
-    background: rgba(21, 101, 192, 0.12);
-    color: #ffffff;
-}
