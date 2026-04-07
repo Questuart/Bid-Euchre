@@ -488,3 +488,29 @@ Analysis complete. Delivered:
 3. Prior experiment design critique (self-play flaw)
 4. Two YAML experiment configs for proper adversarial H2H comparison
 5. Recommendation: feature is correctly inert in high/low; needs H2H proof for suit
+
+### Addendum: Committed Experiment Configs (2026-04-07)
+
+The experiment configs proposed in §5 have been committed as runnable YAML files:
+
+- **EXP 1 (bidless per-contract):** `experiments/configs/cash_a_h2h_per_contract.yaml`
+  - 2 matchups × 6 scenarios × 5,000 deals = 60,000 hands (~12s)
+  - Dry-run validated ✅
+- **EXP 2 (auction H2H):** `experiments/configs/cash_a_h2h_auction.yaml`
+  - 2 matchups × 1 scenario × 5,000 deals = 10,000 hands (~100s)
+  - Uses `GBTActionValueBidder` with `web/models/training_artifact_gbt_av.json`
+    (the same model Bud Bot uses in the browser game)
+  - Dry-run validated ✅
+
+Key adaptation from §5 proposal: EXP 2 uses `GBTActionValueBidder` instead
+of `HybridOLSaBidder` because the hybrid artifact (`hybrid_r0.json`) does not
+exist on disk. The GBT bidder is the production bidder and the stronger
+baseline.
+
+Run commands:
+```bash
+uv run python experiments/run_experiment.py \
+  --config experiments/configs/cash_a_h2h_per_contract.yaml --seed 42
+uv run python experiments/run_experiment.py \
+  --config experiments/configs/cash_a_h2h_auction.yaml --seed 42
+```
