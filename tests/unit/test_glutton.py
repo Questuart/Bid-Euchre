@@ -1538,3 +1538,244 @@ class TestCrossMatchIsolation:
         # Shared prototype retains its default
         assert shared._contract_type == "high"
         assert shared._trump_suit is None
+
+
+class TestSuitContinuity:
+    """Tests for suit continuity feature (#2506).
+
+    After winning a trick as leader in suit X, the AI should prefer
+    continuing to lead suit X if it still holds cards in that suit.
+    """
+
+    def test_continues_suit_after_winning_lead_suit_contract(self):
+        """Suit contract: after winning trick leading clubs, continue clubs."""
+        g = GluttonStrategy()
+        hand_full = [
+            Card("C", "A"),  # 0 - clubs ace
+            Card("C", "K"),  # 1 - clubs king
+            Card("C", "Q"),  # 2 - clubs queen
+            Card("D", "A"),  # 3 - diamonds ace
+            Card("D", "K"),  # 4 - diamonds king
+            Card("H", "T"),  # 5 - hearts ten
+            Card("S", "T"),  # 6 - spades ten
+        ]
+        g.on_hand_start(list(hand_full), "suit", "H", player_index=0)
+
+        # Simulate a completed trick: seat 0 led C-A and won
+        trick_plays = [
+            (0, Card("C", "A")),
+            (1, Card("C", "T")),
+            (2, Card("C", "J")),
+            (3, Card("C", "T")),
+        ]
+        for i, (seat, card) in enumerate(trick_plays):
+            g.observe_play(seat, card, trick_plays[: i + 1], "suit", "H")
+
+        # Now leading again with remaining hand (minus the A♣ that was played)
+        remaining = [
+            Card("C", "K"),  # 0
+            Card("C", "Q"),  # 1
+            Card("D", "A"),  # 2 - diamond ace (high value)
+            Card("D", "K"),  # 3
+            Card("H", "T"),  # 4 - trump
+            Card("S", "T"),  # 5
+        ]
+        choice = g.choose_card(remaining, [], "suit", "H", 0)
+        chosen = remaining[choice]
+        # Should continue clubs (C-K or C-Q), not switch to diamonds or trump
+        assert chosen.suit == "C", f"Expected club continuation, got {chosen}"
+
+    def test_continues_suit_after_winning_lead_high_contract(self):
+        """High contract: after winning trick leading spades, continue spades."""
+        g = GluttonStrategy()
+        hand_full = [
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("S", "Q"),
+            Card("D", "A"),
+            Card("D", "K"),
+            Card("H", "T"),
+            Card("C", "T"),
+        ]
+        g.on_hand_start(list(hand_full), "high", None, player_index=2)
+
+        # Simulate: seat 2 led S-A and won
+        trick_plays = [
+            (2, Card("S", "A")),
+            (3, Card("S", "T")),
+            (0, Card("S", "J")),
+            (1, Card("S", "T")),
+        ]
+        for i, (seat, card) in enumerate(trick_plays):
+            g.observe_play(seat, card, trick_plays[: i + 1], "high", None)
+
+        remaining = [
+            Card("S", "K"),  # 0
+            Card("S", "Q"),  # 1
+            Card("D", "A"),  # 2 - diamond ace
+            Card("D", "K"),  # 3
+            Card("H", "T"),  # 4
+            Card("C", "T"),  # 5
+        ]
+        choice = g.choose_card(remaining, [], "high", None, 2)
+        chosen = remaining[choice]
+        assert chosen.suit == "S", f"Expected spade continuation, got {chosen}"
+
+    def test_no_continuity_when_leader_lost(self):
+        """Continuity should NOT trigger when the leader lost the trick."""
+        g = GluttonStrategy()
+        hand = [
+            Card("C", "A"),  # 0
+            Card("C", "K"),  # 1
+            Card("D", "A"),  # 2 - diamond ace (highest)
+            Card("D", "K"),  # 3
+            Card("D", "Q"),  # 4
+            Card("H", "T"),  # 5
+        ]
+        g.on_hand_start(list(hand), "high", None, player_index=0)
+
+        # Seat 1 led clubs but seat 0 won (we're seat 0, we didn't lead)
+        # Actually, let's simulate seat 1 leading and losing to seat 3
+        trick_plays = [
+            (1, Card("C", "K")),  # seat 1 led clubs
+            (2, Card("C", "T")),
+            (3, Card("C", "A")),  # seat 3 wins
+            (0, Card("C", "J")),
+        ]
+        for i, (seat, card) in enumerate(trick_plays):
+            g.observe_play(seat, card, trick_plays[: i + 1], "high", None)
+
+        # Leader (seat 1) lost → continuity should be cleared
+        assert g._last_won_lead_suit is None
+
+    def test_continuity_cleared_on_hand_start(self):
+        """Continuity state resets at the start of each hand."""
+        g = GluttonStrategy()
+        g._last_won_lead_suit = "C"
+        g._last_won_lead_seat = 0
+
+        g.on_hand_start([Card("D", "A")] * 10, "high", None, player_index=0)
+        assert g._last_won_lead_suit is None
+        assert g._last_won_lead_seat is None
+
+    def test_no_continuity_when_suit_exhausted(self):
+        """If all cards in the continued suit are gone, fall through to other logic."""
+        g = GluttonStrategy()
+        hand = [
+            Card("D", "A"),  # 0
+            Card("D", "K"),  # 1
+            Card("H", "T"),  # 2
+            Card("S", "T"),  # 3
+        ]
+        g.on_hand_start([Card("C", "A")] + list(hand), "high", None, player_index=0)
+
+        # Simulate winning with clubs lead
+        trick_plays = [
+            (0, Card("C", "A")),
+            (1, Card("C", "T")),
+            (2, Card("C", "J")),
+            (3, Card("C", "T")),
+        ]
+        for i, (seat, card) in enumerate(trick_plays):
+            g.observe_play(seat, card, trick_plays[: i + 1], "high", None)
+
+        # No clubs left in hand — should fall through to other logic
+        choice = g.choose_card(hand, [], "high", None, 0)
+        chosen = hand[choice]
+        # Should pick from remaining cards (not crash)
+        assert chosen in hand
+
+    def test_continuity_only_for_winning_seat(self):
+        """Continuity should only apply to the seat that won, not others."""
+        g = GluttonStrategy()
+        # Diamonds is strictly longest suit (3 vs 1 club)
+        hand = [
+            Card("C", "K"),  # 0
+            Card("D", "A"),  # 1 - diamond ace
+            Card("D", "K"),  # 2
+            Card("D", "Q"),  # 3
+            Card("H", "T"),  # 4
+        ]
+        g.on_hand_start(list(hand), "high", None, player_index=2)
+
+        # Seat 0 led clubs and won — not seat 2
+        trick_plays = [
+            (0, Card("C", "A")),
+            (1, Card("C", "T")),
+            (2, Card("C", "J")),
+            (3, Card("C", "T")),
+        ]
+        for i, (seat, card) in enumerate(trick_plays):
+            g.observe_play(seat, card, trick_plays[: i + 1], "high", None)
+
+        assert g._last_won_lead_seat == 0  # seat 0 won, not us (seat 2)
+
+        # Seat 2 now leads — continuity should NOT apply (wrong seat)
+        choice = g.choose_card(hand, [], "high", None, 2)
+        chosen = hand[choice]
+        # Should use normal logic (longest suit = diamonds), not clubs
+        assert chosen.suit == "D", f"Expected diamond lead (longest suit), got {chosen}"
+
+    def test_isolated_suit_continuity_flag_off(self):
+        """GluttonIsolatedStrategy with suit_continuity=False should NOT continue suit."""
+        g = GluttonIsolatedStrategy(smart_leads=True, suit_continuity=False)
+        hand = [
+            Card("C", "A"),
+            Card("C", "K"),
+            Card("D", "A"),
+            Card("D", "K"),
+            Card("D", "Q"),
+            Card("H", "T"),
+        ]
+        g.on_hand_start(list(hand), "high", None, player_index=0)
+
+        # Simulate winning with clubs lead
+        trick_plays = [
+            (0, Card("C", "A")),
+            (1, Card("C", "T")),
+            (2, Card("C", "J")),
+            (3, Card("C", "T")),
+        ]
+        for i, (seat, card) in enumerate(trick_plays):
+            g.observe_play(seat, card, trick_plays[: i + 1], "high", None)
+
+        # With suit_continuity=False, should NOT track
+        assert g._last_won_lead_suit is None
+
+    def test_isolated_suit_continuity_flag_on(self):
+        """GluttonIsolatedStrategy with suit_continuity=True should continue suit."""
+        g = GluttonIsolatedStrategy(smart_leads=True, suit_continuity=True)
+        hand_full = [
+            Card("C", "A"),
+            Card("C", "K"),
+            Card("C", "Q"),
+            Card("D", "A"),
+            Card("D", "K"),
+            Card("H", "T"),
+            Card("S", "T"),
+        ]
+        g.on_hand_start(list(hand_full), "high", None, player_index=0)
+
+        # Simulate winning with clubs lead
+        trick_plays = [
+            (0, Card("C", "A")),
+            (1, Card("C", "T")),
+            (2, Card("C", "J")),
+            (3, Card("C", "T")),
+        ]
+        for i, (seat, card) in enumerate(trick_plays):
+            g.observe_play(seat, card, trick_plays[: i + 1], "high", None)
+
+        assert g._last_won_lead_suit == "C"
+
+        remaining = [
+            Card("C", "K"),  # 0
+            Card("C", "Q"),  # 1
+            Card("D", "A"),  # 2
+            Card("D", "K"),  # 3
+            Card("H", "T"),  # 4
+            Card("S", "T"),  # 5
+        ]
+        choice = g.choose_card(remaining, [], "high", None, 0)
+        chosen = remaining[choice]
+        assert chosen.suit == "C", f"Expected club continuation, got {chosen}"

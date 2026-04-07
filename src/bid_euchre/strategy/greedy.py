@@ -16,7 +16,7 @@ from .base import Strategy, card_value_for_dump
 # GluttonStrategy or GluttonIsolatedStrategy. See
 # docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
 # changelog template.
-GLUTTON_STRATEGY_VERSION = "0.9.0"
+GLUTTON_STRATEGY_VERSION = "0.10.0"
 """Changelog:
 
 - 0.7.0 — Initial versioned baseline (PR #2529)
@@ -30,6 +30,9 @@ GLUTTON_STRATEGY_VERSION = "0.9.0"
   suppress steps 0.5, 0.75, and the step 2 modification
   regardless of ``cash_winners_on_lead`` flag value.
   Category: MINOR.
+- 0.10.0 — Suit continuity: after winning a trick as leader, prefer
+  continuing the same suit if cards remain (#2506).
+  Always-on (no feature flag). Category: MINOR.
 """
 
 
@@ -159,6 +162,10 @@ class GluttonStrategy(Strategy):
         self._contract_type: str = "high"
         self._trump_suit: Optional[str] = None
         self._player_index: int = 0
+        # Suit continuity tracking (#2506): after winning a trick as
+        # leader, prefer continuing the same suit on the next lead.
+        self._last_won_lead_suit: Optional[str] = None
+        self._last_won_lead_seat: Optional[int] = None
 
     def on_hand_start(
         self,
@@ -173,6 +180,8 @@ class GluttonStrategy(Strategy):
         self._contract_type = contract_type
         self._trump_suit = trump_suit
         self._player_index = player_index
+        self._last_won_lead_suit = None
+        self._last_won_lead_seat = None
         if self.debug:
             self.decision_log = []
 
@@ -194,6 +203,25 @@ class GluttonStrategy(Strategy):
             played_eff = effective_suit(card, trump_suit, contract_type)
             if played_eff != led_suit:
                 self._void_suits_by_seat[player_index].add(led_suit)
+
+        # Suit continuity: detect trick completion and track whether
+        # the leader won their own trick (#2506).
+        if len(trick_plays) == 4:
+            winner = trick_winner(
+                trick_plays,
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+            )
+            leader_seat = trick_plays[0][0]
+            if winner == leader_seat:
+                self._last_won_lead_suit = effective_suit(
+                    trick_plays[0][1], trump_suit, contract_type
+                )
+                self._last_won_lead_seat = leader_seat
+            else:
+                # Leader lost — clear continuity
+                self._last_won_lead_suit = None
+                self._last_won_lead_seat = None
 
     def _threat_copies_remaining(
         self,
@@ -361,6 +389,23 @@ class GluttonStrategy(Strategy):
                 )
                 return right_bower_idx
 
+            # 0.25 Suit continuity (#2506): after winning a trick as
+            # leader in suit X, continue leading suit X to cash
+            # established winners before switching suits.
+            if (
+                self._last_won_lead_suit is not None
+                and self._last_won_lead_seat == player_index
+            ):
+                cont_suit = self._last_won_lead_suit
+                cont_indices = [
+                    idx
+                    for idx in legal_indices
+                    if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    == cont_suit
+                ]
+                if cont_indices:
+                    return max(cont_indices, key=card_value)
+
             # 0.5 NEW (Cash-A, Fix 1): Cash established sure winners first.
             # Gated by ``cash_a_active`` which suppresses Cash-A in suit
             # contracts (experiment data: -0.13 Δ). Picks the sure winner
@@ -447,6 +492,20 @@ class GluttonStrategy(Strategy):
             # In Low contracts, card_value_for_dump already inverts ranks
             # (T=4, J=3, ... A=0), so max() correctly picks the best lead.
             select = max
+
+            # Suit continuity (#2506): after winning a trick as leader
+            # in suit X, continue leading suit X before switching.
+            if (
+                self._last_won_lead_suit is not None
+                and self._last_won_lead_seat == player_index
+            ):
+                cont_suit = self._last_won_lead_suit
+                cont_indices = [
+                    idx for idx in legal_indices if hand[idx].suit == cont_suit
+                ]
+                if cont_indices:
+                    return select(cont_indices, key=card_value)
+
             if suit_counts:
                 longest_suit = max(
                     suit_counts.keys(), key=lambda s: suit_counts.get(s, 0)
@@ -603,6 +662,8 @@ class GluttonStrategy(Strategy):
         if contract_type != self._contract_type or trump_suit != self._trump_suit:
             self._seen_counts = {}
             self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
+            self._last_won_lead_suit = None
+            self._last_won_lead_seat = None
         self._contract_type = contract_type
         self._trump_suit = trump_suit
 
@@ -615,6 +676,8 @@ class GluttonStrategy(Strategy):
             self._contract_type = contract_type
             self._trump_suit = trump_suit
             self._player_index = player_index
+            self._last_won_lead_suit = None
+            self._last_won_lead_seat = None
 
         legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
 
@@ -793,6 +856,8 @@ class GluttonIsolatedStrategy(Strategy):
     - lead_bower: Lead right bower when holding both bowers + 5+ trump (PR#2167).
       Defaults to smart_leads when not explicitly set, so configs with
       smart_leads=True keep bower leads. Set False explicitly to isolate.
+    - suit_continuity: After winning a trick as leader, prefer continuing
+      the same suit (#2506). Defaults to False for isolation testing.
 
     With all features disabled, this behaves identically to GreedyStrategy.
     """
@@ -818,6 +883,7 @@ class GluttonIsolatedStrategy(Strategy):
         probabilistic_trump_in: bool = False,
         lead_bower: Optional[bool] = None,
         cash_winners_on_lead: bool = False,
+        suit_continuity: bool = False,
     ):
         super().__init__(name)
         self.debug = debug
@@ -840,6 +906,7 @@ class GluttonIsolatedStrategy(Strategy):
         # plans/sessions/2026-04-06_ai_play_strategy_investigation.md
         # §"Acceptance Criteria" item 1.
         self.cash_winners_on_lead: bool = cash_winners_on_lead
+        self._suit_continuity = suit_continuity
 
         # Double-deck aware tracking (each card exists 0-2 times)
         self._seen_counts: Dict[Card, int] = {}
@@ -854,6 +921,9 @@ class GluttonIsolatedStrategy(Strategy):
         self._contract_type: str = "high"
         self._trump_suit: Optional[str] = None
         self._player_index: int = 0
+        # Suit continuity tracking (#2506)
+        self._last_won_lead_suit: Optional[str] = None
+        self._last_won_lead_seat: Optional[int] = None
 
     def on_hand_start(
         self,
@@ -868,6 +938,8 @@ class GluttonIsolatedStrategy(Strategy):
         self._contract_type = contract_type
         self._trump_suit = trump_suit
         self._player_index = player_index
+        self._last_won_lead_suit = None
+        self._last_won_lead_seat = None
         if self.debug:
             self.decision_log = []
 
@@ -889,6 +961,23 @@ class GluttonIsolatedStrategy(Strategy):
             played_eff = effective_suit(card, trump_suit, contract_type)
             if played_eff != led_suit:
                 self._void_suits_by_seat[player_index].add(led_suit)
+
+        # Suit continuity: detect trick completion (#2506).
+        if self._suit_continuity and len(trick_plays) == 4:
+            winner = trick_winner(
+                trick_plays,
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+            )
+            leader_seat = trick_plays[0][0]
+            if winner == leader_seat:
+                self._last_won_lead_suit = effective_suit(
+                    trick_plays[0][1], trump_suit, contract_type
+                )
+                self._last_won_lead_seat = leader_seat
+            else:
+                self._last_won_lead_suit = None
+                self._last_won_lead_seat = None
 
     def _threat_copies_remaining(
         self,
@@ -1029,6 +1118,22 @@ class GluttonIsolatedStrategy(Strategy):
                 )
                 return right_bower_idx
 
+            # 0.25 Suit continuity (#2506)
+            if (
+                self._suit_continuity
+                and self._last_won_lead_suit is not None
+                and self._last_won_lead_seat == player_index
+            ):
+                cont_suit = self._last_won_lead_suit
+                cont_indices = [
+                    idx
+                    for idx in legal_indices
+                    if effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    == cont_suit
+                ]
+                if cont_indices:
+                    return max(cont_indices, key=card_value)
+
             # 0.5 NEW (Cash-A, Fix 1): Cash established sure winners first.
             # Gated by ``cash_a_active`` (suppressed in suit; see §5).
             if cash_a_active:
@@ -1101,6 +1206,20 @@ class GluttonIsolatedStrategy(Strategy):
 
         else:
             # HIGH / LOW CONTRACT LEADS
+
+            # Suit continuity (#2506)
+            if (
+                self._suit_continuity
+                and self._last_won_lead_suit is not None
+                and self._last_won_lead_seat == player_index
+            ):
+                cont_suit = self._last_won_lead_suit
+                cont_indices = [
+                    idx for idx in legal_indices if hand[idx].suit == cont_suit
+                ]
+                if cont_indices:
+                    return max(cont_indices, key=card_value)
+
             if suit_counts:
                 longest_suit = max(
                     suit_counts.keys(), key=lambda s: suit_counts.get(s, 0)
@@ -1216,6 +1335,8 @@ class GluttonIsolatedStrategy(Strategy):
         if contract_type != self._contract_type or trump_suit != self._trump_suit:
             self._seen_counts = {}
             self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
+            self._last_won_lead_suit = None
+            self._last_won_lead_seat = None
         self._contract_type = contract_type
         self._trump_suit = trump_suit
 
@@ -1228,6 +1349,8 @@ class GluttonIsolatedStrategy(Strategy):
             self._contract_type = contract_type
             self._trump_suit = trump_suit
             self._player_index = player_index
+            self._last_won_lead_suit = None
+            self._last_won_lead_seat = None
 
         legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
 
