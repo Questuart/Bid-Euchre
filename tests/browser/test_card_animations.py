@@ -59,11 +59,13 @@ def _play_to_trick_boundary(page: Page, timeout_s: float = 120.0) -> bool:
         # Advance through any paused states (e.g. trick result)
         _advance_next_steps(page, max_steps=2)
 
-        # If we see card-slot--empty elements, we are at a trick boundary
-        empty_slots = page.locator(".card-slot--empty")
-        if empty_slots.count() >= 2:
-            # At least 2 empty slots means we are at the start of a new
-            # trick (or post-trick reset).  This is our target state.
+        # Wait for a real trick-reset state: all 4 card slots in the trick
+        # area must be empty (not just ≥ 2, which can match mid-trick).
+        empty_slots = page.locator("#trick-area .card-slot--empty")
+        if empty_slots.count() == 4:
+            # All slots empty — confirmed trick reset.  Wait for the
+            # slot-reset-fade animation (200ms) to settle before returning.
+            page.wait_for_timeout(250)
             return True
 
         # Try to submit a pass bid if in auction
