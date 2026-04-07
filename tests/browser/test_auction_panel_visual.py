@@ -203,10 +203,11 @@ def test_auction_mobile_tap_targets(
 ) -> None:
     """Bid controls on mobile viewport must meet WCAG 44px tap target minimum.
 
-    Tests at iPhone 14 Pro dimensions (393x852).
+    Tests at iPhone SE dimensions (375x667) to trigger the
+    ``@media (max-width: 375px)`` touch-target rules in accessibility.css (#2572).
     """
-    # Set mobile viewport
-    page.set_viewport_size({"width": 393, "height": 852})
+    # Set mobile viewport *before* navigating so CSS media queries fire correctly
+    page.set_viewport_size({"width": 375, "height": 667})
 
     _enter_game_and_start_match(page, live_server, invite_code, "MobileTapPlayer")
 

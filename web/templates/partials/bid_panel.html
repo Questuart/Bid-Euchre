@@ -46,7 +46,8 @@
             {# Bid level — single-line row; only for regular bids #}
             <div class="bid-row" id="bid-level-wrapper">
                 <label for="bid-level">Bid:</label>
-                <select id="bid-level" name="bid_n" aria-label="Bid level">
+                <select id="bid-level" name="bid_n" aria-label="Bid level"
+                        onchange="updateBidSubmitState()">
                     {% for n in range(current_high_bid + 1, 11) %}
                     <option value="{{ n }}"{% if loop.first %} selected{% endif %}>{{ n }}</option>
                     {% endfor %}
@@ -119,12 +120,15 @@ function updateBidControls(bidType) {
     }
 }
 
-// Enable Submit Bid only when a contract is explicitly selected (#2521 item 4)
+// Enable Submit Bid when a contract is selected, or when bid level is Pass (#2521 item 4, #2533)
 function updateBidSubmitState() {
     var contractSelect = document.getElementById('bid-contract');
     var submitBtn = document.getElementById('bid-submit');
+    var levelSelect = document.getElementById('bid-level');
     if (!contractSelect || !submitBtn) return;
-    submitBtn.disabled = !contractSelect.value;
+    // Pass (bid_n=0) doesn't require a contract selection
+    var isPass = levelSelect && levelSelect.value === '0';
+    submitBtn.disabled = !isPass && !contractSelect.value;
 }
 
 function submitPass(btn) {

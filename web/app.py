@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from starlette.templating import Jinja2Templates
 
 from .ai_manager import AIManager
@@ -143,11 +143,17 @@ async def lifespan(app: FastAPI):
     # "unknown cohort" marker — see docs/02_agent/STRATEGY_VERSIONING.md.
     match_cols = {c["name"] for c in inspector.get_columns("matches")}
     if "play_strategy_version" not in match_cols:
-        with engine.begin() as conn:
-            conn.execute(
-                text("ALTER TABLE matches " "ADD COLUMN play_strategy_version TEXT")
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE matches " "ADD COLUMN play_strategy_version TEXT")
+                )
+            logger.info("Migration: added play_strategy_version column to matches")
+        except OperationalError:
+            # Column already exists — concurrent startup or stale inspector cache (#2532)
+            logger.info(
+                "Migration: play_strategy_version column already present (concurrent)"
             )
-        logger.info("Migration: added play_strategy_version column to matches")
 
     # 2. Auto-seed invite code on fresh database (atomic: skip if another
     #    instance already seeded between our check and insert)
