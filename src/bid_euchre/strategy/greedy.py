@@ -16,20 +16,21 @@ from .base import Strategy, card_value_for_dump
 # GluttonStrategy or GluttonIsolatedStrategy. See
 # docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
 # changelog template.
-
-# Changelog:
-#   0.7.0 — Initial versioned baseline (PR #2529)
-#   0.8.0 — Cash-A: sure-winner lead priority, draw-trump-first,
-#           draw trump from the top (behind ``cash_winners_on_lead``
-#           flag, default False). Category: MINOR.
-#   0.8.1 — Cash-A: _draw_trump_lead sure-winner-first fallback
-#           (prevents burning LB when second RB is still out).
-#           Category: PATCH.
-#   0.9.0 — Gate Cash-A to high/low contracts only. Suit contracts
-#           suppress steps 0.5, 0.75, and the step 2 modification
-#           regardless of ``cash_winners_on_lead`` flag value.
-#           Category: MINOR.
 GLUTTON_STRATEGY_VERSION = "0.9.0"
+"""Changelog:
+
+- 0.7.0 — Initial versioned baseline (PR #2529)
+- 0.8.0 — Cash-A: sure-winner lead priority, draw-trump-first,
+  draw trump from the top (behind ``cash_winners_on_lead``
+  flag, default False). Category: MINOR.
+- 0.8.1 — Cash-A: ``_draw_trump_lead`` sure-winner-first fallback
+  (prevents burning LB when second RB is still out).
+  Category: PATCH.
+- 0.9.0 — Gate Cash-A to high/low contracts only. Suit contracts
+  suppress steps 0.5, 0.75, and the step 2 modification
+  regardless of ``cash_winners_on_lead`` flag value.
+  Category: MINOR.
+"""
 
 
 class GreedyStrategy(Strategy):
