@@ -26,7 +26,7 @@ from bid_euchre.sim.deals import generate_deal
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import BidAction, FixedBidder
-from bid_euchre.strategy.greedy import GluttonStrategy
+from bid_euchre.strategy.glutton import GluttonStrategy
 
 # ---------------------------------------------------------------------------
 # Data structures

@@ -14,7 +14,7 @@ from bid_euchre.strategy.baselines import (
     AlwaysLowestLegalStrategy,
     RandomLegalStrategy,
 )
-from bid_euchre.strategy.greedy import GluttonStrategy, GreedyStrategy
+from bid_euchre.strategy.glutton import GluttonStrategy, GreedyStrategy
 
 # Strategies to test (all should produce legal moves)
 STRATEGIES = [
@@ -84,15 +84,15 @@ def test_determinism_property(seed: int):
     )
 
     # Key statistics should be identical
-    assert result1["avg_team0"] == result2["avg_team0"], (
-        f"Determinism violation: avg_team0 differs for seed {seed}"
-    )
-    assert result1["avg_team1"] == result2["avg_team1"], (
-        f"Determinism violation: avg_team1 differs for seed {seed}"
-    )
-    assert result1["distribution_team0"] == result2["distribution_team0"], (
-        f"Determinism violation: distribution differs for seed {seed}"
-    )
+    assert (
+        result1["avg_team0"] == result2["avg_team0"]
+    ), f"Determinism violation: avg_team0 differs for seed {seed}"
+    assert (
+        result1["avg_team1"] == result2["avg_team1"]
+    ), f"Determinism violation: avg_team1 differs for seed {seed}"
+    assert (
+        result1["distribution_team0"] == result2["distribution_team0"]
+    ), f"Determinism violation: distribution differs for seed {seed}"
 
 
 @given(
@@ -120,9 +120,9 @@ def test_avg_tricks_bounded(seed: int, contract: str):
 
     assert 0 <= avg0 <= 10, f"avg_team0 out of range: {avg0}"
     assert 0 <= avg1 <= 10, f"avg_team1 out of range: {avg1}"
-    assert abs(avg0 + avg1 - 10) < 0.001, (
-        f"Trick conservation violated: {avg0} + {avg1} != 10"
-    )
+    assert (
+        abs(avg0 + avg1 - 10) < 0.001
+    ), f"Trick conservation violated: {avg0} + {avg1} != 10"
 
 
 @given(seed=st.integers(min_value=0, max_value=100_000))
@@ -178,9 +178,9 @@ def test_player_samples_equals_four_times_hands(seed: int, contract: str):
         strategy=AlwaysHighestLegalStrategy(),
     )
 
-    assert result["player_samples"] == 4 * n, (
-        f"Expected {4 * n} player samples, got {result['player_samples']}"
-    )
+    assert (
+        result["player_samples"] == 4 * n
+    ), f"Expected {4 * n} player samples, got {result['player_samples']}"
 
 
 @pytest.mark.parametrize("strategy", STRATEGIES, ids=lambda s: type(s).__name__)
@@ -231,6 +231,6 @@ def test_win_rates_sum_to_one(seed: int):
 
     # With weighted win rate, team0 + team1 = 1.0 (ties counted 0.5 each)
     total = win0 + win1
-    assert abs(total - 1.0) < 0.001, (
-        f"Weighted win rates don't sum to 1: {win0} + {win1} = {total}"
-    )
+    assert (
+        abs(total - 1.0) < 0.001
+    ), f"Weighted win rates don't sum to 1: {win0} + {win1} = {total}"

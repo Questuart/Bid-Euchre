@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import BiddingPolicy
-from bid_euchre.strategy.greedy import GluttonStrategy
+from bid_euchre.strategy.glutton import GluttonStrategy
 
 from .config import HostedPlayConfig
 

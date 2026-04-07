@@ -25,7 +25,7 @@ from bid_euchre.strategy.baselines import (
     BasicStrategy,
     RandomLegalStrategy,
 )
-from bid_euchre.strategy.greedy import GluttonStrategy, GreedyStrategy
+from bid_euchre.strategy.glutton import GluttonStrategy, GreedyStrategy
 
 # All strategy classes to test
 STRATEGY_CLASSES: list[Type[Strategy]] = [

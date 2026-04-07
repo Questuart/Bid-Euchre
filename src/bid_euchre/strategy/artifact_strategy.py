@@ -13,7 +13,7 @@ from typing import Any, List
 from ..core.cards import Card
 from ..models.bidding_artifact import load_artifact
 from ..strategy.bidding import ArtifactBidder, BiddingObservation
-from ..strategy.greedy import GluttonStrategy
+from ..strategy.glutton import GluttonStrategy
 
 
 class ArtifactGreedyStrategy(GluttonStrategy):
@@ -41,7 +41,9 @@ class ArtifactGreedyStrategy(GluttonStrategy):
         self._contract_token = artifact["contract"]
 
         # Delegate bidding to ArtifactBidder (supports all model types)
-        self._bidder = ArtifactBidder(artifact_path=artifact_path, name=f"{name}_bidder")
+        self._bidder = ArtifactBidder(
+            artifact_path=artifact_path, name=f"{name}_bidder"
+        )
 
     def decide_bid(
         self,
@@ -79,4 +81,6 @@ class ArtifactGreedyStrategy(GluttonStrategy):
         elif action.contract in {"HIGH", "LOW"}:
             return action.n, action.contract.lower(), None
         else:
-            raise ValueError(f"Unexpected contract type from artifact: {action.contract}")
+            raise ValueError(
+                f"Unexpected contract type from artifact: {action.contract}"
+            )

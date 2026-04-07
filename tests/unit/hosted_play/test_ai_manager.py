@@ -12,7 +12,7 @@ from bid_euchre.strategy.bidding import (
     BiddingPolicy,
     GBTActionValueBidder,
 )
-from bid_euchre.strategy.greedy import GluttonStrategy
+from bid_euchre.strategy.glutton import GluttonStrategy
 from tests.unit.hosted_play.conftest import create_browser_ai_test_artifacts
 from web.ai_manager import AIManager, ModelInfo
 from web.config import HostedPlayConfig
