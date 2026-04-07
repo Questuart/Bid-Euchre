@@ -55,6 +55,14 @@ REQUIRED_FIELDS: frozenset[str] = frozenset(
     }
 )
 
+# Fields that appear only on certain decision types (e.g. glutton_action
+# on human play decisions).  Tests should accept these as valid extras.
+OPTIONAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "glutton_action",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Export function
@@ -100,7 +108,7 @@ def decision_to_jsonl(
         ts = ts.replace(tzinfo=timezone.utc)
     timestamp = ts.isoformat() if ts is not None else None
 
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "event": EVENT_TYPE,
         "match_uuid": match_row.match_uuid,
@@ -120,6 +128,12 @@ def decision_to_jsonl(
         "decision_time_ms": decision_row.decision_time_ms,
         "timestamp": timestamp,
     }
+
+    # Include glutton counterfactual when present (human play decisions).
+    if decision_row.glutton_action_json is not None:
+        result["glutton_action"] = json.loads(decision_row.glutton_action_json)
+
+    return result
 
 
 # ---------------------------------------------------------------------------

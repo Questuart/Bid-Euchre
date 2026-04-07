@@ -21,6 +21,7 @@ from tests.unit.hosted_play.conftest import (
     create_test_player,
 )
 from web.export import (
+    OPTIONAL_FIELDS,
     REQUIRED_FIELDS,
     SCHEMA_VERSION,
     decision_to_jsonl,
@@ -48,14 +49,14 @@ class TestSchemaCompliance:
         assert not missing, f"Missing required fields: {missing}"
 
     def test_no_extra_fields(self, db_session):
-        """Output should contain exactly the required fields (no extras)."""
+        """Output should contain exactly required + known optional fields."""
         player = create_test_player(db_session)
         match = create_test_match(db_session, player_id=player.id)
         hand = create_test_hand(db_session, match)
         decision = create_test_decision(db_session, match, hand)
 
         result = decision_to_jsonl(decision, match, hand)
-        extra = set(result.keys()) - REQUIRED_FIELDS
+        extra = set(result.keys()) - REQUIRED_FIELDS - OPTIONAL_FIELDS
         assert not extra, f"Unexpected extra fields: {extra}"
 
     def test_schema_version_is_integer(self, db_session):
@@ -1098,3 +1099,48 @@ class TestValidateReplay:
         assert any(
             "not in dealt hand" in e for e in errors
         ), f"Three copies should be caught, got: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# Glutton counterfactual export tests
+# ---------------------------------------------------------------------------
+
+
+class TestGluttonCounterfactualExport:
+    """Verify glutton_action appears in export when set on Decision rows."""
+
+    def test_glutton_action_included_when_present(self, db_session):
+        """glutton_action field appears in export for decisions that have it."""
+        player = create_test_player(db_session)
+        match = create_test_match(db_session, player_id=player.id)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(
+            db_session,
+            match,
+            hand,
+            phase="play",
+            actor_type="human",
+            decision_source="human",
+            glutton_action_json=json.dumps(3),
+        )
+
+        result = decision_to_jsonl(decision, match, hand)
+        assert "glutton_action" in result
+        assert result["glutton_action"] == 3
+
+    def test_glutton_action_absent_when_null(self, db_session):
+        """glutton_action field is omitted for decisions without it."""
+        player = create_test_player(db_session)
+        match = create_test_match(db_session, player_id=player.id)
+        hand = create_test_hand(db_session, match)
+        decision = create_test_decision(
+            db_session,
+            match,
+            hand,
+            phase="bid",
+            actor_type="human",
+            decision_source="human",
+        )
+
+        result = decision_to_jsonl(decision, match, hand)
+        assert "glutton_action" not in result
