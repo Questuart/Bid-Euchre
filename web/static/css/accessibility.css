@@ -64,9 +64,9 @@ button.card--legal:focus-visible {
     outline-offset: 2px;
 }
 
-/* Pass button — blue focus ring to match the blue outlined button (#2545) */
+/* Pass button — blue focus ring to match the blue outlined button (#2545, #2572) */
 .pass-btn:focus-visible {
-    outline: 3px solid var(--color-pass-blue, #1565c0);
+    outline: 3px solid var(--color-pass-blue, #2196f3);
     outline-offset: 2px;
 }
 

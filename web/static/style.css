@@ -35,8 +35,10 @@
     --team-ai: #42a5f5;
     /* AI card delay — time before an AI card is revealed (#2330, #2386) */
     --ai-card-delay: 0.75s;
-    /* Pass button blue — distinct from Submit Bid green (#2545) */
-    --color-pass-blue: #1565c0;
+    /* Pass button blue — distinct from Submit Bid green (#2545).
+       Brightened from #1565c0 → #2196f3 for WCAG AA contrast ≥4.5:1
+       on --color-surface (#263238) background (#2572). */
+    --color-pass-blue: #2196f3;
 }
 
 *,
@@ -1384,7 +1386,7 @@ main {
 }
 
 .pass-btn:hover {
-    background: rgba(21, 101, 192, 0.12);
+    background: rgba(33, 150, 243, 0.15);
     color: #ffffff;
 }
 
