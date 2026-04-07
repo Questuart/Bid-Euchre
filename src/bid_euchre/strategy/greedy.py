@@ -16,13 +16,16 @@ from .base import Strategy, card_value_for_dump
 # GluttonStrategy or GluttonIsolatedStrategy. See
 # docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
 # changelog template.
-#
+
 # Changelog:
 #   0.7.0 — Initial versioned baseline (PR #2529)
 #   0.8.0 — Cash-A: sure-winner lead priority, draw-trump-first,
 #           draw trump from the top (behind ``cash_winners_on_lead``
 #           flag, default False). Category: MINOR.
-GLUTTON_STRATEGY_VERSION = "0.8.0"
+#   0.8.1 — Cash-A: _draw_trump_lead sure-winner-first fallback
+#           (prevents burning LB when second RB is still out).
+#           Category: PATCH.
+GLUTTON_STRATEGY_VERSION = "0.8.1"
 
 
 class GreedyStrategy(Strategy):
@@ -274,19 +277,32 @@ class GluttonStrategy(Strategy):
         )
 
     def _draw_trump_lead(self, trump_indices: List[int], hand: List[Card]) -> int:
-        """Lead the highest-ranking trump from the given indices.
+        """Lead trump: highest sure-winner trump if any, else lowest trump.
 
-        Shared by Cash-A Fix 1b (draw trump first) and Fix 2 (draw
-        trump from the top). ``card_value_for_dump`` already ranks
-        bowers above non-bower trump above non-trump, so ``max``
-        naturally picks RB > LB > A > K > Q > ... > 10.
+        Shared by Cash-A Fix 1b (draw trump first) and Fix 2 (draw trump
+        from the top).  The previous implementation returned the highest
+        ``card_value_for_dump`` trump unconditionally, which burned the
+        left bower whenever the second right bower was still unaccounted
+        for — see ``plans/sessions/2026-04-06_cash_a_deep_audit.md``
+        §Claim 1.
+
+        New rule:
+        - If any trump in hand is a ``_is_sure_winner`` at lead position,
+          lead the highest-valued sure winner (cashes the master and keeps
+          pressure on opponents).
+        - Otherwise, lead the lowest-valued trump to feel out the shape
+          without burning a top card into the still-unaccounted master.
         """
-        return max(
-            trump_indices,
-            key=lambda i: card_value_for_dump(
-                hand[i], self._contract_type, self._trump_suit
-            ),
-        )
+
+        def value(i: int) -> int:
+            return card_value_for_dump(hand[i], self._contract_type, self._trump_suit)
+
+        sure_winner_trump = [
+            i for i in trump_indices if self._is_sure_winner(hand[i], [], hand)
+        ]
+        if sure_winner_trump:
+            return max(sure_winner_trump, key=value)
+        return min(trump_indices, key=value)
 
     def _choose_lead(
         self,
@@ -935,17 +951,22 @@ class GluttonIsolatedStrategy(Strategy):
         )
 
     def _draw_trump_lead(self, trump_indices: List[int], hand: List[Card]) -> int:
-        """Lead the highest-ranking trump from the given indices.
+        """Lead trump: highest sure-winner trump if any, else lowest trump.
 
         Mirror of :meth:`GluttonStrategy._draw_trump_lead`. Shared by
-        Cash-A Fix 1b and Fix 2.
+        Cash-A Fix 1b and Fix 2.  See the GluttonStrategy docstring for
+        the full rationale and §Claim 1 reference.
         """
-        return max(
-            trump_indices,
-            key=lambda i: card_value_for_dump(
-                hand[i], self._contract_type, self._trump_suit
-            ),
-        )
+
+        def value(i: int) -> int:
+            return card_value_for_dump(hand[i], self._contract_type, self._trump_suit)
+
+        sure_winner_trump = [
+            i for i in trump_indices if self._is_sure_winner(hand[i], [], hand)
+        ]
+        if sure_winner_trump:
+            return max(sure_winner_trump, key=value)
+        return min(trump_indices, key=value)
 
     def _choose_lead_smart(
         self,
