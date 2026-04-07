@@ -47,7 +47,7 @@
 # Depends on
 # ----------
 # - Claim 1 fix (_draw_trump_lead sure-winner-first fallback) from PR #2559
-# - GBT artifact at web/models/training_artifact_gbt_av.json
+# - GBT artifact at data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json
 # - Code analysis: plans/sessions/2026-04-07_cash_winners_contract_analysis.md
 #
 # Run
@@ -88,7 +88,7 @@ bidding_policies:
   - name: gbt_av
     class_name: GBTActionValueBidder
     params:
-      artifact_path: web/models/training_artifact_gbt_av.json
+      artifact_path: data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json
 
 matchups:
   # Cash-A as Team 0 (seats 0, 2)
