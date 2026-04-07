@@ -241,12 +241,20 @@ main {
     cursor: not-allowed;
 }
 
-/* Played card in trick area — slightly smaller, no hover */
+/* Played card in trick area — slightly smaller, no hover.
+   Baseline transitions smooth class-attribute morphs (e.g. card--winning
+   added/removed).  Scoped here — NOT on base .card — per Risk R1:
+   adding opacity transition to all cards would lag hand-card hover. */
 .card--played {
     width: 54px;
     height: 80px;
     font-size: 1rem;
     cursor: default;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        border-color 0.2s ease,
+        opacity 0.2s ease;
 }
 
 .card--played .card__rank {
@@ -264,9 +272,25 @@ main {
     animation: winning-card-pulse 2s ease-in-out infinite;
 }
 
-/* AI card delay — fade-in animation when AI plays (#2330) */
+/* AI card delay — fade-in animation when AI plays (#2330).
+   Declared with longhand animation-name so compound selectors below can
+   extend rather than override (fixes cascade Bug A — #2538). */
 .card--ai-delayed {
-    animation: ai-card-reveal var(--ai-card-delay, 0.75s) ease-out both;
+    animation-name: ai-card-reveal;
+    animation-duration: var(--ai-card-delay, 0.75s);
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
+}
+
+/* When an AI card is both revealing AND currently winning, compose both
+   animations so the gold pulse starts after the reveal completes. */
+.card--winning.card--ai-delayed {
+    animation-name: ai-card-reveal, winning-card-pulse;
+    animation-duration: var(--ai-card-delay, 0.75s), 2s;
+    animation-timing-function: ease-out, ease-in-out;
+    animation-delay: 0s, var(--ai-card-delay, 0.75s);
+    animation-iteration-count: 1, infinite;
+    animation-fill-mode: both, none;
 }
 
 @keyframes ai-card-reveal {
@@ -937,6 +961,18 @@ main {
     box-shadow: 0 0 10px rgba(76, 175, 80, 0.6);
     border: 2px solid var(--color-legal-glow);
     animation: winner-card-glow 1.5s ease-in-out 2;
+}
+
+/* When the trick-winning card was just played by AI, compose reveal +
+   glow animations.  Specificity 0,2,0 beats .card--ai-delayed 0,1,0
+   so the descendant rule doesn't silently drop the reveal (#2538 R4). */
+.trick-slot--winner .card--ai-delayed {
+    animation-name: ai-card-reveal, winner-card-glow;
+    animation-duration: var(--ai-card-delay, 0.75s), 1.5s;
+    animation-timing-function: ease-out, ease-in-out;
+    animation-delay: 0s, var(--ai-card-delay, 0.75s);
+    animation-iteration-count: 1, 2;
+    animation-fill-mode: both, none;
 }
 
 .last-trick {
@@ -3138,6 +3174,12 @@ main {
     }
 
     .card--winning {
+        animation: none;
+    }
+
+    .card--ai-delayed,
+    .card--winning.card--ai-delayed,
+    .trick-slot--winner .card--ai-delayed {
         animation: none;
     }
 }
