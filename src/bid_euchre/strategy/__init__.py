@@ -6,7 +6,7 @@ This package provides strategy classes for playing Bid Euchre.
 Organized into:
 - base: Strategy ABC and shared utilities
 - baselines: Simple/null strategies (basic, random, always-lowest, always-highest)
-- greedy: Greedy strategies with 1-trick lookahead
+- glutton: Greedy/glutton strategies with 1-trick lookahead
 """
 
 # Base strategy class
@@ -44,8 +44,8 @@ from .bidding import (
     enumerate_legal_actions,
 )
 
-# Greedy strategies
-from .greedy import (
+# Greedy/glutton strategies
+from .glutton import (
     GluttonIsolatedStrategy,
     GluttonStrategy,
     GreedyStrategy,

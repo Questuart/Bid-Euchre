@@ -45,7 +45,7 @@ from bid_euchre.hosted_play.state import MatchState
 from bid_euchre.scoring import compute_points
 from bid_euchre.strategy.base import Strategy
 from bid_euchre.strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
-from bid_euchre.strategy.greedy import GluttonStrategy
+from bid_euchre.strategy.glutton import GluttonStrategy
 
 # ---------------------------------------------------------------------------
 # Test helpers — deterministic AI stubs

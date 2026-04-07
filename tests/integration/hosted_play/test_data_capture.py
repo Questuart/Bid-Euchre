@@ -22,7 +22,7 @@ pytestmark = pytest.mark.integration
 from starlette.testclient import TestClient
 
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine
-from bid_euchre.strategy.greedy import GLUTTON_STRATEGY_VERSION
+from bid_euchre.strategy.glutton import GLUTTON_STRATEGY_VERSION
 from tests.unit.hosted_play.conftest import (
     advance_pending_reveals,
     get_match_state,

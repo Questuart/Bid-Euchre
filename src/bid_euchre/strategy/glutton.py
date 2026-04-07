@@ -1,5 +1,9 @@
 """
-Greedy strategies with 1-trick lookahead.
+Greedy/glutton strategies with 1-trick lookahead.
+
+Contains GreedyStrategy (baseline 1-trick lookahead), GluttonStrategy
+(production play strategy with partner awareness), and
+GluttonIsolatedStrategy (feature-flag twin for ablation).
 
 These strategies try to win the current trick if possible,
 with variations that add partner awareness and trump conservation.

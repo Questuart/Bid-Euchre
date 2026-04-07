@@ -242,7 +242,7 @@ flowchart TD
         Scoring["scoring.py"]
 
         StratBase["strategy/base.py"]
-        StratImpl["strategy/greedy.py<br/>strategy/glutton.py<br/>etc."]
+        StratImpl["strategy/glutton.py<br/>strategy/baselines.py<br/>etc."]
 
         Logger["logging/game_logger.py"]
 

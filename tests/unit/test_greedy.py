@@ -15,7 +15,7 @@ import pytest
 
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy import GluttonStrategy, GreedyStrategy
-from bid_euchre.strategy.greedy import GluttonIsolatedStrategy
+from bid_euchre.strategy.glutton import GluttonIsolatedStrategy
 
 
 class TestBowerValueGreedy:
@@ -388,7 +388,7 @@ class TestCashWinnersOnLead:
 
     def test_version_bumped_to_0_10_0(self):
         """Suit continuity (#2506) bumps version to 0.10.0."""
-        from bid_euchre.strategy.greedy import GLUTTON_STRATEGY_VERSION
+        from bid_euchre.strategy.glutton import GLUTTON_STRATEGY_VERSION
 
         assert GLUTTON_STRATEGY_VERSION == "0.10.0"
         assert GluttonStrategy.VERSION == "0.10.0"
