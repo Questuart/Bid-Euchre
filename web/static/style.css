@@ -2834,6 +2834,22 @@ main {
     color: #fff;
 }
 
+/* Contract label for no-trump bids (Hi / Lo) — lightweight neutral style
+   that visually matches the suit icons without adding color rules (#2539). */
+.contract-label {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.05em 0.3em;
+    border: 1px solid var(--color-text);
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-left: 0.15rem;
+    color: var(--color-text);
+}
+
 /* Bid type selector option emphasis */
 .bid-controls select option[value="moon"] {
     color: var(--color-moon);
