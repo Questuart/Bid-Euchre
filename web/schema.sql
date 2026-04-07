@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     legal_actions_json TEXT NOT NULL,
     chosen_action_json TEXT NOT NULL,
     game_state_json TEXT NOT NULL,
+    glutton_action_json TEXT,
     decision_time_ms INTEGER CHECK (
         decision_time_ms IS NULL OR decision_time_ms >= 0
     ),

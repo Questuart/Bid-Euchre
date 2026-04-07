@@ -1054,6 +1054,142 @@ class TestDecisionLogging:
 
 
 # ---------------------------------------------------------------------------
+# Glutton counterfactual logging (#2468)
+# ---------------------------------------------------------------------------
+
+
+class TestGluttonCounterfactual:
+    """Verify glutton counterfactual is logged alongside human play decisions."""
+
+    def test_human_play_decision_has_glutton_action(self, client, app):
+        """Human play-phase decisions include a glutton_action_json value."""
+        link_uuid = _setup_game(client)
+
+        # Navigate to trick play and play one card
+        for _ in range(20):
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+            elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                ai_manager = app.state.ai_manager
+                info = ai_manager.get_model_info(state.ai_model)
+                engine = MatchEngine(
+                    bidding_policy=info.bidding_policy,
+                    play_strategy=info.play_strategy,
+                )
+                legal = engine.get_legal_plays(state)
+                client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "card_index": legal[0],
+                    },
+                )
+                break  # played at least one card
+            else:
+                break
+
+        # Query human play decisions
+        session = app.state.session_factory()
+        human_play_decisions = (
+            session.query(Decision)
+            .filter(Decision.actor_type == "human", Decision.phase == "play")
+            .all()
+        )
+        assert (
+            len(human_play_decisions) > 0
+        ), "Expected at least one human play decision"
+
+        for d in human_play_decisions:
+            assert (
+                d.glutton_action_json is not None
+            ), f"Human play decision turn={d.turn_number} missing glutton_action_json"
+            glutton_choice = json.loads(d.glutton_action_json)
+            assert isinstance(
+                glutton_choice, int
+            ), f"glutton_action should be int, got {type(glutton_choice)}"
+
+            # Verify it's a legal play
+            legal = json.loads(d.legal_actions_json)
+            assert (
+                glutton_choice in legal
+            ), f"glutton_action {glutton_choice} not in legal_actions {legal}"
+
+        session.close()
+
+    def test_ai_decisions_no_glutton_action(self, client, app):
+        """AI decisions should NOT have glutton_action_json set."""
+        link_uuid = _setup_game(client)
+
+        # Play a few turns
+        for _ in range(20):
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+            elif hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+                ai_manager = app.state.ai_manager
+                info = ai_manager.get_model_info(state.ai_model)
+                engine = MatchEngine(
+                    bidding_policy=info.bidding_policy,
+                    play_strategy=info.play_strategy,
+                )
+                legal = engine.get_legal_plays(state)
+                client.post(
+                    f"/play/{link_uuid}/play-card",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "card_index": legal[0],
+                    },
+                )
+                break
+            else:
+                break
+
+        # Query AI decisions — they should NOT have glutton counterfactual
+        session = app.state.session_factory()
+        ai_decisions = session.query(Decision).filter(Decision.actor_type == "ai").all()
+
+        for d in ai_decisions:
+            assert (
+                d.glutton_action_json is None
+            ), f"AI decision turn={d.turn_number} should not have glutton_action_json"
+
+        session.close()
+
+
+# ---------------------------------------------------------------------------
 # Landing page
 # ---------------------------------------------------------------------------
 

@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 from bid_euchre.core.rules import trick_winner
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine, sort_hand_for_display
 from bid_euchre.strategy.bidding import BidAction
+from bid_euchre.strategy.glutton import GluttonStrategy
 
 from .ai_manager import AIManager
 from .cleanup import abandon_player_active_matches
@@ -205,6 +206,32 @@ def _update_match_row(match_row: Match, state) -> None:
         match_row.completed_at = datetime.now(timezone.utc)
 
 
+def _compute_glutton_counterfactual(hand) -> int | None:
+    """Return the card index a fresh GluttonStrategy would play, or None on error.
+
+    Uses a stateless instance so the engine's shared strategy is unaffected.
+    Returns ``None`` if the hand state is unsuitable (missing contract, trick,
+    etc.) so that callers can log without crashing the request.
+    """
+    try:
+        if hand.current_trick is None or hand.contract_type is None:
+            return None
+        glutton = GluttonStrategy(cash_winners_on_lead=True)
+        return glutton.choose_card(
+            hand.hands[HUMAN_SEAT],
+            hand.current_trick.plays,
+            hand.contract_type,
+            hand.trump,
+            HUMAN_SEAT,
+        )
+    except Exception:
+        logger.debug(
+            "glutton counterfactual failed; skipping",
+            exc_info=True,
+        )
+        return None
+
+
 def _log_decision(
     session,
     match_row: Match,
@@ -218,6 +245,7 @@ def _log_decision(
     chosen_action: Any,
     game_state: Any,
     decision_time_ms: int | None = None,
+    glutton_action: Any | None = None,
 ) -> None:
     """Insert a decision row (idempotent — skips if turn already logged)."""
     exists = (
@@ -239,6 +267,9 @@ def _log_decision(
         chosen_action_json=json.dumps(chosen_action),
         game_state_json=json.dumps(game_state),
         decision_time_ms=decision_time_ms,
+        glutton_action_json=json.dumps(glutton_action)
+        if glutton_action is not None
+        else None,
     )
     session.add(decision)
 
@@ -1734,6 +1765,12 @@ async def submit_card(
         # Ensure hand row exists (keyed by deal_id for redeal-safe uniqueness)
         hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
 
+        # Compute glutton counterfactual — what would the glutton strategy
+        # play in the same position?  Uses a fresh instance to avoid
+        # contaminating the engine's shared strategy state.  Purely
+        # observational; does not affect gameplay.  (#2468)
+        glutton_choice = _compute_glutton_counterfactual(hand)
+
         # Log human decision
         _log_decision(
             session,
@@ -1747,6 +1784,7 @@ async def submit_card(
             legal_actions=legal_plays,
             chosen_action=card_index,
             game_state=engine.get_visible_state(state),
+            glutton_action=glutton_choice,
         )
 
         # Apply action — engine auto-advances AI and sets

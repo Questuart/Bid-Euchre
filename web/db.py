@@ -235,6 +235,9 @@ class Decision(Base):
     legal_actions_json = Column(Text, nullable=False)
     chosen_action_json = Column(Text, nullable=False)
     game_state_json = Column(Text, nullable=False)
+    # What the glutton strategy would have played in the same situation.
+    # Only populated for human play-phase decisions (counterfactual logging).
+    glutton_action_json = Column(Text, nullable=True)
     decision_time_ms = Column(
         Integer,
         CheckConstraint("decision_time_ms IS NULL OR decision_time_ms >= 0"),
