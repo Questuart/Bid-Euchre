@@ -386,13 +386,13 @@ class TestCashWinnersOnLead:
             f"must lead A♥ (gating suppresses Cash-A) — got {hand[choice]}"
         )
 
-    def test_version_bumped_to_0_9_0(self):
-        """Cash-A contract-type gating bumps version to 0.9.0."""
+    def test_version_bumped_to_0_10_0(self):
+        """Suit continuity (#2506) bumps version to 0.10.0."""
         from bid_euchre.strategy.greedy import GLUTTON_STRATEGY_VERSION
 
-        assert GLUTTON_STRATEGY_VERSION == "0.9.0"
-        assert GluttonStrategy.VERSION == "0.9.0"
-        assert GluttonIsolatedStrategy.VERSION == "0.9.0"
+        assert GLUTTON_STRATEGY_VERSION == "0.10.0"
+        assert GluttonStrategy.VERSION == "0.10.0"
+        assert GluttonIsolatedStrategy.VERSION == "0.10.0"
 
     # ---- Contract-type gating tests (Cash-A.1 → 0.9.0 update) ----
 
