@@ -194,14 +194,39 @@ def test_mobile_invite_code_input(
 # ---------------------------------------------------------------------------
 
 
-def _advance_to_auction(page, max_steps: int = 8) -> None:
-    """Click Next until the auction log shows bidder rows."""
+def _advance_to_four_bidders(page, max_steps: int = 16) -> None:
+    """Advance through the auction until all 4 bidders have placed bids.
+
+    Clicks "Next" buttons to reveal AI bids *and* submits a Pass for the
+    human player when the bid panel appears.  Stops once the action-rail
+    contains ≥4 items (one per player) or *max_steps* iterations elapse.
+
+    This avoids the fragile pattern of asserting on the auction log before
+    all 4 bidders have actually bid (#2594).
+    """
     for _ in range(max_steps):
-        next_btn = page.locator("button.btn--next-step")
-        if next_btn.count() == 0 or not next_btn.first.is_visible():
+        # Check if we already have 4+ auction entries → done
+        items = page.locator(".action-rail__item")
+        if items.count() >= 4:
             return
-        next_btn.first.click()
-        page.wait_for_timeout(250)
+
+        # If the human bid panel is visible, submit Pass so the
+        # human's bid row appears in the auction log.
+        pass_btn = page.locator("#bid-panel button.pass-btn")
+        if pass_btn.count() > 0 and pass_btn.first.is_visible():
+            pass_btn.first.click()
+            page.wait_for_timeout(300)
+            continue
+
+        # Otherwise, click "Next" to advance through an AI bid.
+        next_btn = page.locator("button.btn--next-step")
+        if next_btn.count() > 0 and next_btn.first.is_visible():
+            next_btn.first.click()
+            page.wait_for_timeout(300)
+            continue
+
+        # Neither button visible — wait briefly for HTMX swap.
+        page.wait_for_timeout(300)
 
 
 @pytest.mark.browser
@@ -236,20 +261,24 @@ def test_auction_log_all_bidders_visible_mobile(
         mobile_page.click("button:has-text('Start Match')")
         mobile_page.wait_for_selector("#game-board", timeout=10000)
 
-        # Advance past any next-step prompts to reach full auction state
-        _advance_to_auction(mobile_page)
+        # Advance through AI and human bids until all 4 bidders are logged (#2594)
+        _advance_to_four_bidders(mobile_page)
 
-        # Verify we're in auction phase — the action-rail should have
-        # data-phase="auction" and be open
-        action_rail = mobile_page.locator("#action-rail[data-phase='auction']")
+        # After all 4 bids, the auction may have settled (phase → trick_play).
+        # Ensure the action-rail <details> is open so items are rendered for
+        # measurement.  Force-open it regardless of auto-collapse state.
+        action_rail = mobile_page.locator("#action-rail")
         if action_rail.count() == 0:
-            pytest.skip("Not in auction phase — AI may have already completed bidding")
+            pytest.skip("No action-rail element found")
+        action_rail.evaluate("el => el.setAttribute('open', '')")
 
-        # Check auction log items
+        # Verify we reached the 4-bidder state before asserting (#2594)
         items = mobile_page.locator(".action-rail__item")
         item_count = items.count()
-        if item_count == 0:
-            pytest.skip("No auction log items visible")
+        assert item_count >= 4, (
+            f"Expected ≥4 auction log items (one per bidder) but found {item_count}. "
+            f"The test must reach a four-bidder state before asserting overflow (#2594)."
+        )
 
         # The list container should NOT be scrollable during auction
         list_el = mobile_page.locator(".action-rail__list")
@@ -317,13 +346,21 @@ def test_auction_log_all_bidders_visible_mobile_big_text(
         mobile_page.click("button:has-text('Start Match')")
         mobile_page.wait_for_selector("#game-board", timeout=10000)
 
-        # Advance past any next-step prompts
-        _advance_to_auction(mobile_page)
+        # Advance through AI and human bids until all 4 bidders are logged (#2594)
+        _advance_to_four_bidders(mobile_page)
 
-        # Verify we're in auction phase
-        action_rail = mobile_page.locator("#action-rail[data-phase='auction']")
+        # Force action-rail open in case auction settled and it auto-collapsed
+        action_rail = mobile_page.locator("#action-rail")
         if action_rail.count() == 0:
-            pytest.skip("Not in auction phase — AI may have already completed bidding")
+            pytest.skip("No action-rail element found")
+        action_rail.evaluate("el => el.setAttribute('open', '')")
+
+        # Verify we reached the 4-bidder state (#2594)
+        items = mobile_page.locator(".action-rail__item")
+        item_count = items.count()
+        assert (
+            item_count >= 4
+        ), f"Expected ≥4 auction log items but found {item_count} (#2594)."
 
         # Check the list container is NOT scrollable (big text mode)
         list_el = mobile_page.locator(".action-rail__list")
