@@ -125,6 +125,43 @@
                 </p>
             </div>
         {% endif %}
+
+        {# Partner's full hand after moon exchange — shows which cards the
+           partner received from the mooner (exchange_given from mooner's
+           perspective = cards the partner now holds) and which cards the
+           partner sent to the mooner (exchange_received = no longer in
+           partner's hand).  Only rendered for moon hands at end of hand.
+           Refs #2554. #}
+        {% set partner_hand = partner_exchange_hand | default([], true) %}
+        {% set partner_seat_num = partner_exchange_seat | default(None, true) %}
+        {% if hand_bid_type == "moon" and partner_hand %}
+            {% set partner_hand_label = seat_labels.get(partner_seat_num, "Partner") if partner_seat_num is not none else partner_seat_label %}
+            <div class="result-partner-hand" aria-label="{{ partner_hand_label }}'s hand after exchange">
+                <p class="result-partner-hand__title"><strong>{{ partner_hand_label }}'s Hand</strong> (after exchange)</p>
+                <div class="result-partner-hand__cards" role="list">
+                    {% for card in partner_hand %}
+                        {% set is_received = card in exchange_given_cards %}
+                        {% set disp_suit = card[0] %}
+                        {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
+                        <div class="card card--{{ suit_classes.get(disp_suit, 'spades') }} card--exchange{% if is_received %} card--exchange-received{% endif %}{% if bower %} card--bower{% endif %}"
+                             role="listitem"
+                             aria-label="{{ card[1]|display_rank }} of {{ suit_classes.get(disp_suit, disp_suit) }}{% if is_received %} (received from mooner){% endif %}{% if bower %} ({{ bower }} bower){% endif %}">
+                            <span class="card__rank" aria-hidden="true">{{ card[1]|display_rank }}</span>
+                            <span class="card__suit" aria-hidden="true">{{ suit_symbols.get(disp_suit, disp_suit) }}</span>
+                            {% if bower %}
+                                <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">{{ "RB" if bower == "right" else "LB" }}</span>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+                {% if exchange_received_cards %}
+                    <p class="result-partner-hand__sent">
+                        Sent to {{ seat_labels.get(bidder_seat, "Mooner") }}:
+                        {% for card in exchange_received_cards %}<span class="card-text"><span class="suit-icon suit-icon--{{ suit_classes.get(card[0], 'spades') }}">{{ suit_symbols.get(card[0], card[0]) }}</span> {{ card[1]|display_rank }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                    </p>
+                {% endif %}
+            </div>
+        {% endif %}
     </div>
 
     <div class="result-scoring" role="table" aria-label="Hand scoring summary">

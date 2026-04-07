@@ -2396,6 +2396,122 @@ class TestMoonLonerSerialization:
 
 
 # ---------------------------------------------------------------------------
+# Test: Partner hand reveal at end of moon hand (#2554)
+# ---------------------------------------------------------------------------
+
+
+class TestPartnerHandReveal:
+    """Verify get_visible_state includes partner's hand for completed moon hands."""
+
+    def test_visible_state_includes_partner_hand_on_moon_complete(self) -> None:
+        """partner_exchange_hand present when phase=complete and bid_type=moon."""
+        engine = MatchEngine(
+            bidding_policy=MoonBidder("S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        for seed in range(200):
+            state = engine.start_match(seed, "heuristic")
+            # Auto-play to completion
+            for _ in range(500):
+                hand = state.current_hand
+                if hand is None or state.status == "complete":
+                    break
+                if hand.phase == "complete":
+                    break
+                if hand.phase == "redeal":
+                    state = engine.next_hand(state)
+                    continue
+                if hand.phase == "trick_play" and hand.paused_after_play:
+                    state = engine.resume_after_play(state)
+                    continue
+                if hand.phase == "trick_play" and hand.paused_after_trick:
+                    state = engine.resume_ai(state)
+                    continue
+                if hand.current_seat == HUMAN_SEAT:
+                    if hand.phase == "auction":
+                        state = engine.submit_human_bid(state, BidAction.pass_bid())
+                    elif hand.phase == "trick_play":
+                        legal = engine.get_legal_plays(state)
+                        state = engine.submit_human_card(state, legal[0])
+                    elif hand.phase == "moon_exchange":
+                        indices = [0, 1]
+                        state = engine.submit_exchange_selection(state, indices)
+                    else:
+                        state = engine.advance(state)
+                else:
+                    state = engine.advance(state)
+
+            hand = state.current_hand
+            if (
+                hand is not None
+                and hand.phase == "complete"
+                and hand.bid_type == "moon"
+            ):
+                visible = engine.get_visible_state(state)
+                assert "partner_exchange_hand" in visible
+                assert "partner_exchange_seat" in visible
+                assert visible["partner_exchange_seat"] == hand.sitting_out_seat
+                # Partner's hand should have 10 cards (sat out, played nothing)
+                assert len(visible["partner_exchange_hand"]) == 10
+                # Each card should be [suit, rank]
+                for card in visible["partner_exchange_hand"]:
+                    assert len(card) == 2
+                return  # success
+
+        pytest.fail("Could not find a completed moon hand in 200 seeds")
+
+    def test_visible_state_excludes_partner_hand_non_moon(self) -> None:
+        """partner_exchange_hand absent for regular (non-moon) completed hands."""
+        engine = MatchEngine(
+            bidding_policy=FixedBidder(5, "S"),
+            play_strategy=FirstLegalPlay(),
+        )
+
+        for seed in range(200):
+            state = engine.start_match(seed, "heuristic")
+            # Auto-play to completion
+            for _ in range(500):
+                hand = state.current_hand
+                if hand is None or state.status == "complete":
+                    break
+                if hand.phase == "complete":
+                    break
+                if hand.phase == "redeal":
+                    state = engine.next_hand(state)
+                    continue
+                if hand.phase == "trick_play" and hand.paused_after_play:
+                    state = engine.resume_after_play(state)
+                    continue
+                if hand.phase == "trick_play" and hand.paused_after_trick:
+                    state = engine.resume_ai(state)
+                    continue
+                if hand.current_seat == HUMAN_SEAT:
+                    if hand.phase == "auction":
+                        state = engine.submit_human_bid(state, BidAction.pass_bid())
+                    elif hand.phase == "trick_play":
+                        legal = engine.get_legal_plays(state)
+                        state = engine.submit_human_card(state, legal[0])
+                    else:
+                        state = engine.advance(state)
+                else:
+                    state = engine.advance(state)
+
+            hand = state.current_hand
+            if (
+                hand is not None
+                and hand.phase == "complete"
+                and hand.bid_type != "moon"
+            ):
+                visible = engine.get_visible_state(state)
+                assert "partner_exchange_hand" not in visible
+                assert "partner_exchange_seat" not in visible
+                return  # success
+
+        pytest.fail("Could not find a completed non-moon hand in 200 seeds")
+
+
+# ---------------------------------------------------------------------------
 # Test 19: Trick winner display — winning_card in visible state
 # ---------------------------------------------------------------------------
 

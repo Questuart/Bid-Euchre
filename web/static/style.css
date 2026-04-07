@@ -3076,6 +3076,37 @@ main {
     color: var(--color-text-muted);
 }
 
+/* 16d. Partner hand reveal at end of moon hand (#2554) */
+
+.result-partner-hand {
+    margin: 0.75rem auto;
+    max-width: 440px;
+    text-align: center;
+    border: 1px solid rgba(255, 160, 0, 0.25);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem 0.75rem;
+    background: rgba(255, 160, 0, 0.04);
+}
+
+.result-partner-hand__title {
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+    color: var(--color-text);
+}
+
+.result-partner-hand__cards {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+}
+
+.result-partner-hand__sent {
+    margin: 0.5rem 0 0;
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+}
+
 /* Card text in exchange summaries and trick winner — rank stays default
    (white); suit icon colored via .suit-icon utility where available (#2289).
    Variant classes provide suit coloring for contexts where the suit symbol
