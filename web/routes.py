@@ -280,10 +280,22 @@ def _awaiting_next(hand) -> bool:
 
 
 def _last_played_seat(hand) -> int | None:
-    """Return the seat that played the most recent card in the active trick."""
+    """Return the seat that played the most recent card in the active trick.
+
+    During ``paused_after_trick`` the active trick may already have been moved
+    to the completed-tricks list (plays cleared / trick reset).  In that case
+    fall back to the last play of the most-recently completed trick so that
+    ``ai_just_played`` and the CSS delay class still fire correctly at the
+    trick boundary.
+    """
     trick = hand.current_trick
     if trick is not None and trick.plays:
         return trick.plays[-1][0]
+    # Fallback: last play of the most-recently completed trick
+    if hand.completed_tricks:
+        last_completed = hand.completed_tricks[-1]
+        if last_completed.plays:
+            return last_completed.plays[-1][0]
     return None
 
 
@@ -578,7 +590,7 @@ def _build_game_context(
         ctx["last_played_seat"] = last_seat
         ctx["ai_just_played"] = (
             hand.phase == "trick_play"
-            and hand.paused_after_play
+            and (hand.paused_after_play or hand.paused_after_trick)
             and last_seat is not None
             and last_seat != HUMAN_SEAT
         )
