@@ -2,7 +2,7 @@
 
 **Analyst:** analyst-d
 **Date:** 2026-04-06
-**Design doc:** [`2026-04-06_glutton_gbt_quicksim_experiment.md`](./2026-04-06_glutton_gbt_quicksim_experiment.md)
+**Design doc:** `plans/sessions/2026-04-06_glutton_gbt_quicksim_experiment.md`
 **Status:** COMPLETE
 
 ---
@@ -347,8 +347,9 @@ uv run python experiments/run_experiment.py \
 
 ### Analysis Execution
 
-All analysis was performed with `bid_euchre.analysis.paired.load_paired_data`,
-`compute_paired_deltas`, and `bid_euchre.analysis.stats.bootstrap_ci` with
+All analysis was performed with the paired analysis module
+(`src/bid_euchre/analysis/paired.py`: `load_paired_data`, `compute_paired_deltas`)
+and the stats module (`src/bid_euchre/analysis/stats.py`: `bootstrap_ci`) with
 n_bootstrap=10,000 and seed=42. Charts generated with matplotlib.
 
 ### Charts Generated
