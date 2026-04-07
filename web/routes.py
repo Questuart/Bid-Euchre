@@ -619,6 +619,18 @@ def _build_game_context(
         ctx["current_high_bid"] = (
             0 if _has_hidden_auction(hand) else hand.current_high_bid
         )
+        # Raw contract value for the current high bid — e.g. "S", "H", "D",
+        # "C", "HIGH", "LOW", or None.  Derived from contract_type + trump.
+        if _has_hidden_auction(hand) or hand.contract_type is None:
+            ctx["current_high_bid_contract"] = None
+        elif hand.contract_type == "suit":
+            ctx["current_high_bid_contract"] = hand.trump  # "S"/"H"/"D"/"C"
+        elif hand.contract_type == "high":
+            ctx["current_high_bid_contract"] = "HIGH"
+        elif hand.contract_type == "low":
+            ctx["current_high_bid_contract"] = "LOW"
+        else:
+            ctx["current_high_bid_contract"] = None
         ctx["auction_settled"] = hand.auction_settled
         ctx["points_team0"] = hand.points_team0
         ctx["points_team1"] = hand.points_team1
@@ -681,6 +693,7 @@ def _build_game_context(
         ctx["winning_bid"] = None
         ctx["bidder_seat"] = None
         ctx["current_high_bid"] = 0
+        ctx["current_high_bid_contract"] = None
         ctx["points_team0"] = 0
         ctx["points_team1"] = 0
         ctx["legal_plays"] = None

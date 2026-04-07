@@ -86,6 +86,15 @@
     {% if current_high_bid > 0 %}
     <p class="bid-info" aria-live="polite">
         Current high bid: {{ current_high_bid }}
+        {% set _hbc = current_high_bid_contract|default(None) %}
+        {% if _hbc in ("S", "H", "D", "C") %}
+            {% set contract_suit_map = {"S": "spades", "H": "hearts", "D": "diamonds", "C": "clubs"} %}
+            <span class="suit-icon suit-icon--{{ contract_suit_map[_hbc] }}">{{ suit_symbols[_hbc] }}</span>
+        {% elif _hbc == "HIGH" %}
+            <span class="contract-label">Hi</span>
+        {% elif _hbc == "LOW" %}
+            <span class="contract-label">Lo</span>
+        {% endif %}
         {{ bid_type_labels.get(bid_type|default("regular"), "") }}
         {% if bid_type|default("regular") == "moon" %}
             <span class="bid-type-badge bid-type-badge--moon">Moon</span>

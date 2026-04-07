@@ -591,6 +591,116 @@ class TestBidPanel:
         assert 'onchange="updateBidSubmitState()"' in html
         assert "function updateBidSubmitState" in html
 
+    # -- Contract icon tests (#2539) ----------------------------------------
+
+    @pytest.mark.parametrize(
+        "contract, expected_class, expected_text",
+        [
+            ("S", "suit-icon--spades", "♠"),
+            ("H", "suit-icon--hearts", "♥"),
+            ("D", "suit-icon--diamonds", "♦"),
+            ("C", "suit-icon--clubs", "♣"),
+        ],
+    )
+    def test_high_bid_shows_suit_icon(
+        self, env, contract, expected_class, expected_text
+    ):
+        """Suit contracts (S/H/D/C) render a colored suit icon next to the bid."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=1,
+            auction=[
+                {"seat": 1, "n": 5, "action": "bid", "contract": contract},
+            ],
+            current_high_bid=5,
+            current_high_bid_contract=contract,
+            dealer_seat=0,
+        )
+        assert expected_class in html
+        assert expected_text in html
+
+    def test_high_bid_shows_high_label(self, env):
+        """HIGH contract renders a 'Hi' label."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=1,
+            auction=[
+                {"seat": 1, "n": 5, "action": "bid", "contract": "HIGH"},
+            ],
+            current_high_bid=5,
+            current_high_bid_contract="HIGH",
+            dealer_seat=0,
+        )
+        assert "contract-label" in html
+        assert ">Hi<" in html
+
+    def test_high_bid_shows_low_label(self, env):
+        """LOW contract renders a 'Lo' label."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=1,
+            auction=[
+                {"seat": 1, "n": 5, "action": "bid", "contract": "LOW"},
+            ],
+            current_high_bid=5,
+            current_high_bid_contract="LOW",
+            dealer_seat=0,
+        )
+        assert "contract-label" in html
+        assert ">Lo<" in html
+
+    def test_no_contract_icon_when_no_bid(self, env):
+        """When no bids have been made, no contract icon or label renders."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            auction=[],
+            current_high_bid=0,
+            current_high_bid_contract=None,
+            dealer_seat=0,
+        )
+        assert "suit-icon" not in html
+        assert "contract-label" not in html
+
+    def test_no_contract_icon_when_contract_none(self, env):
+        """current_high_bid_contract=None (hidden auction) shows no icon."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=1,
+            auction=[
+                {"seat": 1, "n": 5, "action": "bid", "contract": "H"},
+            ],
+            current_high_bid=5,
+            current_high_bid_contract=None,
+            dealer_seat=0,
+        )
+        # The bid info line should render but without a suit icon
+        assert "Current high bid: 5" in html
+        assert "suit-icon" not in html
+        assert "contract-label" not in html
+
+    def test_contract_icon_absent_when_variable_missing(self, env):
+        """Backward compat: template tolerates missing current_high_bid_contract."""
+        tmpl = env.get_template("partials/bid_panel.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=1,
+            auction=[
+                {"seat": 1, "n": 5, "action": "bid", "contract": "H"},
+            ],
+            current_high_bid=5,
+            dealer_seat=0,
+        )
+        # Should render without error and without icon
+        assert "Current high bid: 5" in html
+        assert "suit-icon" not in html
+        assert "contract-label" not in html
+
 
 # ---------------------------------------------------------------------------
 # hand.html
