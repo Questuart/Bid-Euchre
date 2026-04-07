@@ -433,6 +433,55 @@
     }
 
     /* ---------------------------------------------------------------
+     * AI hints toggle — off by default, opt-in via header button (#2185).
+     * Persisted in sessionStorage (per-tab, resets on close).
+     * The inline <script> in base.html applies the attribute before
+     * first paint to avoid FOUC.
+     * --------------------------------------------------------------- */
+
+    var AI_HINTS_KEY = 'aiHints';
+
+    function isAiHintsOn() {
+        try {
+            return sessionStorage.getItem(AI_HINTS_KEY) === 'on';
+        } catch (_) {
+            return document.documentElement.getAttribute('data-ai-hints') === 'on';
+        }
+    }
+
+    function setAiHints(on) {
+        try {
+            if (on) {
+                sessionStorage.setItem(AI_HINTS_KEY, 'on');
+                document.documentElement.setAttribute('data-ai-hints', 'on');
+            } else {
+                sessionStorage.removeItem(AI_HINTS_KEY);
+                document.documentElement.removeAttribute('data-ai-hints');
+            }
+        } catch (_) {
+            if (on) {
+                document.documentElement.setAttribute('data-ai-hints', 'on');
+            } else {
+                document.documentElement.removeAttribute('data-ai-hints');
+            }
+        }
+    }
+
+    function toggleAiHints() {
+        setAiHints(!isAiHintsOn());
+    }
+
+    function attachAiHintsToggle() {
+        document.addEventListener('click', function (event) {
+            var btn = event.target.closest('#ai-hints-toggle');
+            if (btn) {
+                event.preventDefault();
+                toggleAiHints();
+            }
+        });
+    }
+
+    /* ---------------------------------------------------------------
      * Error handling — show user-friendly toast when HTMX requests
      * fail (network error, server error, timeout).
      * --------------------------------------------------------------- */
@@ -790,6 +839,7 @@
         attachTrickHistoryToggle();
         attachAuctionLogToggle();
         attachTextSizeToggle();
+        attachAiHintsToggle();
         attachErrorHandlers();
         attachAutoAdvanceHandler();
         var form = getCardPlayForm();

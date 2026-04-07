@@ -3674,3 +3674,90 @@ main {
     white-space: nowrap;
     border: 0;
 }
+
+/* --------------------------------------------------------------------------
+   23. AI Hints (#2185)
+   --------------------------------------------------------------------------
+   Hints are opt-in: hidden by default, visible when the user toggles
+   data-ai-hints="on" on <html> via the header toggle button.
+   -------------------------------------------------------------------------- */
+
+/* Toggle button — styled like the text-size toggle */
+.ai-hints-toggle {
+    background: var(--color-surface-light);
+    color: var(--color-text);
+    border: 1px solid var(--color-felt);
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ai-hints-toggle:hover {
+    background: var(--color-felt);
+}
+
+/* Active state when hints are on */
+html[data-ai-hints="on"] .ai-hints-toggle {
+    background: var(--color-legal-glow);
+    color: var(--color-black);
+    border-color: var(--color-legal-border);
+}
+
+/* --- Card hint badge --- */
+.card__hint-badge {
+    display: none;
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    font-size: 0.65rem;
+    line-height: 1;
+    z-index: 10;
+}
+
+html[data-ai-hints="on"] .card__hint-badge {
+    display: block;
+}
+
+/* --- Suggested card glow --- */
+/* The card--suggested class is always rendered but the visual treatment
+   is only applied when hints are enabled. */
+html[data-ai-hints="on"] .card--suggested {
+    border-color: #ffd54f;
+    box-shadow: 0 0 8px rgba(255, 213, 79, 0.7), 0 0 16px rgba(255, 213, 79, 0.35);
+}
+
+/* --- Bid suggestion hint --- */
+.ai-hint {
+    display: none;
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: rgba(255, 213, 79, 0.15);
+    border: 1px solid rgba(255, 213, 79, 0.4);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    line-height: 1.3;
+}
+
+.ai-hint__icon {
+    margin-right: 0.25rem;
+}
+
+html[data-ai-hints="on"] .ai-hint {
+    display: flex;
+    align-items: center;
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+    .ai-hints-toggle {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.7rem;
+    }
+
+    .ai-hint {
+        font-size: 0.8rem;
+        padding: 0.3rem 0.5rem;
+    }
+}

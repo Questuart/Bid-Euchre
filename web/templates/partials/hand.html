@@ -43,14 +43,17 @@
             {% if phase == "trick_play" and legal_plays is not none and idx in legal_plays %}
                 <button type="button"
                         id="hand-card-{{ idx }}"
-                        class="card card--{{ suit_class }} card--legal{% if bower %} card--bower{% endif %}"
+                        class="card card--{{ suit_class }} card--legal{% if bower %} card--bower{% endif %}{% if suggested_card_index is defined and suggested_card_index is not none and idx == suggested_card_index %} card--suggested{% endif %}"
                         title="{{ rank|display_rank }}{{ suit_sym }}{% if bower %} ({{ bower }} bower){% endif %} (tap to play)"
-                        aria-label="Play {{ rank|display_rank }} of {{ suit_name }}{{ copy_suffix }}{% if bower %} ({{ bower }} bower){% endif %}"
+                        aria-label="Play {{ rank|display_rank }} of {{ suit_name }}{{ copy_suffix }}{% if bower %} ({{ bower }} bower){% endif %}{% if suggested_card_index is defined and suggested_card_index is not none and idx == suggested_card_index %} (AI suggestion){% endif %}"
                         data-card-index="{{ idx }}">
                     <span class="card__rank" aria-hidden="true">{{ rank|display_rank }}</span>
                     <span class="card__suit" aria-hidden="true">{{ suit_sym }}</span>
                     {% if bower %}
                         <span class="card__bower-badge" title="{{ bower|capitalize }} bower" aria-label="{{ bower }} bower">{{ "RB" if bower == "right" else "LB" }}</span>
+                    {% endif %}
+                    {% if suggested_card_index is defined and suggested_card_index is not none and idx == suggested_card_index %}
+                        <span class="card__hint-badge" title="AI suggestion" aria-label="AI suggested play">💡</span>
                     {% endif %}
                 </button>
             {% else %}

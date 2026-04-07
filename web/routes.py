@@ -662,8 +662,17 @@ def _build_game_context(
             and not show_next
         ):
             ctx["legal_plays"] = engine.get_legal_plays(state)
+            # AI suggested play — the card index the AI recommends
+            ctx["suggested_card_index"] = engine.get_suggested_play(state)
         else:
             ctx["legal_plays"] = None
+            ctx["suggested_card_index"] = None
+
+        # AI suggested bid — shown during the human's bid turn
+        if ctx["show_bid_panel"]:
+            ctx["suggested_bid"] = engine.get_suggested_bid(state)
+        else:
+            ctx["suggested_bid"] = None
 
         # Currently winning seat in the active trick (for highlight).
         trick = hand.current_trick if hand.current_trick is not None else None
@@ -708,6 +717,8 @@ def _build_game_context(
         ctx["points_team0"] = 0
         ctx["points_team1"] = 0
         ctx["legal_plays"] = None
+        ctx["suggested_card_index"] = None
+        ctx["suggested_bid"] = None
         ctx["trick_winning_seat"] = None
         ctx["opp_left_count"] = 0
         ctx["partner_count"] = 0
