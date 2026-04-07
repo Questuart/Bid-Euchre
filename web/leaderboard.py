@@ -35,8 +35,6 @@ _LEADERBOARD_MATCH_STATUSES = ("active", "complete", "abandoned")
 EXCLUDED_TEST_PLAYERS: frozenset[str] = frozenset(
     {
         "QUE-TEST",
-        "StratBot",
-        "CLAUDE",
         "TEST",
         "MEEKS-TEST",
         "TEST3",
