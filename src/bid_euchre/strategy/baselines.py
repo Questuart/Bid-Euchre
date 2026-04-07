@@ -20,6 +20,11 @@ from ..core.cards import (
 from ..core.rules import get_legal_indices
 from .base import Strategy
 
+# Module-level version constant for baseline strategies. These strategies
+# have been stable since initial commit, so the version stays at 1.0.0
+# unless someone changes their decision logic.
+BASELINES_VERSION = "1.0.0"
+
 
 class BasicStrategy(Strategy):
     """
@@ -27,6 +32,8 @@ class BasicStrategy(Strategy):
 
     Simple rule-based approach with no lookahead or trump consideration.
     """
+
+    VERSION = BASELINES_VERSION
 
     def __init__(self, name: str = "basic"):
         super().__init__(name)
@@ -58,6 +65,8 @@ class RandomLegalStrategy(Strategy):
     - Verification that suit-follow enforcement works
     """
 
+    VERSION = BASELINES_VERSION
+
     def __init__(self, name: str = "random_legal", seed: Optional[int] = None):
         super().__init__(name)
         self.rng = random.Random(seed)
@@ -85,6 +94,8 @@ class AlwaysLowestLegalStrategy(Strategy):
     - Baseline for "passive" play
     - Often does okay at not wasting trump, but loses by never taking initiative
     """
+
+    VERSION = BASELINES_VERSION
 
     def __init__(self, name: str = "always_lowest"):
         super().__init__(name)
@@ -146,6 +157,8 @@ class AlwaysHighestLegalStrategy(Strategy):
     - Wastes trump when a low card would win
     - Sets partner up poorly
     """
+
+    VERSION = BASELINES_VERSION
 
     def __init__(self, name: str = "always_highest"):
         super().__init__(name)

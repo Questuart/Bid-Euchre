@@ -2,6 +2,7 @@
 Base strategy class and shared utilities.
 """
 
+import hashlib
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
@@ -15,7 +16,16 @@ from ..core.cards import (
 
 
 class Strategy(ABC):
-    """Abstract base class for Bid Euchre strategies."""
+    """Abstract base class for Bid Euchre strategies.
+
+    Subclasses should set a ``VERSION`` class attribute (semver string)
+    that is bumped on every behavioral change.  See
+    ``docs/02_agent/STRATEGY_VERSIONING.md`` for bump rules.
+    """
+
+    # Default version for strategies that have not opted into versioning.
+    # Concrete subclasses override this with their own semver string.
+    VERSION: str = "0.0.0"
 
     def __init__(self, name: str = "unnamed"):
         self.name = name
@@ -114,6 +124,24 @@ class Strategy(ABC):
             trump_suit: Trump suit for "suit" contracts, None otherwise
         """
         pass
+
+    def fingerprint(self) -> str:
+        """Return a short hex digest identifying this strategy's version and config.
+
+        The fingerprint is derived from the class name, ``VERSION``, and the
+        instance ``name``.  Subclasses with extra configuration (feature flags,
+        artifact paths, etc.) should override and include those values.
+
+        Returns:
+            8-character hex digest (first 8 chars of SHA-256).
+        """
+        parts = [
+            type(self).__name__,
+            type(self).VERSION,
+            self.name,
+        ]
+        blob = "|".join(parts).encode()
+        return hashlib.sha256(blob).hexdigest()[:8]
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}({self.name})"

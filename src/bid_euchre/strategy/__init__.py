@@ -61,6 +61,9 @@ from .glutton import (
 # "greedy" will continue to work via sys.modules alias.
 sys.modules[__name__ + ".greedy"] = sys.modules[__name__ + ".glutton"]
 
+# Versioning utilities
+from .versioning import collect_versions, compare_versions
+
 # Regression strategies - REMOVED: RegressionBidder (legacy pickle path)
 
 __all__ = [
@@ -101,4 +104,7 @@ __all__ = [
     # Legacy functions
     "choose_card_basic",
     "choose_card_greedy",
+    # Versioning
+    "collect_versions",
+    "compare_versions",
 ]
