@@ -82,7 +82,25 @@ def _play_to_trick_boundary(page: Page, timeout_s: float = 120.0) -> bool:
             page.wait_for_timeout(250)
             continue
 
-        # Nothing to do — wait for AI to advance
+        # Handle AI-led trick starts via the auto-advance form.  When it
+        # is the AI's turn to play, the game renders a hidden auto-advance
+        # form instead of a visible Next button.  Submit it directly so the
+        # AI action goes through the browser helper rather than being
+        # bypassed (#2605).
+        auto_submitted = page.evaluate(
+            """() => {
+                const f = document.querySelector(
+                    '.next-controls--auto-advance #next-step-form'
+                );
+                if (f) { f.requestSubmit(); return true; }
+                return false;
+            }"""
+        )
+        if auto_submitted:
+            page.wait_for_timeout(250)
+            continue
+
+        # Nothing to do — wait briefly for HTMX swap
         page.wait_for_timeout(500)
 
     return False
@@ -307,7 +325,6 @@ def test_reduced_motion_disables_slot_fade(
     if animation_name is None:
         pytest.skip("No .card-slot--empty found in current state")
 
-    assert animation_name == "none", (
-        f"Expected animation-name 'none' under reduced-motion, "
-        f"got '{animation_name}'"
-    )
+    assert (
+        animation_name == "none"
+    ), f"Expected animation-name 'none' under reduced-motion, got '{animation_name}'"
