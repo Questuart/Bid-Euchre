@@ -35,6 +35,8 @@
     --team-ai: #42a5f5;
     /* AI card delay — time before an AI card is revealed (#2330, #2386) */
     --ai-card-delay: 0.75s;
+    /* Pass button blue — distinct from Submit Bid green (#2545) */
+    --color-pass-blue: #1565c0;
 }
 
 *,
@@ -1267,13 +1269,26 @@ main {
     gap: 0.5rem;
 }
 
-/* Single-line rows for Type/Bid/Contract — label left, control right (#2521 item 2) */
+/* Single-line rows for Type/Bid/Contract — label left, control right (#2521 item 2).
+   Surface elevation treatment: each row is a visually distinct "card" so
+   new players see three separate form controls at a glance (#2545). */
 .bid-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
     width: 100%;
+    background: var(--color-surface-light);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Accent left border on focused row for extra signal (#2545) */
+.bid-row:focus-within {
+    border-left: 3px solid var(--color-legal-glow);
+    padding-left: calc(0.75rem - 2px);  /* compensate for thicker border */
 }
 
 .bid-row label {

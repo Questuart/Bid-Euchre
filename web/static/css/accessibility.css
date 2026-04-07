@@ -64,9 +64,9 @@ button.card--legal:focus-visible {
     outline-offset: 2px;
 }
 
-/* Pass button */
+/* Pass button — blue focus ring to match the blue outlined button (#2545) */
 .pass-btn:focus-visible {
-    outline: 3px solid var(--color-legal-glow, #4caf50);
+    outline: 3px solid var(--color-pass-blue, #1565c0);
     outline-offset: 2px;
 }
 
@@ -298,14 +298,15 @@ html[data-text-size="large"] .text-size-toggle {
 
 .pass-btn {
     /* Full-width to match Submit Bid, both visually and tap-target wise
-       (#2521 item 3). */
+       (#2521 item 3).  Outlined blue to read as a distinct primary action
+       clearly differentiated from the green Submit Bid (#2545). */
     display: block;
     width: 100%;
     padding: 0.6rem 1.25rem;
-    border: 2px solid var(--color-text-muted, #bdbdbd);
+    border: 2px solid var(--color-pass-blue, #1565c0);
     border-radius: 4px;
     background: transparent;
-    color: var(--color-text-muted, #bdbdbd);
+    color: var(--color-pass-blue, #1565c0);
     font-weight: 600;
     cursor: pointer;
     font-size: 0.9rem;
@@ -313,6 +314,6 @@ html[data-text-size="large"] .text-size-toggle {
 }
 
 .pass-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--color-text, #fafafa);
+    background: rgba(21, 101, 192, 0.12);
+    color: #ffffff;
 }
