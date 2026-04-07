@@ -3,9 +3,10 @@
 **Analyst:** analyst-a
 **Date:** 2026-04-07
 **Task:** `2eeee0e34540`
-**Prior work:** [`2026-04-07_cash_winners_contract_analysis.md`](./2026-04-07_cash_winners_contract_analysis.md) (code analysis),
-[`2026-04-06_experiment_pb_analysis.md`](./2026-04-06_experiment_pb_analysis.md) (P+B self-play ablation),
-[`2026-04-06_cash_a_deep_audit.md`](./2026-04-06_cash_a_deep_audit.md) (deep audit)
+**Prior work:**
+- `plans/sessions/2026-04-07_cash_winners_contract_analysis.md` (code analysis)
+- `plans/sessions/2026-04-06_experiment_pb_analysis.md` (P+B self-play ablation, PR #2564)
+- `plans/sessions/2026-04-06_cash_a_deep_audit.md` (deep audit)
 **Status:** COMPLETE
 
 ---
@@ -282,7 +283,7 @@ After implementing the gating:
    - Expected: aggregate Δ ≈ +0.16 (improved over +0.109)
 
 3. **Flip the default:** After validation, change `cash_winners_on_lead`
-   default from `False` to `True` in `GluttonStrategy.__init__`.
+   default from `False` to `True` in the GluttonStrategy constructor.
 
 ---
 
