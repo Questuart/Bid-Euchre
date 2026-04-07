@@ -2550,6 +2550,147 @@ class GBTActionValueBidder(BiddingPolicy):
         return best_action
 
 
+def _would_overbid_last(obs: BiddingObservation, raw: BidAction) -> bool:
+    """Enhancement A predicate: detect dealer overcall when team hasn't bid.
+
+    Returns True when:
+    1. There is a standing bid (not an all-pass auction).
+    2. Neither the dealer nor their partner has bid yet — the dealer is
+       the "last chance" bidder for the team.
+    3. The raw action overcalls the opponent's standing bid.
+
+    When all three hold, the filter suppresses the overcall to a pass.
+    """
+    # All-pass auction (no high bid) is a redeal scenario, not an overbid.
+    if obs.current_high_bid <= 0:
+        return False
+
+    # Check whether our team has bid already.
+    partner_seat = (obs.seat + 2) % 4
+    for entry in obs.auction_transcript:
+        if entry.get("action") != "BID":
+            continue
+        if entry.get("seat") in (obs.seat, partner_seat):
+            return False  # Team already committed — let the model decide.
+
+    # Opponent holds the contract and our team has not bid.
+    # Any overcall by the dealer in this state is the failure mode we target.
+    return True
+
+
+def _would_nudge_partner(obs: BiddingObservation, raw: BidAction) -> bool:
+    """Enhancement B predicate: detect +1 same-suit bump of partner's bid.
+
+    Returns True when:
+    1. The raw action is a regular suit bid (not moon/loner, not HIGH/LOW).
+    2. Partner has bid in the same suit.
+    3. The raw bid is exactly partner's tricks + 1 in that suit.
+    4. We are the dealer (last bidder).
+
+    This targets the lazy "+1 nudge" failure mode where the model bumps
+    partner's already-committed suit contract by the minimum increment.
+    """
+    if raw.bid_type != "regular":
+        return False
+    if raw.contract not in {"C", "D", "H", "S"}:
+        return False
+
+    # Find the most recent BID from partner.
+    partner_seat = (obs.seat + 2) % 4
+    partner_bid: dict | None = None
+    for entry in obs.auction_transcript:
+        if entry.get("action") != "BID":
+            continue
+        if entry.get("seat") != partner_seat:
+            continue
+        partner_bid = entry  # last write wins — transcripts are time-ordered
+
+    if partner_bid is None:
+        return False
+    if partner_bid.get("contract_type") != "suit":
+        return False
+    if partner_bid.get("trump") != raw.contract:
+        return False
+
+    # Same-suit bump: fire only on the exact +1 nudge.
+    if raw.n != partner_bid.get("tricks_bid", -99) + 1:
+        return False
+
+    # Only fires when we are the dealer (last bidder).
+    return obs.seat == obs.dealer_seat
+
+
+class FilteredGBTBidder(BiddingPolicy):
+    """Wrapper around GBTActionValueBidder with post-inference filters.
+
+    Applies independently togglable behavioural filters after the inner
+    bidder produces a raw action:
+
+    - **flag_a** (Enhancement A): Suppress dealer overcalls when the team
+      has not yet bid and there is a standing opponent contract.
+    - **flag_b** (Enhancement B): Suppress same-suit +1 nudge of partner's
+      bid when the dealer is the last bidder.
+
+    Both filters only fire when the current seat is the dealer (last
+    bidder in LOD auction order).
+
+    Construction modes:
+    - Direct: ``FilteredGBTBidder(inner=gbt_bidder, flag_a=True)``
+    - From YAML config: ``FilteredGBTBidder(artifact_path="...", flag_a=True)``
+      — constructs the inner GBTActionValueBidder automatically.
+    """
+
+    def __init__(
+        self,
+        inner: Optional[GBTActionValueBidder] = None,
+        flag_a: bool = True,
+        flag_b: bool = False,
+        name: str = "filtered_gbt_action_value",
+        *,
+        artifact_path: Optional[str] = None,
+    ):
+        super().__init__(name=name)
+
+        if inner is not None and artifact_path is not None:
+            raise ValueError("Specify either 'inner' or 'artifact_path', not both")
+        if inner is None and artifact_path is None:
+            raise ValueError(
+                "FilteredGBTBidder requires either 'inner' (GBTActionValueBidder) "
+                "or 'artifact_path' to construct one"
+            )
+
+        if inner is not None:
+            self._inner = inner
+        else:
+            assert artifact_path is not None  # for type narrowing
+            self._inner = GBTActionValueBidder(
+                artifact_path=artifact_path, name=f"{name}_inner"
+            )
+
+        self._flag_a = flag_a
+        self._flag_b = flag_b
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        """Select action via inner bidder, then apply post-inference filters."""
+        raw = self._inner.choose_bid(obs)
+
+        # Pass-through: the inner bidder already chose to pass.
+        if raw.is_pass():
+            return raw
+
+        # Filters only apply to the dealer (last bidder in auction order).
+        if obs.seat != obs.dealer_seat:
+            return raw
+
+        if self._flag_a and _would_overbid_last(obs, raw):
+            return BidAction.pass_bid()
+
+        if self._flag_b and _would_nudge_partner(obs, raw):
+            return BidAction.pass_bid()
+
+        return raw
+
+
 def predict_logistic(model_dict: dict, features: np.ndarray) -> float:
     """Sigmoid prediction from a logistic model dict.
 

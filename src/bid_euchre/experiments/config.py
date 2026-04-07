@@ -21,6 +21,7 @@ from ..strategy import (
     ArtifactBidder,
     BasicStrategy,
     BiddingPolicy,
+    FilteredGBTBidder,
     FixedBidder,
     GBTActionValueBidder,
     GluttonIsolatedStrategy,
@@ -63,6 +64,7 @@ BIDDING_POLICY_REGISTRY: dict[str, type] = {
     "HybridOLSaBidder": HybridOLSaBidder,
     "ActionValueBidder": ActionValueBidder,
     "GBTActionValueBidder": GBTActionValueBidder,
+    "FilteredGBTBidder": FilteredGBTBidder,
     "TwoStageActionValueBidder": TwoStageActionValueBidder,
 }
 
@@ -77,6 +79,7 @@ BIDDING_REQUIRED_PARAMS: dict[str, list[str]] = {
     "HybridOLSaBidder": ["artifact_path"],
     "ActionValueBidder": ["artifact_path"],
     "GBTActionValueBidder": ["artifact_path"],
+    "FilteredGBTBidder": ["artifact_path"],
     "TwoStageActionValueBidder": ["artifact_path"],
 }
 
