@@ -138,7 +138,7 @@ class AIManager:
                         name="olsa",
                         skip_behavioral_check=True,
                     ),
-                    play_strategy=GluttonStrategy(),
+                    play_strategy=GluttonStrategy(cash_winners_on_lead=True),
                 )
                 logger.info("Loaded OLSa model from %s", path)
                 return
@@ -174,7 +174,7 @@ class AIManager:
                         name="bud_bot",
                         skip_behavioral_check=True,
                     ),
-                    play_strategy=GluttonStrategy(),
+                    play_strategy=GluttonStrategy(cash_winners_on_lead=True),
                 )
                 logger.info("Loaded Bud Bot model from %s", path)
                 return

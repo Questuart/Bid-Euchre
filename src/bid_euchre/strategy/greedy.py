@@ -16,16 +16,21 @@ from .base import Strategy, card_value_for_dump
 # GluttonStrategy or GluttonIsolatedStrategy. See
 # docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
 # changelog template.
+GLUTTON_STRATEGY_VERSION = "0.9.0"
+"""Changelog:
 
-# Changelog:
-#   0.7.0 — Initial versioned baseline (PR #2529)
-#   0.8.0 — Cash-A: sure-winner lead priority, draw-trump-first,
-#           draw trump from the top (behind ``cash_winners_on_lead``
-#           flag, default False). Category: MINOR.
-#   0.8.1 — Cash-A: _draw_trump_lead sure-winner-first fallback
-#           (prevents burning LB when second RB is still out).
-#           Category: PATCH.
-GLUTTON_STRATEGY_VERSION = "0.8.1"
+- 0.7.0 — Initial versioned baseline (PR #2529)
+- 0.8.0 — Cash-A: sure-winner lead priority, draw-trump-first,
+  draw trump from the top (behind ``cash_winners_on_lead``
+  flag, default False). Category: MINOR.
+- 0.8.1 — Cash-A: ``_draw_trump_lead`` sure-winner-first fallback
+  (prevents burning LB when second RB is still out).
+  Category: PATCH.
+- 0.9.0 — Gate Cash-A to high/low contracts only. Suit contracts
+  suppress steps 0.5, 0.75, and the step 2 modification
+  regardless of ``cash_winners_on_lead`` flag value.
+  Category: MINOR.
+"""
 
 
 class GreedyStrategy(Strategy):
@@ -319,6 +324,15 @@ class GluttonStrategy(Strategy):
 
         suit_counts = self._get_suit_counts(hand)
 
+        # Cash-A contract-type gating: only fire Cash-A behavior for
+        # high/low contracts where experiment data shows +0.66 Δ tricks.
+        # Suit contracts show -0.13 Δ tricks — suppress there. See
+        # plans/sessions/2026-04-07_cash_a_h2h_experiment_report.md §5.
+        cash_a_active = self.cash_winners_on_lead and self._contract_type in (
+            "high",
+            "low",
+        )
+
         if self._contract_type == "suit" and self._trump_suit is not None:
             # SUIT CONTRACT LEADS
 
@@ -348,11 +362,11 @@ class GluttonStrategy(Strategy):
                 return right_bower_idx
 
             # 0.5 NEW (Cash-A, Fix 1): Cash established sure winners first.
-            # Gated by ``cash_winners_on_lead`` (default False on both
-            # Glutton classes). Picks the sure winner from the shortest
-            # effective suit to free up length for future leads, breaking
-            # ties on highest card value.
-            if self.cash_winners_on_lead:
+            # Gated by ``cash_a_active`` which suppresses Cash-A in suit
+            # contracts (experiment data: -0.13 Δ). Picks the sure winner
+            # from the shortest effective suit to free up length for
+            # future leads, breaking ties on highest card value.
+            if cash_a_active:
                 sure_winner_leads = [
                     idx
                     for idx in legal_indices
@@ -370,9 +384,9 @@ class GluttonStrategy(Strategy):
 
             # 0.75 NEW (Cash-A, Fix 1b): Draw opponent trump before
             # cashing side winners (Defect F). Suit contracts only.
-            # Gated by the same ``cash_winners_on_lead`` flag.
+            # Gated by ``cash_a_active`` (suppressed in suit; see §5).
             if (
-                self.cash_winners_on_lead
+                cash_a_active
                 and trump_indices
                 and self._opponents_might_hold_trump(seat=player_index)
             ):
@@ -401,11 +415,11 @@ class GluttonStrategy(Strategy):
             if trump_count >= 4 and trump_indices:
                 if not (has_right and has_left):
                     # Cash-A, Fix 2: lead highest trump to clear opponents'
-                    # top trump ("draw trump from the top"). Gated by the
-                    # same ``cash_winners_on_lead`` flag so Cash-A can be
-                    # feature-isolated. Previous ``min()`` left master
-                    # trump in hand until tricks 9-10 (#2506).
-                    if self.cash_winners_on_lead:
+                    # top trump ("draw trump from the top"). Gated by
+                    # ``cash_a_active`` (suppressed in suit; see §5).
+                    # Previous ``min()`` left master trump in hand until
+                    # tricks 9-10 (#2506).
+                    if cash_a_active:
                         return self._draw_trump_lead(trump_indices, hand)
                     # Lead lowest trump to draw trump without burning top cards
                     return min(trump_indices, key=card_value)
@@ -443,9 +457,8 @@ class GluttonStrategy(Strategy):
                 if longest_suit_indices:
                     # Cash-A fallback guard: the longest-suit heuristic
                     # may skip a sure winner in a short suit. Re-check
-                    # sure winners before falling through when the flag
-                    # is set.
-                    if self.cash_winners_on_lead:
+                    # sure winners before falling through when active.
+                    if cash_a_active:
                         sure_winner_leads = [
                             idx
                             for idx in legal_indices
@@ -456,7 +469,7 @@ class GluttonStrategy(Strategy):
                     return select(longest_suit_indices, key=card_value)
 
             # Cash-A fallback guard for the empty-suit-counts path too.
-            if self.cash_winners_on_lead:
+            if cash_a_active:
                 sure_winner_leads = [
                     idx
                     for idx in legal_indices
@@ -983,6 +996,12 @@ class GluttonIsolatedStrategy(Strategy):
 
         suit_counts = self._get_suit_counts(hand)
 
+        # Cash-A contract-type gating (mirrors GluttonStrategy._choose_lead).
+        cash_a_active = self.cash_winners_on_lead and self._contract_type in (
+            "high",
+            "low",
+        )
+
         if self._contract_type == "suit" and self._trump_suit is not None:
             from ..core.cards import is_left_bower, is_right_bower
 
@@ -1011,7 +1030,8 @@ class GluttonIsolatedStrategy(Strategy):
                 return right_bower_idx
 
             # 0.5 NEW (Cash-A, Fix 1): Cash established sure winners first.
-            if self.cash_winners_on_lead:
+            # Gated by ``cash_a_active`` (suppressed in suit; see §5).
+            if cash_a_active:
                 sure_winner_leads = [
                     idx
                     for idx in legal_indices
@@ -1029,8 +1049,9 @@ class GluttonIsolatedStrategy(Strategy):
 
             # 0.75 NEW (Cash-A, Fix 1b): Draw opponent trump before
             # cashing side winners. Suit contracts only.
+            # Gated by ``cash_a_active`` (suppressed in suit; see §5).
             if (
-                self.cash_winners_on_lead
+                cash_a_active
                 and trump_indices
                 and self._opponents_might_hold_trump(seat=player_index)
             ):
@@ -1058,7 +1079,8 @@ class GluttonIsolatedStrategy(Strategy):
             if trump_count >= 4 and trump_indices:
                 if not (has_right and has_left):
                     # Cash-A, Fix 2: lead highest trump when flagged on.
-                    if self.cash_winners_on_lead:
+                    # Gated by ``cash_a_active`` (suppressed in suit).
+                    if cash_a_active:
                         return self._draw_trump_lead(trump_indices, hand)
                     return min(trump_indices, key=card_value)
 
@@ -1088,7 +1110,7 @@ class GluttonIsolatedStrategy(Strategy):
                 ]
                 if longest_suit_indices:
                     # Cash-A fallback guard in high/low.
-                    if self.cash_winners_on_lead:
+                    if cash_a_active:
                         sure_winner_leads = [
                             idx
                             for idx in legal_indices
@@ -1099,7 +1121,7 @@ class GluttonIsolatedStrategy(Strategy):
                     return max(longest_suit_indices, key=card_value)
 
             # Cash-A fallback guard for the empty-suit-counts path.
-            if self.cash_winners_on_lead:
+            if cash_a_active:
                 sure_winner_leads = [
                     idx
                     for idx in legal_indices

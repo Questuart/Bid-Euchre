@@ -201,13 +201,13 @@ class TestSimPathHooksAlreadyCorrect:
 class TestCashWinnersOnLead:
     """Cash-A: sure-winner lead + draw-trump-first + draw trump from the top.
 
-    All behavior is gated by ``cash_winners_on_lead`` which defaults to
-    ``False`` on both ``GluttonStrategy`` and ``GluttonIsolatedStrategy``.
-    Flag-off tests double as baseline regression guards for the operator
-    proving window before the flag flip.
+    All behavior is gated by ``cash_winners_on_lead`` **and** contract-type
+    gating: Cash-A only fires for high/low contracts. In suit contracts,
+    ``cash_winners_on_lead=True`` produces identical behavior to ``False``
+    (experiment data: -0.13 Δ tricks in suit, +0.66 in high/low).
 
-    See plans/sessions/2026-04-06_ai_play_strategy_investigation.md
-    §Recommended PR Decomposition for context.
+    See plans/sessions/2026-04-07_cash_a_h2h_experiment_report.md §5
+    for the gating recommendation.
     """
 
     def test_sure_winner_lead_high_contract(self):
@@ -261,10 +261,10 @@ class TestCashWinnersOnLead:
             "S", "T"
         ), f"Cash-A (flag on) should lead sure-winner T♠, got {hand[cash_choice]}"
 
-    def test_draw_trump_first_on_suit(self):
-        """Fix 1b (Defect F): in a suit contract, with flag on, AI draws
-        trump from the top instead of burning a side-suit ace while
-        opponents might still hold trump."""
+    def test_suit_contract_suppresses_cash_a(self):
+        """Contract-type gating: in suit contracts, ``cash_winners_on_lead=True``
+        behaves identically to baseline (flag off). Cash-A steps 0.5, 0.75,
+        and step 2 modification are all suppressed."""
         hand = [
             Card("S", "K"),  # idx 0 - trump K (not a sure winner)
             Card("H", "A"),  # idx 1 - side-suit ace
@@ -272,33 +272,27 @@ class TestCashWinnersOnLead:
             Card("D", "T"),  # idx 3 - diamond filler
         ]
 
-        # Baseline (flag off): non-trump-ace heuristic burns A♥ while
-        # trump is still out. This is the #2506 defect.
+        # Baseline (flag off): non-trump-ace heuristic leads A♥.
         baseline = GluttonStrategy()
         baseline.on_hand_start(hand, "suit", "S", player_index=0)
         baseline_choice = baseline.choose_card(hand, [], "suit", "S", 0)
         assert hand[baseline_choice] == Card(
             "H", "A"
-        ), f"Baseline (flag off) should burn A♥, got {hand[baseline_choice]}"
+        ), f"Baseline (flag off) should lead A♥, got {hand[baseline_choice]}"
 
-        # Cash-A (flag on): opponents not inferred-void in trump, so Fix
-        # 1b draws trump from the top (highest trump = K♠).
+        # Cash-A (flag on, suit contract): gating suppresses Cash-A, so
+        # behavior matches baseline — leads A♥, not trump K♠.
         cash = GluttonStrategy(cash_winners_on_lead=True)
         cash.on_hand_start(hand, "suit", "S", player_index=0)
         cash_choice = cash.choose_card(hand, [], "suit", "S", 0)
         assert hand[cash_choice] == Card(
-            "S", "K"
-        ), f"Cash-A (flag on) should draw trump K♠, got {hand[cash_choice]}"
+            "H", "A"
+        ), f"Cash-A gated in suit should lead A♥ like baseline, got {hand[cash_choice]}"
 
-    def test_lead_lowest_trump_fallback_when_drawing(self):
-        """Fix 2 + Claim 1 fix: with flag on, the ≥4-trump-no-both-bowers
-        branch leads the *lowest* trump (T♠) when no trump is a sure winner.
-
-        Before Cash-A.1, this test asserted LB (J♣) — which was the
-        Claim 1 bug (burns LB while second RB is still unaccounted).
-        Now the sure-winner-first fallback returns the lowest trump to
-        feel out the trump shape.
-        """
+    def test_suit_gating_step2_leads_lowest_trump(self):
+        """Contract-type gating in step 2: with flag on in suit, the
+        ≥4-trump-no-both-bowers branch uses baseline behavior (min trump)
+        because Cash-A is suppressed."""
         hand = [
             Card("S", "T"),  # idx 0 - trump (value 10)
             Card("S", "Q"),  # idx 1 - trump (value 12)
@@ -307,9 +301,8 @@ class TestCashWinnersOnLead:
             Card("D", "T"),  # idx 4 - offsuit filler
         ]
 
-        # Seed opponent trump voids so Fix 1b is suppressed and Fix 2
-        # (step 2) is the branch under test. No trump is a sure winner
-        # (both RBs unaccounted), so the fallback leads the lowest trump.
+        # Seed opponent trump voids so step 0.75 path is suppressed and
+        # step 2 is the branch under test.
         def _seed_voids(strategy):
             strategy._void_suits_by_seat[1].add("S")
             strategy._void_suits_by_seat[3].add("S")
@@ -322,13 +315,14 @@ class TestCashWinnersOnLead:
             hand[baseline_choice] == Card("S", "T")
         ), f"Baseline (flag off) should draw lowest trump T♠, got {hand[baseline_choice]}"
 
+        # Flag on in suit: gating suppresses Cash-A, same result as baseline.
         cash = GluttonStrategy(cash_winners_on_lead=True)
         cash.on_hand_start(hand, "suit", "S", player_index=0)
         _seed_voids(cash)
         cash_choice = cash.choose_card(hand, [], "suit", "S", 0)
-        assert (
-            hand[cash_choice] == Card("S", "T")
-        ), f"Cash-A (flag on) should lead lowest trump T♠ (Claim 1 fix), got {hand[cash_choice]}"
+        assert hand[cash_choice] == Card(
+            "S", "T"
+        ), f"Cash-A gated in suit should lead T♠ like baseline, got {hand[cash_choice]}"
 
     def test_default_flag_preserves_baseline_behavior(self):
         """Explicit regression guard: ``GluttonStrategy()`` with no
@@ -374,9 +368,9 @@ class TestCashWinnersOnLead:
             f"must preserve baseline lead (A♥) — got {hand[choice]}"
         )
 
-    def test_isolated_strategy_cash_winners_on_lead_enabled(self):
+    def test_isolated_strategy_suit_gating(self):
         """``GluttonIsolatedStrategy`` with ``cash_winners_on_lead=True``
-        draws trump in the same Defect F scenario as ``GluttonStrategy``."""
+        in a suit contract behaves like baseline (A♥) — Cash-A suppressed."""
         hand = [
             Card("S", "K"),
             Card("H", "A"),
@@ -387,20 +381,20 @@ class TestCashWinnersOnLead:
         isolated = GluttonIsolatedStrategy(smart_leads=True, cash_winners_on_lead=True)
         isolated.on_hand_start(hand, "suit", "S", player_index=0)
         choice = isolated.choose_card(hand, [], "suit", "S", 0)
-        assert hand[choice] == Card("S", "K"), (
-            "GluttonIsolatedStrategy with cash_winners_on_lead=True must "
-            f"draw trump K♠ — got {hand[choice]}"
+        assert hand[choice] == Card("H", "A"), (
+            "GluttonIsolatedStrategy with cash_winners_on_lead=True in suit "
+            f"must lead A♥ (gating suppresses Cash-A) — got {hand[choice]}"
         )
 
-    def test_version_bumped_to_0_8_1(self):
-        """Cash-A.1 bumps GLUTTON_STRATEGY_VERSION from 0.8.0 → 0.8.1."""
+    def test_version_bumped_to_0_9_0(self):
+        """Cash-A contract-type gating bumps version to 0.9.0."""
         from bid_euchre.strategy.greedy import GLUTTON_STRATEGY_VERSION
 
-        assert GLUTTON_STRATEGY_VERSION == "0.8.1"
-        assert GluttonStrategy.VERSION == "0.8.1"
-        assert GluttonIsolatedStrategy.VERSION == "0.8.1"
+        assert GLUTTON_STRATEGY_VERSION == "0.9.0"
+        assert GluttonStrategy.VERSION == "0.9.0"
+        assert GluttonIsolatedStrategy.VERSION == "0.9.0"
 
-    # ---- Cash-A.1 new tests (sure-winner-first fallback) ----
+    # ---- Contract-type gating tests (Cash-A.1 → 0.9.0 update) ----
 
     @pytest.mark.parametrize(
         "cls,kwargs",
@@ -413,27 +407,27 @@ class TestCashWinnersOnLead:
         ],
         ids=["Glutton", "GluttonIsolated"],
     )
-    def test_draw_trump_lowest_fallback_when_masters_unseen(self, cls, kwargs):
-        """Claim 1 repro: hand has LB + non-bower trump, second RB still
-        unaccounted. _draw_trump_lead must return the lowest trump (T♠),
-        not LB. Mirrors the operator's trick-2 failure scenario."""
+    def test_suit_gating_suppresses_step0_5_sure_winners(self, cls, kwargs):
+        """With flag on in a suit contract, step 0.5 (cash sure winners)
+        is suppressed. The baseline path fires instead — non-trump ace (A♥)
+        leads instead of any sure-winner trump."""
         hand = [
             Card("C", "J"),  # LB (value 15, but NOT a sure winner)
             Card("S", "A"),  # trump A (value 14)
             Card("S", "K"),  # trump K (value 13)
-            Card("S", "T"),  # trump T (value 10) — expected lead
-            Card("H", "A"),  # offsuit
+            Card("S", "T"),  # trump T (value 10)
+            Card("H", "A"),  # offsuit — baseline non-trump ace lead
         ]
 
         strat = cls(**kwargs)
         strat.on_hand_start(hand, "suit", "S", player_index=0)
-        # Mark one RB as seen (trick 1), second RB still out.
         strat._seen_counts[Card("S", "J")] = 1
 
         choice = strat.choose_card(hand, [], "suit", "S", 0)
-        assert hand[choice] == Card("S", "T"), (
-            f"{cls.__name__}: should lead lowest trump T♠ when second RB "
-            f"is unaccounted — got {hand[choice]}"
+        # Gating suppresses Cash-A; baseline step 1 leads A♥.
+        assert hand[choice] == Card("H", "A"), (
+            f"{cls.__name__}: suit gating should suppress Cash-A, "
+            f"leading baseline A♥ — got {hand[choice]}"
         )
 
     @pytest.mark.parametrize(
@@ -447,26 +441,26 @@ class TestCashWinnersOnLead:
         ],
         ids=["Glutton", "GluttonIsolated"],
     )
-    def test_draw_trump_prefers_sure_winner_when_masters_accounted(self, cls, kwargs):
-        """Both RBs seen → LB is a sure winner. _draw_trump_lead must
-        lead LB (highest sure-winner trump), not the lowest trump."""
+    def test_suit_gating_suppresses_step2_draw_top(self, cls, kwargs):
+        """With flag on in suit, step 2 modification (draw trump from top
+        via _draw_trump_lead) is suppressed. Baseline leads A♥."""
         hand = [
             Card("C", "J"),  # LB — sure winner now (both RBs gone)
             Card("S", "A"),  # trump A — also sure winner
             Card("S", "K"),  # trump K
             Card("S", "T"),  # trump T
-            Card("H", "A"),  # offsuit
+            Card("H", "A"),  # offsuit — baseline leads this
         ]
 
         strat = cls(**kwargs)
         strat.on_hand_start(hand, "suit", "S", player_index=0)
-        # Both RBs accounted for (played in earlier tricks).
         strat._seen_counts[Card("S", "J")] = 2
 
         choice = strat.choose_card(hand, [], "suit", "S", 0)
-        assert hand[choice] == Card("C", "J"), (
-            f"{cls.__name__}: should lead LB (sure winner) when both RBs "
-            f"are accounted for — got {hand[choice]}"
+        # Gating suppresses Cash-A step 0.5 and 2; baseline leads A♥.
+        assert hand[choice] == Card("H", "A"), (
+            f"{cls.__name__}: suit gating should suppress Cash-A, "
+            f"leading baseline A♥ — got {hand[choice]}"
         )
 
     @pytest.mark.parametrize(
@@ -480,25 +474,83 @@ class TestCashWinnersOnLead:
         ],
         ids=["Glutton", "GluttonIsolated"],
     )
-    def test_draw_trump_trump_dominant_hand_cashes_top(self, cls, kwargs):
-        """Trump-dominant hand: A♠, K♠, Q♠, T♠ with both RBs + both LBs
-        seen. All trump are sure winners — must lead A♠ (highest value)."""
+    def test_suit_gating_trump_dominant_leads_baseline(self, cls, kwargs):
+        """Trump-dominant hand in suit with flag on: gating suppresses
+        Cash-A, so baseline step 1 leads A♥ (non-trump ace)."""
         hand = [
-            Card("S", "A"),  # trump A (value 14) — expected lead
+            Card("S", "A"),  # trump A (value 14)
             Card("S", "K"),  # trump K (value 13)
             Card("S", "Q"),  # trump Q (value 12)
             Card("S", "T"),  # trump T (value 10)
-            Card("H", "A"),  # offsuit
+            Card("H", "A"),  # offsuit — baseline leads this
         ]
 
         strat = cls(**kwargs)
         strat.on_hand_start(hand, "suit", "S", player_index=0)
-        # All bowers accounted for.
         strat._seen_counts[Card("S", "J")] = 2
         strat._seen_counts[Card("C", "J")] = 2
 
         choice = strat.choose_card(hand, [], "suit", "S", 0)
+        # Gating suppresses Cash-A; baseline step 1 leads A♥.
+        assert hand[choice] == Card("H", "A"), (
+            f"{cls.__name__}: suit gating should suppress Cash-A, "
+            f"leading baseline A♥ — got {hand[choice]}"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_high_contract_cash_a_still_fires(self, cls, kwargs):
+        """In high contracts, Cash-A fallback guard still fires when flag
+        is on — sure winner A♠ is preferred over longest-suit K♣."""
+        hand = [
+            Card("S", "A"),  # sure winner in high (nothing beats A)
+            Card("C", "K"),  # longest-suit top card under baseline
+            Card("C", "Q"),
+            Card("C", "T"),
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "high", None, player_index=0)
+        choice = strat.choose_card(hand, [], "high", None, 0)
         assert hand[choice] == Card("S", "A"), (
-            f"{cls.__name__}: should lead A♠ (highest sure winner) in "
-            f"trump-dominant hand — got {hand[choice]}"
+            f"{cls.__name__} in high: Cash-A should fire, "
+            f"leading A♠ — got {hand[choice]}"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_low_contract_cash_a_still_fires(self, cls, kwargs):
+        """In low contracts, Cash-A fallback guard still fires when flag
+        is on — sure winner T♠ is preferred over longest-suit J♣."""
+        hand = [
+            Card("S", "T"),  # sure winner in low (T is highest value)
+            Card("C", "K"),
+            Card("C", "Q"),
+            Card("C", "J"),  # longest-suit best in low (J has value 3)
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "low", None, player_index=0)
+        choice = strat.choose_card(hand, [], "low", None, 0)
+        assert hand[choice] == Card("S", "T"), (
+            f"{cls.__name__} in low: Cash-A should fire, "
+            f"leading T♠ — got {hand[choice]}"
         )
