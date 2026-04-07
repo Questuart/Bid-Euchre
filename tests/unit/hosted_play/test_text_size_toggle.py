@@ -97,6 +97,14 @@ class TestBaseHtmlFoucPrevention:
         game_js_pos = base_html.find("game.js")
         assert fouc_pos < game_js_pos, "FOUC script must precede game.js"
 
+    def test_fouc_defaults_to_large(self, base_html):
+        """Large text is the default — FOUC script must apply large unless
+        user explicitly opted out (#2521 item 1)."""
+        # The script should check for 'default' opt-out, not 'large' opt-in
+        assert (
+            "!=='default'" in base_html
+        ), "FOUC script should default to large text (check for opt-out, not opt-in)"
+
 
 # ---------------------------------------------------------------------------
 # accessibility.css — large mode rule
@@ -169,3 +177,10 @@ class TestGameJsToggleLogic:
         """Toggle should set/remove data-text-size on documentElement."""
         assert "data-text-size" in game_js
         assert "document.documentElement" in game_js
+
+    def test_large_is_default(self, game_js):
+        """getTextSize should return 'large' when no preference is stored (#2521 item 1)."""
+        # The function should treat missing/null localStorage as 'large'
+        assert (
+            "=== 'default' ? 'default' : 'large'" in game_js
+        ), "getTextSize should default to 'large' when localStorage has no value"

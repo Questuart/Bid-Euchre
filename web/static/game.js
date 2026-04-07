@@ -374,29 +374,37 @@
     }
 
     /* ---------------------------------------------------------------
-     * Text size toggle — default (100%) and large (125%).
+     * Text size toggle — large (125%) is the DEFAULT (#2521 item 1).
+     * Standard (100%) is opt-in via the toggle button.
      * Persisted in localStorage. The inline <script> in base.html
      * applies the attribute before first paint to avoid FOUC.
+     *
+     * Storage convention:
+     *   - No stored value → large text (default for new users)
+     *   - 'large' → large text (explicit choice)
+     *   - 'default' → standard text (user opted out)
      * --------------------------------------------------------------- */
 
     var TEXT_SIZE_KEY = 'textSize';
 
     function getTextSize() {
         try {
-            return localStorage.getItem(TEXT_SIZE_KEY) || 'default';
+            var stored = localStorage.getItem(TEXT_SIZE_KEY);
+            // No stored preference → large (the default)
+            return stored === 'default' ? 'default' : 'large';
         } catch (_) {
             // localStorage unavailable — fall back to document state
-            return document.documentElement.getAttribute('data-text-size') || 'default';
+            return document.documentElement.getAttribute('data-text-size') ? 'large' : 'large';
         }
     }
 
     function setTextSize(size) {
         try {
             if (size === 'large') {
-                localStorage.setItem(TEXT_SIZE_KEY, 'large');
+                localStorage.removeItem(TEXT_SIZE_KEY);
                 document.documentElement.setAttribute('data-text-size', 'large');
             } else {
-                localStorage.removeItem(TEXT_SIZE_KEY);
+                localStorage.setItem(TEXT_SIZE_KEY, 'default');
                 document.documentElement.removeAttribute('data-text-size');
             }
         } catch (_) {
