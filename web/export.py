@@ -50,6 +50,7 @@ REQUIRED_FIELDS: frozenset[str] = frozenset(
         "legal_actions",
         "chosen_action",
         "game_state",
+        "counterfactual",
         "decision_time_ms",
         "timestamp",
     }
@@ -125,6 +126,11 @@ def decision_to_jsonl(
         "legal_actions": legal_actions,
         "chosen_action": chosen_action,
         "game_state": game_state,
+        "counterfactual": (
+            json.loads(decision_row.counterfactual_json)
+            if decision_row.counterfactual_json
+            else None
+        ),
         "decision_time_ms": decision_row.decision_time_ms,
         "timestamp": timestamp,
     }

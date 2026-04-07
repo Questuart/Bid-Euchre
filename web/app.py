@@ -146,13 +146,29 @@ async def lifespan(app: FastAPI):
         try:
             with engine.begin() as conn:
                 conn.execute(
-                    text("ALTER TABLE matches " "ADD COLUMN play_strategy_version TEXT")
+                    text("ALTER TABLE matches ADD COLUMN play_strategy_version TEXT")
                 )
             logger.info("Migration: added play_strategy_version column to matches")
         except OperationalError:
             # Column already exists — concurrent startup or stale inspector cache (#2532)
             logger.info(
                 "Migration: play_strategy_version column already present (concurrent)"
+            )
+
+    # 1d. Migrate: add counterfactual_json column to decisions table.
+    # Stores the GBT bidder's recommendation alongside human bid decisions
+    # for divergence analysis (#2469).  NULL for existing rows and AI turns.
+    decision_cols = {c["name"] for c in inspector.get_columns("decisions")}
+    if "counterfactual_json" not in decision_cols:
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE decisions ADD COLUMN counterfactual_json TEXT")
+                )
+            logger.info("Migration: added counterfactual_json column to decisions")
+        except OperationalError:
+            logger.info(
+                "Migration: counterfactual_json column already present (concurrent)"
             )
 
     # 2. Auto-seed invite code on fresh database (atomic: skip if another
