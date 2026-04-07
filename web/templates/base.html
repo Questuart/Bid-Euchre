@@ -38,6 +38,10 @@
     <script>
         (function(){try{var s=localStorage.getItem('textSize');if(s!=='default'){document.documentElement.setAttribute('data-text-size','large');}}catch(e){document.documentElement.setAttribute('data-text-size','large');}})();
     </script>
+    <!-- Apply AI hints preference before first paint (#2185). Off by default — opt-in. -->
+    <script>
+        (function(){try{var h=sessionStorage.getItem('aiHints');if(h==='on'){document.documentElement.setAttribute('data-ai-hints','on');}}catch(e){}})();
+    </script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
     <script src="/static/game.js" defer></script>
@@ -105,6 +109,11 @@
                    data-tab="guide">Help / Guide</a>
             </nav>
             {% endif %}
+            <button id="ai-hints-toggle"
+                    class="ai-hints-toggle"
+                    type="button"
+                    aria-label="Toggle AI hints"
+                    title="Toggle AI hints">Hints</button>
             <button id="text-size-toggle"
                     class="text-size-toggle"
                     type="button"

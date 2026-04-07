@@ -462,6 +462,63 @@ class MatchEngine:
             hand.trump,
         )
 
+    def get_suggested_play(self, state: MatchState) -> int | None:
+        """Return the AI's recommended card index for the human player.
+
+        Uses the same ``play_strategy.choose_card()`` that AI opponents use
+        to pick the card the AI would play in the human's position.
+        Returns ``None`` if it's not the human's turn to play.
+        """
+        hand = state.current_hand
+        if hand is None or hand.phase != "trick_play":
+            return None
+        if hand.current_seat != HUMAN_SEAT:
+            return None
+        if hand.current_trick is None or hand.contract_type is None:
+            return None
+        try:
+            return self.play_strategy.choose_card(
+                hand.hands[HUMAN_SEAT],
+                hand.current_trick.plays,
+                hand.contract_type,
+                hand.trump,
+                HUMAN_SEAT,
+            )
+        except Exception:
+            logger.debug("AI suggestion for play failed", exc_info=True)
+            return None
+
+    def get_suggested_bid(self, state: MatchState) -> dict[str, Any] | None:
+        """Return the AI's recommended bid for the human player.
+
+        Uses the same ``bidding_policy.choose_bid()`` that AI opponents use
+        to pick the bid the AI would make in the human's position.
+        Returns a dict with ``n``, ``contract``, ``bid_type`` keys, or
+        ``None`` if it's not the human's turn to bid.
+        """
+        hand = state.current_hand
+        if hand is None or hand.phase != "auction":
+            return None
+        if hand.current_seat != HUMAN_SEAT:
+            return None
+        try:
+            obs = BiddingObservation(
+                hand=hand.hands[HUMAN_SEAT],
+                seat=HUMAN_SEAT,
+                dealer_seat=hand.dealer_seat,
+                current_high_bid=hand.current_high_bid,
+                auction_transcript=tuple(hand.auction),
+            )
+            bid = self.bidding_policy.choose_bid(obs)
+            return {
+                "n": bid.n,
+                "contract": bid.contract,
+                "bid_type": bid.bid_type,
+            }
+        except Exception:
+            logger.debug("AI suggestion for bid failed", exc_info=True)
+            return None
+
     def get_visible_state(self, state: MatchState) -> dict[str, Any]:
         """Return state visible to the human player.
 

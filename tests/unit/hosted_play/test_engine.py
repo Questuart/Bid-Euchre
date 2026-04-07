@@ -3004,3 +3004,141 @@ class TestFinalTrickPause:
                 return  # Test passed
 
         pytest.skip("No seed produced a complete hand with paused_after_trick")
+
+
+# ---------------------------------------------------------------------------
+# AI Suggestions (#2185)
+# ---------------------------------------------------------------------------
+
+
+class TestGetSuggestedPlay:
+    """Tests for MatchEngine.get_suggested_play()."""
+
+    def test_returns_legal_card_index_on_human_turn(self, engine: MatchEngine):
+        """Suggested play should be a valid legal card index."""
+        state = engine.start_match(SEED, "heuristic")
+        # Advance to human play turn
+        state = _advance_to_human_play(engine, state)
+        hand = state.current_hand
+        if hand is None or hand.phase != "trick_play":
+            pytest.skip("No human play turn reached with this seed")
+
+        suggestion = engine.get_suggested_play(state)
+        assert suggestion is not None
+        legal = engine.get_legal_plays(state)
+        assert suggestion in legal
+
+    def test_returns_none_during_auction(self, engine: MatchEngine):
+        """Suggested play should be None when in auction phase."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        if (
+            hand is not None
+            and hand.phase == "auction"
+            and hand.current_seat == HUMAN_SEAT
+        ):
+            assert engine.get_suggested_play(state) is None
+
+    def test_returns_none_when_not_human_turn(self, engine: MatchEngine):
+        """Suggested play should be None when it's not the human's turn."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        # After start_match, AI has advanced — if it's not human's turn, should be None
+        if hand is not None and hand.current_seat != HUMAN_SEAT:
+            assert engine.get_suggested_play(state) is None
+
+    def test_returns_none_when_no_hand(self, engine: MatchEngine):
+        """Suggested play should be None when current_hand is None."""
+        state = MatchState(seed=SEED, ai_model="heuristic")
+        assert engine.get_suggested_play(state) is None
+
+
+class TestGetSuggestedBid:
+    """Tests for MatchEngine.get_suggested_bid()."""
+
+    def test_returns_bid_dict_on_human_auction_turn(self, engine: MatchEngine):
+        """Suggested bid should return a dict with n, contract, bid_type."""
+        for seed in range(100):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if (
+                hand is not None
+                and hand.phase == "auction"
+                and hand.current_seat == HUMAN_SEAT
+            ):
+                suggestion = engine.get_suggested_bid(state)
+                assert suggestion is not None
+                assert "n" in suggestion
+                assert "contract" in suggestion
+                assert "bid_type" in suggestion
+                assert isinstance(suggestion["n"], int)
+                assert 0 <= suggestion["n"] <= 10
+                return
+        pytest.skip("No seed produced a human auction turn")
+
+    def test_returns_none_during_trick_play(self, engine: MatchEngine):
+        """Suggested bid should be None during trick play."""
+        state = engine.start_match(SEED, "heuristic")
+        state = _advance_to_human_play(engine, state)
+        hand = state.current_hand
+        if hand is not None and hand.phase == "trick_play":
+            assert engine.get_suggested_bid(state) is None
+
+    def test_returns_none_when_not_human_turn(self, engine: MatchEngine):
+        """Suggested bid should be None when it's not the human's turn."""
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        if (
+            hand is not None
+            and hand.phase == "auction"
+            and hand.current_seat != HUMAN_SEAT
+        ):
+            assert engine.get_suggested_bid(state) is None
+
+    def test_returns_none_when_no_hand(self, engine: MatchEngine):
+        """Suggested bid should be None when current_hand is None."""
+        state = MatchState(seed=SEED, ai_model="heuristic")
+        assert engine.get_suggested_bid(state) is None
+
+
+def _advance_to_human_play(engine: MatchEngine, state: MatchState) -> MatchState:
+    """Advance state until the human has a play turn (trick_play phase)."""
+    hand = state.current_hand
+    if hand is None:
+        return state
+
+    # If auction, submit a bid for human
+    if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+        state = engine.submit_human_bid(state, BidAction.pass_bid())
+        hand = state.current_hand
+
+    # Handle exchange
+    if (
+        hand is not None
+        and hand.phase == "moon_exchange"
+        and hand.exchange_phase == "selecting"
+    ):
+        state = engine.submit_exchange_selection(state, [0, 1])
+        hand = state.current_hand
+
+    # Advance through next steps to reach trick play
+    for _ in range(50):
+        hand = state.current_hand
+        if hand is None:
+            break
+        if hand.phase == "trick_play" and hand.current_seat == HUMAN_SEAT:
+            if not hand.paused_after_play and not hand.paused_after_trick:
+                return state
+        if hand.paused_after_play or hand.paused_after_trick:
+            hand.paused_after_play = False
+            hand.paused_after_trick = False
+            state = engine.resume_ai(state)
+            continue
+        if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+            state = engine.submit_human_bid(state, BidAction.pass_bid())
+            continue
+        if hand.phase in ("complete", "redeal"):
+            break
+        break
+
+    return state
