@@ -58,8 +58,9 @@ from .glutton import (
 
 # Backward-compat shim: preserve old bid_euchre.strategy.greedy module path
 # after rename to glutton.py (PR #2604). External code and configs referencing
-# "greedy" will continue to work via sys.modules alias.
+# "greedy" will continue to work via sys.modules alias + package attribute.
 sys.modules[__name__ + ".greedy"] = sys.modules[__name__ + ".glutton"]
+greedy = sys.modules[__name__ + ".glutton"]  # expose as package attribute (#2611)
 
 # Versioning utilities
 from .versioning import collect_versions, compare_versions
