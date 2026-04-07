@@ -1122,6 +1122,12 @@ main {
 .card-slot--empty {
     border: 2px dashed rgba(255, 255, 255, 0.3);
     border-radius: var(--card-radius);
+    animation: slot-reset-fade 0.2s ease-out both;
+}
+
+@keyframes slot-reset-fade {
+    0%   { opacity: 0.3; transform: scale(0.95); }
+    100% { opacity: 1;   transform: scale(1); }
 }
 
 .seat-label {
@@ -3211,6 +3217,10 @@ main {
     .card--ai-delayed,
     .card--winning.card--ai-delayed,
     .trick-slot--winner .card--ai-delayed {
+        animation: none;
+    }
+
+    .card-slot--empty {
         animation: none;
     }
 }
