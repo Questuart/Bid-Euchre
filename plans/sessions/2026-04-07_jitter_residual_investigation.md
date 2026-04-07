@@ -123,7 +123,7 @@ the center area collapses by ~87px, causing the human hand
 
 **File references:**
 - `web/templates/partials/game_board.html` line 126-128: conditional include
-  of `next_controls.html` inside compass-center
+  of `web/templates/partials/next_controls.html` inside compass-center
 - `web/static/style.css` line 175: `.compass-center { grid-area: center; min-width: 0; }`
   — NO min-height set
 - `web/static/style.css` line 167: `grid-template-rows: auto 1fr auto` — center
@@ -209,110 +209,129 @@ identified 8 jitter sources. Here is their current status:
 
 ## 4. Fix Recommendation
 
-### PR UX-4: Stabilize compass-center height (CSS-only, ~15 LoC)
+> **Operator directive (2026-04-07T02:30Z):** Remove the visible "Reveal
+> the next card" / Next button from the `paused_after_play` state during
+> trick play. Keep the 2-second pause between AI card plays so the player
+> can see each card appear, but use the existing auto-advance timer — no
+> user interaction needed. The `paused_after_trick` "Continue to next
+> trick" button at trick end stays. No inserted visible content during the
+> pause = no layout shift = no jitter.
 
-**Goal:** Eliminate L1 and L2 layout shifts. CSS-only changes, no engine
-or route modifications.
+### PR UX-4: Hide next-controls during auto-advance (~30 LoC)
 
-#### Fix 1 — Reserve space for next-controls in compass-center
+**Goal:** Eliminate L1 (87px layout shift) by preventing the next-controls
+div from taking layout space during auto-advance. Also fix L2 (12px
+trick-winner height) for completeness.
 
-Set a `min-height` on `.compass-center` that accommodates the tallest
-content state (trick-area + next-controls + trick-history). This prevents
-the grid from collapsing when next-controls are removed.
+#### Fix 1 — Hide next-controls from first paint during auto-advance
+
+**Current behavior:** The `next-controls` div is rendered visible during
+`paused_after_play`. JavaScript's `scheduleAutoAdvance()` fires on
+`htmx:afterSettle` and adds `js-auto-advance-active` class which hides the
+controls. But between the morph swap and JS execution (~20ms), the
+controls are visible and take ~87px of layout space → layout shift.
+
+**Fix:** Apply `next-controls--auto-advance` CSS to hide controls
+**immediately** on first paint, before JS runs. The form stays in the DOM
+(hidden) so `scheduleAutoAdvance()` can still find and submit it.
 
 ```css
-/* Reserve vertical space in compass center so next-controls add/remove
-   doesn't cause layout shift (L1 — ~87px collapse prevention). */
-.compass-center {
-    grid-area: center;
-    min-width: 0;
-    min-height: 540px;  /* trick-area (~373) + trick-history (~32) + next-controls (~87) + margins */
+/* web/static/style.css — replace the js-auto-advance-active rule */
+
+/* Auto-advancing: hide from first paint — no layout shift.
+   The form stays in DOM for JS auto-submit.  If JS fails,
+   revealManualNextFallback() adds .next-controls--fallback-visible
+   to override this and restore the manual button. */
+.next-controls--auto-advance {
+    position: absolute;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+}
+
+/* Fallback: restore manual button if JS auto-advance fails (#2487). */
+.next-controls--auto-advance.next-controls--fallback-visible {
+    position: static;
+    height: auto;
+    overflow: visible;
+    pointer-events: auto;
+    opacity: 1;
 }
 ```
 
-The exact value should be tuned by measuring the tallest state. Use
-desktop breakpoint value; mobile breakpoints already have tighter
-min-heights.
+**JS change:** Update `revealManualNextFallback()` in `web/static/game.js`
+to add `next-controls--fallback-visible` instead of removing
+`js-auto-advance-active`:
 
-**Alternative (better):** Instead of a magic number, use CSS to keep
-the next-controls in the layout flow even when hidden:
-
-```css
-/* When next-controls are absent, reserve their space with a pseudo-element
-   or by keeping the element in DOM with visibility:hidden. */
+```javascript
+// web/static/game.js — update fallback function
+function revealManualNextFallback(nextControls) {
+    nextControls.classList.add('next-controls--fallback-visible');
+}
 ```
 
-However, this requires a template change (always render next-controls,
-use a `hidden` attribute or class). The `min-height` approach is
-CSS-only and lower-risk.
+**Auto-advance delay change:** The operator wants 2-second pauses between
+AI cards. Update `web/routes.py` line 612:
+
+```python
+# Current:  ctx["auto_advance_delay_ms"] = 850 if is_ai else 500
+# Changed:  ctx["auto_advance_delay_ms"] = 2000 if is_ai else 500
+```
 
 #### Fix 2 — Equalize trick-winner / trick-current-winner layout
 
-Make both paragraph classes occupy the same space regardless of state:
+Make both paragraph classes occupy the same vertical space:
 
 ```css
 .trick-current-winner,
 .trick-winner {
     font-size: 0.9rem;
     font-weight: 500;
-    min-height: 1.8rem;  /* Reserve consistent height */
+    min-height: 1.8rem;
     margin: 0.25rem 0 0;
     padding: 0.2rem 0.5rem;
 }
 
-/* Override only the visual distinction, not layout properties */
 .trick-winner {
     font-weight: 600;
     animation: trick-winner-flash 1.5s ease-out;
 }
 ```
 
-This makes the paragraph the same height in both states, eliminating the
-~12px shift. The trick-winner-flash animation still plays for visual
-feedback.
-
-#### Fix 3 — (Optional) Mobile breakpoint min-heights
-
-Update mobile `@media` queries to set proportional `min-height` values on
-`.compass-center`:
-
-```css
-@media (max-width: 600px) {
-    .compass-center { min-height: 420px; }
-}
-@media (max-width: 480px) {
-    .compass-center { min-height: 360px; }
-}
-```
-
 ### File scope
 
-| File | Change |
-|------|--------|
-| `web/static/style.css` | Fixes 1, 2, 3 (~15 LoC) |
+| File | Change | LoC |
+|------|--------|----:|
+| `web/static/style.css` | Fix 1 CSS (hide auto-advance), Fix 2 (paragraph height) | ~20 |
+| `web/static/game.js` | Update `revealManualNextFallback()` to use new class | ~5 |
+| `web/routes.py` | Change `auto_advance_delay_ms` from 850 to 2000 | ~1 |
 
-No other files touched. No engine, route, template, or JS changes.
+No engine changes. No template changes. No new DOM elements.
 
 ### Validation
 
 ```bash
-# Tier 1 — targeted (no Python changes, so CSS-focused)
+# Tier 1 — targeted
+uv run python -m pytest tests/unit/web/ tests/integration/hosted_play/ -v
 make lint
 
 # Tier 2 — full validation
 make check-gated
 
-# Browser smoke (existing UX-3 tests cover slot stability)
+# Browser smoke
 make browser-smoke
 ```
 
 **Manual Playwright validation:**
 1. Install MutationObserver + height tracker (as used in this investigation)
 2. Play through a full trick sequence: human plays → 3 AI plays → trick completes → Next
-3. Assert `compass-bottom.top` does not shift by more than 4px between any two
+3. Assert the `.compass-bottom` element's top offset does not shift by more than 4px between any two
    consecutive mutation batches
 4. Assert `#trick-area` height does not change by more than 4px between
    `trick-current-winner` and `trick-winner` states
+5. Verify AI cards still appear with reveal animation after ~2s pause
+6. Verify the trick-end "Continue to next trick" Next button still appears and is clickable
 
 ---
 
@@ -320,11 +339,12 @@ make browser-smoke
 
 | # | Risk | Mitigation |
 |---|------|------------|
-| R1 | `min-height` on compass-center creates empty space at bottom when next-controls are absent | This is acceptable — a ~87px reserved gap at the bottom of the center area is invisible against the dark background and prevents the jarring jump. Alternatively, set `min-height` to the SHORTER state (no next-controls) if the jump-down is acceptable and only the jump-up is objectionable. |
-| R2 | Fixed `min-height` doesn't account for content variations (different text lengths, trick history expanding) | Use the maximum observed height across all states. The trick history `<details>` starts collapsed, so its expanded height doesn't affect the calculation. |
-| R3 | Mobile breakpoint `min-height` values may not match all device sizes | Use responsive values (`min-height: max(360px, 50vh)`) or test on representative viewports (375px, 414px, 768px). |
+| R1 | Hiding next-controls via CSS before JS runs means the button is never visible during auto-advance. If JS fails to load, the player is stuck (no button, no auto-advance) | The `revealManualNextFallback()` function already exists for this case (#2487). Update it to add `.next-controls--fallback-visible` class which overrides the CSS hiding. Also, the `<noscript>` fallback (if any) should show the button. |
+| R2 | Increasing auto-advance delay from 850ms to 2000ms makes the game feel slower | This is the operator's explicit requirement — 2s pause so players can see each card. If negative feedback, the value is a single-line change in `web/routes.py`. |
+| R3 | The `position: absolute` on `.next-controls--auto-advance` removes it from layout flow. If any other CSS depends on the controls being in flow, it could break | The controls are inside `.compass-center` which is a block layout. `position: absolute` on a child of a non-positioned parent doesn't affect siblings. Verify with browser devtools. |
 | R4 | Equalizing trick-winner/trick-current-winner font sizes may make the winner announcement less visually distinct | Compensate with font-weight difference (500 vs 600) and the existing `trick-winner-flash` animation. The layout stability is more important than the font-size distinction. |
-| R5 | Idiomorph settling noise (L3) is left unfixed | This is an upstream idiomorph behavior. We could work around it by adding `id` attributes to compass-layout, score-bar elements (idiomorph matches by ID first, reducing attribute diffing), but the performance impact is negligible. |
+| R5 | Idiomorph settling noise (L3) is left unfixed | This is an upstream idiomorph behavior. The performance impact is negligible. No fix needed. |
+| R6 | The `paused_after_trick` Next button ("Continue to next trick") is NOT hidden — it still appears and causes its own layout shift | The trick-end button appears once per trick (not rapid-fire like mid-trick pauses) and requires user interaction. The operator explicitly said to keep it. The shift is acceptable because it's a natural pause point, not a mid-trick stutter. |
 
 ---
 
@@ -365,28 +385,35 @@ thing at the DOM level. The jitter is from layout reflow, not DOM churn.
 ## 7. Dispatch Packet for Implementation
 
 ```yaml
-title: "fix(web): stabilize compass-center height to prevent layout jitter"
-branch: "fix/compass-center-height-stability"
+title: "fix(web): hide next-controls during auto-advance to prevent layout jitter"
+branch: "fix/auto-advance-layout-shift"
 scope_declared:
   - web/static/style.css
+  - web/static/game.js
+  - web/routes.py
 validation: "make check-gated && make browser-smoke"
 refs: "#2538"
-estimated_loc: 15
+estimated_loc: 30
 risk: low
 domain: browser-game
 priority: high
 description: |
-  CSS-only fix for two layout reflow sources causing ~99px of visible
-  jitter during AI card play and trick boundary transitions.
+  Eliminate ~99px of visible layout jitter during AI card play by hiding
+  the next-controls div from first paint during auto-advance sequences.
 
-  L1: Set min-height on .compass-center to prevent ~87px collapse when
-  next-controls are added/removed during auto-advance.
+  L1 (87px): Apply CSS hiding to .next-controls--auto-advance immediately
+  (not waiting for JS to add js-auto-advance-active). Form stays in DOM
+  for auto-submit. Add .next-controls--fallback-visible for JS failure
+  recovery.
 
-  L2: Equalize .trick-current-winner and .trick-winner paragraph layout
-  properties to prevent ~12px trick-area height shift.
+  L2 (12px): Equalize .trick-current-winner and .trick-winner paragraph
+  layout properties (font-size, min-height, margin, padding).
+
+  Also increase auto_advance_delay_ms from 850 to 2000 per operator
+  directive (2s pause between AI cards for readability).
 
   See plans/sessions/2026-04-07_jitter_residual_investigation.md for
-  full evidence and measurements.
+  full evidence, mutation logs, and layout measurements.
 ```
 
 ---
