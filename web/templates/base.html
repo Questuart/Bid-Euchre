@@ -33,9 +33,10 @@
             padding: var(--safe-area-top) var(--safe-area-right) var(--safe-area-bottom) var(--safe-area-left);
         }
     </style>
-    <!-- Apply text size preference before first paint to prevent FOUC -->
+    <!-- Apply text size preference before first paint to prevent FOUC.
+         Large text (125%) is the default — only opt-out if user explicitly chose standard (#2521 item 1). -->
     <script>
-        (function(){try{var s=localStorage.getItem('textSize');if(s==='large'){document.documentElement.setAttribute('data-text-size','large');}}catch(e){}})();
+        (function(){try{var s=localStorage.getItem('textSize');if(s!=='default'){document.documentElement.setAttribute('data-text-size','large');}}catch(e){document.documentElement.setAttribute('data-text-size','large');}})();
     </script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
