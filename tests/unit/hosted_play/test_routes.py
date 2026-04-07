@@ -1190,6 +1190,109 @@ class TestGluttonCounterfactual:
 
 
 # ---------------------------------------------------------------------------
+# GBT counterfactual logging (#2469)
+# ---------------------------------------------------------------------------
+
+
+class TestBidCounterfactual:
+    """Human bid decisions should include a GBT counterfactual."""
+
+    def test_human_bid_has_counterfactual(self, client, app):
+        """After a human bid, the Decision row stores the GBT recommendation."""
+        link_uuid = _setup_game(client)
+
+        # Find and submit a human bid
+        for _ in range(10):
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+                break
+            else:
+                break
+
+        # Query the human bid decision row
+        session = app.state.session_factory()
+        human_bids = (
+            session.query(Decision)
+            .filter(Decision.actor_type == "human", Decision.phase == "bid")
+            .all()
+        )
+        assert len(human_bids) > 0, "Expected at least one human bid decision"
+
+        for d in human_bids:
+            assert (
+                d.counterfactual_json is not None
+            ), f"Human bid turn={d.turn_number} missing counterfactual"
+            cf = json.loads(d.counterfactual_json)
+            assert cf["source"] == "bud_bot"
+            assert "n" in cf
+            assert "contract" in cf
+            assert "bid_type" in cf
+
+        session.close()
+
+    def test_ai_bid_no_counterfactual(self, client, app):
+        """AI bid decision rows should NOT have a counterfactual."""
+        link_uuid = _setup_game(client)
+
+        # Play until we get at least one AI bid
+        for _ in range(10):
+            advance_pending_reveals(client, app, link_uuid)
+            result = get_match_state(app, link_uuid)
+            assert result is not None
+            state, _, session = result
+            session.close()
+
+            hand = state.current_hand
+            if hand is None:
+                break
+
+            if hand.phase == "auction" and hand.current_seat == HUMAN_SEAT:
+                client.post(
+                    f"/play/{link_uuid}/bid",
+                    data={
+                        "turn_number": hand.turn_number,
+                        "bid_n": 0,
+                        "bid_contract": "",
+                    },
+                )
+                break
+            else:
+                break
+
+        # AI decisions should not have counterfactuals
+        session = app.state.session_factory()
+        ai_bids = (
+            session.query(Decision)
+            .filter(Decision.actor_type == "ai", Decision.phase == "bid")
+            .all()
+        )
+
+        for d in ai_bids:
+            assert (
+                d.counterfactual_json is None
+            ), f"AI bid turn={d.turn_number} should not have counterfactual"
+
+        session.close()
+
+
+# ---------------------------------------------------------------------------
 # Landing page
 # ---------------------------------------------------------------------------
 

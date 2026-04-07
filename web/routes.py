@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 from bid_euchre.core.rules import trick_winner
 from bid_euchre.hosted_play.engine import HUMAN_SEAT, MatchEngine, sort_hand_for_display
-from bid_euchre.strategy.bidding import BidAction
+from bid_euchre.strategy.bidding import BidAction, BiddingObservation
 from bid_euchre.strategy.glutton import GluttonStrategy
 
 from .ai_manager import AIManager
@@ -246,6 +246,7 @@ def _log_decision(
     game_state: Any,
     decision_time_ms: int | None = None,
     glutton_action: Any | None = None,
+    counterfactual: dict[str, Any] | None = None,
 ) -> None:
     """Insert a decision row (idempotent — skips if turn already logged)."""
     exists = (
@@ -270,8 +271,49 @@ def _log_decision(
         glutton_action_json=json.dumps(glutton_action)
         if glutton_action is not None
         else None,
+        counterfactual_json=(
+            json.dumps(counterfactual) if counterfactual is not None else None
+        ),
     )
     session.add(decision)
+
+
+def _compute_bid_counterfactual(
+    ai_manager: AIManager,
+    hand,
+    seat: int,
+) -> dict[str, Any] | None:
+    """Run the GBT bidder on the same hand state and return its recommendation.
+
+    Purely observational — does not modify game state.  Returns ``None`` if
+    the ``bud_bot`` model is unavailable (should not happen in production
+    since the startup roster check ensures it).
+    """
+    try:
+        bud_bot = ai_manager.get_model_info("bud_bot")
+    except KeyError:
+        logger.warning("counterfactual: bud_bot model not available, skipping")
+        return None
+
+    obs = BiddingObservation(
+        hand=hand.hands[seat],
+        seat=seat,
+        dealer_seat=hand.dealer_seat,
+        current_high_bid=hand.current_high_bid,
+        auction_transcript=tuple(hand.auction),
+    )
+    try:
+        gbt_bid = bud_bot.bidding_policy.choose_bid(obs)
+    except Exception:
+        logger.warning("counterfactual: GBT bidder failed, skipping", exc_info=True)
+        return None
+
+    return {
+        "source": "bud_bot",
+        "n": gbt_bid.n,
+        "contract": gbt_bid.contract,
+        "bid_type": gbt_bid.bid_type,
+    }
 
 
 def _has_hidden_auction(hand) -> bool:
@@ -1562,10 +1604,14 @@ async def submit_bid(
         # Record pre-action state for decision logging
         pre_turn = hand.turn_number
 
+        # Compute GBT counterfactual before mutating state (#2469).
+        # Purely observational — does not affect gameplay.
+        counterfactual = _compute_bid_counterfactual(ai_manager, hand, HUMAN_SEAT)
+
         # Ensure hand row exists (keyed by deal_id for redeal-safe uniqueness)
         hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)
 
-        # Log human decision
+        # Log human decision (with GBT counterfactual)
         _log_decision(
             session,
             match_row,
@@ -1585,6 +1631,7 @@ async def submit_bid(
                 "bid_type": bid.bid_type,
             },
             game_state=engine.get_visible_state(state),
+            counterfactual=counterfactual,
         )
 
         pre_auction_count = len(hand.auction)
