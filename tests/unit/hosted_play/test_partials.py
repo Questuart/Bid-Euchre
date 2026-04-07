@@ -1720,6 +1720,62 @@ class TestPartnerHandReveal:
         # The exchange-received class should appear (for the highlighted cards)
         assert "card--exchange-received" in html
 
+    def test_moon_result_duplicate_card_highlight_count(self, env):
+        """Double-deck: only ONE copy highlighted when one copy exchanged (#2575).
+
+        Partner holds two 10♦ (double-deck), but only one was exchanged.
+        Count-based matching should highlight exactly one, not both.
+        """
+        html = env.get_template("partials/hand_result.html").render(
+            **self._BASE_CTX,
+            partner_exchange_hand=[
+                ["D", "10"],  # copy 1 — should be highlighted (exchanged)
+                ["D", "10"],  # copy 2 — should NOT be highlighted
+                ["S", "K"],
+                ["H", "A"],
+            ],
+            partner_exchange_seat=2,
+        )
+        # Exactly one card--exchange-received occurrence expected
+        count = html.count("card--exchange-received")
+        assert count == 1, (
+            f"Expected 1 highlighted card but found {count}; "
+            "value-based matching highlights all duplicate copies"
+        )
+
+    def test_moon_result_both_copies_highlighted_when_both_exchanged(self, env):
+        """Double-deck: BOTH copies highlighted when both were exchanged (#2575)."""
+        html = env.get_template("partials/hand_result.html").render(
+            link_uuid="abc-123",
+            winning_bid=10,
+            bidder_seat=0,
+            contract_type="suit",
+            trump="S",
+            bid_type="moon",
+            tricks_team0=10,
+            tricks_team1=0,
+            points_team0=20,
+            points_team1=0,
+            score_human=20,
+            score_ai=0,
+            hands_played=1,
+            exchange_given=[["D", "10"], ["D", "10"]],
+            exchange_received=[["S", "A"], ["H", "K"]],
+            partner_exchange_hand=[
+                ["D", "10"],  # copy 1 — should be highlighted
+                ["D", "10"],  # copy 2 — should also be highlighted
+                ["S", "K"],
+                ["H", "A"],
+            ],
+            partner_exchange_seat=2,
+        )
+        # Both copies were exchanged, so both should be highlighted
+        count = html.count("card--exchange-received")
+        assert count == 2, (
+            f"Expected 2 highlighted cards but found {count}; "
+            "both exchanged copies should be highlighted"
+        )
+
     def test_moon_result_shows_sent_cards(self, env):
         """Cards partner sent to mooner (exchange_received) shown as text."""
         html = env.get_template("partials/hand_result.html").render(

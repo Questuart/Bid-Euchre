@@ -136,11 +136,25 @@
         {% set partner_seat_num = partner_exchange_seat | default(None, true) %}
         {% if hand_bid_type == "moon" and partner_hand %}
             {% set partner_hand_label = seat_labels.get(partner_seat_num, "Partner") if partner_seat_num is not none else partner_seat_label %}
+            {# Build consumable list for count-based matching.  In a double-deck
+               the partner may hold TWO copies of a card; value-based `in` would
+               highlight ALL copies even if only one was exchanged.  #2575 #}
+            {% set exch_ns = namespace(remaining=[]) %}
+            {% for c in exchange_given_cards %}
+                {% set exch_ns.remaining = exch_ns.remaining + [c[0] ~ ":" ~ c[1]] %}
+            {% endfor %}
             <div class="result-partner-hand" aria-label="{{ partner_hand_label }}'s hand after exchange">
                 <p class="result-partner-hand__title"><strong>{{ partner_hand_label }}'s Hand</strong> (after exchange)</p>
                 <div class="result-partner-hand__cards" role="list">
                     {% for card in partner_hand %}
-                        {% set is_received = card in exchange_given_cards %}
+                        {% set card_key = card[0] ~ ":" ~ card[1] %}
+                        {% if card_key in exch_ns.remaining %}
+                            {% set is_received = true %}
+                            {% set _idx = exch_ns.remaining.index(card_key) %}
+                            {% set exch_ns.remaining = exch_ns.remaining[:_idx] + exch_ns.remaining[_idx + 1:] %}
+                        {% else %}
+                            {% set is_received = false %}
+                        {% endif %}
                         {% set disp_suit = card[0] %}
                         {% set bower = card|is_bower(trump | default(None, true), contract_type | default(None, true)) %}
                         <div class="card card--{{ suit_classes.get(disp_suit, 'spades') }} card--exchange{% if is_received %} card--exchange-received{% endif %}{% if bower %} card--bower{% endif %}"
