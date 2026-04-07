@@ -365,13 +365,17 @@ main {
     margin-left: 1px;
 }
 
-/* "X is winning" text below the trick center during active tricks */
+/* "X is winning" / "X won" text below the trick center.
+   Layout properties (min-height, margin, padding) are shared with
+   .trick-winner to prevent ~12px height shift at trick completion (#2538). */
 .trick-current-winner {
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 500;
     color: #ffd700;
     text-align: center;
-    margin: 0.25rem 0 0;
+    min-height: 1.6rem;
+    margin: 0.3rem 0 0;
+    padding: 0.2rem 0.5rem;
     opacity: 0.9;
 }
 
@@ -948,12 +952,13 @@ main {
 }
 
 .trick-winner {
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--color-text);
     text-align: center;
-    margin: 0.35rem 0 0;
-    padding: 0.25rem 0.75rem;
+    min-height: 1.6rem;
+    margin: 0.3rem 0 0;
+    padding: 0.2rem 0.5rem;
     border-radius: 4px;
     animation: trick-winner-flash 1.5s ease-out;
 }
