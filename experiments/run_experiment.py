@@ -55,6 +55,7 @@ from bid_euchre.experiments.meta import get_git_sha, sha256_file, utc_now_iso
 from bid_euchre.logging import GameLogger, LogLevel
 from bid_euchre.sim import simulation
 from bid_euchre.sim.hooks import HandEndEvent, SimulationHooks
+from bid_euchre.strategy.versioning import collect_versions
 
 # Metadata schema version
 META_JSON_SCHEMA_VERSION = (
@@ -1209,6 +1210,7 @@ def main():
         ],
         "strategies": [s.name for s in strategies],
         "bidding_policies": [p.name for p in bidding_policies],
+        "strategy_versions": collect_versions(strategies, bidding_policies),
         "leader_randomized": True,  # Always true with new deal generator
         "common_deals": seed is not None,  # Only true if seed provided
         "pair_deals": pair_deals,  # True = same physical deals across all scenarios

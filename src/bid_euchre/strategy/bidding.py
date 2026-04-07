@@ -5,6 +5,7 @@ This module provides the canonical interface for bidding in auction games,
 where players bid simultaneously for the right to choose contract and trump.
 """
 
+import hashlib
 import json
 import logging
 import math
@@ -251,7 +252,13 @@ class BiddingPolicy(ABC):
     Abstract base class for bidding policies in auction mode.
 
     Bidding policies decide how to bid based on the current auction state.
+
+    Subclasses should set a ``VERSION`` class attribute (semver string)
+    that is bumped on every behavioral change.
     """
+
+    # Default version for policies that have not opted into versioning.
+    VERSION: str = "0.0.0"
 
     def __init__(self, name: str = "unnamed"):
         self.name = name
@@ -269,6 +276,23 @@ class BiddingPolicy(ABC):
         """
         pass
 
+    def fingerprint(self) -> str:
+        """Return a short hex digest identifying this policy's version and config.
+
+        Subclasses with extra configuration (artifact paths, thresholds, etc.)
+        should override and include those values.
+
+        Returns:
+            8-character hex digest (first 8 chars of SHA-256).
+        """
+        parts = [
+            type(self).__name__,
+            type(self).VERSION,
+            self.name,
+        ]
+        blob = "|".join(parts).encode()
+        return hashlib.sha256(blob).hexdigest()[:8]
+
     def __str__(self) -> str:
         return f"{self.__class__.__name__}({self.name})"
 
@@ -276,10 +300,20 @@ class BiddingPolicy(ABC):
         return str(self)
 
 
+# Module-level version constants for bidding policy families.
+# Heuristic bidders have been stable since initial commit.
+HEURISTIC_BIDDER_VERSION = "1.0.0"
+# Artifact-backed bidders derive behavior from the artifact + thin wrapper
+# logic. Bump this when the wrapper changes (not when the artifact does).
+ARTIFACT_BIDDER_VERSION = "1.0.0"
+
+
 class AlwaysPassBidder(BiddingPolicy):
     """
     Baseline bidder that always passes (n=0).
     """
+
+    VERSION = HEURISTIC_BIDDER_VERSION
 
     def __init__(self, name: str = "always_pass"):
         super().__init__(name)
@@ -297,6 +331,8 @@ class StrictHellRaiser(BiddingPolicy):
     - If current_high_bid >= 10: pass
     - Always bids for "S" (Spades) contract (deterministic choice)
     """
+
+    VERSION = HEURISTIC_BIDDER_VERSION
 
     def __init__(self, name: str = "strict_raiser"):
         super().__init__(name)
@@ -325,6 +361,8 @@ class FixedBidder(BiddingPolicy):
     Otherwise, passes.
     """
 
+    VERSION = HEURISTIC_BIDDER_VERSION
+
     def __init__(self, n: int, contract: str, name: str = "fixed_bidder"):
         super().__init__(name)
         if n < 1 or n > 10:
@@ -352,6 +390,8 @@ class HeuristicSuitBidder(BiddingPolicy):
       - strength >= 300: bid 5
       - strength >= 250: bid 4
       - strength >= 200: bid 3
+
+    .. note:: Not registered in the experiment config registry — internal only.
       - else: pass
     - Complies with strict-increasing rule (only bids if > current_high_bid)
     """
@@ -464,6 +504,8 @@ class RanktheTank(BiddingPolicy):
     Named after the blog post character who bids based on "my hand looks big."
     Serves as the canonical "rankthetank" teacher for imitation learning.
     """
+
+    VERSION = HEURISTIC_BIDDER_VERSION
 
     def __init__(self, name: str = "rankthetank"):
         super().__init__(name)
@@ -579,6 +621,8 @@ class ModeloEspecifico(BiddingPolicy):
     Named after the blog post's "specific model" baseline.
     """
 
+    VERSION = HEURISTIC_BIDDER_VERSION
+
     _DEFAULT_FEATURE_WEIGHTS = {
         "suit": {"bowers": 1.0, "trump_count": 0.5, "offsuit_aces": 0.5},
         "high": {"offsuit_aces": 1.0},
@@ -659,6 +703,8 @@ class ArtifactBidder(BiddingPolicy):
 
     The artifact is loaded and validated at initialization time.
     """
+
+    VERSION = ARTIFACT_BIDDER_VERSION
 
     def __init__(self, artifact_path: str, name: str = None):
         """
@@ -871,6 +917,8 @@ class OLSaBidder(BiddingPolicy):
     For hybrid_olsa_v1, uses the offensive sub-model (bidder's perspective)
     and ignores residual_variance / risk_lambda fields.
     """
+
+    VERSION = ARTIFACT_BIDDER_VERSION
 
     def __init__(self, artifact_path: str, name: str = "olsa"):
         super().__init__(name)
@@ -1130,6 +1178,8 @@ class HybridOLSaBidder(BiddingPolicy):
 
     Artifact format: hybrid_olsa_v1 with payoff_model, residual_variance, risk_lambda.
     """
+
+    VERSION = ARTIFACT_BIDDER_VERSION
 
     # z-cap to prevent numerical overflow in CDF/PDF
     _Z_CAP = 6.0
@@ -2144,6 +2194,8 @@ class ActionValueBidder(BiddingPolicy):
     Artifact schema: action_value_olsa_v1
     """
 
+    VERSION = ARTIFACT_BIDDER_VERSION
+
     def __init__(
         self,
         artifact_path: str,
@@ -2353,6 +2405,8 @@ class GBTActionValueBidder(BiddingPolicy):
 
     Artifact schema: action_value_gbt_v1
     """
+
+    VERSION = ARTIFACT_BIDDER_VERSION
 
     def __init__(
         self,
@@ -2640,6 +2694,8 @@ class FilteredGBTBidder(BiddingPolicy):
       — constructs the inner GBTActionValueBidder automatically.
     """
 
+    VERSION = ARTIFACT_BIDDER_VERSION
+
     def __init__(
         self,
         inner: Optional[GBTActionValueBidder] = None,
@@ -2716,6 +2772,8 @@ class TwoStageActionValueBidder(BiddingPolicy):
 
     Artifact schema: two_stage_action_value_v1
     """
+
+    VERSION = ARTIFACT_BIDDER_VERSION
 
     def __init__(
         self,

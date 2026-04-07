@@ -9,6 +9,7 @@ These strategies try to win the current trick if possible,
 with variations that add partner awareness and trump conservation.
 """
 
+import hashlib
 from collections import Counter
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -59,6 +60,10 @@ class GreedyStrategy(Strategy):
     - No multi-trick lookahead
     - Myopic (doesn't consider future tricks)
     """
+
+    # GreedyStrategy has been frozen as a reference baseline since the
+    # Glutton fork. Its decision logic never changes, so version is 1.0.0.
+    VERSION = "1.0.0"
 
     def __init__(self, name: str = "greedy"):
         super().__init__(name)
@@ -170,6 +175,22 @@ class GluttonStrategy(Strategy):
         # leader, prefer continuing the same suit on the next lead.
         self._last_won_lead_suit: Optional[str] = None
         self._last_won_lead_seat: Optional[int] = None
+
+    def fingerprint(self) -> str:
+        """Include feature flags in the fingerprint.
+
+        Two ``GluttonStrategy`` instances with different ``cash_winners_on_lead``
+        settings produce different fingerprints even at the same version, because
+        their play behavior differs.
+        """
+        parts = [
+            type(self).__name__,
+            type(self).VERSION,
+            self.name,
+            f"cash_winners_on_lead={self.cash_winners_on_lead}",
+        ]
+        blob = "|".join(parts).encode()
+        return hashlib.sha256(blob).hexdigest()[:8]
 
     def on_hand_start(
         self,
@@ -928,6 +949,27 @@ class GluttonIsolatedStrategy(Strategy):
         # Suit continuity tracking (#2506)
         self._last_won_lead_suit: Optional[str] = None
         self._last_won_lead_seat: Optional[int] = None
+
+    def fingerprint(self) -> str:
+        """Include all feature flags in the fingerprint."""
+        parts = [
+            type(self).__name__,
+            type(self).VERSION,
+            self.name,
+            f"smart_leads={self._smart_leads}",
+            f"smart_discards={self._smart_discards}",
+            f"third_seat_aggression={self._third_seat_aggression}",
+            f"partner_awareness={self._partner_awareness}",
+            f"sure_winner_cover={self._sure_winner_cover}",
+            f"partner_check={self._partner_check}",
+            f"trump_gating={self._trump_gating}",
+            f"probabilistic_trump_in={self._probabilistic_trump_in}",
+            f"lead_bower={self._lead_bower}",
+            f"cash_winners_on_lead={self.cash_winners_on_lead}",
+            f"suit_continuity={self._suit_continuity}",
+        ]
+        blob = "|".join(parts).encode()
+        return hashlib.sha256(blob).hexdigest()[:8]
 
     def on_hand_start(
         self,
