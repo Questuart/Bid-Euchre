@@ -280,40 +280,39 @@ def test_auction_log_all_bidders_visible_mobile(
             f"The test must reach a four-bidder state before asserting overflow (#2594)."
         )
 
-        # Overflow and scroll assertions only apply during auction phase.
-        # After _advance_to_four_bidders the game may have transitioned to
-        # trick_play, which repositions the action-rail below the score bar
-        # (different layout).  Detect auction phase by the absence of
-        # #trick-area — only rendered when phase != "auction" (#2601, #2606).
-        in_auction = mobile_page.locator("#trick-area").count() == 0
+        # The helper must not overshoot the auction phase — if it does,
+        # the layout assertions below are meaningless (#2612).
+        assert mobile_page.locator("#trick-area").count() == 0, (
+            "Helper _advance_to_four_bidders overshot the auction phase — "
+            "game transitioned to trick_play before auction layout could be "
+            "verified (#2612)."
+        )
 
         # The list container should NOT be scrollable during auction
-        if in_auction:
-            list_el = mobile_page.locator(".action-rail__list")
-            if list_el.count() > 0:
-                scroll_height = list_el.evaluate("el => el.scrollHeight")
-                client_height = list_el.evaluate("el => el.clientHeight")
-                assert scroll_height <= client_height + 2, (
-                    f"Auction log list overflows during auction phase: "
-                    f"scrollHeight={scroll_height}px, clientHeight={client_height}px. "
-                    f"All {item_count} bidder rows should be visible without scrolling (#2591)."
-                )
+        list_el = mobile_page.locator(".action-rail__list")
+        if list_el.count() > 0:
+            scroll_height = list_el.evaluate("el => el.scrollHeight")
+            client_height = list_el.evaluate("el => el.clientHeight")
+            assert scroll_height <= client_height + 2, (
+                f"Auction log list overflows during auction phase: "
+                f"scrollHeight={scroll_height}px, clientHeight={client_height}px. "
+                f"All {item_count} bidder rows should be visible without scrolling (#2591)."
+            )
 
-        # Verify each visible item is within the viewport (auction layout only)
-        if in_auction:
-            viewport_height = MOBILE_VIEWPORT["height"]
-            for i in range(item_count):
-                item = items.nth(i)
-                if not item.is_visible():
-                    continue
-                box = item.bounding_box()
-                if box is None:
-                    continue
-                assert box["y"] + box["height"] <= viewport_height + 5, (
-                    f"Auction log item {i} overflows viewport bottom: "
-                    f"y={box['y']:.0f} + h={box['height']:.0f} = "
-                    f"{box['y'] + box['height']:.0f}px > {viewport_height}px (#2591)"
-                )
+        # Verify each visible item is within the viewport
+        viewport_height = MOBILE_VIEWPORT["height"]
+        for i in range(item_count):
+            item = items.nth(i)
+            if not item.is_visible():
+                continue
+            box = item.bounding_box()
+            if box is None:
+                continue
+            assert box["y"] + box["height"] <= viewport_height + 5, (
+                f"Auction log item {i} overflows viewport bottom: "
+                f"y={box['y']:.0f} + h={box['height']:.0f} = "
+                f"{box['y'] + box['height']:.0f}px > {viewport_height}px (#2591)"
+            )
 
     finally:
         context.close()
@@ -371,22 +370,24 @@ def test_auction_log_all_bidders_visible_mobile_big_text(
             item_count >= 4
         ), f"Expected ≥4 auction log items but found {item_count} (#2594)."
 
-        # Scroll assertion only applies during auction phase — after
-        # _advance_to_four_bidders the game may have transitioned to
-        # trick_play which repositions the action-rail (#2601, #2606).
-        in_auction = mobile_page.locator("#trick-area").count() == 0
+        # The helper must not overshoot the auction phase — if it does,
+        # the layout assertions below are meaningless (#2612).
+        assert mobile_page.locator("#trick-area").count() == 0, (
+            "Helper _advance_to_four_bidders overshot the auction phase — "
+            "game transitioned to trick_play before auction layout could be "
+            "verified (#2612)."
+        )
 
         # Check the list container is NOT scrollable (big text mode)
-        if in_auction:
-            list_el = mobile_page.locator(".action-rail__list")
-            if list_el.count() > 0:
-                scroll_height = list_el.evaluate("el => el.scrollHeight")
-                client_height = list_el.evaluate("el => el.clientHeight")
-                assert scroll_height <= client_height + 2, (
-                    f"Auction log overflows in big text mode: "
-                    f"scrollHeight={scroll_height}px, clientHeight={client_height}px. "
-                    f"All bidder rows should be visible without scrolling (#2591)."
-                )
+        list_el = mobile_page.locator(".action-rail__list")
+        if list_el.count() > 0:
+            scroll_height = list_el.evaluate("el => el.scrollHeight")
+            client_height = list_el.evaluate("el => el.clientHeight")
+            assert scroll_height <= client_height + 2, (
+                f"Auction log overflows in big text mode: "
+                f"scrollHeight={scroll_height}px, clientHeight={client_height}px. "
+                f"All bidder rows should be visible without scrolling (#2591)."
+            )
 
     finally:
         context.close()
