@@ -3,7 +3,7 @@
 **Date:** 2026-04-07
 **Data source:** Render production database (`bideuchre-db`)
 **Players analyzed:** Que (25 matches, 280 hands), Meeks (30 matches, 306 hands)
-**Companion reports:** `2026-04-07_meeks_vs_bud_analysis.md`, `2026-04-07_que_vs_meeks_comparison.md`
+**Companion reports:** Meeks vs Bud (PR #2622), Que vs Meeks H2H (PR #2621)
 
 ---
 
