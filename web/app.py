@@ -171,6 +171,22 @@ async def lifespan(app: FastAPI):
                 "Migration: counterfactual_json column already present (concurrent)"
             )
 
+    # 1e. Migrate: add glutton_action_json column to decisions table.
+    # Stores the GBT bidder's recommended loner/glutton action alongside
+    # human decisions for divergence analysis (#2616).
+    # NULL for existing rows and non-glutton turns.
+    if "glutton_action_json" not in decision_cols:
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE decisions ADD COLUMN glutton_action_json TEXT")
+                )
+            logger.info("Migration: added glutton_action_json column to decisions")
+        except OperationalError:
+            logger.info(
+                "Migration: glutton_action_json column already present (concurrent)"
+            )
+
     # 2. Auto-seed invite code on fresh database (atomic: skip if another
     #    instance already seeded between our check and insert)
     seed_session = session_factory()
