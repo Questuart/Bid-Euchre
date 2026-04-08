@@ -244,6 +244,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/analyze_capture_pipeline.py` | Data capture pipeline analysis (charts + quality report) |
 | `scripts/load_test_concurrent.py` | Concurrent player load test (ThreadPoolExecutor + TestClient) |
 | `scripts/validate_teacher_roster.py` | Teacher roster validation |
+| `scripts/backfill_counterfactuals.py` | Backfill counterfactual columns for historical DB decisions (GBT bid + Glutton play) |
 
 ### Internal tooling (`scripts/internal/`)
 
