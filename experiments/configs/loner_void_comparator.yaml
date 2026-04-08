@@ -1,0 +1,159 @@
+# Loner-void full-auction comparator
+#
+# Purpose
+# -------
+# Measure the aggregate competitive impact of `void_backed_lead` when contracts
+# are chosen by the bidder (auction mode). Tests across BOTH production bidding
+# models: OLSa (ActionValueBidder) and Bud Bot (GBTActionValueBidder). All four
+# seats use the same bidder model per matchup group — only the play strategy
+# differs (void_backed_lead True vs False).
+#
+# Design
+# ------
+# Strategy pairing (identical to loner_void_h2h.yaml):
+#   Team 0 (seats 0, 2): GluttonStrategy with cash_winners_on_lead=True, void_backed_lead=True
+#   Team 1 (seats 1, 3): GluttonStrategy with cash_winners_on_lead=True, void_backed_lead=False
+#
+# Bidder groups (two separate sets of matchups):
+#   Group A — GBT bidder (Bud Bot / production default):
+#     Both seat rotations × 5,000 deals = 10,000 hands
+#   Group B — OLSa bidder:
+#     Both seat rotations × 5,000 deals = 10,000 hands
+#
+# This two-bidder design captures two questions:
+#   1. Does void_backed_lead help under GBT auction dynamics? (Bud Bot contract mix)
+#   2. Does void_backed_lead help under OLSa auction dynamics? (OLSa contract mix)
+# OLSa bids loner at a different rate than GBT — the fix's benefit scales with
+# loner frequency, so this comparison tests robustness to bidding model choice.
+#
+# Relationship to EXP 1 (per-contract)
+# -------------------------------------
+# EXP 1 (`loner_void_h2h.yaml`) isolates the void_backed_lead effect per forced
+# contract type. This experiment (EXP 2) measures the aggregate effect under
+# realistic auction conditions where the bidder selects the contract mix, and
+# loner/moon hands occur at their natural rate (~14% loner + moon for GBT).
+#
+# Post-hoc loner facet
+# --------------------
+# Facet the JSONL hand_end records by bid_type (regular vs loner vs moon) to
+# isolate the loner-specific signal. The fix's effect should be concentrated
+# in loner + moon hands (where partner sits out and opponent voids accumulate
+# faster). Expected distribution from GBT auction (from Cash-A EXP 2 reference):
+#   suit_C ~18%, suit_D ~19%, suit_H ~20%, suit_S ~19%
+#   high ~10%, low ~14%
+#   loner/moon within low/high: examine post-hoc from bid_type field
+#
+# Compute budget
+# --------------
+# 4 matchups × 1 auction scenario × 5,000 deals = 20,000 hands. At
+# ~100 hands/sec for auction runs, this completes in ~200 s.
+#
+# MDE at n=5000 per matchup (paired SD ≈ 4 on net_points):
+# ~0.11 net_points/deal at 95% CI.
+# For loner-specific sub-analysis: n ≈ 700 loner+moon per matchup × 2 dirs =
+# ~1,400 loner hands pooled; MDE ~0.34 tricks at 95% CI (borderline adequate;
+# increase n_per to 10,000 if loner signal is not detectable at n=5,000).
+#
+# Analysis plan
+# -------------
+# - Primary: paired bootstrap delta on net_points per bidder group (GBT, OLSa)
+# - Pool both seat rotations with sign flip to cancel seat bias
+# - Secondary: tricks_won delta per bidder group
+# - Post-hoc facet: filter hand_end records to bid_type in {"loner","moon"} and
+#   re-run bootstrap on that subset to isolate the loner-specific signal
+# - Compare GBT-group vs OLSa-group aggregate deltas for robustness check
+#
+# Success criteria
+# ----------------
+# Clear win:   aggregate Δ net_points > 0.05  (both bidder groups positive)
+# Wash:        |Δ| < 0.05 net_points          (below MDE floor)
+# Regression:  Δ < −0.05 net_points           (fix hurts aggregate)
+#
+# Loner sub-analysis targets (post-hoc, lower statistical power):
+#   Clear win:   loner Δ tricks > 0.20         (similar direction to EXP 1 high/low)
+#   Regression:  loner Δ tricks < −0.10
+#
+# Depends on
+# ----------
+# - PR implementing void_backed_lead Option A from Issue #2627
+# - PR #2588 (Cash-A gated to high/low only)
+# - GBT artifact: data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json
+# - OLSa artifact: data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json
+#
+# Run
+# ---
+#   uv run python experiments/run_experiment.py \
+#     --config experiments/configs/loner_void_comparator.yaml \
+#     --seed 42
+
+experiment_name: loner_void_comparator
+
+parameters:
+  n_per: 5000
+  seed: 42
+  # hand_end records required by
+  # src/bid_euchre/analysis/paired.py::load_paired_data.
+  log_level: hand
+  mode: head_to_head_matrix
+  # Same physical deals across all matchups -> paired bootstrap.
+  pair_deals: true
+
+strategies:
+  # Void-lead ON — the candidate play strategy under evaluation.
+  - name: glutton_void_on
+    class_name: GluttonStrategy
+    params:
+      cash_winners_on_lead: true
+      void_backed_lead: true
+
+  # Void-lead OFF — the baseline (current production behaviour).
+  - name: glutton_void_off
+    class_name: GluttonStrategy
+    params:
+      cash_winners_on_lead: true
+      void_backed_lead: false
+
+bidding_policies:
+  # Bud Bot (GBT) — production default bidder.
+  - name: gbt_av
+    class_name: GBTActionValueBidder
+    params:
+      artifact_path: data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json
+
+  # OLSa — production alternative bidder.
+  - name: olsa_av
+    class_name: ActionValueBidder
+    params:
+      artifact_path: data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json
+
+matchups:
+  # --- Group A: GBT bidder (Bud Bot contract mix) ---
+
+  # Void-lead as Team 0, GBT bidder
+  - matchup_id: gbt_void_on_vs_off
+    team0: glutton_void_on
+    team1: glutton_void_off
+    seat_bidding_policies: [gbt_av, gbt_av, gbt_av, gbt_av]
+
+  # Seat-swapped: Void-lead as Team 1, GBT bidder — controls for seat bias
+  - matchup_id: gbt_void_off_vs_on
+    team0: glutton_void_off
+    team1: glutton_void_on
+    seat_bidding_policies: [gbt_av, gbt_av, gbt_av, gbt_av]
+
+  # --- Group B: OLSa bidder (OLSa contract mix) ---
+
+  # Void-lead as Team 0, OLSa bidder
+  - matchup_id: olsa_void_on_vs_off
+    team0: glutton_void_on
+    team1: glutton_void_off
+    seat_bidding_policies: [olsa_av, olsa_av, olsa_av, olsa_av]
+
+  # Seat-swapped: Void-lead as Team 1, OLSa bidder — controls for seat bias
+  - matchup_id: olsa_void_off_vs_on
+    team0: glutton_void_off
+    team1: glutton_void_on
+    seat_bidding_policies: [olsa_av, olsa_av, olsa_av, olsa_av]
+
+scenarios:
+  - contract_type: null  # Auction mode — bidder decides contract and bid_type
