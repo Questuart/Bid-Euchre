@@ -564,3 +564,104 @@ class TestPlayStrategyVersionMigration:
             cols = [c["name"] for c in sa_inspect(engine).get_columns("matches")]
             # Column should exist exactly once (no duplicate)
             assert cols.count("play_strategy_version") == 1
+
+
+class TestDecisionColumnMigrations:
+    """Tests for the counterfactual_json and glutton_action_json startup
+    migrations (lifespan steps 1d and 1e).
+
+    Both columns are nullable TEXT columns on the ``decisions`` table,
+    added in PRs #2616 and #2618 respectively.  The startup migrations
+    ensure existing deployed databases without these columns are upgraded
+    automatically on the next deployment.
+    """
+
+    def test_fresh_db_already_has_counterfactual_json(self, tmp_path):
+        """On a brand-new DB, create_tables includes counterfactual_json;
+        migration is a no-op and no errors occur."""
+        app = _make_app(tmp_path)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = {c["name"] for c in sa_inspect(engine).get_columns("decisions")}
+            assert "counterfactual_json" in cols
+
+    def test_fresh_db_already_has_glutton_action_json(self, tmp_path):
+        """On a brand-new DB, create_tables includes glutton_action_json;
+        migration is a no-op and no errors occur."""
+        app = _make_app(tmp_path)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = {c["name"] for c in sa_inspect(engine).get_columns("decisions")}
+            assert "glutton_action_json" in cols
+
+    def test_migration_adds_counterfactual_json_to_legacy_db(self, tmp_path):
+        """Starting the app against a legacy DB (no counterfactual_json column
+        on decisions) adds the column via ALTER TABLE."""
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        # Sanity: legacy fixture must not already have the column
+        pre_engine = create_engine(db_url)
+        pre_cols = {c["name"] for c in sa_inspect(pre_engine).get_columns("decisions")}
+        assert "counterfactual_json" not in pre_cols
+        pre_engine.dispose()
+
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = {c["name"] for c in sa_inspect(engine).get_columns("decisions")}
+            assert "counterfactual_json" in cols
+
+    def test_migration_adds_glutton_action_json_to_legacy_db(self, tmp_path):
+        """Starting the app against a legacy DB (no glutton_action_json column
+        on decisions) adds the column via ALTER TABLE."""
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        # Sanity: legacy fixture must not already have the column
+        pre_engine = create_engine(db_url)
+        pre_cols = {c["name"] for c in sa_inspect(pre_engine).get_columns("decisions")}
+        assert "glutton_action_json" not in pre_cols
+        pre_engine.dispose()
+
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = {c["name"] for c in sa_inspect(engine).get_columns("decisions")}
+            assert "glutton_action_json" in cols
+
+    def test_both_columns_added_in_single_startup(self, tmp_path):
+        """A single startup on a legacy DB adds both new columns."""
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = {c["name"] for c in sa_inspect(engine).get_columns("decisions")}
+            assert "counterfactual_json" in cols
+            assert "glutton_action_json" in cols
+
+    def test_migrations_idempotent_on_second_startup(self, tmp_path):
+        """Running the app twice on the same DB does not fail or duplicate
+        either column (second run is a no-op)."""
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        # First startup — triggers both migrations
+        config1 = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app1 = create_app(config=config1)
+        with TestClient(app1):
+            pass  # lifespan runs migrations
+
+        # Second startup — columns already present, migrations skipped
+        config2 = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app2 = create_app(config=config2)
+        with TestClient(app2):
+            engine = app2.state.engine
+            cols = [c["name"] for c in sa_inspect(engine).get_columns("decisions")]
+            assert cols.count("counterfactual_json") == 1
+            assert cols.count("glutton_action_json") == 1
