@@ -33,6 +33,10 @@ and exhaust system memory if not cleaned up.
 
 ```bash
 uv run python -c "
+from bid_euchre.ops.core.provider import ServiceProvider
+provider = ServiceProvider.default()
+# cleanup_lane_processes is a module-level utility (not on AbstractWorkerPool);
+# access via the concrete worker_pool module until Platform-13 adds it to the ABC.
 from bid_euchre.ops.worker_pool import cleanup_lane_processes
 killed = cleanup_lane_processes('<lane_id>')
 print(f'Killed {len(killed)} orphaned process(es)')
