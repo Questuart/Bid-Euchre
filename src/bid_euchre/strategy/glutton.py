@@ -21,7 +21,7 @@ from .base import Strategy, card_value_for_dump
 # GluttonStrategy or GluttonIsolatedStrategy. See
 # docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
 # changelog template.
-GLUTTON_STRATEGY_VERSION = "0.10.0"
+GLUTTON_STRATEGY_VERSION = "0.11.0"
 """Changelog:
 
 - 0.7.0 — Initial versioned baseline (PR #2529)
@@ -38,6 +38,12 @@ GLUTTON_STRATEGY_VERSION = "0.10.0"
 - 0.10.0 — Suit continuity: after winning a trick as leader, prefer
   continuing the same suit if cards remain (#2506).
   Always-on (no feature flag). Category: MINOR.
+- 0.11.0 — Void-backed winner leads: when both opponents are void
+  in a suit, any card in that suit is a guaranteed winner
+  regardless of rank (#2627). Also fixes ``observe_play``
+  trick-completion detection for 3-player loner/moon tricks.
+  Gated behind ``cash_winners_on_lead`` for high/low.
+  Category: MINOR.
 """
 
 
@@ -231,7 +237,9 @@ class GluttonStrategy(Strategy):
 
         # Suit continuity: detect trick completion and track whether
         # the leader won their own trick (#2506).
-        if len(trick_plays) == 4:
+        # Use 3 or 4 to handle both loner/moon (3-player) and normal
+        # (4-player) tricks (#2627).
+        if len(trick_plays) in (3, 4):
             winner = trick_winner(
                 trick_plays,
                 contract_type=contract_type,
@@ -247,6 +255,23 @@ class GluttonStrategy(Strategy):
                 # Leader lost — clear continuity
                 self._last_won_lead_suit = None
                 self._last_won_lead_seat = None
+
+    def _opponents_void_in_suit(self, suit: str, player_index: int) -> bool:
+        """Return True if both logical opponents are void in the given suit.
+
+        When both opponents have demonstrated a void (via failed follow-suit
+        in ``observe_play``), any card in that suit is a guaranteed winner
+        regardless of rank — opponents cannot follow suit and therefore
+        cannot beat the lead (#2627).
+
+        Works correctly for both loner (only 2 active opponents) and regular
+        hands (partner winning = team wins, so leading into a voided suit
+        is safe).
+        """
+        opp_seats = ((player_index + 1) % 4, (player_index + 3) % 4)
+        return all(
+            suit in self._void_suits_by_seat.get(opp, set()) for opp in opp_seats
+        )
 
     def _threat_copies_remaining(
         self,
@@ -530,6 +555,19 @@ class GluttonStrategy(Strategy):
                 ]
                 if cont_indices:
                     return select(cont_indices, key=card_value)
+
+            # Void-backed winners (#2627): if both opponents are void in
+            # a suit, any card in that suit wins regardless of rank.
+            # Gated behind Cash-A (high/low only). Picks the highest-
+            # value card from the voided suit to maximize trick value.
+            if cash_a_active:
+                void_backed = [
+                    idx
+                    for idx in legal_indices
+                    if self._opponents_void_in_suit(hand[idx].suit, player_index)
+                ]
+                if void_backed:
+                    return select(void_backed, key=card_value)
 
             if suit_counts:
                 longest_suit = max(
@@ -1009,7 +1047,8 @@ class GluttonIsolatedStrategy(Strategy):
                 self._void_suits_by_seat[player_index].add(led_suit)
 
         # Suit continuity: detect trick completion (#2506).
-        if self._suit_continuity and len(trick_plays) == 4:
+        # Use 3 or 4 to handle loner/moon (3-player) tricks (#2627).
+        if self._suit_continuity and len(trick_plays) in (3, 4):
             winner = trick_winner(
                 trick_plays,
                 contract_type=contract_type,
@@ -1067,6 +1106,16 @@ class GluttonIsolatedStrategy(Strategy):
             if remaining > 0:
                 return False
         return True
+
+    def _opponents_void_in_suit(self, suit: str, player_index: int) -> bool:
+        """Return True if both logical opponents are void in the given suit.
+
+        Mirror of :meth:`GluttonStrategy._opponents_void_in_suit` (#2627).
+        """
+        opp_seats = ((player_index + 1) % 4, (player_index + 3) % 4)
+        return all(
+            suit in self._void_suits_by_seat.get(opp, set()) for opp in opp_seats
+        )
 
     def _count_effective_suit(self, hand: List[Card], suit: str) -> int:
         """Count cards in hand that belong to the given effective suit."""
@@ -1265,6 +1314,16 @@ class GluttonIsolatedStrategy(Strategy):
                 ]
                 if cont_indices:
                     return max(cont_indices, key=card_value)
+
+            # Void-backed winners (#2627): mirror of GluttonStrategy.
+            if cash_a_active:
+                void_backed = [
+                    idx
+                    for idx in legal_indices
+                    if self._opponents_void_in_suit(hand[idx].suit, player_index)
+                ]
+                if void_backed:
+                    return max(void_backed, key=card_value)
 
             if suit_counts:
                 longest_suit = max(

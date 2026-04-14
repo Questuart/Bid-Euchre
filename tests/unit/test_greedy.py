@@ -386,13 +386,13 @@ class TestCashWinnersOnLead:
             f"must lead A♥ (gating suppresses Cash-A) — got {hand[choice]}"
         )
 
-    def test_version_bumped_to_0_10_0(self):
-        """Suit continuity (#2506) bumps version to 0.10.0."""
+    def test_version_bumped_to_0_11_0(self):
+        """Void-backed winner leads (#2627) bumps version to 0.11.0."""
         from bid_euchre.strategy.glutton import GLUTTON_STRATEGY_VERSION
 
-        assert GLUTTON_STRATEGY_VERSION == "0.10.0"
-        assert GluttonStrategy.VERSION == "0.10.0"
-        assert GluttonIsolatedStrategy.VERSION == "0.10.0"
+        assert GLUTTON_STRATEGY_VERSION == "0.11.0"
+        assert GluttonStrategy.VERSION == "0.11.0"
+        assert GluttonIsolatedStrategy.VERSION == "0.11.0"
 
     # ---- Contract-type gating tests (Cash-A.1 → 0.9.0 update) ----
 
@@ -554,3 +554,259 @@ class TestCashWinnersOnLead:
             f"{cls.__name__} in low: Cash-A should fire, "
             f"leading T♠ — got {hand[choice]}"
         )
+
+
+class TestVoidBackedWinnerLeads:
+    """Void-backed winner leads (#2627): when both opponents are void in
+    a suit, any card in that suit is a guaranteed winner regardless of rank.
+
+    This fixes the loner LOW scenario where the AI held cards in suits where
+    opponents had already shown voids, but led from non-voided suits instead
+    because ``_is_sure_winner`` couldn't account for void-backed guarantees.
+    """
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_void_backed_lead_low_contract(self, cls, kwargs):
+        """Core scenario from #2627: in loner LOW, both opponents void in
+        spades. Hold ♠J (not a sure-winner by rank) and ♣K (in a suit
+        opponents still hold). Void-backed logic should prefer ♠J."""
+        hand = [
+            Card("S", "J"),  # idx 0 - spade J, opponents void in S
+            Card("C", "K"),  # idx 1 - club K, opponents NOT void in C
+            Card("C", "Q"),  # idx 2 - club Q
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "low", None, player_index=0)
+        # Simulate: both opponents are void in spades
+        strat._void_suits_by_seat[1].add("S")
+        strat._void_suits_by_seat[3].add("S")
+
+        choice = strat.choose_card(hand, [], "low", None, 0)
+        assert hand[choice] == Card("S", "J"), (
+            f"{cls.__name__}: void-backed lead should pick ♠J (opponents "
+            f"void in S), got {hand[choice]}"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_void_backed_lead_high_contract(self, cls, kwargs):
+        """In high contract, void-backed leads also fire: ♠J (opponents
+        void in S) is preferred over ♣A (opponents can follow clubs)."""
+        hand = [
+            Card("S", "J"),  # idx 0 - spade J, opponents void in S
+            Card("C", "A"),  # idx 1 - club A, opponents NOT void in C
+            Card("D", "K"),  # idx 2 - diamond K
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "high", None, player_index=0)
+        # Both opponents void in spades
+        strat._void_suits_by_seat[1].add("S")
+        strat._void_suits_by_seat[3].add("S")
+
+        choice = strat.choose_card(hand, [], "high", None, 0)
+        assert hand[choice] == Card(
+            "S", "J"
+        ), f"{cls.__name__}: void-backed lead should pick ♠J, got {hand[choice]}"
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_void_backed_picks_highest_value_card(self, cls, kwargs):
+        """When multiple void-backed cards exist, pick the highest-value one
+        (which in low = lowest rank, in high = highest rank)."""
+        hand = [
+            Card("S", "J"),  # idx 0 - spade J
+            Card("S", "Q"),  # idx 1 - spade Q
+            Card("C", "K"),  # idx 2 - club K (opponents not void)
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "low", None, player_index=0)
+        strat._void_suits_by_seat[1].add("S")
+        strat._void_suits_by_seat[3].add("S")
+
+        choice = strat.choose_card(hand, [], "low", None, 0)
+        # In low, J has higher value than Q (inverted ranks), so J is best
+        assert hand[choice] == Card("S", "J"), (
+            f"{cls.__name__}: should pick highest-value void-backed card "
+            f"(♠J in low), got {hand[choice]}"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_no_void_backed_when_only_one_opponent_void(self, cls, kwargs):
+        """Void-backed requires BOTH opponents void. If only one is void,
+        the other can still follow suit and potentially win."""
+        hand = [
+            Card("S", "J"),  # idx 0 - spade J
+            Card("C", "K"),  # idx 1 - club K
+            Card("C", "Q"),  # idx 2 - club Q
+            Card("C", "T"),  # idx 3 - club T
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "low", None, player_index=0)
+        # Only opponent seat 1 is void in spades, seat 3 is not
+        strat._void_suits_by_seat[1].add("S")
+
+        choice = strat.choose_card(hand, [], "low", None, 0)
+        # Should fall through to longest-suit or sure-winner, not void-backed
+        # ♠J is NOT a sure winner (♠T not accounted for), so longest-suit
+        # (clubs) should be used
+        assert hand[choice].suit == "C", (
+            f"{cls.__name__}: with only one opponent void, should NOT use "
+            f"void-backed logic — got {hand[choice]}"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": False}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": False},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_void_backed_requires_cash_a_flag(self, cls, kwargs):
+        """Void-backed leads are gated behind cash_winners_on_lead. With the
+        flag off, the void-backed path does not fire."""
+        hand = [
+            Card("S", "J"),  # idx 0 - spade J, opponents void in S
+            Card("C", "K"),  # idx 1 - club K
+            Card("C", "Q"),  # idx 2
+            Card("C", "T"),  # idx 3
+        ]
+
+        strat = cls(**kwargs)
+        strat.on_hand_start(hand, "low", None, player_index=0)
+        strat._void_suits_by_seat[1].add("S")
+        strat._void_suits_by_seat[3].add("S")
+
+        choice = strat.choose_card(hand, [], "low", None, 0)
+        # With flag off, falls through to longest-suit heuristic (clubs)
+        assert hand[choice].suit == "C", (
+            f"{cls.__name__}: with Cash-A off, void-backed should not fire "
+            f"— got {hand[choice]}"
+        )
+
+
+class TestObservePlayLonerTricks:
+    """Fix observe_play suit-continuity for 3-player loner/moon tricks (#2627).
+
+    The original code used ``len(trick_plays) == 4`` to detect trick
+    completion, which never fires for loner/moon hands (3 active players).
+    """
+
+    def test_glutton_observe_play_3player_trick(self):
+        """GluttonStrategy.observe_play sets _last_won_lead_suit after
+        a 3-play trick (loner/moon)."""
+        strat = GluttonStrategy()
+        strat.on_hand_start([Card("S", "A")] * 10, "low", None, player_index=0)
+
+        # Simulate a 3-player trick: seat 0 leads ♠T, seat 1 plays ♠J,
+        # seat 3 plays ♠Q. In low, ♠T wins (lowest rank is best).
+        trick_plays = [
+            (0, Card("S", "T")),
+            (1, Card("S", "J")),
+            (3, Card("S", "Q")),
+        ]
+        # Observe each play
+        for seat, card in trick_plays:
+            strat.observe_play(seat, card, trick_plays, "low", None)
+
+        assert strat._last_won_lead_suit == "S", (
+            "After 3-player trick where leader won, _last_won_lead_suit "
+            f"should be 'S', got {strat._last_won_lead_suit}"
+        )
+        assert strat._last_won_lead_seat == 0
+
+    def test_glutton_observe_play_3player_leader_lost(self):
+        """When the leader loses a 3-player trick, continuity is cleared."""
+        strat = GluttonStrategy()
+        strat.on_hand_start([Card("S", "A")] * 10, "low", None, player_index=0)
+
+        # Seat 0 leads ♠Q, seat 1 plays ♠J, seat 3 plays ♠T.
+        # In low, ♠T wins (seat 3), not the leader (seat 0).
+        trick_plays = [
+            (0, Card("S", "Q")),
+            (1, Card("S", "J")),
+            (3, Card("S", "T")),
+        ]
+        for seat, card in trick_plays:
+            strat.observe_play(seat, card, trick_plays, "low", None)
+
+        assert strat._last_won_lead_suit is None
+        assert strat._last_won_lead_seat is None
+
+    def test_isolated_observe_play_3player_trick(self):
+        """GluttonIsolatedStrategy.observe_play handles 3-play tricks
+        when suit_continuity is enabled."""
+        strat = GluttonIsolatedStrategy(suit_continuity=True)
+        strat.on_hand_start([Card("S", "A")] * 10, "low", None, player_index=0)
+
+        trick_plays = [
+            (0, Card("S", "T")),
+            (1, Card("S", "J")),
+            (3, Card("S", "Q")),
+        ]
+        for seat, card in trick_plays:
+            strat.observe_play(seat, card, trick_plays, "low", None)
+
+        assert strat._last_won_lead_suit == "S"
+        assert strat._last_won_lead_seat == 0
+
+    def test_isolated_observe_play_no_continuity_flag(self):
+        """With suit_continuity=False, _last_won_lead_suit stays None
+        even after trick completion."""
+        strat = GluttonIsolatedStrategy(suit_continuity=False)
+        strat.on_hand_start([Card("S", "A")] * 10, "low", None, player_index=0)
+
+        trick_plays = [
+            (0, Card("S", "T")),
+            (1, Card("S", "J")),
+            (3, Card("S", "Q")),
+        ]
+        for seat, card in trick_plays:
+            strat.observe_play(seat, card, trick_plays, "low", None)
+
+        assert strat._last_won_lead_suit is None
