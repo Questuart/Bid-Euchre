@@ -1194,6 +1194,69 @@ class TestGluttonCounterfactual:
 # ---------------------------------------------------------------------------
 
 
+class TestBidCounterfactualLegality:
+    """Illegal GBT bid counterfactuals must be rejected (#2619)."""
+
+    def test_illegal_counterfactual_returns_none(self, app):
+        """When the GBT bidder recommends an illegal bid, the counterfactual
+        must be discarded (return None) rather than stored."""
+        from unittest.mock import MagicMock
+
+        from web.routes import _compute_bid_counterfactual
+
+        # Build a mock AI manager whose bud_bot returns a specific bid
+        mock_policy = MagicMock()
+        mock_policy.choose_bid.return_value = BidAction.bid(8, "H")
+
+        mock_model = MagicMock()
+        mock_model.bidding_policy = mock_policy
+
+        mock_ai = MagicMock(spec=AIManager)
+        mock_ai.get_model_info.return_value = mock_model
+
+        # Build a minimal mock hand
+        mock_hand = MagicMock()
+        mock_hand.hands = {0: []}
+        mock_hand.dealer_seat = 3
+        mock_hand.current_high_bid = None
+        mock_hand.auction = []
+
+        # Legal bids do NOT include the GBT's recommendation (bid 8 H)
+        legal_bids = [BidAction.pass_bid(), BidAction.bid(5, "H")]
+
+        result = _compute_bid_counterfactual(mock_ai, mock_hand, 0, legal_bids)
+        assert result is None, "Illegal counterfactual bid should return None"
+
+    def test_legal_counterfactual_returns_dict(self, app):
+        """When the GBT bidder recommends a legal bid, it is returned normally."""
+        from unittest.mock import MagicMock
+
+        from web.routes import _compute_bid_counterfactual
+
+        mock_policy = MagicMock()
+        mock_policy.choose_bid.return_value = BidAction.pass_bid()
+
+        mock_model = MagicMock()
+        mock_model.bidding_policy = mock_policy
+
+        mock_ai = MagicMock(spec=AIManager)
+        mock_ai.get_model_info.return_value = mock_model
+
+        mock_hand = MagicMock()
+        mock_hand.hands = {0: []}
+        mock_hand.dealer_seat = 3
+        mock_hand.current_high_bid = None
+        mock_hand.auction = []
+
+        # Legal bids include a pass
+        legal_bids = [BidAction.pass_bid(), BidAction.bid(5, "H")]
+
+        result = _compute_bid_counterfactual(mock_ai, mock_hand, 0, legal_bids)
+        assert result is not None
+        assert result["source"] == "bud_bot"
+        assert result["n"] == 0  # pass bid
+
+
 class TestBidCounterfactual:
     """Human bid decisions should include a GBT counterfactual."""
 
