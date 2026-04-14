@@ -7,6 +7,7 @@ turns.  Delegates **all** rule evaluation to existing ``core/``, ``sim/``,
 
 from __future__ import annotations
 
+import copy
 import logging
 import random
 from dataclasses import dataclass
@@ -465,8 +466,12 @@ class MatchEngine:
     def get_suggested_play(self, state: MatchState) -> int | None:
         """Return the AI's recommended card index for the human player.
 
-        Uses the same ``play_strategy.choose_card()`` that AI opponents use
-        to pick the card the AI would play in the human's position.
+        Uses a **deep copy** of ``play_strategy`` so the suggestion call
+        cannot mutate the shared strategy's tracking state (``_seen_counts``,
+        ``_void_suits_by_seat``, ``_player_index``, etc.).  Without this
+        isolation, ``choose_card()``'s defensive resets and state writes
+        would corrupt the instance used for subsequent AI turns.  See #2644.
+
         Returns ``None`` if it's not the human's turn to play.
         """
         hand = state.current_hand
@@ -477,7 +482,11 @@ class MatchEngine:
         if hand.current_trick is None or hand.contract_type is None:
             return None
         try:
-            return self.play_strategy.choose_card(
+            # Deep-copy preserves accumulated tracking state (seen cards,
+            # void inferences) for an informed suggestion while isolating
+            # all mutations from the shared instance.
+            snapshot = copy.deepcopy(self.play_strategy)
+            return snapshot.choose_card(
                 hand.hands[HUMAN_SEAT],
                 hand.current_trick.plays,
                 hand.contract_type,
