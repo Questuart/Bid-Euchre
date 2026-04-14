@@ -3157,6 +3157,80 @@ class TestGetSuggestedBid:
         state = MatchState(seed=SEED, ai_model="heuristic")
         assert engine.get_suggested_bid(state) is None
 
+    def test_suggested_bid_always_subset_of_legal_bids(self, engine: MatchEngine):
+        """Suggested bid must be a member of the legal bids set (#2620)."""
+        found = False
+        for seed in range(200):
+            state = engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if (
+                hand is not None
+                and hand.phase == "auction"
+                and hand.current_seat == HUMAN_SEAT
+            ):
+                suggestion = engine.get_suggested_bid(state)
+                if suggestion is not None:
+                    legal_bids = engine.get_legal_bids(state)
+                    # Build the set of (n, contract, bid_type) tuples from legal bids
+                    legal_set = {(b.n, b.contract, b.bid_type) for b in legal_bids}
+                    suggested_tuple = (
+                        suggestion["n"],
+                        suggestion["contract"],
+                        suggestion["bid_type"],
+                    )
+                    assert suggested_tuple in legal_set, (
+                        f"Suggested bid {suggested_tuple} not in legal bids "
+                        f"{legal_set} (seed={seed})"
+                    )
+                    found = True
+        if not found:
+            pytest.skip("No seed produced a human auction turn with suggestion")
+
+    def test_filters_illegal_suggestion(self):
+        """Engine returns None when bidding policy suggests an illegal bid (#2620).
+
+        Uses the standard FixedBidder(5S) engine to create a state where the
+        high bid is already 5, then swaps in a policy that always suggests 3S
+        to verify the legality filter rejects it.
+        """
+
+        class AlwaysBid3S(BiddingPolicy):
+            """Always suggests 3 Spades regardless of auction state."""
+
+            def __init__(self) -> None:
+                super().__init__(name="always_3s")
+
+            def choose_bid(self, obs: BiddingObservation) -> BidAction:
+                return BidAction.bid(3, "S")
+
+        # Use standard engine to get a state where high bid > 3 and
+        # it's the human's turn.
+        setup_engine = MatchEngine(
+            bidding_policy=FixedBidder(n=5, contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        for seed in range(500):
+            state = setup_engine.start_match(seed, "heuristic")
+            hand = state.current_hand
+            if (
+                hand is not None
+                and hand.phase == "auction"
+                and hand.current_seat == HUMAN_SEAT
+                and hand.current_high_bid > 3
+            ):
+                # Now use an engine with AlwaysBid3S for the suggestion
+                illegal_engine = MatchEngine(
+                    bidding_policy=AlwaysBid3S(),
+                    play_strategy=FirstLegalPlay(),
+                )
+                suggestion = illegal_engine.get_suggested_bid(state)
+                assert suggestion is None, (
+                    f"Expected None for illegal suggestion 3S when "
+                    f"high_bid={hand.current_high_bid} (seed={seed})"
+                )
+                return
+        pytest.skip("No seed produced a human turn with high bid > 3")
+
 
 def _advance_to_human_play(engine: MatchEngine, state: MatchState) -> MatchState:
     """Advance state until the human has a play turn (trick_play phase)."""

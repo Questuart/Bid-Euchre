@@ -2907,6 +2907,47 @@ class TestAccessibilityHand:
         assert "2 cards in your hand" in html
 
 
+class TestHintAnnouncementSuppression:
+    """Hint text must not leak into aria-label when hints are off (#2620).
+
+    The ``data-ai-hints`` toggle is client-side (CSS), so the server-rendered
+    HTML must not embed "(AI suggestion)" in the button's ``aria-label``.
+    The visual hint badge (💡) is CSS-toggled separately.
+    """
+
+    def test_suggested_card_aria_label_omits_hint_text(self, env):
+        """aria-label on a suggested card should NOT contain 'AI suggestion'."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["S", "A"], ["H", "K"]],
+            legal_plays=[0, 1],
+            phase="trick_play",
+            suggested_card_index=0,
+        )
+        # The card at index 0 is the suggested card.  Its aria-label should
+        # describe the card normally, without leaking hint text.
+        assert "(AI suggestion)" not in html
+        # The hint badge emoji should still be rendered (CSS controls visibility)
+        assert "💡" in html
+
+    def test_non_suggested_card_aria_label_unchanged(self, env):
+        """Non-suggested legal card should have clean aria-label too."""
+        tmpl = env.get_template("partials/hand.html")
+        html = tmpl.render(
+            link_uuid="x",
+            turn_number=0,
+            human_hand=[["D", "Q"]],
+            legal_plays=[0],
+            phase="trick_play",
+            suggested_card_index=None,
+        )
+        assert 'aria-label="Play Q of Diamonds"' in html
+        assert "(AI suggestion)" not in html
+        assert "💡" not in html
+
+
 class TestAccessibilityBidPanel:
     """Verify ARIA attributes on bid panel controls."""
 

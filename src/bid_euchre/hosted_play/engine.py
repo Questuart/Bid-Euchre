@@ -519,6 +519,11 @@ class MatchEngine:
                 auction_transcript=tuple(hand.auction),
             )
             bid = self.bidding_policy.choose_bid(obs)
+            # Filter against auction legality — the policy may suggest
+            # a bid that is not legal given the current auction state.
+            legal_bids = self.get_legal_bids(state)
+            if bid not in legal_bids:
+                return None
             return {
                 "n": bid.n,
                 "contract": bid.contract,
