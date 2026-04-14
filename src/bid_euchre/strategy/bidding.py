@@ -2631,6 +2631,31 @@ def _would_overbid_cap(obs: BiddingObservation, raw: BidAction) -> bool:
     return raw.n > obs.current_high_bid + 1
 
 
+def _partner_is_high_bidder(obs: BiddingObservation) -> bool:
+    """Check whether the dealer's partner currently holds the high bid.
+
+    Scans the auction transcript for the last BID entry; returns True when
+    that entry's seat is the partner of ``obs.seat`` (i.e. ``(seat + 2) % 4``).
+
+    Returns False when there is no standing bid (all-pass auction) or the
+    high bidder is an opponent or the dealer themselves.
+
+    This is unconditional — the dealer should *never* overbid their own
+    partner, regardless of Enhancement A/B flag state.
+    """
+    if obs.current_high_bid <= 0:
+        return False
+
+    partner_seat = (obs.seat + 2) % 4
+    # Walk the transcript to find the last BID entry.
+    last_bidder_seat: int | None = None
+    for entry in obs.auction_transcript:
+        if entry.get("action") == "BID":
+            last_bidder_seat = entry.get("seat")
+
+    return last_bidder_seat == partner_seat
+
+
 def _would_nudge_partner(obs: BiddingObservation, raw: BidAction) -> bool:
     """Enhancement B predicate: detect +1 same-suit bump of partner's bid.
 
@@ -2737,6 +2762,12 @@ class FilteredGBTBidder(BiddingPolicy):
         # Filters only apply to the dealer (last bidder in auction order).
         if obs.seat != obs.dealer_seat:
             return raw
+
+        # Unconditional partner-awareness: never overbid your own partner.
+        # This fires before Enhancement A/B — if partner holds the high bid,
+        # the dealer always passes regardless of the model's evaluation.
+        if _partner_is_high_bidder(obs):
+            return BidAction.pass_bid()
 
         if self._flag_a and _would_overbid_cap(obs, raw):
             # Cap the bid to current_high_bid + 1, keeping the same contract.
