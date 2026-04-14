@@ -282,12 +282,14 @@ def _compute_bid_counterfactual(
     ai_manager: AIManager,
     hand,
     seat: int,
+    legal_bids: list[BidAction],
 ) -> dict[str, Any] | None:
     """Run the GBT bidder on the same hand state and return its recommendation.
 
     Purely observational — does not modify game state.  Returns ``None`` if
     the ``bud_bot`` model is unavailable (should not happen in production
-    since the startup roster check ensures it).
+    since the startup roster check ensures it), or if the GBT recommendation
+    is not a legal bid (#2619).
     """
     try:
         bud_bot = ai_manager.get_model_info("bud_bot")
@@ -306,6 +308,25 @@ def _compute_bid_counterfactual(
         gbt_bid = bud_bot.bidding_policy.choose_bid(obs)
     except Exception:
         logger.warning("counterfactual: GBT bidder failed, skipping", exc_info=True)
+        return None
+
+    # Validate the GBT recommendation is a legal bid (#2619).
+    # The GBT bidder may recommend an illegal bid (e.g. a bid that doesn't
+    # overcall the current high bid).  Log and discard rather than storing
+    # an illegal counterfactual that would pollute divergence analysis.
+    is_legal = any(
+        b.n == gbt_bid.n
+        and b.contract == gbt_bid.contract
+        and b.bid_type == gbt_bid.bid_type
+        for b in legal_bids
+    )
+    if not is_legal:
+        logger.info(
+            "counterfactual: GBT bid is illegal (n=%d, contract=%s, bid_type=%s), skipping",
+            gbt_bid.n,
+            gbt_bid.contract,
+            gbt_bid.bid_type,
+        )
         return None
 
     return {
@@ -1606,7 +1627,9 @@ async def submit_bid(
 
         # Compute GBT counterfactual before mutating state (#2469).
         # Purely observational — does not affect gameplay.
-        counterfactual = _compute_bid_counterfactual(ai_manager, hand, HUMAN_SEAT)
+        counterfactual = _compute_bid_counterfactual(
+            ai_manager, hand, HUMAN_SEAT, legal_bids
+        )
 
         # Ensure hand row exists (keyed by deal_id for redeal-safe uniqueness)
         hand_row = _ensure_hand_row(session, match_row, hand, hand.deal_id)

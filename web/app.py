@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from starlette.templating import Jinja2Templates
 
 from .ai_manager import AIManager
@@ -149,8 +149,9 @@ async def lifespan(app: FastAPI):
                     text("ALTER TABLE matches ADD COLUMN play_strategy_version TEXT")
                 )
             logger.info("Migration: added play_strategy_version column to matches")
-        except OperationalError:
-            # Column already exists — concurrent startup or stale inspector cache (#2532)
+        except (OperationalError, ProgrammingError):
+            # SQLite raises OperationalError, PostgreSQL raises ProgrammingError
+            # for duplicate-column errors (#2532, #2632).
             logger.info(
                 "Migration: play_strategy_version column already present (concurrent)"
             )
@@ -166,7 +167,10 @@ async def lifespan(app: FastAPI):
                     text("ALTER TABLE decisions ADD COLUMN counterfactual_json TEXT")
                 )
             logger.info("Migration: added counterfactual_json column to decisions")
-        except OperationalError:
+        except (OperationalError, ProgrammingError):
+            # SQLite raises OperationalError, PostgreSQL raises ProgrammingError
+            # for duplicate-column errors (#2632).  Both mean the column already
+            # exists — concurrent startup or stale inspector cache.
             logger.info(
                 "Migration: counterfactual_json column already present (concurrent)"
             )
@@ -182,7 +186,9 @@ async def lifespan(app: FastAPI):
                     text("ALTER TABLE decisions ADD COLUMN glutton_action_json TEXT")
                 )
             logger.info("Migration: added glutton_action_json column to decisions")
-        except OperationalError:
+        except (OperationalError, ProgrammingError):
+            # SQLite raises OperationalError, PostgreSQL raises ProgrammingError
+            # for duplicate-column errors (#2632).
             logger.info(
                 "Migration: glutton_action_json column already present (concurrent)"
             )

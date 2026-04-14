@@ -665,3 +665,66 @@ class TestDecisionColumnMigrations:
             cols = [c["name"] for c in sa_inspect(engine).get_columns("decisions")]
             assert cols.count("counterfactual_json") == 1
             assert cols.count("glutton_action_json") == 1
+
+
+class TestMigrationDuplicateColumnRobustness:
+    """Migrations must handle duplicate-column errors from any DB backend.
+
+    SQLite raises ``OperationalError`` for duplicate columns while
+    PostgreSQL raises ``ProgrammingError`` (#2632).  The migrations
+    catch both to remain idempotent regardless of backend.
+    """
+
+    def test_concurrent_add_column_on_decisions(self, tmp_path):
+        """Simulate a concurrent startup that adds decision columns between
+        inspector check and ALTER TABLE execution.
+
+        The migration's inspector check finds the column absent, but by the
+        time ALTER TABLE runs, another process has already added it.
+        On SQLite this raises OperationalError; the code must handle it
+        gracefully (no crash, column exists exactly once).
+        """
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        # Manually add the columns (simulating concurrent startup)
+        pre_engine = create_engine(db_url)
+        with pre_engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE decisions ADD COLUMN counterfactual_json TEXT")
+            )
+            conn.execute(
+                text("ALTER TABLE decisions ADD COLUMN glutton_action_json TEXT")
+            )
+        pre_engine.dispose()
+
+        # App startup should NOT crash — migrations detect existing columns
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = [c["name"] for c in sa_inspect(engine).get_columns("decisions")]
+            assert cols.count("counterfactual_json") == 1
+            assert cols.count("glutton_action_json") == 1
+
+    def test_concurrent_add_column_on_matches(self, tmp_path):
+        """Simulate a concurrent startup that adds play_strategy_version
+        between inspector check and ALTER TABLE execution."""
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        # Manually add the column (simulating concurrent startup)
+        pre_engine = create_engine(db_url)
+        with pre_engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE matches ADD COLUMN play_strategy_version TEXT")
+            )
+        pre_engine.dispose()
+
+        # App startup should NOT crash
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with TestClient(app):
+            engine = app.state.engine
+            cols = [c["name"] for c in sa_inspect(engine).get_columns("matches")]
+            assert cols.count("play_strategy_version") == 1
