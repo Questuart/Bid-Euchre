@@ -3052,6 +3052,63 @@ class TestGetSuggestedPlay:
         state = MatchState(seed=SEED, ai_model="heuristic")
         assert engine.get_suggested_play(state) is None
 
+    def test_no_state_leakage_between_calls(self):
+        """Calling get_suggested_play() must not mutate the shared strategy.
+
+        GluttonStrategy has mutable tracking state (_seen_counts,
+        _void_suits_by_seat, _player_index, etc.).  The suggestion path
+        must use an isolated copy so repeated calls don't corrupt the
+        strategy instance used for AI play.  Regression lock for #2644.
+        """
+        glutton = GluttonStrategy()
+        engine = MatchEngine(
+            bidding_policy=FixedBidder(n=5, contract="S"),
+            play_strategy=glutton,
+        )
+
+        # Find a seed where the human gets a play turn
+        for seed in range(200):
+            state = engine.start_match(seed, "heuristic")
+            state = _advance_to_human_play(engine, state)
+            hand = state.current_hand
+            if (
+                hand is not None
+                and hand.phase == "trick_play"
+                and hand.current_seat == HUMAN_SEAT
+            ):
+                break
+        else:
+            pytest.skip("No human play turn found in 200 seeds")
+
+        # Snapshot strategy state before suggestion
+        seen_before = dict(glutton._seen_counts)
+        voids_before = {s: set(v) for s, v in glutton._void_suits_by_seat.items()}
+        player_idx_before = glutton._player_index
+        contract_before = glutton._contract_type
+        trump_before = glutton._trump_suit
+        last_lead_suit_before = glutton._last_won_lead_suit
+        last_lead_seat_before = glutton._last_won_lead_seat
+
+        # Call suggestion multiple times
+        for _ in range(3):
+            result = engine.get_suggested_play(state)
+            assert result is not None
+
+        # Strategy state must be unchanged
+        assert (
+            glutton._seen_counts == seen_before
+        ), "get_suggested_play() leaked _seen_counts into shared strategy"
+        assert (
+            glutton._void_suits_by_seat == voids_before
+        ), "get_suggested_play() leaked _void_suits_by_seat into shared strategy"
+        assert (
+            glutton._player_index == player_idx_before
+        ), "get_suggested_play() leaked _player_index into shared strategy"
+        assert glutton._contract_type == contract_before
+        assert glutton._trump_suit == trump_before
+        assert glutton._last_won_lead_suit == last_lead_suit_before
+        assert glutton._last_won_lead_seat == last_lead_seat_before
+
 
 class TestGetSuggestedBid:
     """Tests for MatchEngine.get_suggested_bid()."""
