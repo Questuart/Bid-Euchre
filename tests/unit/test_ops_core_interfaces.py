@@ -18,12 +18,16 @@ import pytest
 
 from bid_euchre.ops.core import (
     AbstractController,
+    AbstractLaneConfig,
     AbstractMonitor,
     AbstractTaskQueue,
     AbstractWorkerPool,
 )
 from bid_euchre.ops.core.interfaces import (
     AbstractController as DirectController,
+)
+from bid_euchre.ops.core.interfaces import (
+    AbstractLaneConfig as DirectLaneConfig,
 )
 from bid_euchre.ops.core.interfaces import (
     AbstractMonitor as DirectMonitor,
@@ -71,6 +75,17 @@ class TestAbstractTaskQueueNotInstantiable:
 
     def test_re_export_matches_direct(self) -> None:
         assert AbstractTaskQueue is DirectTaskQueue
+
+
+class TestAbstractLaneConfigNotInstantiable:
+    """AbstractLaneConfig raises TypeError on direct instantiation."""
+
+    def test_cannot_instantiate(self) -> None:
+        with pytest.raises(TypeError, match="abstract method"):
+            AbstractLaneConfig()  # type: ignore[abstract]
+
+    def test_re_export_matches_direct(self) -> None:
+        assert AbstractLaneConfig is DirectLaneConfig
 
 
 class TestAbstractWorkerPoolNotInstantiable:
@@ -155,6 +170,24 @@ class _StubTaskQueue(AbstractTaskQueue):
         return {"total": 0}
 
 
+class _StubLaneConfig(AbstractLaneConfig):
+    """Minimal concrete implementation for testing."""
+
+    def known_lanes(self) -> frozenset[str]:
+        return frozenset({"test-lane-a", "test-lane-b"})
+
+    def lane_domains(self) -> dict[str, str | None]:
+        return {"test-lane-a": "domain-x", "test-lane-b": None}
+
+    def pane_name_for_lane(self, lane_id: str) -> str | None:
+        if lane_id in ("test-lane-a", "test-lane-b"):
+            return lane_id
+        return None
+
+    def legacy_lanes(self) -> frozenset[str]:
+        return frozenset({"old-lane"})
+
+
 class _StubWorkerPool(AbstractWorkerPool):
     """Minimal concrete implementation for testing."""
 
@@ -209,6 +242,20 @@ class TestConcreteSubclasses:
         assert tq.list_packets() == []
         assert tq.archive_packet("test") is True
         assert tq.queue_summary()["total"] == 0
+
+    def test_stub_lane_config(self) -> None:
+        lc = _StubLaneConfig()
+        assert isinstance(lc, AbstractLaneConfig)
+        lanes = lc.known_lanes()
+        assert isinstance(lanes, frozenset)
+        assert "test-lane-a" in lanes
+        assert "test-lane-b" in lanes
+        domains = lc.lane_domains()
+        assert domains["test-lane-a"] == "domain-x"
+        assert domains["test-lane-b"] is None
+        assert lc.pane_name_for_lane("test-lane-a") == "test-lane-a"
+        assert lc.pane_name_for_lane("unknown") is None
+        assert "old-lane" in lc.legacy_lanes()
 
     def test_stub_worker_pool(self) -> None:
         wp = _StubWorkerPool()
@@ -289,6 +336,21 @@ class _PartialTaskQueue(AbstractTaskQueue):
     # queue_summary intentionally omitted
 
 
+class _PartialLaneConfig(AbstractLaneConfig):
+    """Missing legacy_lanes — should fail to instantiate."""
+
+    def known_lanes(self) -> frozenset[str]:
+        return frozenset()
+
+    def lane_domains(self) -> dict[str, str | None]:
+        return {}
+
+    def pane_name_for_lane(self, lane_id: str) -> str | None:
+        return None
+
+    # legacy_lanes intentionally omitted
+
+
 class _PartialWorkerPool(AbstractWorkerPool):
     """Missing nudge_pane — should fail to instantiate."""
 
@@ -325,6 +387,10 @@ class TestPartialSubclasses:
         with pytest.raises(TypeError, match="abstract method"):
             _PartialTaskQueue()  # type: ignore[abstract]
 
+    def test_partial_lane_config(self) -> None:
+        with pytest.raises(TypeError, match="abstract method"):
+            _PartialLaneConfig()  # type: ignore[abstract]
+
     def test_partial_worker_pool(self) -> None:
         with pytest.raises(TypeError, match="abstract method"):
             _PartialWorkerPool()  # type: ignore[abstract]
@@ -343,6 +409,7 @@ class TestModuleExports:
 
         expected_abcs = {
             "AbstractController",
+            "AbstractLaneConfig",
             "AbstractMonitor",
             "AbstractTaskQueue",
             "AbstractWorkerPool",
@@ -355,6 +422,7 @@ class TestModuleExports:
 
         abc_names = [
             "AbstractController",
+            "AbstractLaneConfig",
             "AbstractMonitor",
             "AbstractTaskQueue",
             "AbstractWorkerPool",

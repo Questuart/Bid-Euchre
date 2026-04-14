@@ -82,46 +82,39 @@ _PASTE_BRACKET_DELAY: float = 0.1
 #: injected messages from corrupting the current input buffer.  See #2352.
 _ESCAPE_CANCEL_DELAY: float = 0.1
 
-#: Default domain assignment for each managed lane.
-#: Lanes with ``None`` are "flex" — available to any domain when same-domain
-#: lanes are exhausted.
-LANE_DOMAINS: dict[str, str | None] = {
-    # Platform pool
-    "author-a": "platform",
-    "author-b": "platform",
-    "author-c": "platform",
-    "author-d": "platform",
-    # Browser-game pool
-    "brws-author-a": "browser-game",
-    "brws-author-b": "browser-game",
-    "brws-author-c": "browser-game",
-    "brws-author-d": "browser-game",
-    # Analyst pool (flex — accepts any domain)
-    "analyst-a": None,
-    "analyst-b": None,
-    "analyst-c": None,
-    "analyst-d": None,
-    # Flex pool (domain-agnostic overflow)
-    "flex-a": None,
-    "flex-b": None,
-    "flex-c": None,
-    "flex-d": None,
-}
+# ---------------------------------------------------------------------------
+# Lane topology — provided by the adapter layer
+# ---------------------------------------------------------------------------
+
+
+def _get_lane_domains() -> dict[str, str | None]:
+    """Return lane domain assignments from the adapter.
+
+    Replaces the former module-level ``LANE_DOMAINS`` constant.
+    """
+    from bid_euchre.ops.adapters.bid_euchre import get_lane_config
+
+    return get_lane_config().lane_domains()
 
 
 def _managed_lanes() -> frozenset[str]:
     """Return the set of lane IDs managed by the worker pool.
 
-    Imports KNOWN_AUTHOR_LANES from task_queue to avoid duplication.
+    Delegates to the lane config adapter instead of importing from
+    task_queue.
     """
-    from bid_euchre.ops.task_queue import KNOWN_AUTHOR_LANES
+    from bid_euchre.ops.adapters.bid_euchre import get_lane_config
 
-    return KNOWN_AUTHOR_LANES
+    return get_lane_config().known_lanes()
 
 
 def get_lane_domain(lane_id: str) -> str | None:
     """Return the configured domain for a lane, or None if flex/unknown."""
-    return LANE_DOMAINS.get(lane_id)
+    return _get_lane_domains().get(lane_id)
+
+
+# Backward-compatible re-export of LANE_DOMAINS for existing callers.
+LANE_DOMAINS: dict[str, str | None] = _get_lane_domains()
 
 
 # ---------------------------------------------------------------------------

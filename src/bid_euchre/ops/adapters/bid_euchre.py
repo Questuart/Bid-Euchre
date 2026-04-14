@@ -33,7 +33,124 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from bid_euchre.ops.core.interfaces import AbstractTaskQueue, AbstractWorkerPool
+from bid_euchre.ops.core.interfaces import (
+    AbstractLaneConfig,
+    AbstractTaskQueue,
+    AbstractWorkerPool,
+)
+
+
+class BidEuchreLaneConfig(AbstractLaneConfig):
+    """Bid Euchre repo-specific lane topology.
+
+    Provides the canonical set of author/worker lanes, their domain
+    assignments, and tmux pane resolution for the Bid Euchre steward fleet.
+
+    This is the single source of truth for lane topology — replacing the
+    former ``KNOWN_AUTHOR_LANES`` module-level constant in ``task_queue.py``
+    and the ``LANE_DOMAINS`` constant in ``worker_pool.py``.
+    """
+
+    #: All known author/worker lanes that can receive dispatched work.
+    _KNOWN_LANES: frozenset[str] = frozenset(
+        {
+            # Platform pool
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            # Browser-game pool
+            "brws-author-a",
+            "brws-author-b",
+            "brws-author-c",
+            "brws-author-d",
+            # Analyst pool (shaping, triage, plan review, investigation)
+            "analyst-a",
+            "analyst-b",
+            "analyst-c",
+            "analyst-d",
+            # Flex pool (domain-agnostic overflow)
+            "flex-a",
+            "flex-b",
+            "flex-c",
+            "flex-d",
+        }
+    )
+
+    #: Retired lane identifiers kept for backward compatibility.
+    _LEGACY_LANES: frozenset[str] = frozenset({"author-scratch"})
+
+    #: Domain assignment for each managed lane.
+    #: Lanes with ``None`` are "flex" — available to any domain.
+    _LANE_DOMAINS: dict[str, str | None] = {
+        # Platform pool
+        "author-a": "platform",
+        "author-b": "platform",
+        "author-c": "platform",
+        "author-d": "platform",
+        # Browser-game pool
+        "brws-author-a": "browser-game",
+        "brws-author-b": "browser-game",
+        "brws-author-c": "browser-game",
+        "brws-author-d": "browser-game",
+        # Analyst pool (flex — accepts any domain)
+        "analyst-a": None,
+        "analyst-b": None,
+        "analyst-c": None,
+        "analyst-d": None,
+        # Flex pool (domain-agnostic overflow)
+        "flex-a": None,
+        "flex-b": None,
+        "flex-c": None,
+        "flex-d": None,
+    }
+
+    def known_lanes(self) -> frozenset[str]:
+        """Return the 16 known Bid Euchre worker lanes."""
+        return self._KNOWN_LANES
+
+    def lane_domains(self) -> dict[str, str | None]:
+        """Return domain assignments for all known lanes."""
+        return dict(self._LANE_DOMAINS)
+
+    def pane_name_for_lane(self, lane_id: str) -> str | None:
+        """Resolve tmux pane name for a Bid Euchre lane.
+
+        Pane resolution in the Bid Euchre fleet is handled dynamically
+        by ``worker_pool._resolve_tmux_target()`` using live tmux queries
+        and registry fallback.  This method returns the lane_id itself
+        as the logical pane identifier, since the actual pane index is
+        resolved at dispatch time.
+
+        Returns ``None`` for unknown lanes.
+        """
+        if lane_id in self._KNOWN_LANES:
+            return lane_id
+        return None
+
+    def legacy_lanes(self) -> frozenset[str]:
+        """Return retired Bid Euchre lane identifiers."""
+        return self._LEGACY_LANES
+
+
+# ---------------------------------------------------------------------------
+# Singleton accessor for lane config
+# ---------------------------------------------------------------------------
+
+_lane_config_instance: BidEuchreLaneConfig | None = None
+
+
+def get_lane_config() -> BidEuchreLaneConfig:
+    """Return the singleton BidEuchreLaneConfig instance.
+
+    Provides a module-level accessor so that callers in ``task_queue.py``
+    and ``worker_pool.py`` can retrieve lane topology without constructing
+    a full ServiceProvider.
+    """
+    global _lane_config_instance
+    if _lane_config_instance is None:
+        _lane_config_instance = BidEuchreLaneConfig()
+    return _lane_config_instance
 
 
 class TaskQueueService(AbstractTaskQueue):

@@ -42,6 +42,7 @@ Usage::
 from bid_euchre.ops.core.controller import ControlPlaneController
 from bid_euchre.ops.core.interfaces import (
     AbstractController,
+    AbstractLaneConfig,
     AbstractMonitor,
     AbstractTaskQueue,
     AbstractWorkerPool,
@@ -51,6 +52,7 @@ from bid_euchre.ops.core.provider import ServiceProvider
 
 __all__ = [
     "AbstractController",
+    "AbstractLaneConfig",
     "AbstractMonitor",
     "AbstractTaskQueue",
     "AbstractWorkerPool",
