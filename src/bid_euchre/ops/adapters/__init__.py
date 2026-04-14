@@ -35,7 +35,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bid_euchre.ops.adapters.bid_euchre import TaskQueueService, WorkerPoolService
+from bid_euchre.ops.adapters.bid_euchre import (
+    BidEuchreLaneConfig,
+    TaskQueueService,
+    WorkerPoolService,
+    get_lane_config,
+)
 from bid_euchre.ops.core.controller import ControlPlaneController
 from bid_euchre.ops.core.monitor import MonitorService
 
@@ -73,9 +78,11 @@ def create_provider(
 
 
 __all__ = [
+    "BidEuchreLaneConfig",
     "ControlPlaneController",
     "MonitorService",
     "TaskQueueService",
     "WorkerPoolService",
     "create_provider",
+    "get_lane_config",
 ]

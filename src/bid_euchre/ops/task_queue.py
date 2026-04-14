@@ -55,34 +55,37 @@ VALID_ACK_ACTIONS = frozenset({"approve", "edit", "redirect", "reject"})
 
 VALID_RESULT_STATUSES = frozenset({"completed", "failed", "blocked"})
 
-# Known author lanes that can receive dispatched work.
-# Platform pool, browser-game pool, analyst pool, and flex lanes.
-KNOWN_AUTHOR_LANES = frozenset(
-    {
-        # Platform pool
-        "author-a",
-        "author-b",
-        "author-c",
-        "author-d",
-        # Browser-game pool
-        "brws-author-a",
-        "brws-author-b",
-        "brws-author-c",
-        "brws-author-d",
-        # Analyst pool (shaping, triage, plan review, investigation)
-        "analyst-a",
-        "analyst-b",
-        "analyst-c",
-        "analyst-d",
-        # Flex pool (domain-agnostic overflow)
-        "flex-a",
-        "flex-b",
-        "flex-c",
-        "flex-d",
-    }
-)
+# ---------------------------------------------------------------------------
+# Lane topology — provided by the adapter layer
+# ---------------------------------------------------------------------------
 
-_LEGACY_AUTHOR_LANES = frozenset({"author-scratch"})
+
+def get_known_lanes() -> frozenset[str]:
+    """Return the set of known author lanes from the lane config adapter.
+
+    This replaces the former module-level ``KNOWN_AUTHOR_LANES`` constant.
+    Lane topology is now owned by
+    :class:`~bid_euchre.ops.adapters.bid_euchre.BidEuchreLaneConfig`
+    and accessed via the singleton accessor.
+    """
+    from bid_euchre.ops.adapters.bid_euchre import get_lane_config
+
+    return get_lane_config().known_lanes()
+
+
+def _get_legacy_lanes() -> frozenset[str]:
+    """Return the set of legacy/retired lane identifiers."""
+    from bid_euchre.ops.adapters.bid_euchre import get_lane_config
+
+    return get_lane_config().legacy_lanes()
+
+
+# Backward-compatible re-export.  External callers that imported
+# ``KNOWN_AUTHOR_LANES`` from this module will continue to work, but
+# should migrate to ``get_known_lanes()`` for future portability.
+KNOWN_AUTHOR_LANES: frozenset[str] = get_known_lanes()
+
+_LEGACY_AUTHOR_LANES: frozenset[str] = _get_legacy_lanes()
 
 # Valid state transitions for the task packet lifecycle.
 # Enforced by transition_status() to prevent incoherent state from
@@ -136,9 +139,10 @@ class TaskPacket:
             raise ValueError(
                 f"Invalid priority {self.priority!r}; expected one of {sorted(VALID_PRIORITIES)}"
             )
-        if self.owner is not None and self.owner not in KNOWN_AUTHOR_LANES:
+        _lanes = get_known_lanes()
+        if self.owner is not None and self.owner not in _lanes:
             raise ValueError(
-                f"Unknown owner lane {self.owner!r}; expected one of {sorted(KNOWN_AUTHOR_LANES)}"
+                f"Unknown owner lane {self.owner!r}; expected one of {sorted(_lanes)}"
             )
         if self.domain is not None and self.domain not in KNOWN_DOMAINS:
             raise ValueError(
@@ -167,10 +171,11 @@ class TaskAck:
             )
         if self.action == "redirect" and not self.redirect_to:
             raise ValueError("redirect_to is required when action is 'redirect'")
-        if self.redirect_to and self.redirect_to not in KNOWN_AUTHOR_LANES:
+        _ack_lanes = get_known_lanes()
+        if self.redirect_to and self.redirect_to not in _ack_lanes:
             raise ValueError(
                 f"Unknown redirect target {self.redirect_to!r}; "
-                f"expected one of {sorted(KNOWN_AUTHOR_LANES)}"
+                f"expected one of {sorted(_ack_lanes)}"
             )
 
 

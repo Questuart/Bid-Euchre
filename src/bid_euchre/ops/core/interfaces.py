@@ -452,3 +452,69 @@ class AbstractWorkerPool(ABC):
             ``True`` if the nudge was sent successfully, ``False``
             otherwise.
         """
+
+
+# ---------------------------------------------------------------------------
+# AbstractLaneConfig
+# ---------------------------------------------------------------------------
+
+
+class AbstractLaneConfig(ABC):
+    """Provides lane topology information for an orchestrated project.
+
+    Lane topology defines which lanes exist, their domain assignments,
+    and how lane identifiers map to tmux pane targets.  This contract
+    decouples the orchestration loop from project-specific lane naming
+    conventions.
+
+    Concrete implementations:
+        ``bid_euchre.ops.adapters.bid_euchre.BidEuchreLaneConfig``
+    """
+
+    @abstractmethod
+    def known_lanes(self) -> frozenset[str]:
+        """Return the set of all known author/worker lane identifiers.
+
+        These are the lanes eligible to receive dispatched work via
+        the task queue.
+
+        Returns:
+            A frozenset of lane identifier strings.
+        """
+
+    @abstractmethod
+    def lane_domains(self) -> dict[str, str | None]:
+        """Return the domain assignment for each known lane.
+
+        Lanes with a ``None`` domain are "flex" — available to any
+        execution domain when same-domain lanes are exhausted.
+
+        Returns:
+            A dict mapping lane identifier to domain string (or None).
+        """
+
+    @abstractmethod
+    def pane_name_for_lane(self, lane_id: str) -> str | None:
+        """Resolve the tmux pane target for a given lane.
+
+        Used by the worker pool to address lanes when sending nudges
+        or checking pane health.  Returns ``None`` if the lane is
+        unknown or has no configured pane.
+
+        Args:
+            lane_id: The lane identifier to resolve.
+
+        Returns:
+            The tmux pane target string, or ``None`` if not resolvable.
+        """
+
+    @abstractmethod
+    def legacy_lanes(self) -> frozenset[str]:
+        """Return the set of retired/legacy lane identifiers.
+
+        Legacy lanes are recognized for backward compatibility (e.g.,
+        reading old task packets) but are not eligible for new dispatch.
+
+        Returns:
+            A frozenset of legacy lane identifier strings.
+        """

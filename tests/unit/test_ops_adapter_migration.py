@@ -18,9 +18,174 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bid_euchre.ops.core.interfaces import (
+    AbstractLaneConfig,
     AbstractTaskQueue,
     AbstractWorkerPool,
 )
+
+# =========================================================================
+# BidEuchreLaneConfig
+# =========================================================================
+
+
+class TestBidEuchreLaneConfigABCCompliance:
+    """BidEuchreLaneConfig properly implements AbstractLaneConfig."""
+
+    def test_is_subclass(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        assert issubclass(BidEuchreLaneConfig, AbstractLaneConfig)
+
+    def test_can_instantiate(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        assert isinstance(lc, AbstractLaneConfig)
+
+
+class TestBidEuchreLaneConfigTopology:
+    """BidEuchreLaneConfig provides correct Bid Euchre lane topology."""
+
+    def test_known_lanes_count(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        lanes = lc.known_lanes()
+        assert len(lanes) == 16  # 4 platform + 4 browser + 4 analyst + 4 flex
+
+    def test_known_lanes_contains_all_pools(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        lanes = lc.known_lanes()
+        # Platform pool
+        assert "author-a" in lanes
+        assert "author-d" in lanes
+        # Browser-game pool
+        assert "brws-author-a" in lanes
+        assert "brws-author-d" in lanes
+        # Analyst pool
+        assert "analyst-a" in lanes
+        assert "analyst-d" in lanes
+        # Flex pool
+        assert "flex-a" in lanes
+        assert "flex-d" in lanes
+
+    def test_known_lanes_returns_frozenset(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        lanes = lc.known_lanes()
+        assert isinstance(lanes, frozenset)
+
+    def test_lane_domains_covers_all_lanes(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        domains = lc.lane_domains()
+        assert set(domains.keys()) == set(lc.known_lanes())
+
+    def test_lane_domains_platform(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        domains = lc.lane_domains()
+        assert domains["author-a"] == "platform"
+        assert domains["author-b"] == "platform"
+
+    def test_lane_domains_browser_game(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        domains = lc.lane_domains()
+        assert domains["brws-author-a"] == "browser-game"
+
+    def test_lane_domains_flex_is_none(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        domains = lc.lane_domains()
+        assert domains["analyst-a"] is None
+        assert domains["flex-a"] is None
+
+    def test_pane_name_for_known_lane(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        assert lc.pane_name_for_lane("author-a") == "author-a"
+
+    def test_pane_name_for_unknown_lane(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        assert lc.pane_name_for_lane("nonexistent-lane") is None
+
+    def test_legacy_lanes(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+
+        lc = BidEuchreLaneConfig()
+        legacy = lc.legacy_lanes()
+        assert "author-scratch" in legacy
+        assert isinstance(legacy, frozenset)
+
+
+class TestGetLaneConfigSingleton:
+    """get_lane_config() returns a singleton instance."""
+
+    def test_returns_same_instance(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import get_lane_config
+
+        config1 = get_lane_config()
+        config2 = get_lane_config()
+        assert config1 is config2
+
+    def test_returns_correct_type(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import (
+            BidEuchreLaneConfig,
+            get_lane_config,
+        )
+
+        config = get_lane_config()
+        assert isinstance(config, BidEuchreLaneConfig)
+
+
+class TestLaneTopologyBackwardCompat:
+    """Backward-compatible imports from task_queue and worker_pool still work."""
+
+    def test_task_queue_known_author_lanes(self) -> None:
+        from bid_euchre.ops.task_queue import KNOWN_AUTHOR_LANES
+
+        assert len(KNOWN_AUTHOR_LANES) == 16
+        assert "author-a" in KNOWN_AUTHOR_LANES
+        assert "flex-d" in KNOWN_AUTHOR_LANES
+
+    def test_task_queue_get_known_lanes(self) -> None:
+        from bid_euchre.ops.task_queue import get_known_lanes
+
+        lanes = get_known_lanes()
+        assert len(lanes) == 16
+        assert isinstance(lanes, frozenset)
+
+    def test_known_lanes_match_adapter(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+        from bid_euchre.ops.task_queue import KNOWN_AUTHOR_LANES
+
+        adapter_lanes = BidEuchreLaneConfig().known_lanes()
+        assert set(KNOWN_AUTHOR_LANES) == set(adapter_lanes)
+
+    def test_worker_pool_lane_domains(self) -> None:
+        from bid_euchre.ops.worker_pool import LANE_DOMAINS
+
+        assert len(LANE_DOMAINS) == 16
+        assert LANE_DOMAINS["author-a"] == "platform"
+
+    def test_lane_domains_match_adapter(self) -> None:
+        from bid_euchre.ops.adapters.bid_euchre import BidEuchreLaneConfig
+        from bid_euchre.ops.worker_pool import LANE_DOMAINS
+
+        adapter_domains = BidEuchreLaneConfig().lane_domains()
+        assert LANE_DOMAINS == adapter_domains
+
 
 # =========================================================================
 # TaskQueueService
@@ -410,15 +575,17 @@ class TestWorkerPoolServiceDelegation:
 class TestAdapterPackageExports:
     """Verify adapters/__init__.py re-exports all four adapter classes."""
 
-    def test_all_four_adapters_exported(self) -> None:
+    def test_all_adapters_exported(self) -> None:
         import bid_euchre.ops.adapters as adapters
 
         expected = {
+            "BidEuchreLaneConfig",
             "ControlPlaneController",
             "MonitorService",
             "TaskQueueService",
             "WorkerPoolService",
             "create_provider",
+            "get_lane_config",
         }
         assert expected == set(adapters.__all__)
 
@@ -459,10 +626,11 @@ class TestAdapterPackageExports:
 
 
 class TestAllAdaptersImplementABCs:
-    """All four adapters are instances of their respective ABCs."""
+    """All five adapters are instances of their respective ABCs."""
 
-    def test_all_four_are_abc_subclasses(self) -> None:
+    def test_all_five_are_abc_subclasses(self) -> None:
         from bid_euchre.ops.adapters import (
+            BidEuchreLaneConfig,
             ControlPlaneController,
             MonitorService,
             TaskQueueService,
@@ -470,18 +638,21 @@ class TestAllAdaptersImplementABCs:
         )
         from bid_euchre.ops.core import (
             AbstractController,
+            AbstractLaneConfig,
             AbstractMonitor,
             AbstractTaskQueue,
             AbstractWorkerPool,
         )
 
+        assert issubclass(BidEuchreLaneConfig, AbstractLaneConfig)
         assert issubclass(ControlPlaneController, AbstractController)
         assert issubclass(MonitorService, AbstractMonitor)
         assert issubclass(TaskQueueService, AbstractTaskQueue)
         assert issubclass(WorkerPoolService, AbstractWorkerPool)
 
-    def test_all_four_can_instantiate(self) -> None:
+    def test_all_five_can_instantiate(self) -> None:
         from bid_euchre.ops.adapters import (
+            BidEuchreLaneConfig,
             ControlPlaneController,
             MonitorService,
             TaskQueueService,
@@ -489,11 +660,13 @@ class TestAllAdaptersImplementABCs:
         )
 
         # All should instantiate without error
+        lc = BidEuchreLaneConfig()
         ctrl = ControlPlaneController()
         mon = MonitorService()
         tq = TaskQueueService()
         wp = WorkerPoolService()
 
+        assert lc is not None
         assert ctrl is not None
         assert mon is not None
         assert tq is not None
