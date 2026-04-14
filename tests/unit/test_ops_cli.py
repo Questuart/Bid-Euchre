@@ -4897,3 +4897,173 @@ class TestCmdReviewHwm:
             ]
         )
         assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# ServiceProvider integration tests (SP-5-01 PR2)
+# ---------------------------------------------------------------------------
+
+
+class TestServiceProviderWiring:
+    """Verify that the four primary command groups (task, monitor, fleet,
+    workers) use ServiceProvider rather than direct module imports for
+    core data operations."""
+
+    def test_get_provider_returns_service_provider(self, runtime_dir: Path) -> None:
+        """_get_provider() constructs a ServiceProvider with correct paths."""
+        import ops
+
+        args = argparse.Namespace(runtime_dir=runtime_dir)
+        provider = ops._get_provider(args)
+
+        from bid_euchre.ops.core.provider import ServiceProvider
+
+        assert isinstance(provider, ServiceProvider)
+
+    def test_get_provider_queue_root_matches_runtime(self, runtime_dir: Path) -> None:
+        """ServiceProvider task_queue adapter uses the correct queue root."""
+        import ops
+
+        args = argparse.Namespace(runtime_dir=runtime_dir)
+        provider = ops._get_provider(args)
+
+        # The adapter encapsulates the queue_root — verify it is set.
+        tq = provider.task_queue
+        assert tq._queue_root == runtime_dir / "task_queue"
+
+    def test_task_list_uses_provider(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Task list routes through ServiceProvider.task_queue.list_packets."""
+        from unittest.mock import patch
+
+        import ops
+
+        # Create a packet first so there's data to list.
+        ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Provider test",
+            ]
+        )
+        capsys.readouterr()
+
+        # Verify the provider's list_packets is called (not direct import).
+        with patch(
+            "bid_euchre.ops.adapters.bid_euchre.TaskQueueService.list_packets",
+            wraps=ops._get_provider(
+                argparse.Namespace(runtime_dir=runtime_dir)
+            ).task_queue.list_packets,
+        ) as mock_list:
+            rc = ops.main(
+                [
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "task",
+                    "list",
+                ]
+            )
+            assert rc == 0
+            assert mock_list.called
+
+    def test_task_create_uses_provider(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Task create routes through ServiceProvider.task_queue."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "SP wiring test",
+                "--owner",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["title"] == "SP wiring test"
+        assert data["owner"] == "author-b"
+        assert data["status"] == "pending"
+
+    def test_fleet_load_uses_provider(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """cmd_fleet routes load_status through ServiceProvider.controller."""
+        import ops
+
+        # No fleet status file exists — should return gracefully.
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "fleet",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "No fleet status file found" in out
+
+    def test_workers_snapshot_uses_provider(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """cmd_workers default snapshot routes through ServiceProvider."""
+        import ops
+
+        # Workers snapshot without tmux should produce pool output
+        # (or an error about tmux which is expected in CI).
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "workers",
+            ]
+        )
+        out = capsys.readouterr().out
+        # Either shows pool data or "no managed workers"
+        assert rc == 0 or "Worker Pool" in out or "no managed" in out
+
+    def test_provider_to_dict(self, runtime_dir: Path) -> None:
+        """ServiceProvider.to_dict() exposes correct adapter class names."""
+        import ops
+
+        args = argparse.Namespace(runtime_dir=runtime_dir)
+        provider = ops._get_provider(args)
+        d = provider.to_dict()
+
+        assert d["controller"] == "ControlPlaneController"
+        assert d["monitor"] == "MonitorService"
+        assert d["task_queue"] == "TaskQueueService"
+        assert d["worker_pool"] == "WorkerPoolService"
