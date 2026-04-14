@@ -123,6 +123,28 @@ def _check_boundary(
     return None
 
 
+# ---------------------------------------------------------------------------
+# ServiceProvider helper — centralised adapter wiring for primary commands
+# ---------------------------------------------------------------------------
+
+
+def _get_provider(args: argparse.Namespace):  # -> ServiceProvider
+    """Construct the default ServiceProvider from CLI args.
+
+    Centralises adapter wiring for the four primary command groups
+    (monitor, task, dispatch/workers, controller/fleet).  The provider
+    is constructed lazily (deferred imports inside ``ServiceProvider.default``)
+    so it adds no measurable latency at the top of each command.
+    """
+    from bid_euchre.ops.core.provider import ServiceProvider
+
+    queue_root = args.runtime_dir / "task_queue" if args.runtime_dir else None
+    return ServiceProvider.default(
+        runtime_dir=args.runtime_dir,
+        queue_root=queue_root,
+    )
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Show status across lanes, sessions, and tasks."""
     from bid_euchre.ops.status import (
@@ -1493,17 +1515,23 @@ def cmd_repairs(args: argparse.Namespace) -> int:
 
 
 def cmd_task(args: argparse.Namespace) -> int:
-    """Orchestrator task queue inspection (Platform-2)."""
+    """Orchestrator task queue inspection (Platform-2).
+
+    Core data operations (list, load, create, save, transition) are routed
+    through :func:`_get_provider` so that callers depend on the adapter
+    contract rather than direct module imports.  Auxiliary operations
+    (``load_ack``, ``load_result``, ``create_result``, ``complete_packet``)
+    remain as direct imports until the ABC surface covers them.
+    """
+    provider = _get_provider(args)
+    tq = provider.task_queue
+
+    # Functions not yet on the AbstractTaskQueue surface.
     from bid_euchre.ops.task_queue import (
         complete_packet,
-        create_packet,
         create_result,
-        list_packets,
         load_ack,
-        load_packet,
         load_result,
-        save_packet,
-        transition_status,
     )
 
     task_queue_root = args.runtime_dir / "task_queue"
@@ -1511,12 +1539,14 @@ def cmd_task(args: argparse.Namespace) -> int:
     action = getattr(args, "task_action", None)
 
     if action == "list":
-        packets = list_packets(
-            task_queue_root,
-            status_filter=args.status,
-            owner_filter=args.owner,
-            domain_filter=getattr(args, "domain", None),
+        packets = tq.list_packets(
+            status=args.status,
+            owner=args.owner,
         )
+        # Domain filtering is not yet on the adapter surface — apply locally.
+        domain = getattr(args, "domain", None)
+        if domain:
+            packets = [p for p in packets if getattr(p, "domain", None) == domain]
         if args.json:
             from dataclasses import asdict
 
@@ -1536,7 +1566,7 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "show":
-        pkt = load_packet(args.packet_id, task_queue_root)
+        pkt = tq.load_packet(args.packet_id)
         if pkt is None:
             print(f"Packet {args.packet_id!r} not found.", file=sys.stderr)
             return 1
@@ -1589,7 +1619,7 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "create":
-        pkt = create_packet(
+        pkt = tq.create_packet(
             title=args.title,
             description=args.description or "",
             owner=args.owner,
@@ -1598,7 +1628,7 @@ def cmd_task(args: argparse.Namespace) -> int:
             scope_declared=args.scope_declared,
             validation=args.validation,
         )
-        save_packet(pkt, task_queue_root)
+        tq.save_packet(pkt)
         if args.json:
             from dataclasses import asdict
 
@@ -1617,7 +1647,7 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "approve":
-        updated = transition_status(args.packet_id, "approved", task_queue_root)
+        updated = tq.transition_status(args.packet_id, "approved")
         if updated is None:
             print(f"Packet {args.packet_id!r} not found.", file=sys.stderr)
             return 1
@@ -1631,6 +1661,8 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "dispatch":
+        # dispatch_to_worker kept as direct import — the adapter's
+        # dispatch_to_worker() does not yet support reset/no_auto_refresh.
         from bid_euchre.ops.worker_pool import (
             dispatch_to_worker,
             format_action_text,
@@ -1641,12 +1673,12 @@ def cmd_task(args: argparse.Namespace) -> int:
 
         # Optional --approve: transition to approved first if needed
         if getattr(args, "auto_approve", False):
-            pkt = load_packet(packet_id, task_queue_root)
+            pkt = tq.load_packet(packet_id)
             if pkt is None:
                 print(f"Packet {packet_id!r} not found.", file=sys.stderr)
                 return 1
             if pkt.status in ("pending", "previewing"):
-                approved = transition_status(packet_id, "approved", task_queue_root)
+                approved = tq.transition_status(packet_id, "approved")
                 if approved is None:
                     print(
                         f"Failed to approve packet {packet_id!r}.",
@@ -1678,7 +1710,7 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0 if result.executed else 1
 
     elif action == "accept":
-        return _cmd_task_accept(args, task_queue_root)
+        return _cmd_task_accept(args)
 
     elif action == "complete":
         packet_id = args.packet_id
@@ -1688,7 +1720,7 @@ def cmd_task(args: argparse.Namespace) -> int:
         no_archive = getattr(args, "no_archive", False)
 
         # Verify the packet exists before creating the result
-        pkt = load_packet(packet_id, task_queue_root)
+        pkt = tq.load_packet(packet_id)
         if pkt is None:
             print(f"Packet {packet_id!r} not found.", file=sys.stderr)
             return 1
@@ -1696,7 +1728,7 @@ def cmd_task(args: argparse.Namespace) -> int:
         # Auto-transition approved → dispatched so the completion
         # follows the state machine (approved → dispatched → completed).
         if pkt.status == "approved":
-            transition_status(packet_id, "dispatched", task_queue_root)
+            tq.transition_status(packet_id, "dispatched")
         elif pkt.status != "dispatched":
             print(
                 f"Cannot complete packet in {pkt.status!r} state "
@@ -1760,7 +1792,7 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 1
 
 
-def _cmd_task_accept(args: argparse.Namespace, task_queue_root: Path) -> int:
+def _cmd_task_accept(args: argparse.Namespace) -> int:
     """Accept a dispatched task: ack inbox, send ack to orchestrator, emit event.
 
     Idempotent — safe to call multiple times for the same packet.
@@ -1773,7 +1805,9 @@ def _cmd_task_accept(args: argparse.Namespace, task_queue_root: Path) -> int:
         send_message,
         shared_bus_root,
     )
-    from bid_euchre.ops.task_queue import load_packet
+
+    provider = _get_provider(args)
+    tq = provider.task_queue
 
     packet_id = args.packet_id
     lane_id = args.lane_id
@@ -1781,7 +1815,7 @@ def _cmd_task_accept(args: argparse.Namespace, task_queue_root: Path) -> int:
     events_dir = args.runtime_dir / "events"
 
     # 1. Verify packet exists
-    pkt = load_packet(packet_id, task_queue_root)
+    pkt = tq.load_packet(packet_id)
     if pkt is None:
         print(f"Packet {packet_id!r} not found.", file=sys.stderr)
         return 1
@@ -2312,17 +2346,28 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     ``reconcile()`` so that ``fleet_status.json`` stays current.  Pass
     ``--no-reconcile`` to skip the projection update (useful in tests or
     when only findings output is needed).
+
+    Primary data operations (task listing, reconciliation) use the
+    :class:`~bid_euchre.ops.core.provider.ServiceProvider`.  Monitoring
+    cycle execution and formatters remain as direct imports because the
+    adapter's ``run_cycle()`` converts findings to dicts, which is
+    incompatible with the downstream formatters that expect dataclass
+    instances.
     """
     from dataclasses import asdict as _asdict
 
-    from bid_euchre.ops.control_plane import reconcile as _reconcile
+    # reconcile and list_packets are accessed via the provider below.
+    # Formatters and run_monitoring_cycle stay as direct imports because
+    # the MonitorService adapter converts findings to dicts, breaking
+    # downstream format_findings_text/json and evaluate_alert_push.
     from bid_euchre.ops.monitor import (
         evaluate_alert_push,
         format_findings_json,
         format_findings_text,
         run_monitoring_cycle,
     )
-    from bid_euchre.ops.task_queue import list_packets
+
+    provider = _get_provider(args)
 
     skip_pr = getattr(args, "skip_pr_check", False)
     no_notify = getattr(args, "no_notify", False)
@@ -2362,10 +2407,9 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     # Update the controller projection so fleet_status.json reflects the
     # latest monitor findings, task queue, inbox, and audit state.
     if not no_reconcile:
+        # Use provider.task_queue to list packets for the reconcile step.
         try:
-            task_dicts = [
-                _asdict(p) for p in list_packets(root=args.runtime_dir / "task_queue")
-            ]
+            task_dicts = [_asdict(p) for p in provider.task_queue.list_packets()]
         except Exception:
             task_dicts = None
 
@@ -2389,6 +2433,11 @@ def cmd_monitor(args: argparse.Namespace) -> int:
             audit_dicts = [r.to_dict() for r in raw_records]
         except Exception:
             audit_dicts = None
+
+        # reconcile is called via the module function (not the adapter)
+        # because the adapter's reconcile() does not support the
+        # monitor_finding_objects or now_iso parameters.
+        from bid_euchre.ops.control_plane import reconcile as _reconcile
 
         _reconcile(
             runtime_dir=args.runtime_dir,
@@ -2428,18 +2477,28 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
 
 def cmd_fleet(args: argparse.Namespace) -> int:
-    """Fleet status — read-only view of the controller projection (SP-4-07)."""
+    """Fleet status — read-only view of the controller projection (SP-4-07).
+
+    Load/save goes through the :class:`ServiceProvider` controller adapter.
+    Mutation helpers (ack/clear/suppress) and formatters stay as direct
+    imports because the CLI's batch-mutation pattern (load once, mutate
+    in-memory, save once) does not map to the adapter's per-call
+    load-mutate-save cycle.
+    """
+    # ack_item, clear_item, suppress_item operate on an in-memory
+    # FleetStatus object — kept as direct imports.
     from bid_euchre.ops.control_plane import (
         ack_item,
         clear_item,
         format_status_json,
         format_status_text,
-        load_fleet_status,
-        save_fleet_status,
         suppress_item,
     )
 
-    status = load_fleet_status(args.runtime_dir)
+    provider = _get_provider(args)
+    ctrl = provider.controller
+
+    status = ctrl.load_status()
     if status is None:
         if args.json:
             print(json.dumps({"items": [], "summary": {"total": 0, "open": 0}}))
@@ -2479,7 +2538,7 @@ def cmd_fleet(args: argparse.Namespace) -> int:
                 return 1
 
     if mutated:
-        save_fleet_status(status, args.runtime_dir)
+        ctrl.save_status(status)
 
     if args.json:
         print(format_status_json(status))
@@ -2839,25 +2898,33 @@ def cmd_lane(args: argparse.Namespace) -> int:
 
 
 def cmd_workers(args: argparse.Namespace) -> int:
-    """Worker pool lifecycle management (Platform-7)."""
+    """Worker pool lifecycle management (Platform-7).
+
+    Core lifecycle operations (wake, park, take_snapshot) use the
+    :class:`ServiceProvider` worker-pool adapter.  Functions not yet on
+    the ABC surface (``retire_worker``, ``run_pool_maintenance``,
+    ``dispatch_to_worker`` with ``reset``/``no_auto_refresh``) and
+    formatters remain as direct imports.
+    """
+    # Formatters and functions not on the ABC surface.
     from bid_euchre.ops.worker_pool import (
         dispatch_to_worker,
         format_action_text,
         format_actions_json,
         format_pool_json,
         format_pool_text,
-        park_worker,
         retire_worker,
         run_pool_maintenance,
-        take_pool_snapshot,
-        wake_worker,
     )
+
+    provider = _get_provider(args)
+    wp = provider.worker_pool
 
     action = getattr(args, "workers_action", None)
 
     if action == "wake":
         lane_id = args.lane_id
-        result = wake_worker(lane_id, runtime_dir=args.runtime_dir)
+        result = wp.wake_worker(lane_id)
         if args.json:
             from dataclasses import asdict
 
@@ -2868,7 +2935,7 @@ def cmd_workers(args: argparse.Namespace) -> int:
 
     elif action == "park":
         lane_id = args.lane_id
-        result = park_worker(lane_id, runtime_dir=args.runtime_dir)
+        result = wp.park_worker(lane_id)
         if args.json:
             from dataclasses import asdict
 
@@ -2923,7 +2990,7 @@ def cmd_workers(args: argparse.Namespace) -> int:
 
     else:
         # Default: show pool snapshot
-        pool = take_pool_snapshot(args.runtime_dir)
+        pool = wp.take_snapshot()
         if args.json:
             print(json.dumps(format_pool_json(pool), indent=2))
         else:
