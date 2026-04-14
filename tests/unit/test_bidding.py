@@ -21,6 +21,7 @@ from bid_euchre.strategy.bidding import (
     RanktheTank,
     StrictHellRaiser,
     StrictRaiserBidder,
+    _partner_is_high_bidder,
     _would_nudge_partner,
     _would_overbid_cap,
 )
@@ -1981,6 +1982,155 @@ class TestWouldNudgePartner:
         assert _would_nudge_partner(obs, raw) is False
 
 
+class TestPartnerIsHighBidder:
+    """Tests for the _partner_is_high_bidder predicate (#2626)."""
+
+    def test_partner_is_high_bidder(self):
+        """Partner (seat 2) bid 4H, dealer (seat 0) should detect partner as high."""
+        transcript = (
+            {"seat": 1, "action": "PASS", "tricks_bid": 0},
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "H",
+            },
+            {"seat": 3, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        assert _partner_is_high_bidder(obs) is True
+
+    def test_opponent_is_high_bidder(self):
+        """Opponent (seat 1) bid 4H -> partner is NOT the high bidder."""
+        transcript = (
+            {
+                "seat": 1,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "H",
+            },
+            {"seat": 2, "action": "PASS", "tricks_bid": 0},
+            {"seat": 3, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        assert _partner_is_high_bidder(obs) is False
+
+    def test_other_opponent_is_high_bidder(self):
+        """Opponent (seat 3) outbid partner -> partner is NOT the high bidder."""
+        transcript = (
+            {
+                "seat": 1,
+                "action": "BID",
+                "tricks_bid": 3,
+                "contract_type": "suit",
+                "trump": "S",
+            },
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "H",
+            },
+            {
+                "seat": 3,
+                "action": "BID",
+                "tricks_bid": 5,
+                "contract_type": "suit",
+                "trump": "D",
+            },
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=5, transcript=transcript)
+        assert _partner_is_high_bidder(obs) is False
+
+    def test_no_bids_yet(self):
+        """All-pass auction (no bids) -> False."""
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=0)
+        assert _partner_is_high_bidder(obs) is False
+
+    def test_all_pass_with_transcript(self):
+        """Passes only in transcript, current_high_bid=0 -> False."""
+        transcript = (
+            {"seat": 1, "action": "PASS", "tricks_bid": 0},
+            {"seat": 2, "action": "PASS", "tricks_bid": 0},
+            {"seat": 3, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=0, transcript=transcript)
+        assert _partner_is_high_bidder(obs) is False
+
+    def test_partner_outbid_by_opponent_then_passes(self):
+        """Partner bid 3, opponent bid 4, opponent passes -> opponent still high."""
+        transcript = (
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 3,
+                "contract_type": "suit",
+                "trump": "H",
+            },
+            {
+                "seat": 3,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "S",
+            },
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        assert _partner_is_high_bidder(obs) is False
+
+    def test_partner_rebids_over_opponent(self):
+        """Partner bid 3, opponent bid 4, partner bid 5 -> partner is high bidder."""
+        transcript = (
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 3,
+                "contract_type": "suit",
+                "trump": "H",
+            },
+            {
+                "seat": 3,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "S",
+            },
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 5,
+                "contract_type": "suit",
+                "trump": "H",
+            },
+            {"seat": 3, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=5, transcript=transcript)
+        assert _partner_is_high_bidder(obs) is True
+
+    def test_different_dealer_seat(self):
+        """Dealer at seat 2, partner at seat 0 bid high -> True."""
+        transcript = (
+            {
+                "seat": 3,
+                "action": "PASS",
+                "tricks_bid": 0,
+            },
+            {
+                "seat": 0,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "C",
+            },
+            {"seat": 1, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=2, dealer_seat=2, current_high_bid=4, transcript=transcript)
+        assert _partner_is_high_bidder(obs) is True
+
+
 class TestFilteredGBTBidder:
     """Integration tests for FilteredGBTBidder wrapper."""
 
@@ -2046,7 +2196,11 @@ class TestFilteredGBTBidder:
         assert result == raw
 
     def test_enh_b_fires_plus_one_same_suit(self):
-        """Enh B: partner bid n in suit X, dealer bids n+1 in X -> pass."""
+        """Partner is high bidder -> pass via partner-awareness (#2626).
+
+        Previously tested Enhancement B specifically, but partner-awareness
+        now fires first. Result is the same (pass).
+        """
         transcript = (
             {
                 "seat": 1,
@@ -2079,7 +2233,11 @@ class TestFilteredGBTBidder:
         assert result.is_pass()
 
     def test_enh_b_skips_plus_two(self):
-        """Enh B: partner bid 4S, dealer bids 6S -> preserved (not +1)."""
+        """Enh B: partner bid 4S then opponent outbid 5D, dealer bids 6S -> preserved.
+
+        Partner-awareness doesn't fire because opponent holds the high bid.
+        Enh B doesn't fire because the bid is +2 over partner's (not +1).
+        """
         transcript = (
             {
                 "seat": 1,
@@ -2098,13 +2256,14 @@ class TestFilteredGBTBidder:
             },
             {
                 "seat": 3,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
+                "action": "BID",
+                "tricks_bid": 5,
+                "contract_type": "suit",
+                "trump": "D",
+                "bid_type": "regular",
             },
         )
-        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=5, transcript=transcript)
 
         raw = BidAction.bid(6, "S")
         inner = _make_mock_inner(raw)
@@ -2113,22 +2272,26 @@ class TestFilteredGBTBidder:
         assert result == raw
 
     def test_enh_b_skips_different_suit(self):
-        """Enh B: partner bid 4S, dealer bids 5H -> preserved (diff suit)."""
+        """Enh B: opponent bid 4S (high bidder), dealer bids 5H -> preserved.
+
+        Partner-awareness doesn't fire because opponent holds the high bid.
+        Enh B doesn't fire because the bid is a different suit than partner.
+        """
         transcript = (
             {
                 "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
                 "action": "BID",
                 "tricks_bid": 4,
                 "contract_type": "suit",
                 "trump": "S",
                 "bid_type": "regular",
+            },
+            {
+                "seat": 2,
+                "action": "PASS",
+                "tricks_bid": 0,
+                "contract_type": None,
+                "trump": None,
             },
             {
                 "seat": 3,
@@ -2147,23 +2310,25 @@ class TestFilteredGBTBidder:
         assert result == raw
 
     def test_flag_independence_a_only(self):
-        """flag_a=True, flag_b=False: Enh A caps, Enh B inactive."""
-        # Scenario: dealer overbids by +3, Enh B conditions met but flag_b off.
+        """flag_a=True, flag_b=False: Enh A caps, Enh B inactive.
+
+        Opponent holds the high bid, so partner-awareness doesn't fire.
+        """
         transcript = (
             {
                 "seat": 1,
-                "action": "PASS",
-                "tricks_bid": 0,
-                "contract_type": None,
-                "trump": None,
-            },
-            {
-                "seat": 2,
                 "action": "BID",
                 "tricks_bid": 4,
                 "contract_type": "suit",
                 "trump": "S",
                 "bid_type": "regular",
+            },
+            {
+                "seat": 2,
+                "action": "PASS",
+                "tricks_bid": 0,
+                "contract_type": None,
+                "trump": None,
             },
             {
                 "seat": 3,
@@ -2242,12 +2407,12 @@ class TestFilteredGBTBidder:
         assert result.contract == "S"
 
     def test_both_flags_capped_bid_triggers_flag_b(self):
-        """Both flags on: flag-A caps the bid, capped bid then triggers flag-B.
+        """Both flags on: partner is high bidder -> pass via partner-awareness.
 
-        Scenario: partner bid 4S, raw bid 7S. Flag-A caps to 5S (high_bid + 1).
-        The capped 5S is partner's 4S + 1 in the same suit -> flag-B fires,
-        returning pass. Before the fix, the early return in flag-A skipped
-        the flag-B evaluation entirely.
+        Scenario: partner bid 4S, raw bid 7S. Partner-awareness fires first
+        (unconditional) and returns pass before flag-A/flag-B evaluate.
+        Previously, this tested the flag-A cap -> flag-B nudge cascade, but
+        partner-awareness (#2626) now supersedes both.
         """
         transcript = (
             {
@@ -2275,14 +2440,12 @@ class TestFilteredGBTBidder:
         )
         obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
 
-        # Raw bid 7S: flag-A caps to 5S (4+1), then flag-B sees 5S is
-        # partner's 4S + 1 in the same suit -> pass.
         inner = _make_mock_inner(BidAction.bid(7, "S"))
         bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=True)
         result = bidder.choose_bid(obs)
         assert (
             result.is_pass()
-        ), f"Expected pass (flag-B should fire on capped bid), got {result}"
+        ), f"Expected pass (partner-awareness should fire), got {result}"
 
     def test_construction_requires_inner_or_artifact(self):
         """Must provide either inner or artifact_path, not neither."""
@@ -2300,3 +2463,132 @@ class TestFilteredGBTBidder:
         inner = _make_mock_inner(BidAction.pass_bid())
         bidder = FilteredGBTBidder(inner=inner)
         assert bidder.name == "filtered_gbt_action_value"
+
+    # -----------------------------------------------------------------------
+    # Partner-awareness: dealer passes when partner is high bidder (#2626)
+    # -----------------------------------------------------------------------
+
+    def test_dealer_passes_when_partner_is_high_bidder(self):
+        """Dealer should pass when partner already holds the high bid (#2626).
+
+        Scenario: partner (seat 2) bid 4H. Dealer (seat 0) evaluates a bid
+        of 5H. The dealer should pass unconditionally — never overbid partner.
+        """
+        transcript = (
+            {"seat": 1, "action": "PASS", "tricks_bid": 0},
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "H",
+                "bid_type": "regular",
+            },
+            {"seat": 3, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        inner = _make_mock_inner(BidAction.bid(5, "H"))
+        bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
+        result = bidder.choose_bid(obs)
+        assert (
+            result.is_pass()
+        ), f"Expected pass when partner is high bidder, got {result}"
+
+    def test_dealer_bids_when_opponent_is_high_bidder(self):
+        """Dealer should NOT pass when an opponent holds the high bid.
+
+        Scenario: opponent (seat 1) bid 4H. Dealer (seat 0) evaluates 5S.
+        The dealer should proceed with the bid (flags permitting).
+        """
+        transcript = (
+            {
+                "seat": 1,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "H",
+                "bid_type": "regular",
+            },
+            {"seat": 2, "action": "PASS", "tricks_bid": 0},
+            {"seat": 3, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        raw = BidAction.bid(5, "S")
+        inner = _make_mock_inner(raw)
+        bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
+        result = bidder.choose_bid(obs)
+        assert not result.is_pass(), "Should bid when opponent is high bidder"
+        assert result.n == 5
+
+    def test_partner_pass_fires_before_flag_a(self):
+        """Partner-awareness fires before Enhancement A cap.
+
+        Even if the raw bid would normally be capped by Enhancement A,
+        the partner check fires first and returns pass immediately.
+        """
+        transcript = (
+            {"seat": 1, "action": "PASS", "tricks_bid": 0},
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "S",
+                "bid_type": "regular",
+            },
+            {"seat": 3, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        # Raw bid 7S would trigger Enhancement A cap (7 > 4+1)
+        inner = _make_mock_inner(BidAction.bid(7, "S"))
+        bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=False)
+        result = bidder.choose_bid(obs)
+        assert (
+            result.is_pass()
+        ), "Partner-awareness should fire before Enhancement A cap"
+
+    def test_partner_pass_fires_regardless_of_flags(self):
+        """Partner-awareness is unconditional — fires even with flags off.
+
+        Both flag_a and flag_b disabled, dealer should still pass when
+        partner is high bidder.
+        """
+        transcript = (
+            {"seat": 1, "action": "PASS", "tricks_bid": 0},
+            {
+                "seat": 2,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "H",
+                "bid_type": "regular",
+            },
+            {"seat": 3, "action": "PASS", "tricks_bid": 0},
+        )
+        obs = _obs(seat=0, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        inner = _make_mock_inner(BidAction.bid(5, "H"))
+        bidder = FilteredGBTBidder(inner=inner, flag_a=False, flag_b=False)
+        result = bidder.choose_bid(obs)
+        assert result.is_pass(), "Partner-awareness should fire even with all flags off"
+
+    def test_non_dealer_ignores_partner_awareness(self):
+        """Non-dealer seats are unaffected by partner-awareness.
+
+        Filters (including partner-awareness) only fire for the dealer.
+        """
+        transcript = (
+            {
+                "seat": 3,
+                "action": "BID",
+                "tricks_bid": 4,
+                "contract_type": "suit",
+                "trump": "H",
+                "bid_type": "regular",
+            },
+        )
+        obs = _obs(seat=1, dealer_seat=0, current_high_bid=4, transcript=transcript)
+        raw = BidAction.bid(5, "S")
+        inner = _make_mock_inner(raw)
+        bidder = FilteredGBTBidder(inner=inner, flag_a=True, flag_b=True)
+        result = bidder.choose_bid(obs)
+        assert result == raw, "Non-dealer should not be affected by partner check"
