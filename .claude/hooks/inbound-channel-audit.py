@@ -102,6 +102,11 @@ def _route_ack(body: str, tag_text: str) -> str | None:
 
     This function performs lazy imports to avoid loading project modules on the
     fast path.
+
+    Note: ``process_inbound_ack`` is a module-level utility without an ABC
+    counterpart on ``AbstractMonitor``.  It remains a direct import until
+    Platform-13 determines whether it should be promoted to the adapter
+    surface.  (SP-5-01 PR4)
     """
     from bid_euchre.ops.monitor import process_inbound_ack  # noqa: E402
 
@@ -144,6 +149,8 @@ def main() -> int:
 
     # Import only when we actually need to audit — keeps the fast-exit path
     # free of project imports.
+    # Note: audit_channel_tag is a module-level utility without an ABC
+    # counterpart.  Remains a direct import until Platform-13.  (SP-5-01 PR4)
     from bid_euchre.ops.audit_trail import audit_channel_tag  # noqa: E402
 
     ack_replies: list[str] = []

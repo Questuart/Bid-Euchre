@@ -10,6 +10,8 @@ Test categories:
 4. **Diagnostics** — to_dict and repr expose adapter types.
 5. **Package exports** — provider is importable from expected locations.
 6. **Convenience factory** — adapters.create_provider() shortcut works.
+7. **Hook import resolution** — hook callers can resolve imports through
+   the provider/adapter layer (SP-5-01 PR4 regression guard).
 """
 
 from __future__ import annotations
@@ -349,3 +351,84 @@ class TestCreateProviderFactory:
 
         provider = create_provider(tmux_session="custom")
         assert provider.worker_pool._tmux_session == "custom"
+
+
+# =========================================================================
+# Hook import resolution (SP-5-01 PR4 regression guard)
+# =========================================================================
+
+
+class TestHookImportResolution:
+    """Verify that all hook-level imports resolve through provider or direct paths.
+
+    Hook files (.claude/hooks/) use inline Python with deferred imports.
+    These tests ensure the import paths remain valid after the SP-5-01 PR4
+    migration.  They test import resolution only — functional correctness
+    of hooks requires a live steward session.
+    """
+
+    def test_post_merge_notify_provider_import(self) -> None:
+        """post-merge-notify.sh: ServiceProvider is importable and constructs."""
+        from bid_euchre.ops.core.provider import ServiceProvider
+
+        provider = ServiceProvider.default()
+        # The hook uses provider.task_queue.list_packets and .transition_status
+        assert hasattr(provider.task_queue, "list_packets")
+        assert hasattr(provider.task_queue, "transition_status")
+
+    def test_post_merge_notify_list_packets_via_provider(self) -> None:
+        """post-merge-notify.sh: list_packets through provider returns a list."""
+        from bid_euchre.ops.core.provider import ServiceProvider
+
+        provider = ServiceProvider.default()
+        # Should not raise; returns a list (may be empty in test env)
+        result = provider.task_queue.list_packets(status="dispatched")
+        assert isinstance(result, list)
+
+    def test_post_merge_notify_worker_pool_import(self) -> None:
+        """post-merge-notify.sh: cleanup_lane_processes is importable directly.
+
+        This function is a module-level utility without an ABC counterpart.
+        It remains a direct import until Platform-13.
+        """
+        from bid_euchre.ops.worker_pool import cleanup_lane_processes
+
+        assert callable(cleanup_lane_processes)
+
+    def test_post_merge_notify_message_bus_import(self) -> None:
+        """post-merge-notify.sh: message_bus functions are importable directly.
+
+        message_bus has no ABC — these remain direct imports.
+        """
+        from bid_euchre.ops.message_bus import create_message, send_message
+
+        assert callable(create_message)
+        assert callable(send_message)
+
+    def test_inbound_channel_audit_monitor_import(self) -> None:
+        """inbound-channel-audit.py: process_inbound_ack is importable.
+
+        This is a module-level utility without an ABC counterpart on
+        AbstractMonitor.  Remains a direct import until Platform-13.
+        """
+        from bid_euchre.ops.monitor import process_inbound_ack
+
+        assert callable(process_inbound_ack)
+
+    def test_inbound_channel_audit_audit_trail_import(self) -> None:
+        """inbound-channel-audit.py: audit_channel_tag is importable.
+
+        audit_trail has no ABC — remains a direct import.
+        """
+        from bid_euchre.ops.audit_trail import audit_channel_tag
+
+        assert callable(audit_channel_tag)
+
+    def test_park_skill_worker_pool_import(self) -> None:
+        """park/SKILL.md: cleanup_lane_processes is importable via worker_pool.
+
+        The SKILL.md code example uses this function directly.
+        """
+        from bid_euchre.ops.worker_pool import cleanup_lane_processes
+
+        assert callable(cleanup_lane_processes)

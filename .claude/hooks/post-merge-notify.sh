@@ -125,10 +125,12 @@ _transition_failed = False
 # 1. Find and complete the active dispatched task packet
 #    Primary (Gap B): look up by PR number in metadata
 #    Fallback: look up by lane owner
+#    Uses ServiceProvider for task_queue operations (SP-5-01 PR4).
 packet_id = None
 try:
-    from bid_euchre.ops.task_queue import list_packets, transition_status
-    dispatched = list_packets(status_filter='dispatched')
+    from bid_euchre.ops.core.provider import ServiceProvider
+    _provider = ServiceProvider.default()
+    dispatched = _provider.task_queue.list_packets(status='dispatched')
 
     # Primary: match by PR number in metadata
     if pr_num and pr_num != 'unknown':
@@ -147,7 +149,7 @@ try:
                 break
 
     if packet_id:
-        transition_status(packet_id, 'completed')
+        _provider.task_queue.transition_status(packet_id, 'completed')
 except Exception as exc:
     print(f'post-merge-notify: task transition failed: {exc}', file=sys.stderr)
     _transition_failed = True
