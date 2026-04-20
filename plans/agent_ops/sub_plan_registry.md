@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-04-01 by analyst-a (Phase 5+ POSTPONED — operator decision to focus on browser game)
+**Last updated:** 2026-04-20 by author-d (SP-5-02 partially reactivated — adaptive dispatch subset only; absorbs token-economy restart plan Slices C/D/E)
 
 ---
 
@@ -34,15 +34,17 @@
 | SP-4-08 | Platform-9a idle-attention alerts and remote acknowledgement loop | Phase 4, Step 4 (Platform-9a) | postponed | overnight fleet + author-c | `plans/agent_ops/4_remote_channel/sub/2026-03-25_platform-9a-idle-attention-alerts.md` | 2026-03-25 | — (groundwork shipped: evaluator, adapter, ack parser, controller mutation, tests. Monitor wiring shipped: PR #1944. **POSTPONED 2026-04-01** — platform work postponed indefinitely) |
 | SP-4-09 | Platform-9b away-from-desk queue priority and away-mode | Phase 4, Step 5 (Platform-9b) | postponed | overnight fleet | _(no sub-plan file — retroactive registration of shipped groundwork)_ | 2026-03-25 | — (groundwork shipped: queue priority scorer #1802, away-mode detection #1806, away-mode wiring #1815. **POSTPONED 2026-04-01** — platform work postponed indefinitely) |
 | SP-4-10 | Platform-10 core ops extraction | Phase 4, Step 6 / Phase 5 bridge (Platform-10) | postponed | overnight fleet | _(no sub-plan file — retroactive registration of shipped groundwork)_ | 2026-03-25 | — (groundwork shipped: core ops ABCs #1807, extract core ops #1813, repo adapter #1817. **POSTPONED 2026-04-01** — platform work postponed indefinitely) |
+| SP-5-01 | Platform-10 portability completion | Phase 5, Step 1 (Platform-10 core-vs-adapter portability completion) | completed | author-a, author-b | `plans/agent_ops/5_portability_and_learning/sub/2026-04-01_platform-10-portability-completion.md` | 2026-04-01 | 2026-04-14 (PRs #2655, #2656, #2657, #2659) |
+| SP-5-02 | Platform-11 skill learning loop | Phase 5, Step 2 (Platform-11 skill learning loop) | in_progress | author-d (governance) + future dispatches | `plans/agent_ops/5_portability_and_learning/sub/2026-04-01_platform-11-skill-learning-loop.md` | 2026-04-01 | — (**PARTIALLY REACTIVATED 2026-04-20** — operator decision approved adaptive dispatch subset only. Absorbs Slices C/D/E of `plans/sessions/2026-04-20_token_economy_restart_plan.md`; `model_hint`/`effort_hint` folded into existing `task_type`/`complexity_estimate` work. PR5 (skill suggestion pipeline) stays POSTPONED until dispatch advisor validated. Motivated by analyst-a scoping on #2169.) |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
 | proposed | 0 |
-| in_progress | 0 |
+| in_progress | 1 |
 | blocked | 0 |
-| completed | 21 |
+| completed | 22 |
 | postponed | 3 |
 | abandoned | 0 |
 | superseded | 1 |
