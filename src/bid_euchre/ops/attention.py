@@ -222,6 +222,56 @@ _DEFAULT_CYCLE_INTERVAL_SECONDS: float = 3.0
 #: Events that carry the (message_type, priority, to_lane) tuple we need.
 _BROKER_EVENT_TYPE: str = "message_sent"
 
+# ---------------------------------------------------------------------------
+# Compaction policy (see `compact_tickets` below and issue #2674).
+# ---------------------------------------------------------------------------
+# ``deferred_tickets.jsonl`` is append-only during normal operation: every
+# ticket state transition writes one line.  Without a bounded retention
+# policy the log grows linearly with message volume — MBs per week at fleet
+# scale — and ``load_tickets`` re-parses the entire file on every 3s cycle.
+#
+# Compaction rewrites the log to keep:
+#   - every non-terminal ticket (pending), and
+#   - terminal tickets (nudged / abandoned) within a bounded retention
+#     window, to preserve dedup against events.jsonl replay races.
+#
+# Trigger choice (size-based, not time-based):
+#   The ~3s ``run_once`` cadence makes time-based triggers noisy; a
+#   byte-size gate is a single ``stat()`` call per cycle and fires only
+#   when the file has actually grown.  ``COMPACTION_MIN_BYTES`` is picked
+#   so a fresh broker can ingest hundreds of tickets before the first
+#   rewrite, and each rewrite meaningfully shrinks the file.
+#
+# Retention window choice (24h + hard cap):
+#   The dedup safety net only matters while events.jsonl may re-emit a
+#   message_id we've already processed.  Events the broker has crossed are
+#   past the persistent cursor; the only re-emit path is cursor reset
+#   after file rotation, which the broker defends against by restarting
+#   the cursor at 0.  A 24h retention window is multiple orders of
+#   magnitude wider than any realistic cursor-reset window and caps the
+#   retained terminal set at a bounded count so a single burst of traffic
+#   can't defeat the size gate.
+#
+# These constants are module-level so tests can ``monkeypatch`` them to
+# exercise the compaction path on tiny fixtures without synthesizing MBs
+# of ticket history.
+
+#: Size gate: compaction is a no-op until the ticket log exceeds this many
+#: bytes.  50KB comfortably holds ~250 ticket transitions (avg ~200 bytes
+#: per line after JSON-encoding), so fresh brokers never pay the rewrite
+#: cost and busy brokers compact every few minutes of steady-state.
+COMPACTION_MIN_BYTES: int = 50_000
+
+#: Terminal retention window — keep nudged/abandoned tickets whose
+#: ``created_at`` falls within the last N hours.  Preserves dedup against
+#: short-window event replay without unbounded growth.
+COMPACTION_TERMINAL_RETENTION_HOURS: float = 24.0
+
+#: Hard ceiling on retained terminal tickets regardless of the time
+#: window.  Protects against a single traffic burst (e.g., thousands of
+#: blocker messages in one hour) defeating the size gate.
+COMPACTION_TERMINAL_RETENTION_MAX: int = 500
+
 
 @dataclass
 class AttentionState:
@@ -469,6 +519,164 @@ def load_tickets(state: AttentionState) -> dict[str, DeferredTicket]:
 def pending_tickets(state: AttentionState) -> list[DeferredTicket]:
     """Return only tickets whose current status is ``pending``."""
     return [t for t in load_tickets(state).values() if t.status == "pending"]
+
+
+# ---------------------------------------------------------------------------
+# Compaction (see module-level constants for policy rationale)
+# ---------------------------------------------------------------------------
+
+
+def _count_nonblank_lines(path: Path) -> int:
+    """Cheap line count.  Returns 0 for a missing file."""
+    try:
+        text = path.read_text()
+    except (FileNotFoundError, OSError):
+        return 0
+    return sum(1 for line in text.splitlines() if line.strip())
+
+
+def compact_tickets(
+    state: AttentionState,
+    *,
+    now: datetime | None = None,
+    retention_hours: float = COMPACTION_TERMINAL_RETENTION_HOURS,
+    retention_max: int = COMPACTION_TERMINAL_RETENTION_MAX,
+) -> int:
+    """Rewrite ``deferred_tickets.jsonl`` to a bounded, compact form.
+
+    Two sources of savings:
+
+    1. **Per-ticket history collapse.**  During normal operation each
+       ticket writes one line per state transition (pending -> deferred
+       (pending) -> nudged/abandoned).  ``load_tickets`` already keeps
+       only the last entry per ticket_id; compaction materializes that
+       collapsed view back to disk.
+    2. **Terminal retention window.**  Terminal tickets (``nudged`` /
+       ``abandoned``) older than ``retention_hours`` are dropped.  All
+       non-terminal tickets (``pending``) are preserved unconditionally.
+       The retained terminal set is also capped at ``retention_max`` so a
+       traffic burst within the window cannot defeat the size gate.
+
+    **Atomic rewrite:** content is written to
+    ``<tickets_file>.jsonl.tmp``, flushed + fsync'd, then ``os.replace``'d
+    onto the live path.  A concurrent ``load_tickets`` will see either
+    the pre-compaction file or the post-compaction file — never a
+    partial write.
+
+    **Caller contract:** The caller holds the single-instance pidfile
+    lock (``run_daemon``) OR runs from a CLI one-shot.  Concurrent
+    writers to the same ticket log would corrupt it whether or not
+    compaction was happening; this function does not add that
+    concurrency invariant, it just does not break it.
+
+    Args:
+        state: Broker filesystem layout.
+        now: Frozen clock (tests).  Defaults to wall-clock UTC.
+        retention_hours: Keep terminal tickets whose ``created_at`` is
+            within this many hours of ``now``.
+        retention_max: Hard cap on retained terminal tickets, newest
+            first by ``created_at``.  Always applied after the time
+            window.
+
+    Returns:
+        Number of lines the rewrite removed (``existing - retained``).
+        Zero when the log is empty or already compact.
+    """
+    tickets = load_tickets(state)
+    existing_lines = _count_nonblank_lines(state.tickets_file)
+
+    if not tickets:
+        # Either the file is missing or all lines were unparseable.  Nothing
+        # to compact — avoid creating an empty file where one did not exist.
+        if existing_lines == 0:
+            return 0
+        # Parseable content produced no tickets; fall through so we still
+        # rewrite the file and drop the corrupt lines (existing_lines > 0
+        # here means malformed JSON or missing fields).
+
+    now_dt = now or _now()
+    retention_cutoff = now_dt - timedelta(hours=retention_hours)
+
+    def _created_at(ticket: DeferredTicket) -> datetime:
+        dt = _parse_iso(ticket.created_at)
+        if dt is None:
+            # Treat unparseable timestamps as epoch so they're dropped by
+            # the retention window (fail-closed).
+            return datetime.min.replace(tzinfo=timezone.utc)
+        # Tolerate tz-naive timestamps by treating them as UTC.
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    pending = [t for t in tickets.values() if t.status == "pending"]
+    terminal = [t for t in tickets.values() if t.status != "pending"]
+
+    terminal_in_window = [t for t in terminal if _created_at(t) >= retention_cutoff]
+    terminal_sorted = sorted(terminal_in_window, key=_created_at, reverse=True)
+    terminal_capped = terminal_sorted[: max(0, retention_max)]
+
+    retained = pending + terminal_capped
+
+    # Atomic rewrite — tmp → fsync → replace.
+    state.ensure_dir()
+    tmp = state.tickets_file.with_suffix(".jsonl.tmp")
+    try:
+        with open(tmp, "w") as f:
+            for ticket in retained:
+                f.write(json.dumps(ticket.to_json(), sort_keys=True) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, state.tickets_file)
+    except OSError:
+        # Best-effort cleanup of the tmp file on failure; the original
+        # live file is untouched because os.replace is atomic.
+        try:
+            tmp.unlink()
+        except (FileNotFoundError, OSError):
+            pass
+        raise
+
+    dropped = max(0, existing_lines - len(retained))
+    if dropped > 0:
+        logger.info(
+            "attention-broker compacted tickets log: %d -> %d lines "
+            "(dropped %d; pending=%d, terminal_retained=%d)",
+            existing_lines,
+            len(retained),
+            dropped,
+            len(pending),
+            len(terminal_capped),
+        )
+    return dropped
+
+
+def _compact_if_size_exceeds_threshold(
+    state: AttentionState,
+    *,
+    now: datetime | None = None,
+    min_bytes: int | None = None,
+) -> int:
+    """Size-gated compaction for the ``run_once`` hot path.
+
+    Cheap fast-path: a single ``stat()`` call per cycle.  Only when the
+    file exceeds ``min_bytes`` do we load+rewrite.  Returns the number of
+    lines dropped (0 when the gate suppressed the rewrite or the rewrite
+    found nothing to drop).
+
+    ``min_bytes`` defaults to the module-level
+    :data:`COMPACTION_MIN_BYTES` at call time (not at function-definition
+    time), so tests that ``monkeypatch.setattr`` the constant observe the
+    effect on the hot path without having to thread the kwarg through
+    ``run_once``.
+    """
+    threshold = COMPACTION_MIN_BYTES if min_bytes is None else min_bytes
+    try:
+        size = state.tickets_file.stat().st_size
+    except (FileNotFoundError, OSError):
+        return 0
+    if size < threshold:
+        return 0
+    return compact_tickets(state, now=now)
 
 
 # ---------------------------------------------------------------------------
@@ -883,6 +1091,20 @@ def run_once(
     summary.pending_after = sum(1 for t in tickets.values() if t.status == "pending")
 
     _write_status(state, summary)
+
+    # Best-effort size-gated compaction.  The gate is a single stat() call
+    # per cycle; the rewrite only fires when the ticket log has actually
+    # grown past COMPACTION_MIN_BYTES.  Failures never mask the cycle
+    # result — a compaction OSError is logged and swallowed so the bus
+    # side of the broker keeps flowing.
+    try:
+        _compact_if_size_exceeds_threshold(state, now=now_dt)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception(
+            "attention-broker compaction failed during run_once; "
+            "continuing with un-compacted log"
+        )
+
     return summary
 
 
@@ -1054,10 +1276,14 @@ def get_status(*, runtime_dir: Path | None = None) -> BrokerStatus:
 __all__ = [
     "AttentionState",
     "BrokerStatus",
+    "COMPACTION_MIN_BYTES",
+    "COMPACTION_TERMINAL_RETENTION_HOURS",
+    "COMPACTION_TERMINAL_RETENTION_MAX",
     "CycleSummary",
     "DeferredTicket",
     "MAX_ATTEMPTS",
     "acquire_pidfile",
+    "compact_tickets",
     "default_pane_state",
     "get_status",
     "load_tickets",
