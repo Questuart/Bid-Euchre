@@ -201,26 +201,8 @@ def send_with_attention(
 
 
 # ---------------------------------------------------------------------------
-# PR-MSG-4 — attention broker daemon
+# PR-MSG-4 — attention broker daemon (see module docstring for design).
 # ---------------------------------------------------------------------------
-#
-# The broker watches events.jsonl for message_sent events, filters to the
-# types that should_nudge_for_message() flags, and poke the recipient lane
-# only when the pane looks safe.  When a pane is busy, the ticket is
-# deferred and retried on a bounded backoff.
-#
-# State layout (rooted at runtime_dir / "attention_broker"):
-#
-#     pid                    — pidfile (sentinel + liveness).  One daemon per repo.
-#     cursor.json            — {"byte_offset": N} tail position into events.jsonl
-#     deferred_tickets.jsonl — append-only ticket state transitions.  Last
-#                              entry per ticket_id wins on replay.
-#     FAILED                 — optional failure sentinel for post-tool-daemon-notify.
-#     last_cycle.json        — {"timestamp": iso, "cycle": N, "nudged": N,
-#                              "deferred": N, "abandoned": N} — status surface.
-#
-# Retry schedule: 10s, 30s, 90s → then abandon.  These are bounded so a
-# persistently-busy lane cannot pin a ticket forever.
 
 #: Default subdirectory under ``runtime_dir`` for broker state.
 _ATTENTION_DIRNAME: str = "attention_broker"
