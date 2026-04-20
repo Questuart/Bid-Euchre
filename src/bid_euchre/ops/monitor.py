@@ -1495,7 +1495,8 @@ def _notify_approval_stall(
         The message_id if sent, or None on failure.
     """
     try:
-        from bid_euchre.ops.message_bus import create_message, send_message
+        from bid_euchre.ops.attention import send_with_attention
+        from bid_euchre.ops.message_bus import create_message
 
         msg = create_message(
             from_lane="ops-monitor",
@@ -1509,7 +1510,8 @@ def _notify_approval_stall(
                 "action": "User must navigate to tmux pane and approve/deny",
             },
         )
-        return send_message(msg)
+        # escalation → always nudges recipient per PR-MSG-2 policy.
+        return send_with_attention(msg)
     except Exception as exc:
         logger.warning(
             "Failed to notify orchestrator about approval stall for %r: %s",
@@ -1853,7 +1855,8 @@ def _send_findings_to_orchestrator(
     if not findings:
         return None
 
-    from bid_euchre.ops.message_bus import create_message, send_message
+    from bid_euchre.ops.attention import send_with_attention
+    from bid_euchre.ops.message_bus import create_message
 
     has_high = any(f.severity == SEVERITY_HIGH for f in findings)
     high_count = sum(1 for f in findings if f.severity == SEVERITY_HIGH)
@@ -1890,7 +1893,11 @@ def _send_findings_to_orchestrator(
     )
 
     try:
-        return send_message(msg, bus_root)
+        # supervisor_alert: send_with_attention nudges only when priority is
+        # "high" (or "urgent") per PR-MSG-2 policy.  Normal-priority info
+        # rollups ride the durable-only path and surface via prompt-boundary
+        # hooks or cron.
+        return send_with_attention(msg, bus_root)
     except (ValueError, OSError) as exc:
         logger.warning("Failed to send monitor summary: %s", exc)
         return None
