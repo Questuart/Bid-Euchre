@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
 # inbox-completion-inject.sh — UserPromptSubmit hook: surface unacked
-# completion messages from the orchestrator inbox.
+# high-priority inbox messages from the orchestrator inbox.
 #
-# When author/analyst lanes complete tasks, they send completion messages
-# to the orchestrator's inbox.  This hook checks for unacked completions
-# and injects them as additionalContext so the orchestrator sees them
-# immediately — no polling needed.
+# When author/analyst lanes signal orchestrator-actionable state, they send
+# messages (completion, blocker, escalation, high/urgent supervisor_alert)
+# to the orchestrator's inbox.  This hook checks for unacked instances of
+# those types and injects them as additionalContext so the orchestrator
+# sees them on every prompt boundary — no polling needed.
+#
+# Only `completion` messages are auto-acked after surfacing.  Blockers,
+# escalations, and high/urgent alerts are surfaced ONLY and remain in the
+# inbox until explicitly handled — auto-acking them would silently drop
+# real action items.  See inbox-completion-inject.py for the full policy.
 #
 # Design:
 #   - Best-effort: failures never block prompt submission
-#   - Fast guard: exits immediately (~0ms) when no inbox file or no completions
-#   - Delegates to inbox-completion-inject.py for inbox reading + ack
+#   - Fast guard: exits immediately (~0ms) when no inbox file or no matching
+#     message types are present
+#   - Delegates to inbox-completion-inject.py for accurate filtering,
+#     priority checks, and conditional ack
 #   - Only fires on the orchestrator lane (lane guard)
 #
-# Closes #1986.
+# Closes #1986.  Broadened by PR-MSG-3 (messaging revamp execution plan).
 set -euo pipefail
 
 # Lane guard: only the orchestrator needs completion injection.
@@ -42,9 +50,10 @@ if [ ! -f "$_INBOX_FILE" ]; then
     exit 0
 fi
 
-# Quick grep: does the inbox contain any completion messages that aren't resolved/expired?
-# This is a heuristic — the Python script does the accurate filtering.
-grep -q '"completion"' "$_INBOX_FILE" || exit 0
+# Quick grep: does the inbox contain any message type we care about?
+# This is a heuristic — the Python script does the accurate filtering
+# (including the priority check for supervisor_alert).
+grep -qE '"(completion|blocker|escalation|supervisor_alert)"' "$_INBOX_FILE" || exit 0
 
 # Delegate to Python for accurate inbox reading, formatting, and auto-ack.
 # Best-effort: failures are silently swallowed.
