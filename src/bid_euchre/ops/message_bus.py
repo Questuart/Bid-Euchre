@@ -39,7 +39,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 logger = logging.getLogger("ops.message_bus")
 
@@ -88,6 +88,15 @@ VALID_MESSAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     "dead_lettered": frozenset(),  # terminal
 }
 
+# Statuses from which no further state transitions are possible.  Used by
+# bulk-ack logic to skip records that cannot be acked rather than letting
+# them bubble up an ``InvalidTransition`` ValueError mid-batch (see #2668).
+# ``acked`` is included because it is semi-terminal from bulk-ack's POV —
+# only ``acked -> resolved`` is legal and bulk-ack does not attempt that.
+BULK_ACK_TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {"acked", "resolved", "expired", "dead_lettered"}
+)
+
 # Default delivery policy
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_TTL_SECONDS: int = 86400  # 24-hour expiry by default
@@ -112,6 +121,29 @@ COMPACT_TERMINAL_MAX_AGE_HOURS: float = 1.0
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
+
+
+class BulkAckResult(NamedTuple):
+    """Result of a :func:`bulk_ack_messages` call.
+
+    Attributes:
+        acked: Updated message records that were successfully transitioned
+            to the ``acked`` state.
+        skipped_terminal: Count of messages that matched the caller's
+            ``filter_fn`` but could not be acked because they were already
+            in a terminal state (``acked``, ``resolved``, ``expired``,
+            ``dead_lettered``). This includes both records visible as
+            terminal in the initial inbox snapshot *and* records that
+            transitioned mid-batch (e.g. lazy expiry on a concurrent
+            ``read_inbox`` call; see #2668).
+
+    ``BulkAckResult`` is a ``NamedTuple``, so callers can continue to use
+    tuple-unpacking (``acked, skipped = bulk_ack_messages(...)``) or access
+    fields by name.
+    """
+
+    acked: list[dict[str, Any]]
+    skipped_terminal: int
 
 
 @dataclass(frozen=True)
@@ -908,11 +940,24 @@ def bulk_ack_messages(
     bus_root: Path | None = None,
     *,
     events_dir: Path | None = None,
-) -> list[dict[str, Any]]:
+) -> BulkAckResult:
     """Acknowledge all messages in a lane's inbox that match *filter_fn*.
 
     Only messages in ack-able states (``pending`` or ``delivered``) are
-    considered.  Messages already acked, resolved, or terminal are skipped.
+    considered.  Records already in a terminal state (``acked``,
+    ``resolved``, ``expired``, ``dead_lettered``) are counted in
+    :attr:`BulkAckResult.skipped_terminal` rather than raising.
+
+    The filter is evaluated *before* the ackable check: a record only
+    counts toward ``skipped_terminal`` if the caller expressed interest
+    in it via ``filter_fn``.  Unrelated terminal records are ignored.
+
+    A record can also transition to terminal state mid-batch — for
+    example, a concurrent :func:`read_inbox` call can lazily expire a
+    TTL-stale message via :func:`_expire_stale_on_read` between the
+    snapshot and the per-message update.  :func:`_update_inbox_status`
+    raises ``ValueError`` in that case; we treat it as a terminal skip
+    (see #2668).
 
     Args:
         lane_id: The lane whose inbox to scan.
@@ -921,7 +966,9 @@ def bulk_ack_messages(
         events_dir: Override for events directory (for testing).
 
     Returns:
-        List of acked message dicts.
+        :class:`BulkAckResult` with the list of acked records and a
+        count of records that matched ``filter_fn`` but could not be
+        acked because they were (or became) terminal.
     """
     root = shared_bus_root(bus_root)
     raw = _read_inbox_raw(lane_id, root)
@@ -935,14 +982,38 @@ def bulk_ack_messages(
 
     ackable = {"pending", "delivered"}
     acked: list[dict[str, Any]] = []
+    skipped_terminal = 0
     for mid, rec in by_id.items():
-        if rec.get("status") not in ackable:
-            continue
+        # Filter first so unrelated terminal records don't inflate the
+        # skipped count.  Only records the caller asked about count.
         if not filter_fn(rec):
             continue
-        updated = _update_inbox_status(
-            mid, lane_id, "acked", root, extra_fields={"acked_at": _now_iso()}
-        )
+
+        status = rec.get("status")
+        if status in BULK_ACK_TERMINAL_STATUSES:
+            skipped_terminal += 1
+            continue
+        if status not in ackable:
+            # Unknown/unexpected status — skip defensively, surface in log.
+            logger.debug("Skipping %s in bulk-ack: unexpected status %r", mid, status)
+            continue
+
+        try:
+            updated = _update_inbox_status(
+                mid,
+                lane_id,
+                "acked",
+                root,
+                extra_fields={"acked_at": _now_iso()},
+            )
+        except ValueError:
+            # Race: another caller (e.g. concurrent read_inbox triggering
+            # lazy expiry) transitioned the message to a terminal state
+            # between our snapshot and this update.  Count as a terminal
+            # skip rather than aborting the whole batch (see #2668).
+            skipped_terminal += 1
+            continue
+
         if updated is not None:
             acked.append(updated)
             try:
@@ -958,9 +1029,14 @@ def bulk_ack_messages(
             except Exception:
                 logger.warning("Failed to emit message_acked event for %s", mid)
 
-    if acked:
-        logger.info("Bulk-acked %d message(s) for %s", len(acked), lane_id)
-    return acked
+    if acked or skipped_terminal:
+        logger.info(
+            "Bulk-acked %d message(s) for %s (skipped %d terminal-state)",
+            len(acked),
+            lane_id,
+            skipped_terminal,
+        )
+    return BulkAckResult(acked=acked, skipped_terminal=skipped_terminal)
 
 
 def resolve_message(

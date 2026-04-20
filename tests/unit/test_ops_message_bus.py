@@ -12,12 +12,14 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
 from bid_euchre.ops.message_bus import (
     AUTO_COMPACT_RAW_THRESHOLD,
+    BULK_ACK_TERMINAL_STATUSES,
     COMPACT_HANDLED_MAX_AGE_HOURS,
     COMPACT_TERMINAL_MAX_AGE_HOURS,
     DEFAULT_MAX_RETRIES,
@@ -26,6 +28,7 @@ from bid_euchre.ops.message_bus import (
     VALID_MESSAGE_STATUSES,
     VALID_MESSAGE_TRANSITIONS,
     VALID_MESSAGE_TYPES,
+    BulkAckResult,
     BusMessage,
     _content_dedup_key,
     _find_content_duplicate,
@@ -1082,11 +1085,13 @@ class TestBulkAckMessages:
         send_message(m1, bus_root, events_dir=events_dir)
         send_message(m2, bus_root, events_dir=events_dir)
 
-        acked = bulk_ack_messages(
+        result = bulk_ack_messages(
             "target", lambda _: True, bus_root, events_dir=events_dir
         )
-        assert len(acked) == 2
-        assert all(r["status"] == "acked" for r in acked)
+        assert isinstance(result, BulkAckResult)
+        assert len(result.acked) == 2
+        assert all(r["status"] == "acked" for r in result.acked)
+        assert result.skipped_terminal == 0
 
     def test_bulk_ack_with_filter(self, bus_root: Path, events_dir: Path) -> None:
         """Only messages matching filter_fn are acked."""
@@ -1095,14 +1100,15 @@ class TestBulkAckMessages:
         send_message(m1, bus_root, events_dir=events_dir)
         send_message(m2, bus_root, events_dir=events_dir)
 
-        acked = bulk_ack_messages(
+        result = bulk_ack_messages(
             "target",
             lambda msg: "scoring" in msg.get("summary", "").lower(),
             bus_root,
             events_dir=events_dir,
         )
-        assert len(acked) == 1
-        assert acked[0]["summary"] == "Fix scoring bug"
+        assert len(result.acked) == 1
+        assert result.acked[0]["summary"] == "Fix scoring bug"
+        assert result.skipped_terminal == 0
 
         # The other message remains pending
         inbox = read_inbox("target", bus_root, status="pending")
@@ -1119,19 +1125,23 @@ class TestBulkAckMessages:
         # Ack m1 individually first
         ack_message(m1.message_id, "target", bus_root, events_dir=events_dir)
 
-        # Bulk ack should only ack m2
-        acked = bulk_ack_messages(
+        # Bulk ack should only ack m2; m1 counts as skipped-terminal
+        # because it matched the filter (lambda _: True) but was already
+        # in the terminal ``acked`` state.
+        result = bulk_ack_messages(
             "target", lambda _: True, bus_root, events_dir=events_dir
         )
-        assert len(acked) == 1
-        assert acked[0]["message_id"] == m2.message_id
+        assert len(result.acked) == 1
+        assert result.acked[0]["message_id"] == m2.message_id
+        assert result.skipped_terminal == 1
 
     def test_bulk_ack_empty_inbox(self, bus_root: Path, events_dir: Path) -> None:
-        """Bulk ack on empty inbox returns empty list."""
-        acked = bulk_ack_messages(
+        """Bulk ack on empty inbox returns empty result."""
+        result = bulk_ack_messages(
             "empty-lane", lambda _: True, bus_root, events_dir=events_dir
         )
-        assert acked == []
+        assert result.acked == []
+        assert result.skipped_terminal == 0
 
     def test_bulk_ack_emits_events(self, bus_root: Path, events_dir: Path) -> None:
         """Each bulk-acked message emits an event with bulk=True."""
@@ -1188,16 +1198,179 @@ class TestBulkAckMessages:
                 return False
             return ts < cutoff_ts
 
-        acked = bulk_ack_messages(
+        result = bulk_ack_messages(
             "target", older_than_cutoff, bus_root, events_dir=events_dir
         )
-        assert len(acked) == 1
-        assert acked[0]["message_id"] == m1.message_id
+        assert len(result.acked) == 1
+        assert result.acked[0]["message_id"] == m1.message_id
+        assert result.skipped_terminal == 0
 
         # m2 (new) remains pending
         inbox = read_inbox("target", bus_root, status="pending")
         assert len(inbox) == 1
         assert inbox[0]["message_id"] == m2.message_id
+
+
+# ---------------------------------------------------------------------------
+# Bulk ack — terminal-state handling (#2668)
+# ---------------------------------------------------------------------------
+
+
+class TestBulkAckTerminalStates:
+    """Regression tests for #2668 — bulk-ack must not crash on terminal
+    messages encountered in the snapshot or mid-batch."""
+
+    def test_bulk_ack_terminal_statuses_constant(self) -> None:
+        """Sanity check the BULK_ACK_TERMINAL_STATUSES constant covers all
+        terminal states plus the semi-terminal ``acked``."""
+        assert "acked" in BULK_ACK_TERMINAL_STATUSES
+        assert "resolved" in BULK_ACK_TERMINAL_STATUSES
+        assert "expired" in BULK_ACK_TERMINAL_STATUSES
+        assert "dead_lettered" in BULK_ACK_TERMINAL_STATUSES
+        assert "pending" not in BULK_ACK_TERMINAL_STATUSES
+        assert "delivered" not in BULK_ACK_TERMINAL_STATUSES
+
+    def _expire_inbox_record(self, bus_root: Path, lane: str, message_id: str) -> None:
+        """Append a synthetic ``expired`` record for *message_id* to the
+        lane's inbox.  This simulates what :func:`_expire_stale_on_read`
+        does when a TTL-stale message is encountered via ``read_inbox``."""
+        inbox_path = bus_root / "inbox" / f"{lane}.jsonl"
+        lines = inbox_path.read_text().strip().split("\n")
+        latest = None
+        for line in lines:
+            rec = json.loads(line)
+            if rec.get("message_id") == message_id:
+                latest = rec
+        assert latest is not None, f"{message_id} not found in {lane} inbox"
+        expired = {**latest, "status": "expired"}
+        with open(inbox_path, "a") as f:
+            f.write(json.dumps(expired) + "\n")
+
+    def test_bulk_ack_mixed_pending_and_expired(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Mix of pending + expired messages: acks the pending ones and
+        reports expired as skipped_terminal without raising."""
+        m1 = create_message("a", "target", "assignment", "Pending 1")
+        m2 = create_message("a", "target", "assignment", "Will be expired")
+        m3 = create_message("a", "target", "assignment", "Pending 2")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+        send_message(m3, bus_root, events_dir=events_dir)
+
+        # Pre-expire m2 in the inbox (as lazy TTL expiry would do)
+        self._expire_inbox_record(bus_root, "target", m2.message_id)
+
+        result = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+        assert len(result.acked) == 2
+        assert {r["message_id"] for r in result.acked} == {
+            m1.message_id,
+            m3.message_id,
+        }
+        assert result.skipped_terminal == 1
+
+    def test_bulk_ack_all_terminal(self, bus_root: Path, events_dir: Path) -> None:
+        """All-terminal batch reports 0 acked, N skipped, no error."""
+        m1 = create_message("a", "target", "assignment", "Expired 1")
+        m2 = create_message("a", "target", "assignment", "Expired 2")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+
+        self._expire_inbox_record(bus_root, "target", m1.message_id)
+        self._expire_inbox_record(bus_root, "target", m2.message_id)
+
+        result = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+        assert result.acked == []
+        assert result.skipped_terminal == 2
+
+    def test_bulk_ack_filter_excludes_terminal_from_skipped_count(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Terminal messages that don't match filter_fn are NOT counted
+        as skipped — only messages the caller asked about count."""
+        m1 = create_message("a", "target", "assignment", "Target 1")
+        m2 = create_message("a", "target", "assignment", "Other")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+
+        # m2 is terminal but doesn't match filter — should not count
+        self._expire_inbox_record(bus_root, "target", m2.message_id)
+
+        result = bulk_ack_messages(
+            "target",
+            lambda msg: "Target" in msg.get("summary", ""),
+            bus_root,
+            events_dir=events_dir,
+        )
+        assert len(result.acked) == 1
+        assert result.acked[0]["message_id"] == m1.message_id
+        assert result.skipped_terminal == 0  # m2 filtered out, not counted
+
+    def test_bulk_ack_handles_race_condition(
+        self,
+        bus_root: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Simulate a race where a message transitions to terminal state
+        between the bulk-ack snapshot and the per-message update.  The
+        underlying ``_update_inbox_status`` raises ``ValueError``; bulk-ack
+        must catch it and tally the message as skipped_terminal."""
+        m1 = create_message("a", "target", "assignment", "Pending 1")
+        m2 = create_message("a", "target", "assignment", "Races to expired")
+        m3 = create_message("a", "target", "assignment", "Pending 2")
+        send_message(m1, bus_root, events_dir=events_dir)
+        send_message(m2, bus_root, events_dir=events_dir)
+        send_message(m3, bus_root, events_dir=events_dir)
+
+        # Monkeypatch _update_inbox_status so that the first call for m2
+        # raises ValueError (simulating the race).  Other calls pass
+        # through to the real implementation.
+        import bid_euchre.ops.message_bus as mb
+
+        real_update = mb._update_inbox_status
+
+        def racing_update(*args: Any, **kwargs: Any) -> Any:
+            # Positional signature: message_id, lane_id, new_status, bus_root
+            message_id = args[0] if args else kwargs.get("message_id")
+            new_status = args[2] if len(args) > 2 else kwargs.get("new_status")
+            if message_id == m2.message_id and new_status == "acked":
+                raise ValueError(
+                    f"Invalid transition 'expired' -> 'acked' for "
+                    f"message {message_id!r}; allowed: (terminal)"
+                )
+            return real_update(*args, **kwargs)
+
+        monkeypatch.setattr(mb, "_update_inbox_status", racing_update)
+
+        result = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+        # m1 and m3 acked; m2 counted as skipped due to race
+        assert len(result.acked) == 2
+        assert {r["message_id"] for r in result.acked} == {
+            m1.message_id,
+            m3.message_id,
+        }
+        assert result.skipped_terminal == 1
+
+    def test_bulk_ack_result_is_tuple_unpackable(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """BulkAckResult is a NamedTuple — verify tuple unpacking works
+        for callers that prefer that idiom over attribute access."""
+        m1 = create_message("a", "target", "assignment", "Task")
+        send_message(m1, bus_root, events_dir=events_dir)
+
+        acked, skipped = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+        assert len(acked) == 1
+        assert skipped == 0
 
 
 # ---------------------------------------------------------------------------

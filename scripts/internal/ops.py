@@ -2085,14 +2085,25 @@ def cmd_inbox(args: argparse.Namespace) -> int:
             def filter_fn(msg: dict) -> bool:
                 return True
 
-        acked = bulk_ack_messages(lane, filter_fn, bus_root)
+        result = bulk_ack_messages(lane, filter_fn, bus_root)
+        acked = result.acked
+        skipped = result.skipped_terminal
         if args.json:
-            print(json.dumps(acked, indent=2, default=str))
+            print(
+                json.dumps(
+                    {"acked": acked, "skipped_terminal": skipped},
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
-            if not acked:
+            if not acked and not skipped:
                 print(f"No ack-able messages in {lane} inbox.")
             else:
-                print(f"Bulk-acked {len(acked)} message(s) in {lane} inbox:")
+                summary = f"Bulk-acked {len(acked)} message(s) in {lane} inbox"
+                if skipped:
+                    summary += f", skipped {skipped} terminal-state message(s)"
+                print(f"{summary}:")
                 for msg in acked:
                     print(
                         f"  {msg.get('message_id', '?'):16s}  "

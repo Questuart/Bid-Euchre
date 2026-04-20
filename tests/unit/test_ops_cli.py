@@ -4107,6 +4107,213 @@ class TestInboxAck:
         assert "P2 (normal/low)" in out
 
 
+class TestInboxBulkAck:
+    """Tests for ops.py inbox bulk-ack subcommand (regression for #2668)."""
+
+    @pytest.fixture()
+    def bus_dir(self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Isolate the bus root to the test's runtime dir."""
+        d = runtime_dir / "message_bus"
+        (d / "inbox").mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("BID_EUCHRE_BUS_DIR", str(d))
+        return d
+
+    def _send(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        to: str,
+        summary: str,
+    ) -> str:
+        """Helper: send a message via CLI and return its id."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "message",
+                "send",
+                "--from",
+                "orchestrator",
+                "--to",
+                to,
+                "--type",
+                "ack",
+                "--summary",
+                summary,
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        return data["message_id"]
+
+    def test_bulk_ack_mixed_pending_and_expired_no_crash(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        bus_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Regression for #2668: bulk-ack must not crash when a message in
+        the batch is already in a terminal state.  Output must surface the
+        skipped-terminal count."""
+        import ops
+
+        # Send three messages to author-a
+        _m1 = self._send(runtime_dir, plans_dir, capsys, "author-a", "Pending 1")
+        m2 = self._send(runtime_dir, plans_dir, capsys, "author-a", "Will be expired")
+        _m3 = self._send(runtime_dir, plans_dir, capsys, "author-a", "Pending 2")
+
+        # Pre-expire m2 by appending an ``expired`` record to the inbox
+        inbox_path = bus_dir / "inbox" / "author-a.jsonl"
+        lines = inbox_path.read_text().strip().split("\n")
+        latest = None
+        for line in lines:
+            rec = json.loads(line)
+            if rec.get("message_id") == m2:
+                latest = rec
+        assert latest is not None
+        expired_rec = {**latest, "status": "expired"}
+        with open(inbox_path, "a") as f:
+            f.write(json.dumps(expired_rec) + "\n")
+
+        # Run bulk-ack — must not raise, must report skipped count
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "bulk-ack",
+                "--lane",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Bulk-acked 2 message(s)" in out
+        assert "skipped 1 terminal-state message(s)" in out
+
+    def test_bulk_ack_all_terminal_reports_skipped(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        bus_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """All-terminal batch: 0 acked, N skipped, exit 0."""
+        import ops
+
+        m1 = self._send(runtime_dir, plans_dir, capsys, "author-a", "Expired 1")
+        m2 = self._send(runtime_dir, plans_dir, capsys, "author-a", "Expired 2")
+
+        inbox_path = bus_dir / "inbox" / "author-a.jsonl"
+        lines = inbox_path.read_text().strip().split("\n")
+        expired_records = []
+        for line in lines:
+            rec = json.loads(line)
+            if rec.get("message_id") in {m1, m2}:
+                expired_records.append({**rec, "status": "expired"})
+        with open(inbox_path, "a") as f:
+            for rec in expired_records:
+                f.write(json.dumps(rec) + "\n")
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "bulk-ack",
+                "--lane",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Bulk-acked 0 message(s)" in out
+        assert "skipped 2 terminal-state message(s)" in out
+
+    def test_bulk_ack_all_pending_no_skipped(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        bus_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """No regression: bulk-ack on all-pending acks all, no skipped."""
+        import ops
+
+        self._send(runtime_dir, plans_dir, capsys, "author-a", "Task 1")
+        self._send(runtime_dir, plans_dir, capsys, "author-a", "Task 2")
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "bulk-ack",
+                "--lane",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Bulk-acked 2 message(s)" in out
+        assert "skipped" not in out  # no skipped-terminal note
+
+    def test_bulk_ack_json_reports_skipped_count(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        bus_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """JSON mode includes skipped_terminal alongside acked list."""
+        import ops
+
+        _m1 = self._send(runtime_dir, plans_dir, capsys, "author-a", "P")
+        m2 = self._send(runtime_dir, plans_dir, capsys, "author-a", "Exp")
+
+        inbox_path = bus_dir / "inbox" / "author-a.jsonl"
+        lines = inbox_path.read_text().strip().split("\n")
+        for line in lines:
+            rec = json.loads(line)
+            if rec.get("message_id") == m2:
+                with open(inbox_path, "a") as f:
+                    f.write(json.dumps({**rec, "status": "expired"}) + "\n")
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "bulk-ack",
+                "--lane",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert "acked" in data
+        assert "skipped_terminal" in data
+        assert len(data["acked"]) == 1
+        assert data["skipped_terminal"] == 1
+
+
 # ---------------------------------------------------------------------------
 # review-check
 # ---------------------------------------------------------------------------

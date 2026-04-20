@@ -1147,14 +1147,15 @@ class TestBulkAck:
         send_message(progress, bus_root=bus_root, events_dir=events_dir)
 
         # Bulk-ack only assignments
-        acked = bulk_ack_messages(
+        result = bulk_ack_messages(
             "author-a",
             lambda m: m.get("message_type") == "assignment",
             bus_root=bus_root,
             events_dir=events_dir,
         )
-        assert len(acked) == 2
-        assert all(a["status"] == "acked" for a in acked)
+        assert len(result.acked) == 2
+        assert all(a["status"] == "acked" for a in result.acked)
+        assert result.skipped_terminal == 0
 
         # Progress message should still be pending
         pending = read_inbox(
@@ -1180,24 +1181,28 @@ class TestBulkAck:
         mid = send_message(msg, bus_root=bus_root, events_dir=events_dir)
         ack_message(mid, "author-a", bus_root=bus_root, events_dir=events_dir)
 
-        # Bulk-ack should return empty (nothing ackable)
-        acked = bulk_ack_messages(
+        # Bulk-ack should return empty acked list; the already-acked message
+        # is counted as skipped_terminal because it matched filter_fn but
+        # was already in the terminal ``acked`` state.
+        result = bulk_ack_messages(
             "author-a",
             lambda m: True,
             bus_root=bus_root,
             events_dir=events_dir,
         )
-        assert len(acked) == 0
+        assert result.acked == []
+        assert result.skipped_terminal == 1
 
     def test_bulk_ack_empty_inbox(self, bus_root: Path, events_dir: Path) -> None:
-        """Bulk-ack on empty inbox returns empty list."""
-        acked = bulk_ack_messages(
+        """Bulk-ack on empty inbox returns empty result."""
+        result = bulk_ack_messages(
             "author-a",
             lambda m: True,
             bus_root=bus_root,
             events_dir=events_dir,
         )
-        assert acked == []
+        assert result.acked == []
+        assert result.skipped_terminal == 0
 
 
 # ---------------------------------------------------------------------------
