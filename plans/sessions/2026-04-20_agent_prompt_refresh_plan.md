@@ -118,7 +118,7 @@ Ten principles derived from the research, each anchored to a citation or empiric
    Tool `allowedTools` / `disallowedTools` / `model` settings are not changed in this plan and are not relaxed by softer prose. The prose migration is orthogonal to the structural guardrails.
 
 9. **Deduplicate author/brws/flex lanes before softening them.**
-   Eleven author prompts share ~85% of text. Any tone migration applied to copies drifts. Extract a shared baseline (e.g., `.claude/agents/_author_baseline.md` or an include mechanism) before refreshing the language, or script the refresh to touch all eleven atomically. Deduplication can happen without any tone change first, as a safe refactor.
+   Eleven author prompts share ~85% of text. Any tone migration applied to copies drifts. Extract a shared baseline (e.g., a hypothetical `<shared-author-baseline>` file in `.claude/agents/`, or an include mechanism) before refreshing the language, or script the refresh to touch all eleven atomically. The exact authoring surface is TBD during Wave 3 scoping. Deduplication can happen without any tone change first, as a safe refactor.
 
 10. **Validate by qualitative transcript review, not by chasing statistical significance on a short pilot.**
     Per `.claude/rules/deferred/05_rigor.md`, our fleet volume (~10–40 PRs/day) is insufficient for a statistically rigorous before/after comparison on a one-week pilot. Validation is operator judgment + targeted transcript review, honestly labeled as such. Measurement integrity matters more here than the illusion of a gate.
@@ -208,7 +208,7 @@ Four waves, each ~1 week apart, with operator review between waves. This plan sp
 ### Option C — A/B comparison
 Run softened and unsoftened prompts side-by-side on matched tasks, compare outcomes.
 - **Pro:** Quantitative evidence.
-- **Con:** At ~10–40 PRs/day fleet volume and with heterogeneous tasks, no pilot window small enough to be politically viable would produce statistically significant results. Per `05_rigor.md`, we should not pretend otherwise.
+- **Con:** At ~10–40 PRs/day fleet volume and with heterogeneous tasks, no pilot window small enough to be politically viable would produce statistically significant results. Per `.claude/rules/deferred/05_rigor.md`, we should not pretend otherwise.
 - **Rejected:** measurement infrastructure does not support a rigorous A/B at our volume.
 
 ---
@@ -250,7 +250,7 @@ Any of these reverts the wave; we regroup and revise the principles.
 | Claude Code doesn't support prompt includes / shared baselines. | Confirm the authoring surface during Wave 3 scoping. Fallback: script-based multi-file edit with a single source of truth in `plans/`. |
 | Flurry of prompt PRs competes with other lane work for review attention. | Waves are explicitly spaced; one softening PR per wave (except Wave 3 refactor). |
 | "Valued teammate" framing is read as instructive-of-personality rather than instructive-of-process. | Principles ground the language in process outcomes (uncertainty-surfacing, deviate-authority), not personality adjectives. |
-| Measurement honesty: operator wants "proof it worked" but fleet volume can't deliver. | `05_rigor.md`-compliant framing baked into this plan's Validation section from day one. |
+| Measurement honesty: operator wants "proof it worked" but fleet volume can't deliver. | `.claude/rules/deferred/05_rigor.md`-compliant framing baked into this plan's Validation section from day one. |
 | Issue #2677 references "feedback" about command language; we may be missing operator examples. | First-wave PR description to ask operator for the motivating transcripts so Wave 2+ prompts can reference them directly. |
 | Prompt changes silently break `.claude/skills/*` workflow documentation that assumes certain agent phrasings. | Scan skills/ for references to specific prompt strings before each wave PR. |
 
