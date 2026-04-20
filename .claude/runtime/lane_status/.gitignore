@@ -1,0 +1,5 @@
+# Ephemeral heartbeat snapshots — recreated every tool call.
+# Keep the schema doc; ignore everything else.
+*
+!README.md
+!.gitignore
