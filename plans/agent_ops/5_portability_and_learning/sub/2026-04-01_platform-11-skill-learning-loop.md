@@ -1,11 +1,69 @@
 # SP-5-02: Platform-11 Skill Learning Loop
 
-**Status:** postponed (2026-04-01 operator decision — platform work postponed indefinitely)
-**Author:** analyst-a
-**Date:** 2026-04-01
+**Status:** in_progress (partially reactivated 2026-04-20 — adaptive dispatch subset only; PR5 skill-suggestion pipeline remains POSTPONED)
+**Author:** analyst-a (original), author-d (2026-04-20 reactivation annotations)
+**Date:** 2026-04-01 (original), 2026-04-20 (reactivation)
 **Parent:** `plans/agent_ops/governing_plan.md` — Phase 5, Platform-11
 **Registry ID:** SP-5-02
 **Scope lock:** `plans/agent_ops/5_skill_learning/scope_lock.md`
+
+---
+
+## SCOPE EXTENSION (2026-04-20 — partial reactivation)
+
+> Added by author-d as part of the governance paperwork landing the operator's
+> 2026-04-20 partial-reactivation decision. This section does not rewrite the
+> original sub-plan below; it documents what the reactivation absorbs and what
+> stays postponed.
+
+**Motivation.** Analyst-a's scoping on #2169
+(`plans/sessions/2026-04-20_token_economy_restart_plan.md`) recommended
+splitting the token-economy restart program. Slices C/D/E of that plan
+(routing metadata + outcome capture, fixed policy controls, and advisory
+adaptive dispatch in shadow mode) overlap substantially with SP-5-02's
+existing PR1–PR4 scope. Rather than inventing a parallel planning structure,
+those slices are folded into SP-5-02 under the operator's 2026-04-20 partial
+reactivation.
+
+**What this reactivation absorbs from the token-economy restart plan.**
+
+- **`model_hint` and `effort_hint` packet metadata keys.** The existing PR1
+  packet metadata scope (`task_type`, `complexity_estimate`) is extended to
+  also include `model_hint` and `effort_hint`. All four are optional
+  `TaskPacket.metadata` fields — no schema break.
+- **Outcome records enriched with model/effort attribution.** PR2's outcome
+  log captures the `model_hint` / `effort_hint` that were in effect for each
+  completion, so the affinity model and reporting surfaces can reason about
+  lane × model × effort.
+- **Lane-default model/effort policy in the worker pool (fixed policy
+  controls).** PR3/PR4's advisory-mode work extends to respecting task-level
+  `model_hint` / `effort_hint` overrides when present, with lane defaults for
+  low-risk categories (ops monitoring, review coordination, docs-only
+  tasks, test-only tasks, convention fixes).
+- **Shadow-mode recommendation logging.** PR3/PR4's advisory-mode design
+  (orchestrator retains dispatch authority; advisor emits recommendations
+  before dispatch) subsumes token-economy Slice E's shadow-mode requirement.
+
+**What this reactivation does NOT include.**
+
+- **PR5 skill suggestion pipeline.** Still POSTPONED. It stays postponed
+  until the PR1–PR4 dispatch advisor is validated against real steward
+  outcomes.
+- **Token-economy Slices A and B.** Baseline refresh and lane × model ×
+  effort telemetry extension stay on their own session plans under
+  `plans/sessions/`. They feed SP-5-02 (measurement must lead policy) but
+  are not part of SP-5-02 itself.
+- **Token-economy Slice F.** Evaluation and promotion decision stays on
+  its own session plan under `plans/sessions/`, to be authored after
+  Slices D/E land and accumulate outcome data.
+- **Platform-12 and Platform-13.** Both remain POSTPONED under their
+  original scope locks.
+
+**Consequence for PR decomposition.** The PR1–PR4 scopes below are authored
+as if `model_hint` / `effort_hint` existed in the original sub-plan. When
+implementing, treat them as first-class packet metadata alongside
+`task_type` / `complexity_estimate`, and ensure outcome records, advisor
+inputs, and evaluation surfaces all carry model/effort attribution.
 
 ---
 
