@@ -222,54 +222,18 @@ _DEFAULT_CYCLE_INTERVAL_SECONDS: float = 3.0
 #: Events that carry the (message_type, priority, to_lane) tuple we need.
 _BROKER_EVENT_TYPE: str = "message_sent"
 
-# ---------------------------------------------------------------------------
-# Compaction policy (see `compact_tickets` below and issue #2674).
-# ---------------------------------------------------------------------------
-# ``deferred_tickets.jsonl`` is append-only during normal operation: every
-# ticket state transition writes one line.  Without a bounded retention
-# policy the log grows linearly with message volume — MBs per week at fleet
-# scale — and ``load_tickets`` re-parses the entire file on every 3s cycle.
-#
-# Compaction rewrites the log to keep:
-#   - every non-terminal ticket (pending), and
-#   - terminal tickets (nudged / abandoned) within a bounded retention
-#     window, to preserve dedup against events.jsonl replay races.
-#
-# Trigger choice (size-based, not time-based):
-#   The ~3s ``run_once`` cadence makes time-based triggers noisy; a
-#   byte-size gate is a single ``stat()`` call per cycle and fires only
-#   when the file has actually grown.  ``COMPACTION_MIN_BYTES`` is picked
-#   so a fresh broker can ingest hundreds of tickets before the first
-#   rewrite, and each rewrite meaningfully shrinks the file.
-#
-# Retention window choice (24h + hard cap):
-#   The dedup safety net only matters while events.jsonl may re-emit a
-#   message_id we've already processed.  Events the broker has crossed are
-#   past the persistent cursor; the only re-emit path is cursor reset
-#   after file rotation, which the broker defends against by restarting
-#   the cursor at 0.  A 24h retention window is multiple orders of
-#   magnitude wider than any realistic cursor-reset window and caps the
-#   retained terminal set at a bounded count so a single burst of traffic
-#   can't defeat the size gate.
-#
-# These constants are module-level so tests can ``monkeypatch`` them to
-# exercise the compaction path on tiny fixtures without synthesizing MBs
-# of ticket history.
+# Compaction tunables.  See `compact_tickets` docstring for policy rationale
+# (trigger choice, retention window, dedup safety).  These live at module
+# scope so tests can `monkeypatch.setattr` them without threading kwargs.
 
 #: Size gate: compaction is a no-op until the ticket log exceeds this many
-#: bytes.  50KB comfortably holds ~250 ticket transitions (avg ~200 bytes
-#: per line after JSON-encoding), so fresh brokers never pay the rewrite
-#: cost and busy brokers compact every few minutes of steady-state.
+#: bytes.  50KB ≈ 250 ticket transitions at the observed ~200-byte line size.
 COMPACTION_MIN_BYTES: int = 50_000
 
-#: Terminal retention window — keep nudged/abandoned tickets whose
-#: ``created_at`` falls within the last N hours.  Preserves dedup against
-#: short-window event replay without unbounded growth.
+#: Retention window for terminal tickets (nudged / abandoned), in hours.
 COMPACTION_TERMINAL_RETENTION_HOURS: float = 24.0
 
-#: Hard ceiling on retained terminal tickets regardless of the time
-#: window.  Protects against a single traffic burst (e.g., thousands of
-#: blocker messages in one hour) defeating the size gate.
+#: Hard ceiling on retained terminal tickets regardless of the time window.
 COMPACTION_TERMINAL_RETENTION_MAX: int = 500
 
 
@@ -542,20 +506,41 @@ def compact_tickets(
     retention_hours: float = COMPACTION_TERMINAL_RETENTION_HOURS,
     retention_max: int = COMPACTION_TERMINAL_RETENTION_MAX,
 ) -> int:
-    """Rewrite ``deferred_tickets.jsonl`` to a bounded, compact form.
+    """Rewrite ``deferred_tickets.jsonl`` to a bounded, compact form (issue #2674).
 
-    Two sources of savings:
+    **Why compaction exists.**  ``deferred_tickets.jsonl`` is append-only
+    during normal operation: every ticket state transition writes one
+    line.  Without a bounded retention policy the log grows linearly with
+    message volume (MBs/week at fleet scale) and ``load_tickets`` re-
+    parses the entire file on every 3s cycle.  Compaction keeps the log
+    small enough that re-parse cost is bounded.
 
-    1. **Per-ticket history collapse.**  During normal operation each
-       ticket writes one line per state transition (pending -> deferred
-       (pending) -> nudged/abandoned).  ``load_tickets`` already keeps
-       only the last entry per ticket_id; compaction materializes that
-       collapsed view back to disk.
-    2. **Terminal retention window.**  Terminal tickets (``nudged`` /
+    **Two sources of savings:**
+
+    1. Per-ticket history collapse.  During normal operation each ticket
+       writes one line per state transition (pending -> deferred (still
+       pending) -> nudged/abandoned).  ``load_tickets`` already keeps
+       only the last entry per ``ticket_id``; compaction materializes
+       that collapsed view back to disk.
+    2. Terminal retention window.  Terminal tickets (``nudged`` /
        ``abandoned``) older than ``retention_hours`` are dropped.  All
        non-terminal tickets (``pending``) are preserved unconditionally.
        The retained terminal set is also capped at ``retention_max`` so a
        traffic burst within the window cannot defeat the size gate.
+
+    **Trigger choice — size-based, not time-based.**  The ~3s
+    ``run_once`` cadence makes time-based triggers noisy; a byte-size
+    gate is a single ``stat()`` call per cycle and fires only when the
+    file has actually grown.  See ``COMPACTION_MIN_BYTES``.
+
+    **Retention window choice — 24h plus hard cap.**  The dedup safety
+    net only matters while ``events.jsonl`` may re-emit a ``message_id``
+    we've already processed.  Events past the persistent cursor are
+    normally gone; the only re-emit path is cursor reset after file
+    rotation, which the broker defends against by restarting the cursor
+    at 0.  A 24h retention window is multiple orders of magnitude wider
+    than any realistic cursor-reset window.  The hard cap prevents a
+    single traffic burst from defeating the size gate.
 
     **Atomic rewrite:** content is written to
     ``<tickets_file>.jsonl.tmp``, flushed + fsync'd, then ``os.replace``'d
