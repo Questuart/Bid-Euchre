@@ -155,7 +155,7 @@
     ]
   },
   "permissions": {
-    "defaultMode": "bypassPermissions",
+    "defaultMode": "auto",
     "allow": [
       "Edit(.claude/skills/**)",
       "Write(.claude/skills/**)",
