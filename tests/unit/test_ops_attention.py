@@ -32,15 +32,20 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bid_euchre.ops.attention import (
+    COMPACTION_MIN_BYTES,
+    COMPACTION_TERMINAL_RETENTION_HOURS,
+    COMPACTION_TERMINAL_RETENTION_MAX,
     MAX_ATTEMPTS,
     AttentionState,
     DeferredTicket,
     acquire_pidfile,
+    compact_tickets,
     get_status,
     load_tickets,
     pending_tickets,
@@ -1121,3 +1126,387 @@ class TestDeferredTicketSerialization:
         )
         roundtripped = DeferredTicket.from_json(ticket.to_json())
         assert roundtripped == ticket
+
+
+# ---------------------------------------------------------------------------
+# Compaction — bounded ticket log (issue #2674)
+# ---------------------------------------------------------------------------
+
+
+def _write_ticket_lines(state: AttentionState, tickets: list[DeferredTicket]) -> None:
+    """Write a list of tickets as newline-delimited JSON (overwrites)."""
+    state.ensure_dir()
+    with open(state.tickets_file, "w") as f:
+        for ticket in tickets:
+            f.write(json.dumps(ticket.to_json(), sort_keys=True) + "\n")
+
+
+def _make_ticket(
+    *,
+    ticket_id: str,
+    status: str,
+    created_at: datetime,
+    message_id: str | None = None,
+    to_lane: str = "author-b",
+    message_type: str = "blocker",
+) -> DeferredTicket:
+    """Build a DeferredTicket at a specific wall-clock for retention tests."""
+    return DeferredTicket(
+        ticket_id=ticket_id,
+        message_id=message_id or f"mid-{ticket_id}",
+        to_lane=to_lane,
+        message_type=message_type,
+        priority="high",
+        created_at=created_at.isoformat(),
+        next_retry_at=created_at.isoformat(),
+        attempts=1 if status != "pending" else 0,
+        last_reason=f"test:{status}",
+        status=status,
+    )
+
+
+class TestCompaction:
+    """Issue #2674 — bounded growth for deferred_tickets.jsonl."""
+
+    def test_pending_tickets_always_preserved(self, runtime_dir: Path) -> None:
+        """Non-terminal tickets must survive compaction unconditionally,
+        even when they're far older than the terminal retention window."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        ancient = now - timedelta(days=30)
+        tickets = [
+            _make_ticket(
+                ticket_id="tkt-old-pending", status="pending", created_at=ancient
+            ),
+            _make_ticket(ticket_id="tkt-new-pending", status="pending", created_at=now),
+        ]
+        _write_ticket_lines(state, tickets)
+
+        compact_tickets(state, now=now)
+
+        reloaded = load_tickets(state)
+        assert set(reloaded.keys()) == {"tkt-old-pending", "tkt-new-pending"}
+        assert all(t.status == "pending" for t in reloaded.values())
+
+    def test_terminal_outside_window_is_dropped(self, runtime_dir: Path) -> None:
+        """Nudged/abandoned tickets older than retention_hours are removed."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        # 48h ago — outside the default 24h window.
+        old = now - timedelta(hours=48)
+        tickets = [
+            _make_ticket(ticket_id="tkt-old-nudged", status="nudged", created_at=old),
+            _make_ticket(
+                ticket_id="tkt-old-abandoned", status="abandoned", created_at=old
+            ),
+            # Recent pending: must be preserved.
+            _make_ticket(
+                ticket_id="tkt-recent-pending", status="pending", created_at=now
+            ),
+        ]
+        _write_ticket_lines(state, tickets)
+
+        compact_tickets(state, now=now)
+
+        reloaded = load_tickets(state)
+        assert "tkt-old-nudged" not in reloaded
+        assert "tkt-old-abandoned" not in reloaded
+        assert "tkt-recent-pending" in reloaded
+
+    def test_terminal_within_window_is_retained(self, runtime_dir: Path) -> None:
+        """Nudged/abandoned tickets inside the window are kept for dedup."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        # 1h ago — inside the default 24h window.
+        recent = now - timedelta(hours=1)
+        tickets = [
+            _make_ticket(
+                ticket_id="tkt-recent-nudged",
+                status="nudged",
+                created_at=recent,
+                message_id="mid-recent",
+            ),
+        ]
+        _write_ticket_lines(state, tickets)
+
+        compact_tickets(state, now=now)
+
+        reloaded = load_tickets(state)
+        assert "tkt-recent-nudged" in reloaded
+        assert reloaded["tkt-recent-nudged"].status == "nudged"
+        # Message-id dedup must still see this ticket after compaction.
+        seen_message_ids = {t.message_id for t in reloaded.values()}
+        assert "mid-recent" in seen_message_ids
+
+    def test_terminal_retention_max_caps_bulk(self, runtime_dir: Path) -> None:
+        """With retention_max=10, only the 10 newest terminals survive a
+        burst of 50 recent nudged tickets, even though all are in the
+        time window."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        base = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+
+        # 50 nudged tickets, each 1 minute apart, all within the window.
+        terminals = [
+            _make_ticket(
+                ticket_id=f"tkt-n-{i:02d}",
+                status="nudged",
+                created_at=base - timedelta(minutes=i),
+            )
+            for i in range(50)
+        ]
+        _write_ticket_lines(state, terminals)
+
+        dropped = compact_tickets(state, now=base, retention_max=10)
+
+        reloaded = load_tickets(state)
+        assert len(reloaded) == 10
+        assert dropped == 40
+        # The 10 newest (smallest `i`) should survive.
+        surviving = sorted(reloaded.keys())
+        assert surviving == [f"tkt-n-{i:02d}" for i in range(10)]
+
+    def test_compaction_deduplicates_transitions(self, runtime_dir: Path) -> None:
+        """Multiple JSONL lines for the same ticket_id collapse to one line
+        (the latest status) — this is the main space savings in steady state."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        # Simulate the natural ticket lifecycle: pending -> deferred (still
+        # pending) x 3 -> nudged.
+        base = {
+            "ticket_id": "tkt-xforms",
+            "message_id": "mid-xforms",
+            "to_lane": "author-b",
+            "message_type": "blocker",
+            "priority": "high",
+            "created_at": now.isoformat(),
+            "next_retry_at": now.isoformat(),
+            "last_reason": "n/a",
+        }
+        with open(state.tickets_file, "w") as f:
+            f.write(json.dumps({**base, "status": "pending", "attempts": 0}) + "\n")
+            f.write(json.dumps({**base, "status": "pending", "attempts": 1}) + "\n")
+            f.write(json.dumps({**base, "status": "pending", "attempts": 2}) + "\n")
+            f.write(json.dumps({**base, "status": "pending", "attempts": 3}) + "\n")
+            f.write(json.dumps({**base, "status": "nudged", "attempts": 4}) + "\n")
+
+        assert len(state.tickets_file.read_text().strip().splitlines()) == 5
+        dropped = compact_tickets(state, now=now)
+        assert dropped == 4
+        remaining = state.tickets_file.read_text().strip().splitlines()
+        assert len(remaining) == 1
+        reloaded = load_tickets(state)
+        assert reloaded["tkt-xforms"].status == "nudged"
+        assert reloaded["tkt-xforms"].attempts == 4
+
+    def test_dedup_intact_after_compaction(self, runtime_dir: Path) -> None:
+        """After compaction, re-running run_once with the same message_id
+        in events.jsonl must NOT create a duplicate ticket.
+
+        This is the invariant the retention window exists to preserve:
+        terminal tickets retained in the compacted log still block a
+        re-nudge for their message_id.
+        """
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+
+        # Seed: one nudged ticket within retention window (message_id X).
+        seed = _make_ticket(
+            ticket_id="tkt-seed",
+            status="nudged",
+            created_at=now - timedelta(hours=1),
+            message_id="stable-X",
+        )
+        _write_ticket_lines(state, [seed])
+        # Matching cursor past the file so run_once never re-reads it.
+        compact_tickets(state, now=now)
+        # Confirm the dedup anchor survived.
+        assert "stable-X" in {t.message_id for t in load_tickets(state).values()}
+
+        # Now append a new event with the *same* message_id and run one cycle.
+        _write_events(
+            runtime_dir,
+            [
+                _msg_sent_event(
+                    to_lane="author-b",
+                    message_type="blocker",
+                    message_id="stable-X",
+                ),
+            ],
+        )
+        nudged: list[str] = []
+        summary = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+            now=now + timedelta(seconds=5),
+        )
+        # Dedup worked: no new ticket, no new nudge.
+        assert summary.tickets_created == 0
+        assert nudged == []
+
+    def test_size_gate_skips_small_files(self, runtime_dir: Path) -> None:
+        """run_once must NOT rewrite the file when it's below the size gate."""
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        # Default threshold (50KB) is far larger than a single-ticket file.
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn([]),
+        )
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        # Initial pending + terminal nudged lines — 2 lines, not 1 (compaction
+        # would collapse to 1 if it ran).
+        lines = [
+            line for line in state.tickets_file.read_text().splitlines() if line.strip()
+        ]
+        assert len(lines) == 2, (
+            "Small files must skip compaction so the per-cycle cost stays "
+            "bounded by a single stat() call"
+        )
+
+    def test_size_gate_triggers_compaction_on_large_files(
+        self,
+        runtime_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Force the gate open with a tiny threshold and prove run_once
+        actually rewrites the file end-to-end."""
+        # Drop the threshold so any non-empty file triggers compaction.
+        monkeypatch.setattr("bid_euchre.ops.attention.COMPACTION_MIN_BYTES", 1)
+
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+
+        # Preload ticket log with redundant transitions.
+        base = {
+            "ticket_id": "tkt-big",
+            "message_id": "mid-big",
+            "to_lane": "author-b",
+            "message_type": "blocker",
+            "priority": "high",
+            "created_at": now.isoformat(),
+            "next_retry_at": now.isoformat(),
+            "last_reason": "n/a",
+        }
+        state.ensure_dir()
+        with open(state.tickets_file, "w") as f:
+            for i in range(10):
+                f.write(json.dumps({**base, "status": "pending", "attempts": i}) + "\n")
+            f.write(json.dumps({**base, "status": "nudged", "attempts": 10}) + "\n")
+
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn([]),
+            now=now,
+        )
+        # After run_once + compaction, the duplicated transitions collapse
+        # to the single terminal state.
+        lines = [
+            line for line in state.tickets_file.read_text().splitlines() if line.strip()
+        ]
+        assert len(lines) == 1
+        assert json.loads(lines[0])["status"] == "nudged"
+
+    def test_atomic_rewrite_uses_tmp_then_replace(self, runtime_dir: Path) -> None:
+        """If os.replace fails mid-write, the live file must still contain
+        the pre-compaction content — never a partial write."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        # Seed with a non-trivial set that compaction would shrink.
+        old = now - timedelta(hours=48)
+        tickets = [
+            _make_ticket(ticket_id="tkt-p", status="pending", created_at=now),
+            _make_ticket(ticket_id="tkt-old-t", status="nudged", created_at=old),
+        ]
+        _write_ticket_lines(state, tickets)
+        original_bytes = state.tickets_file.read_bytes()
+
+        tmp_path = state.tickets_file.with_suffix(".jsonl.tmp")
+        assert not tmp_path.exists()
+
+        with patch(
+            f"{_ATTENTION}.os.replace",
+            side_effect=OSError("simulated rename failure"),
+        ):
+            with pytest.raises(OSError, match="simulated rename failure"):
+                compact_tickets(state, now=now)
+
+        # Live file must be byte-for-byte the original — atomicity.
+        assert state.tickets_file.read_bytes() == original_bytes
+        # Tmp file cleaned up on failure.
+        assert not tmp_path.exists(), "compaction must clean up tmp on failure"
+
+    def test_atomic_rewrite_calls_fsync_before_replace(self, runtime_dir: Path) -> None:
+        """Structural proof: fsync happens before os.replace on the same fd."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        _write_ticket_lines(
+            state,
+            [_make_ticket(ticket_id="tkt-a", status="pending", created_at=now)],
+        )
+
+        call_order: list[str] = []
+
+        real_fsync = os.fsync
+        real_replace = os.replace
+
+        def tracked_fsync(fd: int) -> None:
+            call_order.append("fsync")
+            real_fsync(fd)
+
+        def tracked_replace(src: Any, dst: Any) -> None:
+            call_order.append("replace")
+            real_replace(src, dst)
+
+        with patch(f"{_ATTENTION}.os.fsync", side_effect=tracked_fsync):
+            with patch(f"{_ATTENTION}.os.replace", side_effect=tracked_replace):
+                compact_tickets(state, now=now)
+
+        assert call_order == ["fsync", "replace"], (
+            "compaction must fsync the tmp file before calling os.replace; "
+            f"saw {call_order!r}"
+        )
+
+    def test_empty_file_is_noop(self, runtime_dir: Path) -> None:
+        """Compaction on a missing / empty log returns zero drops and
+        does not create a spurious empty file."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        # File does not exist.
+        assert not state.tickets_file.exists()
+        dropped = compact_tickets(state)
+        assert dropped == 0
+        # We did not create an empty file.
+        assert not state.tickets_file.exists()
+
+    def test_malformed_lines_are_dropped_on_compaction(self, runtime_dir: Path) -> None:
+        """Compaction quietly drops unparseable lines (forward-compat with
+        partially-corrupted logs)."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        good = _make_ticket(ticket_id="tkt-good", status="pending", created_at=now)
+        with open(state.tickets_file, "w") as f:
+            f.write("this is not json\n")
+            f.write(json.dumps(good.to_json(), sort_keys=True) + "\n")
+            f.write('{"missing": "fields"}\n')
+        compact_tickets(state, now=now)
+        reloaded = load_tickets(state)
+        assert set(reloaded.keys()) == {"tkt-good"}
+
+    def test_defaults_are_reasonable(self) -> None:
+        """Regression-lock the default compaction policy values.  These
+        are the documented knobs operators read from logs; a silent change
+        would surprise them."""
+        assert (
+            COMPACTION_MIN_BYTES >= 1_000
+        ), "Threshold too low — would compact on every cycle"
+        assert (
+            COMPACTION_MIN_BYTES <= 10_000_000
+        ), "Threshold too high — would never compact"
+        assert COMPACTION_TERMINAL_RETENTION_HOURS >= 1.0
+        assert COMPACTION_TERMINAL_RETENTION_MAX >= 50
