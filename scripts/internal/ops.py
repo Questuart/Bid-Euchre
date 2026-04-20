@@ -15,6 +15,9 @@ Usage:
     uv run python scripts/internal/ops.py ci [--json]
     uv run python scripts/internal/ops.py ci --pr N [--json]
     uv run python scripts/internal/ops.py daemon [--interval N] [--max-ticks N] [--json]
+    uv run python scripts/internal/ops.py attention once [--json]
+    uv run python scripts/internal/ops.py attention run [--interval N] [--max-cycles N]
+    uv run python scripts/internal/ops.py attention status [--json]
     uv run python scripts/internal/ops.py retry --task TASK_ID [--json]
     uv run python scripts/internal/ops.py index [--rebuild] [--json]
     uv run python scripts/internal/ops.py query --text TEXT [--type TYPE] [--limit N] [--json]
@@ -736,6 +739,94 @@ def cmd_ci(args: argparse.Namespace) -> int:
         print(format_ci_text(report))
 
     return 1 if report.overall == "failure" else 0
+
+
+def cmd_attention(args: argparse.Namespace) -> int:
+    """Run the attention-broker daemon (PR-MSG-4).
+
+    Subcommands:
+        once   — run exactly one broker cycle and exit
+        run    — long-running daemon (pidfile-guarded, single-instance)
+        status — print broker PID / last cycle / pending ticket count
+    """
+    from bid_euchre.ops.attention import (
+        MAX_ATTEMPTS,
+        get_status,
+        run_daemon,
+        run_once,
+    )
+
+    action = getattr(args, "attention_action", None)
+    if action is None:
+        print(
+            "Usage: ops.py attention {once|run|status} [options]",
+            file=sys.stderr,
+        )
+        return 1
+
+    runtime_dir: Path = args.runtime_dir
+
+    if action == "once":
+        summary = run_once(runtime_dir=runtime_dir)
+        if args.json:
+            print(json.dumps(summary.to_json(), indent=2, sort_keys=True))
+        else:
+            print("attention broker cycle:")
+            print(f"  timestamp:        {summary.timestamp}")
+            print(f"  new_events_seen:  {summary.new_events_seen}")
+            print(f"  tickets_created:  {summary.tickets_created}")
+            print(f"  nudged:           {summary.nudged}")
+            print(f"  deferred:         {summary.deferred}")
+            print(f"  abandoned:        {summary.abandoned}")
+            print(f"  pending_after:    {summary.pending_after}")
+            if summary.errors:
+                print(f"  errors:           {summary.errors}")
+        return 0
+
+    if action == "run":
+        interval = float(getattr(args, "interval", 3.0))
+        max_cycles = getattr(args, "max_cycles", None)
+        rc = run_daemon(
+            runtime_dir=runtime_dir,
+            interval_seconds=interval,
+            max_cycles=max_cycles,
+        )
+        return rc
+
+    if action == "status":
+        status = get_status(runtime_dir=runtime_dir)
+        if args.json:
+            payload = status.to_json()
+            payload["max_attempts_per_ticket"] = MAX_ATTEMPTS
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            alive_label = "alive" if status.alive else "not running"
+            print(f"attention-broker: {alive_label}")
+            print(f"  pid:                 {status.pid if status.pid else 'n/a'}")
+            print(f"  pending tickets:     {status.pending_count}")
+            print(f"  nudged (lifetime):   {status.nudged_count}")
+            print(f"  abandoned:           {status.abandoned_count}")
+            print(f"  cursor byte offset:  {status.cursor_offset}")
+            print(f"  events file:         {status.events_file}")
+            print(f"  runtime dir:         {status.runtime_dir}")
+            print(f"  max attempts/ticket: {MAX_ATTEMPTS}")
+            if status.last_cycle:
+                lc = status.last_cycle
+                print(f"  last cycle:          {lc.get('timestamp', '?')}")
+                print(
+                    "                       "
+                    f"events={lc.get('new_events_seen', 0)} "
+                    f"nudged={lc.get('nudged', 0)} "
+                    f"deferred={lc.get('deferred', 0)} "
+                    f"abandoned={lc.get('abandoned', 0)}"
+                )
+        return 0
+
+    print(
+        f"Unknown attention action: {action!r}. Use one of: once, run, status.",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def cmd_daemon(args: argparse.Namespace) -> int:
@@ -3566,6 +3657,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--pr", type=int, default=None, help="PR number to check (required)"
     )
 
+    # attention (PR-MSG-4 broker)
+    attention_parser = subparsers.add_parser(
+        "attention",
+        help="Attention-broker daemon — tail message_sent events and nudge safely",
+    )
+    attention_sub = attention_parser.add_subparsers(dest="attention_action")
+    attention_sub.add_parser("once", help="Run one broker cycle then exit")
+    run_parser = attention_sub.add_parser(
+        "run", help="Long-running daemon (pidfile-guarded, single instance)"
+    )
+    run_parser.add_argument(
+        "--interval",
+        type=float,
+        default=3.0,
+        help="Seconds between cycles (default: 3.0)",
+    )
+    run_parser.add_argument(
+        "--max-cycles",
+        type=int,
+        default=None,
+        help="Stop after N cycles (testing/bounded runs; default: unbounded)",
+    )
+    attention_sub.add_parser(
+        "status", help="Show broker PID, last cycle, and pending ticket count"
+    )
+
     # daemon
     daemon_parser = subparsers.add_parser(
         "daemon", help="Run bounded repeating tick loop"
@@ -4444,6 +4561,7 @@ def main(argv: list[str] | None = None) -> int:
         "reviews": cmd_reviews,
         "comments": cmd_comments,
         "ci": cmd_ci,
+        "attention": cmd_attention,
         "daemon": cmd_daemon,
         "retry": cmd_retry,
         "index": cmd_index,

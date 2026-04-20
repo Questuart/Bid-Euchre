@@ -1,6 +1,7 @@
-"""Tests for the PR-MSG-2 delivery-policy helper.
+"""Tests for the PR-MSG-2 delivery-policy helper and PR-MSG-4 broker.
 
-Proves the nudge policy in :mod:`bid_euchre.ops.attention`:
+PR-MSG-2 proves the immediate-send nudge policy in
+:mod:`bid_euchre.ops.attention`:
 
 - Low/normal ``progress`` messages: **no nudge**
 - ``blocker``: **nudge**
@@ -10,19 +11,47 @@ Proves the nudge policy in :mod:`bid_euchre.ops.attention`:
 - ``supervisor_alert`` at priority ``normal`` / ``low``: **no nudge**
 - ``send_message`` failure: **no nudge attempted**
 
+PR-MSG-4 proves the broker daemon:
+
+- Cursor resumes on restart (byte-offset persistence)
+- Deferred ticket transitions (pending → nudged, pending → deferred →
+  nudged, pending → abandoned)
+- Safe / unsafe poke decisions (mocked pane state)
+- Pidfile single-instance guard
+- Exactly-once nudge per message_sent event across crash-restart
+
 The architectural invariant is that ``send_with_attention`` wraps (not
 replaces) ``send_message``, so all durability guarantees still hold and
-no tmux coupling leaks into the bus layer.
+no tmux coupling leaks into the bus layer.  The broker reuses existing
+pane-state helpers rather than inventing new ones.
 """
 
 from __future__ import annotations
 
+import json
+import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bid_euchre.ops.attention import send_with_attention, should_nudge_for_message
+from bid_euchre.ops.attention import (
+    MAX_ATTEMPTS,
+    AttentionState,
+    DeferredTicket,
+    acquire_pidfile,
+    get_status,
+    load_tickets,
+    pending_tickets,
+    read_cursor,
+    read_pidfile,
+    release_pidfile,
+    run_once,
+    send_with_attention,
+    should_nudge_for_message,
+    write_cursor,
+)
 from bid_euchre.ops.message_bus import create_message, shared_bus_root
 from bid_euchre.ops.worker_pool import PoolAction
 
@@ -506,3 +535,589 @@ class TestNudgeTargetsRecipient:
         mock_nudge.assert_called_once()
         called_lane = mock_nudge.call_args.args[0]
         assert called_lane == "review"
+
+
+# ---------------------------------------------------------------------------
+# PR-MSG-4: Attention broker daemon
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def runtime_dir(tmp_path: Path) -> Path:
+    """Isolated runtime root for broker tests."""
+    rt = tmp_path / "runtime"
+    rt.mkdir()
+    (rt / "events").mkdir()
+    return rt
+
+
+def _write_events(runtime_dir: Path, events: list[dict]) -> None:
+    """Append a list of event dicts to events.jsonl (creates file if absent)."""
+    events_file = runtime_dir / "events" / "events.jsonl"
+    with open(events_file, "a") as f:
+        for ev in events:
+            f.write(json.dumps(ev, sort_keys=True) + "\n")
+
+
+def _msg_sent_event(
+    *,
+    to_lane: str,
+    message_type: str,
+    priority: str = "high",
+    from_lane: str = "author-a",
+    message_id: str | None = None,
+) -> dict:
+    """Build a synthetic message_sent event matching the events.jsonl schema."""
+    return {
+        "timestamp": "2026-04-20T18:00:00+00:00",
+        "event_type": "message_sent",
+        "source": "ops.message_bus",
+        "lane_id": from_lane,
+        "payload": {
+            "message_id": message_id or f"mid-{to_lane}-{message_type}",
+            "message_type": message_type,
+            "priority": priority,
+            "to_lane": to_lane,
+            "task_id": None,
+            "thread_id": None,
+        },
+    }
+
+
+def _safe_pane(_lane_id: str) -> tuple[str, str]:
+    return ("safe", "idle")
+
+
+def _busy_pane(_lane_id: str) -> tuple[str, str]:
+    return ("busy", "active_work_detected")
+
+
+def _missing_pane(_lane_id: str) -> tuple[str, str]:
+    return ("missing", "pane_not_found")
+
+
+def _record_nudge_fn(recorder: list[str]):
+    """Build a nudge_fn that records each lane it was asked to nudge."""
+
+    def _fn(lane_id: str) -> PoolAction:
+        recorder.append(lane_id)
+        return PoolAction(
+            action="inbox_nudge",
+            lane_id=lane_id,
+            reason=f"fake nudge to {lane_id}",
+            executed=True,
+        )
+
+    return _fn
+
+
+class TestAttentionStateLayout:
+    """Filesystem-layout invariants for the broker state dir."""
+
+    def test_from_runtime_dir_uses_attention_broker_subdir(
+        self, runtime_dir: Path
+    ) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        assert state.root == runtime_dir / "attention_broker"
+        assert state.pidfile.name == "pid"
+        assert state.cursor_file.name == "cursor.json"
+        assert state.tickets_file.name == "deferred_tickets.jsonl"
+        assert state.failure_sentinel.name == "FAILED"
+        assert state.events_file == runtime_dir / "events" / "events.jsonl"
+
+    def test_ensure_dir_creates_directory(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        assert not state.root.exists()
+        state.ensure_dir()
+        assert state.root.is_dir()
+
+
+class TestPidfileGuard:
+    """Single-instance protection via liveness-checked pidfile."""
+
+    def test_acquire_empty_succeeds(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        assert acquire_pidfile(state) is True
+        assert state.pidfile.read_text().strip() == str(os.getpid())
+
+    def test_stale_pidfile_is_replaced(self, runtime_dir: Path) -> None:
+        """A pidfile pointing at a dead PID must be claimable."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        # PID 1 typically exists, but 999999 almost certainly does not.
+        dead_pid = 999_999
+        state.pidfile.write_text(f"{dead_pid}\n")
+        assert acquire_pidfile(state) is True
+        assert state.pidfile.read_text().strip() == str(os.getpid())
+
+    def test_garbage_pidfile_is_replaced(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        state.pidfile.write_text("not-a-pid\n")
+        assert acquire_pidfile(state) is True
+
+    def test_live_pidfile_blocks_acquire(self, runtime_dir: Path) -> None:
+        """A pidfile pointing at a LIVE process (other than us) refuses
+        acquisition.
+
+        We simulate by writing the current test process's PID as if another
+        daemon owned it, then calling acquire_pidfile with a monkey-patched
+        getpid() that returns a different PID.
+        """
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        # The test process itself is alive — write its pid as though it were
+        # "another daemon".
+        owner_pid = os.getpid()
+        state.pidfile.write_text(f"{owner_pid}\n")
+
+        with patch(f"{_ATTENTION}.os.getpid", return_value=owner_pid + 1):
+            assert acquire_pidfile(state) is False
+
+    def test_release_only_removes_own_pidfile(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        foreign_pid = os.getpid() + 1
+        state.pidfile.write_text(f"{foreign_pid}\n")
+        release_pidfile(state)  # we are not the owner
+        assert state.pidfile.exists()
+        assert state.pidfile.read_text().strip() == str(foreign_pid)
+
+    def test_release_removes_our_pidfile(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        assert acquire_pidfile(state) is True
+        release_pidfile(state)
+        assert not state.pidfile.exists()
+
+    def test_read_pidfile_reports_live_only(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        state.pidfile.write_text("999999\n")  # dead
+        assert read_pidfile(state) is None
+        state.pidfile.write_text(f"{os.getpid()}\n")
+        assert read_pidfile(state) == os.getpid()
+
+
+class TestCursorResume:
+    """events.jsonl byte-offset cursor persists across daemon restarts."""
+
+    def test_cursor_default_zero(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        assert read_cursor(state) == 0
+
+    def test_cursor_roundtrip(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        write_cursor(state, 1234)
+        assert read_cursor(state) == 1234
+
+    def test_malformed_cursor_file_falls_back_to_zero(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        state.cursor_file.write_text("not json")
+        assert read_cursor(state) == 0
+
+    def test_run_once_advances_cursor(self, runtime_dir: Path) -> None:
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        assert read_cursor(state) == 0
+        nudged: list[str] = []
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        size = (runtime_dir / "events" / "events.jsonl").stat().st_size
+        assert read_cursor(state) == size
+        assert nudged == ["author-b"]
+
+    def test_run_once_does_not_replay_on_restart(self, runtime_dir: Path) -> None:
+        """Second run with no new events must produce no new nudges."""
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        nudged: list[str] = []
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert nudged == ["author-b"]
+        # Simulate a daemon restart — the cursor persists, so the second
+        # run sees no new events.
+        nudged.clear()
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert nudged == []
+
+
+class TestSafePokeDecision:
+    """Safe / unsafe poke classifier steers the ticket transitions."""
+
+    def test_safe_pane_nudges_immediately(self, runtime_dir: Path) -> None:
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        nudged: list[str] = []
+        summary = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert nudged == ["author-b"]
+        assert summary.nudged == 1
+        assert summary.tickets_created == 1
+        assert summary.pending_after == 0
+
+    def test_busy_pane_defers_no_nudge(self, runtime_dir: Path) -> None:
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        nudged: list[str] = []
+        summary = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_busy_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert nudged == []
+        assert summary.nudged == 0
+        assert summary.deferred == 1
+        assert summary.pending_after == 1
+
+    def test_missing_pane_abandons(self, runtime_dir: Path) -> None:
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        nudged: list[str] = []
+        summary = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_missing_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert nudged == []
+        assert summary.abandoned == 1
+        assert summary.pending_after == 0
+
+    def test_self_loop_is_filtered(self, runtime_dir: Path) -> None:
+        """An event where sender == recipient creates no ticket."""
+        ev = _msg_sent_event(
+            to_lane="author-a",
+            message_type="blocker",
+            from_lane="author-a",
+        )
+        _write_events(runtime_dir, [ev])
+        nudged: list[str] = []
+        summary = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert summary.tickets_created == 0
+        assert nudged == []
+
+    def test_non_nudge_type_creates_no_ticket(self, runtime_dir: Path) -> None:
+        """progress / ack / completion never create broker tickets."""
+        events = [
+            _msg_sent_event(to_lane="author-b", message_type=t)
+            for t in ("progress", "ack", "completion", "assignment")
+        ]
+        _write_events(runtime_dir, events)
+        nudged: list[str] = []
+        summary = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert summary.new_events_seen == len(events)
+        assert summary.tickets_created == 0
+        assert nudged == []
+
+
+class TestDeferredTicketTransitions:
+    """Exercises the pending → deferred → nudged / abandoned transitions."""
+
+    def test_busy_then_safe_nudges_exactly_once(self, runtime_dir: Path) -> None:
+        """Cycle 1 defers (busy), cycle 2 (after retry window) nudges."""
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="escalation")],
+        )
+        nudged: list[str] = []
+
+        # Cycle 1: busy → defer
+        t0 = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        summary1 = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_busy_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+            now=t0,
+        )
+        assert summary1.deferred == 1
+        assert summary1.pending_after == 1
+        assert nudged == []
+
+        # Cycle 2: safe → nudge, at a time well past the first retry window
+        t1 = t0 + timedelta(seconds=60)
+        summary2 = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+            now=t1,
+        )
+        assert summary2.nudged == 1
+        assert summary2.pending_after == 0
+        assert nudged == ["author-b"]
+
+    def test_retry_before_window_is_a_no_op(self, runtime_dir: Path) -> None:
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        nudged: list[str] = []
+        t0 = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_busy_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+            now=t0,
+        )
+        # 1 second later — still well within the 10s first-retry window.
+        summary = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+            now=t0 + timedelta(seconds=1),
+        )
+        # The pane is now "safe" BUT we haven't reached next_retry_at yet,
+        # so nothing should fire.
+        assert summary.nudged == 0
+        assert summary.deferred == 0
+        assert nudged == []
+
+    def test_exhausted_retries_abandon(self, runtime_dir: Path) -> None:
+        """After MAX_ATTEMPTS on a persistently busy pane, ticket is abandoned."""
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        nudged: list[str] = []
+        now = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+
+        for i in range(MAX_ATTEMPTS):
+            run_once(
+                runtime_dir=runtime_dir,
+                pane_state_fn=_busy_pane,
+                nudge_fn=_record_nudge_fn(nudged),
+                now=now + timedelta(seconds=1000 * i),
+            )
+
+        assert nudged == []
+        tickets = list(
+            load_tickets(AttentionState.from_runtime_dir(runtime_dir)).values()
+        )
+        assert len(tickets) == 1
+        assert tickets[0].status == "abandoned"
+        assert tickets[0].attempts == MAX_ATTEMPTS
+
+    def test_ticket_dedup_on_duplicate_message_id(self, runtime_dir: Path) -> None:
+        """Same message_id emitted twice creates only one ticket."""
+        ev = _msg_sent_event(
+            to_lane="author-b",
+            message_type="blocker",
+            message_id="stable-id",
+        )
+        _write_events(runtime_dir, [ev, ev])
+        nudged: list[str] = []
+        summary = run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert summary.tickets_created == 1
+        assert nudged == ["author-b"]
+
+    def test_pending_tickets_helper(self, runtime_dir: Path) -> None:
+        """After one busy cycle, pending_tickets reports the unresolved one."""
+        _write_events(
+            runtime_dir,
+            [
+                _msg_sent_event(
+                    to_lane="author-b",
+                    message_type="blocker",
+                    message_id="a",
+                ),
+                _msg_sent_event(
+                    to_lane="author-c",
+                    message_type="escalation",
+                    message_id="b",
+                ),
+            ],
+        )
+        nudged: list[str] = []
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_busy_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        pending = pending_tickets(state)
+        pending_lanes = {t.to_lane for t in pending}
+        assert pending_lanes == {"author-b", "author-c"}
+        assert all(t.status == "pending" for t in pending)
+
+
+class TestTicketPersistence:
+    """Ticket state survives crash-restart via append-only jsonl."""
+
+    def test_jsonl_records_each_transition(self, runtime_dir: Path) -> None:
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        t0 = datetime(2026, 4, 20, 18, 0, 0, tzinfo=timezone.utc)
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_busy_pane,
+            nudge_fn=_record_nudge_fn([]),
+            now=t0,
+        )
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn([]),
+            now=t0 + timedelta(seconds=60),
+        )
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        lines = [
+            line for line in state.tickets_file.read_text().splitlines() if line.strip()
+        ]
+        # Three lines: initial (pending), defer, nudge.
+        assert len(lines) == 3
+        statuses = [json.loads(line)["status"] for line in lines]
+        assert statuses == ["pending", "pending", "nudged"]
+
+    def test_load_tickets_uses_last_entry_per_id(self, runtime_dir: Path) -> None:
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        state.ensure_dir()
+        # Simulate two transitions by hand.
+        base = {
+            "ticket_id": "tkt-1",
+            "message_id": "mid-1",
+            "to_lane": "author-b",
+            "message_type": "blocker",
+            "priority": "high",
+            "created_at": "2026-04-20T18:00:00+00:00",
+            "next_retry_at": "2026-04-20T18:00:00+00:00",
+            "last_reason": "new_ticket",
+        }
+        with open(state.tickets_file, "w") as f:
+            f.write(json.dumps({**base, "status": "pending", "attempts": 0}) + "\n")
+            f.write(json.dumps({**base, "status": "nudged", "attempts": 1}) + "\n")
+        tickets = load_tickets(state)
+        assert set(tickets.keys()) == {"tkt-1"}
+        assert tickets["tkt-1"].status == "nudged"
+        assert tickets["tkt-1"].attempts == 1
+
+
+class TestStatusSurface:
+    """get_status() produces a readable operator snapshot."""
+
+    def test_status_reports_no_broker_on_fresh_tree(self, runtime_dir: Path) -> None:
+        status = get_status(runtime_dir=runtime_dir)
+        assert status.alive is False
+        assert status.pid is None
+        assert status.pending_count == 0
+        assert status.nudged_count == 0
+        assert status.abandoned_count == 0
+
+    def test_status_reports_pending_after_busy_cycle(self, runtime_dir: Path) -> None:
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_busy_pane,
+            nudge_fn=_record_nudge_fn([]),
+        )
+        status = get_status(runtime_dir=runtime_dir)
+        assert status.pending_count == 1
+        assert status.nudged_count == 0
+
+    def test_status_reports_nudged_after_safe_cycle(self, runtime_dir: Path) -> None:
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="escalation")],
+        )
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn([]),
+        )
+        status = get_status(runtime_dir=runtime_dir)
+        assert status.pending_count == 0
+        assert status.nudged_count == 1
+
+    def test_status_last_cycle_round_trips(self, runtime_dir: Path) -> None:
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn([]),
+        )
+        status = get_status(runtime_dir=runtime_dir)
+        assert status.last_cycle is not None
+        assert "timestamp" in status.last_cycle
+        assert status.last_cycle["nudged"] == 0
+
+
+class TestCursorTruncation:
+    """Safety net when events.jsonl is rotated / truncated."""
+
+    def test_cursor_resets_when_file_shrinks(self, runtime_dir: Path) -> None:
+        """If events.jsonl is truncated below the cursor, we restart from 0."""
+        state = AttentionState.from_runtime_dir(runtime_dir)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        events_file.write_text("x" * 10_000)
+        write_cursor(state, 9_000)
+        # Truncate.
+        events_file.write_text("")
+        _write_events(
+            runtime_dir,
+            [_msg_sent_event(to_lane="author-b", message_type="blocker")],
+        )
+        nudged: list[str] = []
+        run_once(
+            runtime_dir=runtime_dir,
+            pane_state_fn=_safe_pane,
+            nudge_fn=_record_nudge_fn(nudged),
+        )
+        assert nudged == ["author-b"]
+
+
+class TestDeferredTicketSerialization:
+    """Direct round-trip tests for DeferredTicket.to_json / from_json."""
+
+    def test_round_trip(self) -> None:
+        ticket = DeferredTicket(
+            ticket_id="tkt-abc",
+            message_id="mid-1",
+            to_lane="author-b",
+            message_type="blocker",
+            priority="urgent",
+            created_at="2026-04-20T18:00:00+00:00",
+            next_retry_at="2026-04-20T18:00:10+00:00",
+            attempts=1,
+            last_reason="deferred:active_work_detected",
+            status="pending",
+        )
+        roundtripped = DeferredTicket.from_json(ticket.to_json())
+        assert roundtripped == ticket

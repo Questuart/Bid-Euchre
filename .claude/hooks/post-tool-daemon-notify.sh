@@ -56,6 +56,17 @@ for sentinel in "$RUNTIME_DIR"/ci_polls/pr_*/FAILED "$RUNTIME_DIR"/review_loops/
     mv "$sentinel" "${daemon_dir}/NOTIFIED" 2>/dev/null || true
 done
 
+# Attention-broker sentinel (PR-MSG-4): one top-level FAILED file, not
+# a per-PR directory.  Surface it once per failure then rename.
+ATTENTION_SENTINEL="$RUNTIME_DIR/attention_broker/FAILED"
+if [ -f "$ATTENTION_SENTINEL" ]; then
+    summary=$(head -1 "$ATTENTION_SENTINEL" 2>/dev/null | cut -c1-200 || echo "unknown failure")
+    log_file="$RUNTIME_DIR/attention_broker/daemon.log"
+    MESSAGES="${MESSAGES}Attention broker FAILED: ${summary}. Log: ${log_file}
+"
+    mv "$ATTENTION_SENTINEL" "$RUNTIME_DIR/attention_broker/NOTIFIED" 2>/dev/null || true
+fi
+
 # If we found any failures, emit them as additionalContext
 if [ -n "$MESSAGES" ]; then
     FULL_MSG="WARNING — Background daemon failure(s) detected:
