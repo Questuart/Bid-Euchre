@@ -1,0 +1,1 @@
+"""Hook script unit tests."""

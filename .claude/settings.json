@@ -122,6 +122,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -lc '\"$CLAUDE_PROJECT_DIR\"/scripts/internal/hooks/permission_denied_alert.sh'",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -165,6 +175,8 @@
       "Write(.claude/settings.json)",
       "Edit(.claude/hooks/**)",
       "Write(.claude/hooks/**)",
+      "Edit(.claude/runtime/classifier_denials/**)",
+      "Write(.claude/runtime/classifier_denials/**)",
       "Edit(MEMORY.md)",
       "Write(MEMORY.md)",
       "Edit(plans/**)",

@@ -1,0 +1,9 @@
+{
+  "tool_name": "Bash",
+  "rule_matched": "Self-Modification",
+  "message": "Attempted to edit ~/.claude/settings.json without explicit User Intent override",
+  "session_id": "test-session-abc123",
+  "tool_input": {
+    "command": "echo 'x' >> ~/.claude/settings.json"
+  }
+}
