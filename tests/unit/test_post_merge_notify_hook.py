@@ -7,6 +7,11 @@ Validates key behaviors (issue #1461):
 4. Non-merge commands are ignored (guard check)
 5. Failed commands are ignored (exit code guard)
 6. Dedupe sentinel prevents double-firing
+
+PR-MSG-1 additions (completion fast-path nudge):
+7. Direct merge sends completion AND attempts best-effort tmux nudge
+8. Message send failure skips the nudge (no stale inbox-poll)
+9. Auto-merge initial path does not nudge (background watcher handles it)
 """
 
 from __future__ import annotations
@@ -20,6 +25,26 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK_PATH = REPO_ROOT / ".claude" / "hooks" / "post-merge-notify.sh"
+
+
+def _make_tmux_stub(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a fake ``tmux`` binary that logs every invocation.
+
+    Returns ``(stub_bin_dir, tmux_log_path)``.  Prepend ``stub_bin_dir`` to
+    ``PATH`` in ``env_overrides`` so the hook's ``nudge_inbox()`` call hits
+    the stub instead of the system tmux.  The log captures one line per
+    invocation (newline-separated argv), letting tests assert whether a
+    ``send-keys`` nudge was attempted.
+    """
+    stub_dir = tmp_path / "stub_bin"
+    stub_dir.mkdir(exist_ok=True)
+    tmux_log = tmp_path / "tmux_calls.log"
+    stub = stub_dir / "tmux"
+    # Use printf to preserve argv boundaries; exit 0 so send-keys appears to
+    # succeed from nudge_inbox()'s perspective.
+    stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{tmux_log}"\nexit 0\n')
+    stub.chmod(0o755)
+    return stub_dir, tmux_log
 
 
 def _run_hook(
@@ -301,5 +326,142 @@ class TestLaneIdResolution:
             )
             assert result.returncode == 0
             assert sentinel.exists()
+        finally:
+            sentinel.unlink(missing_ok=True)
+
+
+class TestCompletionNudge:
+    """Test the PR-MSG-1 completion-fast-path nudge behavior.
+
+    The hook must (a) fire ``nudge_inbox('orchestrator')`` after a successful
+    message send, (b) skip the nudge when the send failed, and (c) not fire
+    any nudge on the initial auto-merge dispatch (the background watcher
+    reuses ``run_completion`` and will nudge when the PR actually merges).
+
+    Assertions use a tmux stub script that records each invocation to a
+    log file.  A nudge is detected when the log contains a ``send-keys``
+    line — the first subprocess call inside ``nudge_inbox()`` is
+    ``tmux send-keys -t <target> Escape``.
+    """
+
+    def test_direct_merge_nudges_after_successful_send(self, tmp_path: Path) -> None:
+        """Direct merge should send completion then attempt a best-effort nudge."""
+        pr_num = "7001"
+        sentinel = Path(f"/tmp/.claude-post-merge-notify-{pr_num}")
+        sentinel.unlink(missing_ok=True)
+        stub_dir, tmux_log = _make_tmux_stub(tmp_path)
+        try:
+            result = _run_hook(
+                command=f"gh pr merge {pr_num} --squash",
+                tmp_path=tmp_path,
+                env_overrides={
+                    # Prepend stub so nudge_inbox()'s tmux call hits our stub.
+                    "PATH": f"{stub_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+                    "CLAUDE_AGENT_NAME": "steward-author-a",
+                },
+            )
+            assert result.returncode == 0
+            assert sentinel.exists(), "Direct merge should create sentinel"
+            assert (
+                tmux_log.exists()
+            ), "tmux stub was never invoked — nudge path did not fire"
+            log_contents = tmux_log.read_text()
+            assert "send-keys" in log_contents, (
+                f"Expected a tmux send-keys call from nudge_inbox(), got:\n"
+                f"{log_contents!r}"
+            )
+        finally:
+            sentinel.unlink(missing_ok=True)
+
+    def test_send_failure_skips_nudge(self, tmp_path: Path) -> None:
+        """If message send fails, no nudge should be attempted.
+
+        We force ``send_message()`` to raise by pointing ``BID_EUCHRE_BUS_DIR``
+        at a path under a read-only parent directory — ``shared_bus_root()``
+        will fail to ``mkdir`` and propagate ``PermissionError``.  In that
+        case, nudging would surface a stale inbox state without the new
+        completion message, so the hook must skip it.
+        """
+        pr_num = "7002"
+        sentinel = Path(f"/tmp/.claude-post-merge-notify-{pr_num}")
+        sentinel.unlink(missing_ok=True)
+        stub_dir, tmux_log = _make_tmux_stub(tmp_path)
+        # Build a bus path that cannot be created (read-only parent).
+        ro_parent = tmp_path / "ro_parent"
+        ro_parent.mkdir()
+        ro_parent.chmod(0o555)
+        broken_bus = ro_parent / "bus"
+        try:
+            # Bypass _run_hook's default BUS dir — we need the broken path.
+            env = {
+                "PATH": f"{stub_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+                "HOME": os.environ.get("HOME", "/tmp"),
+                "BID_EUCHRE_BUS_DIR": str(broken_bus),
+                "CLAUDE_AGENT_NAME": "steward-author-a",
+            }
+            hook_input = json.dumps(
+                {
+                    "tool_input": {
+                        "command": f"gh pr merge {pr_num} --squash",
+                    },
+                    "tool_response": {
+                        "stdout": "",
+                        "stderr": "",
+                        "exit_code": 0,
+                    },
+                }
+            )
+            result = subprocess.run(
+                ["bash", str(HOOK_PATH)],
+                input=hook_input,
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            assert result.returncode == 0
+            # Task transition does not depend on the bus, so sentinel can
+            # still be created.  The critical assertion is: no tmux calls.
+            log_text = tmux_log.read_text() if tmux_log.exists() else ""
+            assert log_text == "", (
+                "tmux should not be invoked when message send failed; "
+                f"got log:\n{log_text!r}"
+            )
+        finally:
+            sentinel.unlink(missing_ok=True)
+            # Restore writable perms so pytest can clean the tmp_path.
+            ro_parent.chmod(0o755)
+
+    def test_auto_merge_initial_path_does_not_nudge(self, tmp_path: Path) -> None:
+        """The initial --auto dispatch must not nudge (PR is not merged yet).
+
+        The background watcher reuses ``run_completion`` and will nudge when
+        the PR actually reaches MERGED state; that inner behavior is
+        covered by ``test_direct_merge_nudges_after_successful_send`` since
+        both paths share the same Python completion block.
+        """
+        pr_num = "7003"
+        sentinel = Path(f"/tmp/.claude-post-merge-notify-{pr_num}")
+        sentinel.unlink(missing_ok=True)
+        stub_dir, tmux_log = _make_tmux_stub(tmp_path)
+        try:
+            result = _run_hook(
+                command=f"gh pr merge {pr_num} --auto --squash",
+                stdout=f"✓ Auto-merge enabled for pull request #{pr_num}",
+                tmp_path=tmp_path,
+                env_overrides={
+                    "PATH": f"{stub_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+                    "CLAUDE_AGENT_NAME": "steward-author-a",
+                },
+            )
+            assert result.returncode == 0
+            assert (
+                not sentinel.exists()
+            ), "Auto-merge initial dispatch should not create sentinel"
+            log_text = tmux_log.read_text() if tmux_log.exists() else ""
+            assert (
+                log_text == ""
+            ), f"Auto-merge initial dispatch should not nudge; got log:\n{log_text!r}"
         finally:
             sentinel.unlink(missing_ok=True)

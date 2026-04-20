@@ -5,6 +5,9 @@
 #   1. Finds the active dispatched task packet by PR number (Gap B)
 #   2. Transitions it to "completed" status
 #   3. Sends a completion message to the orchestrator via message bus
+#   4. Best-effort tmux nudge ("/inbox-poll") to wake the orchestrator
+#      immediately so it processes the completion without waiting for
+#      the next /fleet-check cron tick (PR-MSG-1).
 #
 # Handles two merge modes:
 #   - Direct merge (`gh pr merge <N> --squash`): completes immediately
@@ -171,6 +174,7 @@ suffix = ' (auto-merge)' if auto_merge else ''
 payload = {'pr_number': pr_num, 'packet_id': packet_id}
 if auto_merge:
     payload['auto_merge'] = True
+_send_succeeded = False
 try:
     from bid_euchre.ops.message_bus import create_message, send_message
     msg = create_message(
@@ -182,12 +186,31 @@ try:
         payload=payload,
     )
     send_message(msg)
+    _send_succeeded = True
 except Exception as exc:
     print(f'post-merge-notify: message send failed: {exc}', file=sys.stderr)
 
+# 4. Best-effort nudge: wake the orchestrator so it processes the
+#    completion message immediately instead of waiting for the next
+#    /fleet-check cron tick.  This is the PR-MSG-1 attention fast path.
+#
+#    Delivery-policy boundary (see
+#    plans/sessions/2026-04-20_messaging-revamp-execution-plan.md):
+#    the durable send happens via message_bus.send_message(); the
+#    tmux-layer nudge lives in worker_pool.nudge_inbox().  Only nudge
+#    after a successful send — nudging on failure would surface stale
+#    inbox state without the new message.
+if _send_succeeded:
+    try:
+        from bid_euchre.ops.worker_pool import nudge_inbox
+        nudge_inbox('orchestrator')
+    except Exception as exc:
+        print(f'post-merge-notify: nudge failed: {exc}', file=sys.stderr)
+
 # Exit non-zero only when the task transition itself failed — this
 # prevents sentinel creation so the next hook invocation can retry.
-# Message send failures are logged but do not block the sentinel.
+# Message send and nudge failures are logged but do not block the
+# sentinel.
 if _transition_failed:
     sys.exit(1)
 " 2>/dev/null
