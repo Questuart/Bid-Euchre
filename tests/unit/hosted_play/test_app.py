@@ -728,3 +728,45 @@ class TestMigrationDuplicateColumnRobustness:
             engine = app.state.engine
             cols = [c["name"] for c in sa_inspect(engine).get_columns("matches")]
             assert cols.count("play_strategy_version") == 1
+
+    def test_matches_migration_reraises_non_duplicate_operational_error(
+        self, tmp_path, monkeypatch
+    ):
+        """Non-duplicate OperationalError during the play_strategy_version
+        migration must propagate instead of being silently swallowed (#2653).
+
+        Prior to the fix, the ``except (OperationalError, ProgrammingError)``
+        at ``web/app.py`` line 152 swallowed every such error — including
+        connection drops, permission failures, and disk-full conditions —
+        and logged a misleading "column already present" message.  The
+        narrowed handler only swallows duplicate-column errors; anything
+        else now surfaces at startup as intended.
+        """
+        import pytest
+        from sqlalchemy.exc import OperationalError
+
+        import web.app as app_module
+
+        db_path = tmp_path / "legacy.db"
+        db_url = _create_legacy_db(db_path)
+
+        real_text = app_module.text
+
+        def text_with_injection(sql):
+            # Redirect only the play_strategy_version migration statement to
+            # a bogus table so it raises OperationalError("no such table: …"),
+            # which is NOT a duplicate-column error and must propagate.
+            if "ADD COLUMN play_strategy_version" in sql:
+                return real_text(
+                    "ALTER TABLE nonexistent_matches_table "
+                    "ADD COLUMN play_strategy_version TEXT"
+                )
+            return real_text(sql)
+
+        monkeypatch.setattr(app_module, "text", text_with_injection)
+
+        config = make_hosted_play_test_config(tmp_path, database_url=db_url)
+        app = create_app(config=config)
+        with pytest.raises(OperationalError, match="no such table"):
+            with TestClient(app):
+                pass
