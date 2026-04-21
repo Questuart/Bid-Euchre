@@ -32,9 +32,16 @@ from bid_euchre.ops.token_economy import (
 # ---------------------------------------------------------------------------
 
 
-def test_schema_version_is_2():
-    """Schema version must be 2 after the JSONL scanner addition."""
-    assert SCHEMA_VERSION == 2
+def test_schema_version_is_3():
+    """Schema version is 3 after the Slice B model/effort/cache fields.
+
+    Version history:
+      v1 — baseline session-meta ingest.
+      v2 — JSONL scanner addition (#1770).
+      v3 — Slice B (issue #2169): model, model_mix, effort,
+           cache_creation_tokens, cache_read_tokens on SessionRecord.
+    """
+    assert SCHEMA_VERSION == 3
 
 
 # ---------------------------------------------------------------------------
@@ -189,9 +196,15 @@ def _make_assistant_msg(
     cache_read: int = 0,
     timestamp: str = "2026-03-25T10:00:00.000Z",
     cwd: str = "/Users/test/Bid-Euchre-steward-author",
+    model: str | None = None,
 ) -> str:
-    """Create a JSONL line for an assistant message with usage data."""
-    obj = {
+    """Create a JSONL line for an assistant message with usage data.
+
+    The ``model`` argument defaults to ``None`` so existing tests see the
+    same output shape (no ``model`` key). Slice B tests pass an explicit
+    model name to exercise the new capture path.
+    """
+    obj: dict = {
         "type": "assistant",
         "sessionId": session_id,
         "timestamp": timestamp,
@@ -209,6 +222,8 @@ def _make_assistant_msg(
             },
         },
     }
+    if model is not None:
+        obj["message"]["model"] = model
     return json.dumps(obj)
 
 
@@ -524,7 +539,7 @@ class TestBuildRecordFromJsonl:
         assert rec.assistant_message_count == 10
         assert rec.duration_minutes == 30
         assert rec.project_path == "/Users/test/Bid-Euchre-steward-author"
-        assert rec.schema_version == 2
+        assert rec.schema_version == 3
 
     def test_missing_cwd_uses_inferred_lane(self, tmp_path: Path):
         agg = _JNLSessionAgg(
@@ -1168,3 +1183,244 @@ class TestJoinOutcomesRecommendedLaneFlow:
         assert len(records) == 1
         assert records[0].recommended_lane is None
         assert records[0].recommendation_match is None
+
+
+# ---------------------------------------------------------------------------
+# Slice B (issue #2169) — model capture + mixed-model handling
+#
+# These tests exercise the scanner's ability to capture the per-message
+# ``model`` string, resolve it to a session-level ``model`` (majority by
+# output tokens), and preserve the raw vote distribution as
+# ``model_mix`` only when more than one distinct model contributed.
+# ---------------------------------------------------------------------------
+
+
+class TestSliceBModelCapture:
+    def test_scan_jsonl_single_model_session(self, tmp_path: Path) -> None:
+        """Single-model session: model captured, model_mix empty."""
+        sid = "sess-sb-01"
+        lines = [
+            _make_assistant_msg(
+                sid,
+                input_tokens=100,
+                output_tokens=50,
+                model="claude-opus-4-7",
+            ),
+            _make_assistant_msg(
+                sid,
+                input_tokens=200,
+                output_tokens=75,
+                model="claude-opus-4-7",
+            ),
+        ]
+        f = tmp_path / f"{sid}.jsonl"
+        f.write_text("\n".join(lines) + "\n")
+
+        agg = _scan_jsonl_file(f)
+        assert agg is not None
+        # Scanner accumulates votes per model; a single-model session has
+        # exactly one key in the counter.
+        assert list(agg.models.keys()) == ["claude-opus-4-7"]
+        # Value is total output tokens under that model.
+        assert agg.models["claude-opus-4-7"] == 125
+
+    def test_scan_jsonl_mixed_model_session(self, tmp_path: Path) -> None:
+        """Multiple models contribute; counter keeps per-model output totals."""
+        sid = "sess-sb-02"
+        lines = [
+            _make_assistant_msg(
+                sid,
+                input_tokens=100,
+                output_tokens=40,
+                model="claude-opus-4-7",
+            ),
+            _make_assistant_msg(
+                sid,
+                input_tokens=100,
+                output_tokens=10,
+                model="synthetic",
+            ),
+            _make_assistant_msg(
+                sid,
+                input_tokens=100,
+                output_tokens=60,
+                model="claude-opus-4-7",
+            ),
+        ]
+        f = tmp_path / f"{sid}.jsonl"
+        f.write_text("\n".join(lines) + "\n")
+
+        agg = _scan_jsonl_file(f)
+        assert agg is not None
+        assert agg.models["claude-opus-4-7"] == 100
+        assert agg.models["synthetic"] == 10
+
+    def test_scan_jsonl_synthetic_only_session(self, tmp_path: Path) -> None:
+        """Synthetic model captured verbatim (not coerced to 'unknown')."""
+        sid = "sess-sb-03"
+        lines = [
+            _make_assistant_msg(
+                sid,
+                input_tokens=50,
+                output_tokens=25,
+                model="synthetic",
+            )
+        ]
+        f = tmp_path / f"{sid}.jsonl"
+        f.write_text("\n".join(lines) + "\n")
+
+        agg = _scan_jsonl_file(f)
+        assert agg is not None
+        assert list(agg.models.keys()) == ["synthetic"]
+
+    def test_build_record_from_jsonl_preserves_model_fields(
+        self, tmp_path: Path
+    ) -> None:
+        """Mixed-model aggregate → majority wins for model, mix is populated."""
+        import collections as _c
+
+        agg = _JNLSessionAgg(
+            session_id="sess-sb-04",
+            input_tokens=300,
+            output_tokens=100,
+            user_message_count=2,
+            assistant_message_count=3,
+            first_timestamp="2026-04-20T10:00:00Z",
+            last_timestamp="2026-04-20T10:10:00Z",
+            cwd="/Users/test/Bid-Euchre-steward-author",
+            models=_c.Counter({"claude-opus-4-7": 70, "synthetic": 30}),
+        )
+        rec = _build_record_from_jsonl(
+            agg,
+            source_path=tmp_path / "sess-sb-04.jsonl",
+            source_hash="deadbeef",
+            now="2026-04-20T11:00:00Z",
+            lane_id="author-b",
+        )
+        # Majority by output tokens.
+        assert rec.model == "claude-opus-4-7"
+        # Mix preserved verbatim for downstream analysis.
+        assert rec.model_mix == {"claude-opus-4-7": 70, "synthetic": 30}
+
+    def test_build_record_from_jsonl_single_model_no_mix(self, tmp_path: Path) -> None:
+        """Single-model session: model set, model_mix empty dict."""
+        import collections as _c
+
+        agg = _JNLSessionAgg(
+            session_id="sess-sb-05",
+            input_tokens=100,
+            output_tokens=50,
+            models=_c.Counter({"claude-opus-4-7": 50}),
+        )
+        rec = _build_record_from_jsonl(
+            agg,
+            source_path=tmp_path / "sess-sb-05.jsonl",
+            source_hash="x",
+            now="2026-04-20T12:00:00Z",
+            lane_id="author-a",
+        )
+        assert rec.model == "claude-opus-4-7"
+        # model_mix is only populated on >1 distinct model.
+        assert rec.model_mix == {}
+
+    def test_session_meta_record_has_no_model(self) -> None:
+        """Legacy SessionRecord (no scanner) has ``model=None``.
+
+        The reader's null-safety contract (§3.2 of shaping plan) requires
+        legacy rows to bucket as ``unknown`` without being coerced to a
+        default model string.
+        """
+        rec = SessionRecord(session_id="legacy-001")
+        assert rec.model is None
+        assert rec.model_mix == {}
+        assert rec.effort is None
+
+    def test_schema_version_bump_read_compat(self, tmp_path: Path) -> None:
+        """Mixed v2/v3 rows in the store load without error.
+
+        The store uses JSONL with per-row ``schema_version``. A v2 row
+        predates the Slice B fields so its on-disk representation lacks
+        ``model`` / ``model_mix`` / ``effort`` — the loader must fall
+        back to ``None`` rather than raising.
+        """
+        from bid_euchre.ops.token_economy import _load_sessions
+
+        usage = tmp_path / "session_usage.jsonl"
+        v2_row = {
+            "session_id": "v2-001",
+            "schema_version": 2,
+            "source_type": "session-meta",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "git_commits": 0,
+            "imported_at": "2026-04-01T10:00:00Z",
+        }
+        v3_row = {
+            "session_id": "v3-001",
+            "schema_version": 3,
+            "source_type": "project-jsonl",
+            "input_tokens": 200,
+            "output_tokens": 75,
+            "model": "claude-opus-4-7",
+            "model_mix": {},
+            "effort": None,
+            "cache_creation_tokens": 10,
+            "cache_read_tokens": 5,
+            "git_commits": 1,
+            "imported_at": "2026-04-20T10:00:00Z",
+        }
+        usage.write_text(
+            json.dumps(v2_row) + "\n" + json.dumps(v3_row) + "\n",
+            encoding="utf-8",
+        )
+        rows = _load_sessions(tmp_path)
+        assert len(rows) == 2
+        # v2 row: missing fields absent (None / defaulted when read).
+        assert rows[0].get("model") is None
+        # v3 row: explicit model preserved.
+        assert rows[1]["model"] == "claude-opus-4-7"
+
+    def test_null_safe_unknown_bucket(self, tmp_path: Path) -> None:
+        """model_summary places legacy rows under the literal ``unknown`` bucket.
+
+        The shaping plan's null-safety contract (§3.2) is that ``unknown``
+        is a first-class bucket name, never coerced to a default model.
+        """
+        from bid_euchre.ops.token_economy import (
+            UNKNOWN_BUCKET,
+            model_summary,
+        )
+
+        usage = tmp_path / "session_usage.jsonl"
+        # One row has no model (legacy), one row has an explicit model.
+        rows = [
+            {
+                "session_id": "legacy-001",
+                "schema_version": 2,
+                "source_type": "session-meta",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "git_commits": 0,
+                "imported_at": "2026-04-01T10:00:00Z",
+            },
+            {
+                "session_id": "v3-001",
+                "schema_version": 3,
+                "source_type": "project-jsonl",
+                "input_tokens": 200,
+                "output_tokens": 75,
+                "model": "claude-opus-4-7",
+                "git_commits": 1,
+                "imported_at": "2026-04-20T10:00:00Z",
+            },
+        ]
+        usage.write_text(
+            "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
+        )
+        buckets = model_summary(output_dir=tmp_path)
+        labels = [b.model for b in buckets]
+        assert UNKNOWN_BUCKET in labels
+        assert "claude-opus-4-7" in labels
+        # Both rows are represented in the totals.
+        total = sum(b.total_tokens for b in buckets)
+        assert total == (100 + 50) + (200 + 75)
