@@ -1809,6 +1809,32 @@ def dispatch_to_worker(
         # Brief pause to let /clear complete before sending /start-task
         time.sleep(2)
 
+    # 3c. Shadow-mode adaptive dispatch advisor (Slice E, #2169).
+    #     Best-effort: emits one dispatch_recommendation event and returns.
+    #     Never alters lane_id or fails dispatch on advisor error.  The
+    #     selected_lane field on the emitted event is the caller-supplied
+    #     lane_id — this is the shadow-mode invariant enforcement point.
+    try:
+        from bid_euchre.ops.learning import log_recommendation_for_dispatch
+
+        eligible_lanes = sorted(w.lane_id for w in pool.workers)
+        # Route advisor logs to the same runtime_dir as the rest of dispatch
+        # so tests with a scoped runtime_dir capture the event alongside the
+        # other artifacts.  In production both paths resolve to the canonical
+        # .claude/runtime/events directory.
+        log_recommendation_for_dispatch(
+            packet=packet,
+            candidates=eligible_lanes,
+            selected_lane=lane_id,
+            events_dir=runtime_dir / "events",
+        )
+    except Exception as exc:
+        logger.warning(
+            "Dispatch advisor failed for packet %s (continuing dispatch): %s",
+            packet_id,
+            exc,
+        )
+
     # 4. Transition packet to dispatched
     try:
         # Update packet owner to lane_id before transitioning

@@ -61,6 +61,9 @@ VALID_EVENT_TYPES = frozenset(
         "message_expired",
         "message_dead_lettered",
         "fleet_idle_shutoff",
+        # Slice E (#2169): shadow-mode dispatch advisor recommendation log.
+        # Emitted once per dispatch call; never alters the dispatched lane_id.
+        "dispatch_recommendation",
     }
 )
 

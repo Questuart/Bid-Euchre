@@ -77,6 +77,40 @@ class TestAppendEvent:
         events = read_events(events_dir, limit=len(VALID_EVENT_TYPES) + 1)
         assert len(events) == len(VALID_EVENT_TYPES)
 
+    def test_dispatch_recommendation_round_trip(self, events_dir: Path) -> None:
+        """Slice E (#2169): dispatch_recommendation event is a first-class type.
+
+        Guards the contract that the shadow-mode advisor can write this event
+        via ``append_event`` and retrieve it via ``read_events`` without
+        any schema coercion.
+        """
+        assert "dispatch_recommendation" in VALID_EVENT_TYPES
+
+        payload = {
+            "packet_id": "pkt-sliceE",
+            "task_type": "convention",
+            "complexity_estimate": 2,
+            "candidates": [
+                {"lane_id": "author-a", "score": 0.82, "rank": 1},
+                {"lane_id": "author-b", "score": 0.44, "rank": 2},
+            ],
+            "selected_lane": "author-a",
+            "override": False,
+            "override_reason": None,
+            "policy_version": "slice-e-v1",
+            "window_days": 14,
+            "advisor_mode": "shadow",
+        }
+        append_event(
+            "dispatch_recommendation", "ops.learning", "author-a", payload, events_dir
+        )
+
+        events = read_events(events_dir, event_type="dispatch_recommendation", limit=10)
+        assert len(events) == 1
+        assert events[0]["payload"]["selected_lane"] == "author-a"
+        assert events[0]["payload"]["candidates"][0]["lane_id"] == "author-a"
+        assert events[0]["payload"]["policy_version"] == "slice-e-v1"
+
 
 class TestReadEvents:
     """Tests for read_events()."""

@@ -1036,7 +1036,7 @@ class TestStoreStatus:
         """A single malformed line must not raise — introspection is best-effort."""
         usage_file = tmp_path / "session_usage.jsonl"
         usage_file.write_text(
-            '{"session_id": "s1"}\n' "this is not json\n" '{"session_id": "s2"}\n',
+            '{"session_id": "s1"}\nthis is not json\n{"session_id": "s2"}\n',
             encoding="utf-8",
         )
         _write_attr_rows(tmp_path, count=2)
@@ -1056,3 +1056,115 @@ class TestStoreStatus:
         store_status(output_dir=tmp_path)
         mtime_after = (usage_file.stat().st_mtime, attr_file.stat().st_mtime)
         assert mtime_before == mtime_after
+
+
+# ---------------------------------------------------------------------------
+# join_outcomes_with_token_economy — Slice E (#2169) recommended_lane flow
+# ---------------------------------------------------------------------------
+
+
+def _write_task_completed_event(
+    events_dir: Path,
+    *,
+    packet_id: str,
+    actual_lane: str,
+    recommended_lane: str | None,
+    completed_at: str = "2026-04-21T12:00:00+00:00",
+) -> None:
+    """Write one task_completed event to the events log."""
+    events_dir.mkdir(parents=True, exist_ok=True)
+    event = {
+        "timestamp": completed_at,
+        "event_type": "task_completed",
+        "source": "ops.test",
+        "lane_id": actual_lane,
+        "payload": {
+            "packet_id": packet_id,
+            "title": "test",
+            "actual_lane": actual_lane,
+            "recommended_lane": recommended_lane,
+            "token_spend": 100_000,
+            "elapsed_seconds": 1800,
+            "review_rounds": 1,
+            "shipped_outcome": "merged",
+        },
+    }
+    with (events_dir / "events.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(event) + "\n")
+
+
+class TestJoinOutcomesRecommendedLaneFlow:
+    """Verify the Slice C substrate populates Slice E's recommendation_match.
+
+    This is the read side the adaptive dispatch advisor consumes. The
+    advisor writes ``recommended_lane`` on dispatch (via the orchestrator
+    copying it from the most recent ``dispatch_recommendation`` event),
+    and the outcome join must surface a truthful ``recommendation_match``.
+    """
+
+    def test_matching_lane_sets_match_true(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.token_economy import (
+            join_outcomes_with_token_economy,
+        )
+
+        events_dir = tmp_path / "events"
+        _write_task_completed_event(
+            events_dir,
+            packet_id="pkt-match",
+            actual_lane="author-a",
+            recommended_lane="author-a",
+        )
+
+        records = join_outcomes_with_token_economy(
+            events_dir=events_dir, output_dir=tmp_path / "store"
+        )
+        assert len(records) == 1
+        assert records[0].actual_lane == "author-a"
+        assert records[0].recommended_lane == "author-a"
+        assert records[0].recommendation_match is True
+
+    def test_mismatched_lane_sets_match_false(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.token_economy import (
+            join_outcomes_with_token_economy,
+        )
+
+        events_dir = tmp_path / "events"
+        _write_task_completed_event(
+            events_dir,
+            packet_id="pkt-override",
+            actual_lane="author-a",
+            recommended_lane="author-b",
+        )
+
+        records = join_outcomes_with_token_economy(
+            events_dir=events_dir, output_dir=tmp_path / "store"
+        )
+        assert len(records) == 1
+        assert records[0].recommended_lane == "author-b"
+        assert records[0].recommendation_match is False
+
+    def test_absent_recommendation_preserves_none(self, tmp_path: Path) -> None:
+        """Legacy completions without recommended_lane yield match=None, not False.
+
+        This is critical for evaluation: the advisor coverage metric
+        (Slice F Q4) distinguishes "no recommendation" from "recommendation
+        was overridden".
+        """
+        from bid_euchre.ops.token_economy import (
+            join_outcomes_with_token_economy,
+        )
+
+        events_dir = tmp_path / "events"
+        _write_task_completed_event(
+            events_dir,
+            packet_id="pkt-legacy",
+            actual_lane="author-a",
+            recommended_lane=None,
+        )
+
+        records = join_outcomes_with_token_economy(
+            events_dir=events_dir, output_dir=tmp_path / "store"
+        )
+        assert len(records) == 1
+        assert records[0].recommended_lane is None
+        assert records[0].recommendation_match is None
