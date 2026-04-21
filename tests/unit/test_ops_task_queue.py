@@ -482,12 +482,34 @@ class TestLifecycleTransitions:
                 ), f"Transition {source!r} -> {target!r}: target is not a valid status"
 
     def test_terminal_states_have_no_transitions(self) -> None:
-        """Terminal states (completed, rejected, redirected) cannot transition."""
-        for terminal in ("completed", "rejected", "redirected"):
+        """Terminal states cannot transition onward."""
+        for terminal in ("completed", "failed", "rejected", "redirected"):
             assert VALID_TRANSITIONS[terminal] == frozenset(), (
                 f"{terminal!r} should be terminal but allows: "
                 f"{VALID_TRANSITIONS[terminal]}"
             )
+
+    def test_dispatched_to_failed_allowed(self, tmp_path: Path) -> None:
+        """#2701 — reconciler transitions dispatched → failed on CLOSED PR."""
+        pkt = create_packet("Task", "d")
+        save_packet(pkt, tmp_path)
+        transition_status(pkt.packet_id, "approved", tmp_path)
+        transition_status(pkt.packet_id, "dispatched", tmp_path)
+
+        updated = transition_status(pkt.packet_id, "failed", tmp_path)
+        assert updated is not None
+        assert updated.status == "failed"
+
+    def test_failed_is_terminal(self, tmp_path: Path) -> None:
+        """Once failed, the packet cannot re-enter an earlier state."""
+        pkt = create_packet("Task", "d")
+        save_packet(pkt, tmp_path)
+        transition_status(pkt.packet_id, "approved", tmp_path)
+        transition_status(pkt.packet_id, "dispatched", tmp_path)
+        transition_status(pkt.packet_id, "failed", tmp_path)
+
+        with pytest.raises(ValueError, match="Invalid transition"):
+            transition_status(pkt.packet_id, "completed", tmp_path)
 
     def test_archive_packet(self, tmp_path: Path) -> None:
         pkt = create_packet("Task", "d")
@@ -634,7 +656,7 @@ class TestCompletePacket:
         assert (archive_dir / f"{pkt.packet_id}.result.json").exists()
 
     def test_complete_with_failed_result(self, tmp_path: Path) -> None:
-        """Failed result archives packet with dispatched status + result sidecar."""
+        """Failed result transitions packet to failed + archives with result sidecar."""
         pkt = create_packet("Task", "d", owner="author-a")
         save_packet(pkt, tmp_path)
         transition_status(pkt.packet_id, "approved", tmp_path)
@@ -643,14 +665,15 @@ class TestCompletePacket:
         result = create_result(pkt.packet_id, "failed", "Tests failed")
         final = complete_packet(result, tmp_path)
 
-        # Packet returned with its last valid status (dispatched)
+        # Packet transitioned to terminal 'failed' status (dispatched → failed
+        # is a valid transition; see #2701 reconcile_dispatched_packets).
         assert final is not None
-        assert final.status == "dispatched"
+        assert final.status == "failed"
 
         # Packet is archived
         assert load_packet(pkt.packet_id, tmp_path) is None
 
-        # Result sidecar in archive records the actual failure
+        # Result sidecar in archive records the failure
         archive_dir = tmp_path / "archive"
         result_path = archive_dir / f"{pkt.packet_id}.result.json"
         assert result_path.exists()

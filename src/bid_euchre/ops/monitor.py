@@ -638,22 +638,104 @@ def check_recently_merged_prs(
 # ---------------------------------------------------------------------------
 
 
-def check_merged_dispatches(
+def _query_pr_state(pr_number: int | str) -> str | None:
+    """Query GitHub for a PR's state.
+
+    Returns the raw state string (e.g., ``"MERGED"``, ``"OPEN"``, ``"CLOSED"``)
+    or ``None`` if the query fails for any reason. Kept as a module-level
+    helper so tests can monkeypatch it directly.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--json",
+                "state",
+                "--jq",
+                ".state",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    state = result.stdout.strip()
+    return state or None
+
+
+def _send_reconcile_message(
+    *,
+    from_lane: str,
+    message_type: str,
+    summary: str,
+    task_id: str,
+    payload: dict[str, Any],
+) -> None:
+    """Emit a durable message from the reconciler to the orchestrator.
+
+    Best-effort — failures are logged but never re-raised so a single
+    message-bus hiccup does not cascade into the monitor cycle. The
+    orchestrator's next reconcile pass is idempotent because the packet
+    status has already transitioned to a terminal state.
+    """
+    try:
+        from bid_euchre.ops.message_bus import create_message, send_message
+
+        msg = create_message(
+            from_lane=from_lane or "orchestrator",
+            to_lane="orchestrator",
+            message_type=message_type,
+            summary=summary,
+            task_id=task_id,
+            payload=payload,
+        )
+        send_message(msg)
+    except Exception as exc:  # pragma: no cover — best-effort
+        logger.warning(
+            "reconcile_dispatched_packets: send %s for %s failed: %s",
+            message_type,
+            task_id,
+            exc,
+        )
+
+
+def reconcile_dispatched_packets(
     runtime_dir: Path | None = None,
 ) -> list[MonitorFinding]:
-    """Complete dispatched packets whose PRs have already been merged.
+    """Reconcile dispatched packets against GitHub PR state (#2701).
 
-    When GitHub auto-merges a PR (server-side), the PostToolUse hook in
-    ``post-merge-notify.sh`` never fires because no ``gh pr merge`` runs in
-    a Claude session.  This check scans dispatched packets that carry a
-    ``metadata.pr_number``, queries GitHub for each PR's merge state, and
-    auto-completes any that are merged.
+    Author-side ``post-merge-notify.sh`` only fires when a human or author
+    lane runs ``gh pr merge`` locally.  When a PR is merged via the
+    ``auto-merge.yml`` workflow (fleet path), no PostToolUse hook fires in
+    any Claude session and dispatched packets stay ``dispatched`` until an
+    operator reaps them manually.  This reconciler closes the loop.
+
+    For each ``dispatched`` packet that carries ``metadata.pr_number``:
+
+    - ``MERGED`` → transition to ``completed`` and emit a ``completion``
+      message with ``payload.reconciled=True``.
+    - ``CLOSED`` (not merged) → transition to ``failed`` and emit a
+      ``completion`` message with ``payload.status="failed"`` and
+      ``payload.reason="pr_closed_without_merge"``.
+    - ``OPEN`` / other → leave untouched.
+
+    Packets without ``metadata.pr_number`` are skipped silently — the
+    ``post-pr-review.sh`` hook populates that key when the PR is created,
+    so absence indicates either a legacy packet or a lane that failed to
+    run the hook.
 
     Args:
         runtime_dir: Override for the runtime directory root.
 
     Returns:
-        List of findings (one per auto-completed packet, plus errors).
+        List of findings — one INFO per transition, plus WARN findings
+        for query/transition errors.
     """
     findings: list[MonitorFinding] = []
 
@@ -681,41 +763,50 @@ def check_merged_dispatches(
     for pkt in dispatched:
         pr_number = (getattr(pkt, "metadata", None) or {}).get("pr_number")
         if pr_number is None:
+            # No PR yet recorded for this packet — skip. The
+            # post-pr-review.sh hook will populate pr_number on the next
+            # ``gh pr create`` for this lane.
             continue
 
-        # Query GitHub for the PR's merge state
-        try:
-            result = subprocess.run(
-                [
-                    "gh",
-                    "pr",
-                    "view",
-                    str(pr_number),
-                    "--json",
-                    "state",
-                    "--jq",
-                    ".state",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if result.returncode != 0:
+        state = _query_pr_state(pr_number)
+        if state is None:
+            # gh failure or unavailable — skip this packet; retry next tick.
+            continue
+
+        owner = pkt.owner or "orchestrator"
+
+        if state == "MERGED":
+            try:
+                transition_status(pkt.packet_id, "completed", task_queue_root)
+            except Exception as exc:
+                findings.append(
+                    MonitorFinding(
+                        category="merged_dispatch",
+                        severity=SEVERITY_WARN,
+                        summary=(
+                            f"Failed to auto-complete packet {pkt.packet_id!r} "
+                            f"(PR #{pr_number}): {exc}"
+                        ),
+                        details={
+                            "packet_id": pkt.packet_id,
+                            "error": str(exc),
+                        },
+                    )
+                )
                 continue
-            state = result.stdout.strip()
-        except (
-            FileNotFoundError,
-            subprocess.TimeoutExpired,
-            OSError,
-        ):
-            continue
 
-        if state != "MERGED":
-            continue
-
-        # Auto-complete the packet
-        try:
-            transition_status(pkt.packet_id, "completed", task_queue_root)
+            _send_reconcile_message(
+                from_lane=owner,
+                message_type="completion",
+                summary=(f"PR #{pr_number} merged (reconciled) — task complete"),
+                task_id=pkt.packet_id,
+                payload={
+                    "pr_number": pr_number,
+                    "packet_id": pkt.packet_id,
+                    "status": "completed",
+                    "reconciled": True,
+                },
+            )
             findings.append(
                 MonitorFinding(
                     category="merged_dispatch",
@@ -728,23 +819,81 @@ def check_merged_dispatches(
                         "packet_id": pkt.packet_id,
                         "pr_number": pr_number,
                         "owner": pkt.owner,
+                        "reconciled": True,
                     },
                 )
             )
-        except Exception as exc:
+
+        elif state == "CLOSED":
+            try:
+                transition_status(pkt.packet_id, "failed", task_queue_root)
+            except Exception as exc:
+                findings.append(
+                    MonitorFinding(
+                        category="merged_dispatch",
+                        severity=SEVERITY_WARN,
+                        summary=(
+                            f"Failed to mark packet {pkt.packet_id!r} "
+                            f"failed (PR #{pr_number} closed): {exc}"
+                        ),
+                        details={
+                            "packet_id": pkt.packet_id,
+                            "error": str(exc),
+                        },
+                    )
+                )
+                continue
+
+            reason = "pr_closed_without_merge"
+            _send_reconcile_message(
+                from_lane=owner,
+                message_type="completion",
+                summary=(
+                    f"PR #{pr_number} closed without merge (reconciled) — "
+                    f"task failed"
+                ),
+                task_id=pkt.packet_id,
+                payload={
+                    "pr_number": pr_number,
+                    "packet_id": pkt.packet_id,
+                    "status": "failed",
+                    "reason": reason,
+                    "reconciled": True,
+                },
+            )
             findings.append(
                 MonitorFinding(
                     category="merged_dispatch",
                     severity=SEVERITY_WARN,
                     summary=(
-                        f"Failed to auto-complete packet {pkt.packet_id!r} "
-                        f"(PR #{pr_number}): {exc}"
+                        f"Marked packet {pkt.packet_id!r} failed "
+                        f"(PR #{pr_number} closed without merge)"
                     ),
-                    details={"packet_id": pkt.packet_id, "error": str(exc)},
+                    details={
+                        "packet_id": pkt.packet_id,
+                        "pr_number": pr_number,
+                        "owner": pkt.owner,
+                        "reason": reason,
+                        "reconciled": True,
+                    },
                 )
             )
 
+        # OPEN and any other state: leave packet dispatched.
+
     return findings
+
+
+def check_merged_dispatches(
+    runtime_dir: Path | None = None,
+) -> list[MonitorFinding]:
+    """Deprecated alias for :func:`reconcile_dispatched_packets` (#2701).
+
+    Retained so external callers that imported ``check_merged_dispatches``
+    under the pre-#2701 name keep working. New code should call
+    :func:`reconcile_dispatched_packets` directly.
+    """
+    return reconcile_dispatched_packets(runtime_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -1929,7 +2078,8 @@ def run_monitoring_cycle(
     5. Stalled lane detection (acked but idle), with optional recovery
     6. Approval-stall detection (lanes blocked on tool-approval prompts)
     7. Recently merged PR detection (new merges since last cycle)
-    8. Auto-complete dispatched packets whose PRs were merged externally
+    8. Reconcile dispatched packets against GitHub PR state (#2701)
+       — MERGED → completed, CLOSED → failed
     9. Auto-dispatch approved packets to idle lanes
     10. Fleet-level idle check — auto-shutoff recommendation (#1572)
 
@@ -1977,9 +2127,12 @@ def run_monitoring_cycle(
     if not skip_pr_check:
         findings.extend(check_recently_merged_prs(runtime_dir))
 
-    # 8. Auto-complete dispatched packets whose PRs were merged externally
+    # 8. Reconcile dispatched packets against GitHub PR state (#2701):
+    #    auto-complete on MERGED, mark failed on CLOSED. This is the only
+    #    completion path for the auto-merge.yml workflow (no local
+    #    ``gh pr merge`` means no PostToolUse hook).
     if not skip_pr_check:
-        findings.extend(check_merged_dispatches(runtime_dir))
+        findings.extend(reconcile_dispatched_packets(runtime_dir))
 
     # 9. Auto-dispatch approved packets to idle lanes
     if not no_auto_dispatch:

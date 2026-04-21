@@ -40,6 +40,7 @@ VALID_STATUSES = frozenset(
         "approved",
         "dispatched",
         "completed",
+        "failed",
         "rejected",
         "redirected",
     }
@@ -163,8 +164,11 @@ VALID_TRANSITIONS: dict[str, frozenset[str]] = {
     "pending": frozenset({"previewing", "approved", "rejected", "redirected"}),
     "previewing": frozenset({"approved", "rejected", "redirected"}),
     "approved": frozenset({"dispatched", "rejected"}),
-    "dispatched": frozenset({"completed"}),
+    # ``failed`` is entered by the orchestrator-side reconciler when a PR
+    # associated with a dispatched packet is closed without merging (#2701).
+    "dispatched": frozenset({"completed", "failed"}),
     "completed": frozenset(),  # terminal
+    "failed": frozenset(),  # terminal
     "rejected": frozenset(),  # terminal
     "redirected": frozenset(),  # terminal
 }

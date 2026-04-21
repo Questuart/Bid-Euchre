@@ -37,6 +37,7 @@ from bid_euchre.ops.monitor import (
     evaluate_alert_push,
     format_findings_json,
     format_findings_text,
+    reconcile_dispatched_packets,
     run_monitoring_cycle,
 )
 
@@ -1662,6 +1663,240 @@ class TestCheckMergedDispatches:
         assert len(findings) == 1
         assert findings[0].severity == SEVERITY_WARN
         assert "Failed to auto-complete" in findings[0].summary
+
+
+# ---------------------------------------------------------------------------
+# reconcile_dispatched_packets tests (#2701)
+# ---------------------------------------------------------------------------
+
+
+class TestReconcileDispatchedPackets:
+    """Tests for the orchestrator-side dispatched packet reconciler."""
+
+    def test_merged_pr_completes_and_emits_message(self, tmp_path: Path) -> None:
+        """MERGED → packet.status=completed + completion message queued."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(
+            packet_id="pkt-merged-1",
+            owner="author-a",
+            metadata={"pr_number": 42},
+        )
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.monitor._query_pr_state",
+                return_value="MERGED",
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+            ) as mock_transition,
+            patch(
+                "bid_euchre.ops.message_bus.create_message",
+            ) as mock_create,
+            patch(
+                "bid_euchre.ops.message_bus.send_message",
+            ) as mock_send,
+        ):
+            mock_create.return_value = MagicMock()
+            findings = reconcile_dispatched_packets(runtime_dir)
+
+        mock_transition.assert_called_once_with(
+            "pkt-merged-1", "completed", runtime_dir / "task_queue"
+        )
+        mock_create.assert_called_once()
+        kwargs = mock_create.call_args.kwargs
+        assert kwargs["to_lane"] == "orchestrator"
+        assert kwargs["message_type"] == "completion"
+        assert kwargs["task_id"] == "pkt-merged-1"
+        assert kwargs["payload"]["pr_number"] == 42
+        assert kwargs["payload"]["status"] == "completed"
+        assert kwargs["payload"]["reconciled"] is True
+        mock_send.assert_called_once()
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_INFO
+        assert findings[0].details["reconciled"] is True
+
+    def test_closed_pr_marks_failed_and_emits_message(self, tmp_path: Path) -> None:
+        """CLOSED → packet.status=failed with reason + completion message."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(
+            packet_id="pkt-closed-1",
+            owner="author-b",
+            metadata={"pr_number": 55},
+        )
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.monitor._query_pr_state",
+                return_value="CLOSED",
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+            ) as mock_transition,
+            patch(
+                "bid_euchre.ops.message_bus.create_message",
+            ) as mock_create,
+            patch(
+                "bid_euchre.ops.message_bus.send_message",
+            ) as mock_send,
+        ):
+            mock_create.return_value = MagicMock()
+            findings = reconcile_dispatched_packets(runtime_dir)
+
+        mock_transition.assert_called_once_with(
+            "pkt-closed-1", "failed", runtime_dir / "task_queue"
+        )
+        mock_create.assert_called_once()
+        payload = mock_create.call_args.kwargs["payload"]
+        assert payload["status"] == "failed"
+        assert payload["reason"] == "pr_closed_without_merge"
+        assert payload["reconciled"] is True
+        mock_send.assert_called_once()
+
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_WARN
+        assert findings[0].details["reason"] == "pr_closed_without_merge"
+
+    def test_open_pr_unchanged(self, tmp_path: Path) -> None:
+        """OPEN → packet unchanged, no message emitted."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={"pr_number": 99})
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.monitor._query_pr_state",
+                return_value="OPEN",
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+            ) as mock_transition,
+            patch("bid_euchre.ops.message_bus.send_message") as mock_send,
+        ):
+            findings = reconcile_dispatched_packets(runtime_dir)
+
+        assert len(findings) == 0
+        mock_transition.assert_not_called()
+        mock_send.assert_not_called()
+
+    def test_no_pr_number_skipped(self, tmp_path: Path) -> None:
+        """Packet without metadata.pr_number is skipped gracefully."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={})
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.monitor._query_pr_state",
+            ) as mock_query,
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+            ) as mock_transition,
+            patch("bid_euchre.ops.message_bus.send_message") as mock_send,
+        ):
+            findings = reconcile_dispatched_packets(runtime_dir)
+
+        assert len(findings) == 0
+        mock_query.assert_not_called()
+        mock_transition.assert_not_called()
+        mock_send.assert_not_called()
+
+    def test_gh_query_failure_skips_packet(self, tmp_path: Path) -> None:
+        """If _query_pr_state returns None, packet is left dispatched."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={"pr_number": 111})
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.monitor._query_pr_state",
+                return_value=None,
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+            ) as mock_transition,
+            patch("bid_euchre.ops.message_bus.send_message") as mock_send,
+        ):
+            findings = reconcile_dispatched_packets(runtime_dir)
+
+        assert len(findings) == 0
+        mock_transition.assert_not_called()
+        mock_send.assert_not_called()
+
+    def test_message_send_failure_does_not_rollback_transition(
+        self, tmp_path: Path
+    ) -> None:
+        """send_message failure is swallowed — packet stays completed."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        pkt = _make_dispatched_pkt(metadata={"pr_number": 200})
+
+        with (
+            patch(
+                "bid_euchre.ops.task_queue.list_packets",
+                return_value=[pkt],
+            ),
+            patch(
+                "bid_euchre.ops.monitor._query_pr_state",
+                return_value="MERGED",
+            ),
+            patch(
+                "bid_euchre.ops.task_queue.transition_status",
+            ) as mock_transition,
+            patch(
+                "bid_euchre.ops.message_bus.send_message",
+                side_effect=OSError("bus unavailable"),
+            ),
+        ):
+            findings = reconcile_dispatched_packets(runtime_dir)
+
+        mock_transition.assert_called_once()
+        # INFO finding still produced — message failure is logged, not
+        # surfaced as a finding to avoid infinite escalation.
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_INFO
+
+    def test_check_merged_dispatches_is_alias(self, tmp_path: Path) -> None:
+        """The pre-#2701 name forwards to reconcile_dispatched_packets."""
+        runtime_dir = tmp_path / "runtime"
+        (runtime_dir / "task_queue").mkdir(parents=True)
+
+        with patch(
+            "bid_euchre.ops.monitor.reconcile_dispatched_packets",
+            return_value=[],
+        ) as mock_new:
+            check_merged_dispatches(runtime_dir)
+
+        mock_new.assert_called_once_with(runtime_dir)
 
 
 # ---------------------------------------------------------------------------
