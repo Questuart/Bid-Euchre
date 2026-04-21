@@ -58,33 +58,35 @@ VALID_RESULT_STATUSES = frozenset({"completed", "failed", "blocked"})
 # ---------------------------------------------------------------------------
 # Routing metadata contract (issue #2169 — token-economy Slice C)
 # ---------------------------------------------------------------------------
-#
-# TaskPacket.metadata remains dict[str, Any] to preserve the frozen dataclass
-# extension point, but four keys are reserved for routing/learning inputs.
-# Downstream consumers (fixed-policy controls, advisory dispatch scorer,
-# outcome-join reporting) rely on these keys being stable and, when present,
-# being drawn from the documented value spaces below.
-#
-# All keys are OPTIONAL. A packet without any routing metadata is always
-# legal and never rejected. Validation is advisory via
-# :func:`validate_routing_metadata`; the TaskPacket dataclass itself does not
-# enforce routing-key typing so existing callers that store unrelated metadata
-# keep working without change.
-#
-# Key semantics:
-#   task_type           — coarse classification used by the advisor scorer
-#                         and outcome rollups. Must be a non-empty str when
-#                         present; preferred values are in VALID_TASK_TYPES
-#                         (advisory — unknown values are a warning, not a
-#                         hard error, so the taxonomy can evolve without
-#                         breaking legacy packets).
-#   complexity_estimate — integer 1..5 inclusive, orchestrator-assigned at
-#                         dispatch time. Higher = more complex.
-#   model_hint          — preferred model tier for the task. Known values in
-#                         VALID_MODEL_HINTS; unknown values are a warning.
-#   effort_hint         — preferred effort envelope (token budget / think
-#                         depth). Known values in VALID_EFFORT_HINTS.
-#
+
+ROUTING_METADATA_CONTRACT_DOC = """\
+TaskPacket.metadata remains dict[str, Any] to preserve the frozen dataclass
+extension point, but four keys are reserved for routing/learning inputs.
+Downstream consumers (fixed-policy controls, advisory dispatch scorer,
+outcome-join reporting) rely on these keys being stable and, when present,
+being drawn from the documented value spaces below.
+
+All keys are OPTIONAL. A packet without any routing metadata is always
+legal and never rejected. Validation is advisory via
+:func:`validate_routing_metadata`; the TaskPacket dataclass itself does not
+enforce routing-key typing so existing callers that store unrelated metadata
+keep working without change.
+
+Key semantics:
+  task_type           — coarse classification used by the advisor scorer
+                        and outcome rollups. Must be a non-empty str when
+                        present; preferred values are in VALID_TASK_TYPES
+                        (advisory — unknown values are a warning, not a
+                        hard error, so the taxonomy can evolve without
+                        breaking legacy packets).
+  complexity_estimate — integer 1..5 inclusive, orchestrator-assigned at
+                        dispatch time. Higher = more complex.
+  model_hint          — preferred model tier for the task. Known values in
+                        VALID_MODEL_HINTS; unknown values are a warning.
+  effort_hint         — preferred effort envelope (token budget / think
+                        depth). Known values in VALID_EFFORT_HINTS.
+"""
+
 ROUTING_METADATA_KEYS: frozenset[str] = frozenset(
     {"task_type", "complexity_estimate", "model_hint", "effort_hint"}
 )
