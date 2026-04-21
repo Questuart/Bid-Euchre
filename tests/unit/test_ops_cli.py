@@ -4677,6 +4677,88 @@ class TestInboxBulkAck:
         assert len(data["acked"]) == 1
         assert data["skipped_terminal"] == 1
 
+    def test_bulk_ack_cli_large_inbox_completes(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        bus_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Regression for #2699: CLI ``ack-all`` on a large inbox
+        completes in seconds, not minutes. A 2000-message inbox on the
+        pre-#2699 O(N²) path would take 10s+ (and 10min+ on the
+        observed 12K orchestrator inbox). The single-pass rewrite keeps
+        wall-clock bounded at O(N)."""
+        import time as _time
+
+        import ops
+
+        # Seed the inbox directly (JSONL append) — sending 2000 messages
+        # via CLI would dominate the test wall-clock budget.
+        inbox_path = bus_dir / "inbox" / "bulk-perf.jsonl"
+        inbox_path.parent.mkdir(parents=True, exist_ok=True)
+
+        from datetime import datetime, timedelta, timezone
+
+        count = 2000
+        now_dt = datetime.now(timezone.utc)
+        with open(inbox_path, "w") as f:
+            for i in range(count):
+                # Keep created_at within the default 24h TTL window so
+                # the lazy-expiry pass doesn't intercept them.
+                ts = (now_dt - timedelta(minutes=i % 60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                rec = {
+                    "message_id": f"perf{i:08d}",
+                    "thread_id": None,
+                    "task_id": None,
+                    "from_lane": "orchestrator",
+                    "to_lane": "bulk-perf",
+                    "message_type": "ack",
+                    "priority": "normal",
+                    "status": "pending",
+                    "created_at": ts,
+                    "acked_at": None,
+                    "resolved_at": None,
+                    "requires_human": False,
+                    "summary": f"perf-{i}",
+                    "payload": {
+                        "max_retries": 3,
+                        "retry_count": 0,
+                        "ttl_seconds": 86400,
+                    },
+                    "source_transport": "bus",
+                    "parent_message_id": None,
+                }
+                f.write(json.dumps(rec) + "\n")
+
+        # Drain capsys so the test's own assertion reads only CLI output
+        capsys.readouterr()
+
+        start = _time.perf_counter()
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "inbox",
+                "bulk-ack",
+                "--lane",
+                "bulk-perf",
+            ]
+        )
+        elapsed = _time.perf_counter() - start
+
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data["acked"]) == count
+        assert data["skipped_terminal"] == 0
+        assert elapsed < 5.0, (
+            f"ack-all on {count} messages took {elapsed:.2f}s "
+            f"(expected <5.0s; O(N²) regression suspected — see #2699)"
+        )
+
 
 # ---------------------------------------------------------------------------
 # review-check

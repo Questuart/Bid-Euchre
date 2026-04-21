@@ -934,12 +934,53 @@ def ack_message(
     return updated
 
 
+def _expire_stale_in_memory(
+    by_id: dict[str, dict[str, Any]],
+    *,
+    now: float | None = None,
+) -> set[str]:
+    """Apply TTL lazy expiry to *by_id* entries in memory (no I/O).
+
+    Pure in-memory variant of :func:`_expire_stale_on_read` — mutates
+    *by_id* in place by replacing TTL-stale non-terminal records with
+    an ``expired`` copy and returns the set of message ids that were
+    transitioned.  Urgent (P0) messages are never auto-expired, matching
+    the side-effecting read-path policy.
+
+    Used by :func:`bulk_ack_messages` so the caller can perform the
+    full read-expire-ack rewrite under a single inbox lock.
+    """
+    current_time = now if now is not None else time.time()
+    skip = {"resolved", "expired", "dead_lettered", "acked"}
+    expired_ids: set[str] = set()
+
+    for mid, rec in list(by_id.items()):
+        if rec.get("status") in skip:
+            continue
+        if rec.get("priority") == "urgent":
+            continue
+        ttl = rec.get("payload", {}).get("ttl_seconds")
+        if ttl is None:
+            continue
+        created = rec.get("created_at", "")
+        try:
+            created_ts = datetime.fromisoformat(created).timestamp()
+        except (ValueError, TypeError):
+            continue
+        if current_time - created_ts > ttl:
+            by_id[mid] = {**rec, "status": "expired"}
+            expired_ids.add(mid)
+
+    return expired_ids
+
+
 def bulk_ack_messages(
     lane_id: str,
     filter_fn: Callable[[dict[str, Any]], bool],
     bus_root: Path | None = None,
     *,
     events_dir: Path | None = None,
+    now: float | None = None,
 ) -> BulkAckResult:
     """Acknowledge all messages in a lane's inbox that match *filter_fn*.
 
@@ -952,82 +993,141 @@ def bulk_ack_messages(
     counts toward ``skipped_terminal`` if the caller expressed interest
     in it via ``filter_fn``.  Unrelated terminal records are ignored.
 
-    A record can also transition to terminal state mid-batch — for
-    example, a concurrent :func:`read_inbox` call can lazily expire a
-    TTL-stale message via :func:`_expire_stale_on_read` between the
-    snapshot and the per-message update.  :func:`_update_inbox_status`
-    raises ``ValueError`` in that case; we treat it as a terminal skip
-    (see #2668).
+    Implementation is a single-pass filter-and-rewrite under the inbox
+    :data:`flock` (see #2699): the raw JSONL is read once into memory,
+    deduplicated to latest-record-per-id, TTL-stale non-terminal
+    records are expired in memory (parity with :func:`read_inbox`),
+    matching ackable records are transitioned to ``acked``, and the
+    file is rewritten atomically via tmp+rename.  Total I/O is
+    **O(N)** regardless of how many records match *filter_fn* —
+    replacing the previous O(N·M) pattern where each match triggered
+    a full re-read via :func:`_update_inbox_status`.
+
+    Because the rewrite is atomic and holds the inbox lock for its
+    duration, concurrent writers (``append_message``,
+    :func:`_update_inbox_status`) cannot interleave with this call.
+    The previous ``ValueError`` mid-batch race path (``#2668``) is
+    therefore no longer reachable from inside this function; callers
+    that rely on the skipped-terminal count still observe the same
+    contract when records are already terminal at snapshot time or
+    get lazily expired in memory before the partition step.
+
+    Note on history: the rewrite stores at most one record per
+    ``message_id`` in the inbox (same dedup semantics as
+    :func:`compact_inbox`).  Full status-transition history continues
+    to live in the global audit trail (``messages.jsonl``) — only
+    ``append_message`` writes there, and it is untouched by this
+    function.  No caller of :func:`_read_inbox_raw` currently depends
+    on multi-record history within a single inbox.
 
     Args:
         lane_id: The lane whose inbox to scan.
         filter_fn: Predicate receiving a message dict; return ``True`` to ack.
         bus_root: Override for bus root directory.
         events_dir: Override for events directory (for testing).
+        now: Override for current time as Unix timestamp, passed to the
+            in-memory lazy-expiry pass (for testing).
 
     Returns:
         :class:`BulkAckResult` with the list of acked records and a
         count of records that matched ``filter_fn`` but could not be
-        acked because they were (or became) terminal.
+        acked because they were terminal at snapshot time (or became
+        terminal via in-memory lazy expiry before the partition step).
     """
     root = shared_bus_root(bus_root)
-    raw = _read_inbox_raw(lane_id, root)
+    inbox = _inbox_path(lane_id, root)
+    lock_path = _inbox_lock_path(lane_id, root)
 
-    # Deduplicate: latest record per message_id wins
-    by_id: dict[str, dict[str, Any]] = {}
-    for rec in raw:
-        mid = rec.get("message_id")
-        if mid:
-            by_id[mid] = rec
+    # Short-circuit when no inbox file exists — nothing to do, no lock needed.
+    if not inbox.exists():
+        return BulkAckResult(acked=[], skipped_terminal=0)
 
+    ack_ts = _now_iso()
     ackable = {"pending", "delivered"}
     acked: list[dict[str, Any]] = []
     skipped_terminal = 0
-    for mid, rec in by_id.items():
-        # Filter first so unrelated terminal records don't inflate the
-        # skipped count.  Only records the caller asked about count.
-        if not filter_fn(rec):
-            continue
 
-        status = rec.get("status")
-        if status in BULK_ACK_TERMINAL_STATUSES:
-            skipped_terminal += 1
-            continue
-        if status not in ackable:
-            # Unknown/unexpected status — skip defensively, surface in log.
-            logger.debug("Skipping %s in bulk-ack: unexpected status %r", mid, status)
-            continue
-
+    # Single atomic read-mutate-rewrite under the inbox lock.
+    # Ensures concurrent writers (including other bulk_ack_messages calls)
+    # are serialized — no mid-batch state drift is possible.
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
         try:
-            updated = _update_inbox_status(
-                mid,
+            # One read of the raw JSONL.
+            raw: list[dict[str, Any]] = []
+            with open(inbox) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        logger.warning("Skipping malformed inbox line for %s", lane_id)
+
+            # Deduplicate: latest record per message_id wins.
+            by_id: dict[str, dict[str, Any]] = {}
+            for rec in raw:
+                mid = rec.get("message_id")
+                if mid:
+                    by_id[mid] = rec
+
+            # Apply lazy TTL expiry in-memory before the ack partition,
+            # so the rewrite carries the same side effect that
+            # ``read_inbox -> _expire_stale_on_read`` would have
+            # produced on the same inbox state.
+            _expire_stale_in_memory(by_id, now=now)
+
+            # Partition: filter first so unrelated terminal records
+            # don't inflate the skipped count.
+            for mid, rec in by_id.items():
+                if not filter_fn(rec):
+                    continue
+
+                status = rec.get("status")
+                if status in BULK_ACK_TERMINAL_STATUSES:
+                    skipped_terminal += 1
+                    continue
+                if status not in ackable:
+                    # Unknown/unexpected status — skip defensively.
+                    logger.debug(
+                        "Skipping %s in bulk-ack: unexpected status %r",
+                        mid,
+                        status,
+                    )
+                    continue
+
+                updated = {**rec, "status": "acked", "acked_at": ack_ts}
+                by_id[mid] = updated
+                acked.append(updated)
+
+            # Atomic rewrite via tmp + rename (same pattern as compact_inbox).
+            tmp_path = inbox.with_suffix(".jsonl.tmp")
+            with open(tmp_path, "w") as f:
+                for rec in by_id.values():
+                    f.write(json.dumps(rec, sort_keys=True, default=str) + "\n")
+                f.flush()
+            tmp_path.rename(inbox)
+
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+
+    # Emit events outside the lock — idempotent and out-of-band.
+    for rec in acked:
+        mid = rec.get("message_id")
+        try:
+            from bid_euchre.ops.events import append_event
+
+            append_event(
+                "message_acked",
+                "ops.message_bus",
                 lane_id,
-                "acked",
-                root,
-                extra_fields={"acked_at": _now_iso()},
+                {"message_id": mid, "bulk": True},
+                events_dir=events_dir,
             )
-        except ValueError:
-            # Race: another caller (e.g. concurrent read_inbox triggering
-            # lazy expiry) transitioned the message to a terminal state
-            # between our snapshot and this update.  Count as a terminal
-            # skip rather than aborting the whole batch (see #2668).
-            skipped_terminal += 1
-            continue
-
-        if updated is not None:
-            acked.append(updated)
-            try:
-                from bid_euchre.ops.events import append_event
-
-                append_event(
-                    "message_acked",
-                    "ops.message_bus",
-                    lane_id,
-                    {"message_id": mid, "bulk": True},
-                    events_dir=events_dir,
-                )
-            except Exception:
-                logger.warning("Failed to emit message_acked event for %s", mid)
+        except Exception:
+            logger.warning("Failed to emit message_acked event for %s", mid)
 
     if acked or skipped_terminal:
         logger.info(
