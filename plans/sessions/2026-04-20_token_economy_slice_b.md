@@ -300,9 +300,10 @@ not pass `--shipped-outcome`. Slice B maps these five values plus
 | `None` (unset)          | `other_count`         |
 
 The mapping table is expressed as a module-level constant
-(`_OUTCOME_BUCKET: dict[str | None, str]`) in `token_economy.py` so the
-`task complete` enum and the Slice B reducer can be kept in sync by a
-single grep-friendly test (see §7.2). Adding a new outcome value to the
+(`_OUTCOME_BUCKET: dict[str | None, str]`) in
+`src/bid_euchre/ops/token_economy.py` so the `task complete` enum and
+the Slice B reducer can be kept in sync by a single grep-friendly test
+(see §7.2). Adding a new outcome value to the
 CLI enum without updating this table raises in the Slice B reducer and
 fails the dedicated contract test — new values must not be silently
 lumped into `other_count`.
@@ -333,15 +334,18 @@ and means:
 - No retention policy change.
 - No new gitignore entry needed.
 - `model_outcome_summary` reads `task_completed` events from **both**
-  the active and archived event logs: `events.jsonl` *and*
-  `events.archive.jsonl` (both under `.claude/runtime/events/`,
-  gitignored). `src/bid_euchre/ops/events.py` drains completed records
+  event logs under `.claude/runtime/events/` (gitignored) — the active
+  log written by `ops events emit` and the archive log written by the
+  drain pass, whose filenames are exported as `ACTIVE_FILE` and
+  `ARCHIVE_FILE` module constants in `src/bid_euchre/ops/events.py`
+  (the archive path is `.claude/runtime/events/events.archive*.jsonl`
+  by glob). `src/bid_euchre/ops/events.py` drains completed records
   from the active log into the archive — reading only the active log
   would make the Slice B rollup depend on retention state rather than
   task history. Records are de-duplicated by `event_id` on read so a
   mid-drain race does not double-count. Callers may pass `events_dir`
   to override the location; both files are optional on disk (a fresh
-  lane may have only `events.jsonl`, a long-lived lane may have both).
+  lane may have only the active log, a long-lived lane may have both).
 
 Caching, if profiling later reveals a hot path, is out of scope for
 Slice B.
@@ -505,10 +509,10 @@ Additive panel only — existing `Token Economy` section stays intact.
 `src/bid_euchre/ops/token_economy.py` (line 2177 as of this writing).
 `src/bid_euchre/ops/dashboard.py` imports it and renders the return
 value — it does not own the payload shape. The Slice B payload change
-therefore lives in `token_economy.py::dashboard_token_economy`; the
-only edit to `dashboard.py` is in its `format_dashboard_text` helper
-(referenced below), which reads the new `by_model` key and emits the
-additive sub-section.
+therefore lives in `dashboard_token_economy` in the token_economy
+module; the only edit to the dashboard module is in its
+`format_dashboard_text` helper (referenced below), which reads the new
+`by_model` key and emits the additive sub-section.
 
 `src/bid_euchre/ops/token_economy.py::dashboard_token_economy` gains a
 new `by_model` key on its return dict:
@@ -659,8 +663,9 @@ No new test files needed; all three already exist from Slice A.
   produces 7.0 + 3.0 allocations; single-model lane-days produce
   integer-preserving allocations.
 - `test_model_outcome_summary_reads_archive` — events split between
-  `events.jsonl` and `events.archive.jsonl` with one event_id present
-  in both (mid-drain race) is counted exactly once.
+  the active log and the archive log (both matched by the glob
+  `.claude/runtime/events/events*.jsonl`) with one event_id present in
+  both (mid-drain race) is counted exactly once.
 - `test_model_outcome_summary_missing_events_dir` — returns rows with
   zero outcome counts, never raises.
 - `test_reconcile_includes_by_model_parity` — mismatch surfaces
