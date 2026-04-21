@@ -117,7 +117,7 @@ the fleet and blurs the "this is the result of Slices D+E" attribution.
   metrics except the "mid-window carryover" reporting row. Do not
   retroactively reclassify its outcome.
 - **Advisor mid-window:** Q3 (downgrade coverage) and Q4 (advisor
-  predictiveness) only count packets whose `metadata.task_type` was
+  predictiveness) only count packets whose `<metadata.task_type>` was
   populated at dispatch time and whose routing decision was logged by
   Slice E's recommendation logger. Packets missing either field are
   reported in an "unaudited" row and excluded from Q3/Q4 numerators and
@@ -131,7 +131,8 @@ Before starting the window, the operator must:
    eval report's "Data provenance" section (see §6).
 2. Snapshot the token_economy store (`uv run python scripts/internal/ops.py
    usage status`) as the pre-window reference point. Record the SHA-256 of
-   `session_usage.jsonl` and `session_attributions.jsonl`.
+   `<.claude/runtime/token_economy/session_usage.jsonl>` and
+   `<.claude/runtime/token_economy/session_attributions.jsonl>`.
 3. Pre-register the threshold numbers in §4 and §5 **before** `T_start`.
    These numbers must appear in a committed update to this file (or a
    companion thresholds file) before the window opens. Any change after
@@ -145,17 +146,22 @@ The evaluation consumes only these artifacts. All are local to the repo
 or to `~/.claude/`; no network calls. Exact paths are pinned so the
 evaluation is reproducible from a clean machine.
 
+The paths below use angle-bracket notation (e.g. `<path/to/file>`) for
+artifacts that are **planned but not yet on disk** — they will be created
+by Slices A/B/C/D/E PRs before this evaluation runs. Plain-backtick paths
+are existing files in the repo.
+
 | Input | Path | Produced by | Query |
 |-------|------|-------------|-------|
 | Token telemetry (raw) | `~/.claude/projects/*steward*/*.jsonl` | Claude Code runtime | Ingested via `usage import` |
-| Token telemetry (normalized) | `.claude/runtime/token_economy/session_usage.jsonl` | `usage import` (Slice A) | Read via `token_economy.usage_summary` / `lane_summary` |
-| Session attributions | `.claude/runtime/token_economy/session_attributions.jsonl` | `usage attribute` (Slice A) | Joined on `session_id` for lane attribution |
+| Token telemetry (normalized) | `<.claude/runtime/token_economy/session_usage.jsonl>` | Will add `usage import` (Slice A) | Read via `token_economy.usage_summary` / `lane_summary` |
+| Session attributions | `<.claude/runtime/token_economy/session_attributions.jsonl>` | Will add `usage attribute` (Slice A) | Joined on `session_id` for lane attribution |
 | Event log | `.claude/runtime/events/events.jsonl` | `src/bid_euchre/ops/events.py` | Grep/jq for `task_completed` and `task_outcome_recorded` in window |
-| Task outcome log (Slice C/D/E) | `.claude/runtime/learning/outcomes.jsonl` | SP-5-02 PR2 `OutcomeLogger` | Filter by completion timestamp in window; group by lane × task_type × model_hint × effort_hint |
-| Advisor affinity snapshot | `.claude/runtime/learning/lane_affinity.json` | SP-5-02 PR2 `AffinityModel` | Read post-window for final state; snapshot pre-window for drift |
-| Advisor recommendation log | `.claude/runtime/learning/recommendations.jsonl` | SP-5-02 PR3/PR4 recommendation emission (Slice E shadow log) | Match `recommendation_id` → actual `selected_lane` → outcome record |
+| Task outcome log (Slice C/D/E) | `<.claude/runtime/learning/outcomes.jsonl>` | New file created by SP-5-02 PR2 `OutcomeLogger` | Filter by completion timestamp in window; group by lane × task_type × model_hint × effort_hint |
+| Advisor affinity snapshot | `<.claude/runtime/learning/lane_affinity.json>` | New file created by SP-5-02 PR2 `AffinityModel` | Read post-window for final state; snapshot pre-window for drift |
+| Advisor recommendation log | `<.claude/runtime/learning/recommendations.jsonl>` | New file created by SP-5-02 PR3/PR4 (Slice E shadow log) | Match `recommendation_id` → actual `selected_lane` → outcome record |
 | GitHub PR merge data | `gh pr list --state merged --search "merged:>=<T_start>"` | GitHub | Join on branch or PR number to find owning task packet |
-| Review round count | `.claude/runtime/review_loops/pr_<N>/state.json` + `verdict.json` | `review_driver.py` | Count rounds; cross-check with PR comment history |
+| Review round count | `<.claude/runtime/review_loops/pr_<N>/state.json>` + `<.claude/runtime/review_loops/pr_<N>/verdict.json>` | `scripts/internal/review_driver.py` | Count rounds; cross-check with PR comment history |
 | Task packet archive | `.claude/runtime/task_queue/*` | `src/bid_euchre/ops/task_queue.py` | Resolve packet metadata (task_type, complexity_estimate, model_hint, effort_hint) per outcome |
 
 ### 2.1 Known gaps (verify on-dispatch, before running)
@@ -164,14 +170,14 @@ These are asserted below but must be **verified** when the evaluation is
 actually dispatched (because Slices C/D/E have not landed as of this
 draft):
 
-- ⬛ **Slice C:** `.claude/runtime/learning/outcomes.jsonl` actually carries
-  `model_hint`, `effort_hint`, `task_type`, `complexity_estimate`, and joins
-  to token spend.
+- ⬛ **Slice C:** the new `<.claude/runtime/learning/outcomes.jsonl>` file
+  actually carries `model_hint`, `effort_hint`, `task_type`,
+  `complexity_estimate`, and joins to token spend.
 - ⬛ **Slice D:** A `dispatch_policy_applied` audit record per packet exists
   so we can measure coverage without re-inferring from heuristics.
-- ⬛ **Slice E:** `recommendations.jsonl` exists, includes a ranked lane
-  list per decision, and emits an `advisor_override` flag when the
-  orchestrator picked a lane other than rank-1.
+- ⬛ **Slice E:** the new `<recommendations.jsonl>` file exists, includes a
+  ranked lane list per decision, and emits an `advisor_override` flag when
+  the orchestrator picked a lane other than rank-1.
 - ⬛ Outcome records include enough fields to reconstruct tokens/PR, review
   rounds, and outcome class (shipped / set-aside / reverted).
 
@@ -185,13 +191,13 @@ The eval runner is not in scope here, but query skeletons are pinned so
 the evaluator can execute them verbatim:
 
 - **Q1 tokens/merged-PR:**
-  - Pull `session_usage.jsonl` + `session_attributions.jsonl` in window.
+  - Pull `<session_usage.jsonl>` + `<session_attributions.jsonl>` in window.
   - Sum `cache_read + output` tokens per `lane_id`, normalize by count of
     `merged_at in window` PRs attributable to that lane.
   - Bootstrap median (n=10000, seed=42) and report 95% CI.
 - **Q2 review churn:**
   - For each merged PR in window, count review rounds from
-    `.claude/runtime/review_loops/pr_<N>/state.json`.
+    `<.claude/runtime/review_loops/pr_<N>/state.json>`.
   - Compute rework rate as `reverts_within_7d + followup_fix_prs /
     merged_in_window`.
 - **Q3 downgrade coverage:**
@@ -202,7 +208,7 @@ the evaluator can execute them verbatim:
     packets per low-risk class and flags any that should NOT have been
     downgraded. Flag rate is the mis-classification rate.
 - **Q4 advisor predictiveness:**
-  - For each decision in `recommendations.jsonl`, find the outcome of the
+  - For each decision in `<recommendations.jsonl>`, find the outcome of the
     realized lane. Compute Spearman ρ between advisor rank and a
     post-hoc "clean merge yes/no + token-efficiency tier" outcome score.
   - Also compute top-1 accuracy: was the advisor's rank-1 lane the lane
@@ -317,7 +323,7 @@ recommendation, regardless of Q1–Q4 outcomes.
 ### R1 — CRITICAL post-merge review finding attributed to D/E behavior
 
 - **Checkable condition:** During the window, any post-merge review
-  (`post-merge-review.sh` output) surfaces a CRITICAL severity finding
+  (`.claude/hooks/post-merge-review.sh` output) surfaces a CRITICAL severity finding
   **and** the finding's root cause is attributable to a Slice D/E
   behavior change (e.g., a downgrade to Sonnet produced a logic bug that
   was not caught in review). Attribution is **operator-judged**, with
@@ -368,9 +374,9 @@ When the evaluation runs, the output report lives at:
 protocol and its results).
 
 Alternative: if the evaluator prefers to keep this file as the protocol
-and publish the verdict separately, use
-`plans/sessions/YYYY-MM-DD_token_economy_restart_eval_report.md` (dated
-to the execution date), and cross-link both ways.
+and publish the verdict separately, create a new dated report file
+`<plans/sessions/YYYY-MM-DD_token_economy_restart_eval_report.md>`
+(dated to the execution date), and cross-link both ways.
 
 ### Required sections (in order)
 
@@ -410,9 +416,9 @@ to the execution date), and cross-link both ways.
   outcomes), the report is re-runnable but the numbers may drift; the
   original committed report retains the original hash and numbers.
 - **Artifact capture:** at the end of the evaluation, copy
-  `outcomes.jsonl`, `session_usage.jsonl`, `session_attributions.jsonl`,
-  `recommendations.jsonl`, and the review-loop state files for in-window
-  PRs into a committed artifact tarball under `data/fixtures/eval_slice_f/`
+  `<outcomes.jsonl>`, `<session_usage.jsonl>`, `<session_attributions.jsonl>`,
+  `<recommendations.jsonl>`, and the review-loop state files for in-window
+  PRs into a new committed artifact tarball under `data/fixtures/eval_slice_f/`
   (tiny — only the in-window slice, gitignore otherwise). Per
   `.claude/rules/deferred/30_data_contract.md`, only `data/fixtures/` is
   committable.
@@ -451,7 +457,7 @@ This is the packet the orchestrator will dispatch when the window closes.
 | **Trigger condition** | All of: (a) Slice C/D/E PRs merged; (b) ≥ 7 calendar days since the last of those merges; (c) merge floor and lane coverage floor met per §1.3; (d) thresholds from §4 locked in a committed update |
 | **Owner recommendation** | **analyst lane** (analyst-c or analyst-d). Ops lane has the monitor data but does not own statistical analysis; analyst lane is the right fit for bootstrap + operator-judgment write-up. If the analyst pool is saturated, a flex lane with a narrow `scope_declared` is acceptable. |
 | **Delivery mode** | **PR mode** — amends this file in place (or adds companion report file per §6) |
-| **scope_declared** | `plans/sessions/2026-04-20_token_economy_restart_eval.md` (amendments), optional `plans/sessions/YYYY-MM-DD_token_economy_restart_eval_report.md`, and a new `data/fixtures/eval_slice_f/**` tarball directory with in-window slice data. **No `src/` changes** unless a query helper is needed, in which case it must be scoped to `src/bid_euchre/ops/token_economy.py` or `src/bid_euchre/ops/learning.py` with tests. |
+| **scope_declared** | `plans/sessions/2026-04-20_token_economy_restart_eval.md` (amendments), optional new `<plans/sessions/YYYY-MM-DD_token_economy_restart_eval_report.md>`, and a new `data/fixtures/eval_slice_f/**` tarball directory with in-window slice data. **No `src/` changes** unless a query helper is needed, in which case it must be scoped to `src/bid_euchre/ops/token_economy.py` or the new SP-5-02 module `<src/bid_euchre/ops/learning.py>` with tests. |
 | **Validation commands** | ```bash
 uv run python -m pytest tests/unit/test_token_economy.py tests/unit/test_ops_learning.py -v
 uv run python scripts/internal/ops.py usage status
