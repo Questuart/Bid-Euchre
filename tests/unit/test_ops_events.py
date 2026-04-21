@@ -366,3 +366,129 @@ class TestLockFile:
         events = read_events(events_dir)
         assert len(events) == 1
         assert events[0]["payload"]["survived"] is True
+
+
+class TestTaskCompletedOutcomePayload:
+    """Outcome-enriched task_completed payload (issue #2169 Slice C).
+
+    The ``task_completed`` event is the durable record that downstream
+    consumers (outcome-join reporting, Slice D/E advisor) use to compare
+    recommended vs actual routing. These tests pin the payload shape so
+    future refactors cannot silently drop fields.
+    """
+
+    OUTCOME_KEYS = (
+        "packet_id",
+        "title",
+        "summary",
+        "pr_number",
+        "completed_by",
+        "task_type",
+        "complexity_estimate",
+        "model_hint",
+        "effort_hint",
+        "actual_lane",
+        "recommended_lane",
+        "token_spend",
+        "elapsed_seconds",
+        "review_rounds",
+        "shipped_outcome",
+    )
+
+    def test_payload_accepts_all_outcome_keys(self, events_dir: Path) -> None:
+        """Every documented outcome key must be accepted by append_event.
+
+        This is primarily a shape test — append_event does not enforce
+        payload structure, so the guarantee is that the CLI-produced
+        payload round-trips through the event log intact.
+        """
+        full_payload = {
+            "packet_id": "abc123",
+            "title": "Slice C test",
+            "summary": "All done",
+            "pr_number": 1234,
+            "completed_by": "author-c",
+            "task_type": "feature",
+            "complexity_estimate": 3,
+            "model_hint": "sonnet",
+            "effort_hint": "medium",
+            "actual_lane": "author-c",
+            "recommended_lane": "author-a",
+            "token_spend": 42000,
+            "elapsed_seconds": 600.5,
+            "review_rounds": 1,
+            "shipped_outcome": "merged",
+        }
+
+        append_event(
+            "task_completed", "ops.task_complete", "author-c", full_payload, events_dir
+        )
+
+        events = read_events(events_dir)
+        assert len(events) == 1
+        loaded = events[0]["payload"]
+        for key in self.OUTCOME_KEYS:
+            assert key in loaded, f"Key {key!r} missing from loaded payload"
+            assert loaded[key] == full_payload[key]
+
+    def test_payload_tolerates_missing_outcome_keys(self, events_dir: Path) -> None:
+        """Legacy payloads missing Slice C keys must still round-trip.
+
+        The outcome-join helper must be able to read older events that
+        predate the enriched payload. This test pins that contract.
+        """
+        legacy_payload = {
+            "packet_id": "legacy_001",
+            "title": "Legacy completion",
+            "summary": "Pre-Slice-C payload",
+            "pr_number": 1,
+            "completed_by": "author-a",
+        }
+        append_event(
+            "task_completed",
+            "ops.task_complete",
+            "author-a",
+            legacy_payload,
+            events_dir,
+        )
+
+        events = read_events(events_dir)
+        assert len(events) == 1
+        assert events[0]["payload"] == legacy_payload
+
+    def test_payload_preserves_none_values(self, events_dir: Path) -> None:
+        """None-valued outcome fields must be preserved, not dropped.
+
+        Downstream consumers distinguish "no recommendation" (None) from
+        "not recorded" (missing key). Serialization must not collapse them.
+        """
+        payload_with_nones = {
+            "packet_id": "none_test",
+            "title": "t",
+            "summary": "s",
+            "pr_number": None,
+            "completed_by": "author-a",
+            "task_type": None,
+            "complexity_estimate": None,
+            "model_hint": None,
+            "effort_hint": None,
+            "actual_lane": "author-a",
+            "recommended_lane": None,
+            "token_spend": None,
+            "elapsed_seconds": None,
+            "review_rounds": None,
+            "shipped_outcome": None,
+        }
+        append_event(
+            "task_completed",
+            "ops.task_complete",
+            "author-a",
+            payload_with_nones,
+            events_dir,
+        )
+
+        events = read_events(events_dir)
+        assert len(events) == 1
+        loaded = events[0]["payload"]
+        assert loaded["recommended_lane"] is None
+        assert "recommended_lane" in loaded  # key present, value None

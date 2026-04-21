@@ -73,7 +73,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from _repo_utils import find_repo_root
 
@@ -1712,6 +1712,30 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "create":
+        # Build routing metadata from CLI flags (issue #2169 Slice C).
+        # Validate against the contract so new packets land with clean
+        # routing keys; archived packets are not re-validated.
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        routing_metadata: dict[str, Any] = {}
+        if getattr(args, "task_type", None) is not None:
+            routing_metadata["task_type"] = args.task_type
+        if getattr(args, "complexity_estimate", None) is not None:
+            routing_metadata["complexity_estimate"] = args.complexity_estimate
+        if getattr(args, "model_hint", None) is not None:
+            routing_metadata["model_hint"] = args.model_hint
+        if getattr(args, "effort_hint", None) is not None:
+            routing_metadata["effort_hint"] = args.effort_hint
+
+        if routing_metadata:
+            errors, warnings = validate_routing_metadata(routing_metadata)
+            if errors:
+                for msg in errors:
+                    print(f"Routing metadata error: {msg}", file=sys.stderr)
+                return 1
+            for msg in warnings:
+                print(f"Routing metadata warning: {msg}", file=sys.stderr)
+
         pkt = tq.create_packet(
             title=args.title,
             description=args.description or "",
@@ -1720,6 +1744,7 @@ def cmd_task(args: argparse.Namespace) -> int:
             domain=getattr(args, "domain", None),
             scope_declared=args.scope_declared,
             validation=args.validation,
+            metadata=routing_metadata or None,
         )
         tq.save_packet(pkt)
         if args.json:
@@ -1812,6 +1837,14 @@ def cmd_task(args: argparse.Namespace) -> int:
         completed_by = getattr(args, "completed_by", "") or ""
         no_archive = getattr(args, "no_archive", False)
 
+        # Outcome detail flags (issue #2169 Slice C — enriched task_completed
+        # event payload for downstream advisor + outcome-join reporting).
+        recommended_lane = getattr(args, "recommended_lane", None)
+        token_spend = getattr(args, "token_spend", None)
+        elapsed_seconds = getattr(args, "elapsed_seconds", None)
+        review_rounds = getattr(args, "review_rounds", None)
+        shipped_outcome = getattr(args, "shipped_outcome", None)
+
         # Verify the packet exists before creating the result
         pkt = tq.load_packet(packet_id)
         if pkt is None:
@@ -1843,21 +1876,48 @@ def cmd_task(args: argparse.Namespace) -> int:
             print(f"Failed to complete packet {packet_id!r}.", file=sys.stderr)
             return 1
 
-        # Emit task_completed event (append-only, best-effort)
+        # Emit task_completed event (append-only, best-effort). The payload
+        # is enriched with routing metadata pulled from the packet + outcome
+        # detail provided on the CLI so downstream consumers (outcome-join
+        # reporting, adaptive dispatch scorer) can compare recommendation vs
+        # actual routing without re-reading archived packets.
         try:
             from bid_euchre.ops.events import append_event
+            from bid_euchre.ops.task_queue import (
+                get_complexity,
+                get_effort_hint,
+                get_model_hint,
+                get_task_type,
+            )
+
+            actual_lane = completed_by or (pkt.owner or "unknown")
+            payload: dict[str, Any] = {
+                "packet_id": packet_id,
+                "title": pkt.title,
+                "summary": summary,
+                "pr_number": pr_number,
+                "completed_by": completed_by or (pkt.owner or "unknown"),
+                # Routing context — sourced from packet metadata, not CLI.
+                "task_type": get_task_type(pkt),
+                "complexity_estimate": get_complexity(pkt),
+                "model_hint": get_model_hint(pkt),
+                "effort_hint": get_effort_hint(pkt),
+                # Outcome detail — sourced from CLI flags. Keys are always
+                # present (value may be None) so event consumers can rely
+                # on the shape regardless of which flags were supplied.
+                "actual_lane": actual_lane,
+                "recommended_lane": recommended_lane,
+                "token_spend": token_spend,
+                "elapsed_seconds": elapsed_seconds,
+                "review_rounds": review_rounds,
+                "shipped_outcome": shipped_outcome,
+            }
 
             append_event(
                 event_type="task_completed",
                 source="ops.task_complete",
-                lane_id=completed_by or (pkt.owner or "unknown"),
-                payload={
-                    "packet_id": packet_id,
-                    "title": pkt.title,
-                    "summary": summary,
-                    "pr_number": pr_number,
-                    "completed_by": completed_by or (pkt.owner or "unknown"),
-                },
+                lane_id=actual_lane,
+                payload=payload,
                 events_dir=args.runtime_dir / "events",
             )
         except Exception:
@@ -3360,8 +3420,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
             print("Token Economy Totals Reconciliation")
             print("=" * 60)
             print(
-                f"  {'Surface':<14s} {'Sessions':>10s} {'Tokens':>14s} "
-                f"{'Commits':>10s}"
+                f"  {'Surface':<14s} {'Sessions':>10s} {'Tokens':>14s} {'Commits':>10s}"
             )
             print("-" * 60)
             print(
@@ -4154,6 +4213,39 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Validation command (repeatable)",
     )
+    # Routing metadata (issue #2169 Slice C — token-economy routing substrate).
+    # All four keys are optional and stored in packet.metadata; unknown values
+    # produce a warning rather than a hard failure so the taxonomy can evolve.
+    task_create_parser.add_argument(
+        "--task-type",
+        dest="task_type",
+        default=None,
+        help=(
+            "Routing metadata: coarse task classification "
+            "(preferred: docs, tests, convention, feature, bugfix, ops, "
+            "review, investigation, refactor)"
+        ),
+    )
+    task_create_parser.add_argument(
+        "--complexity-estimate",
+        dest="complexity_estimate",
+        type=int,
+        default=None,
+        help="Routing metadata: integer complexity estimate in [1, 5]",
+    )
+    task_create_parser.add_argument(
+        "--model-hint",
+        dest="model_hint",
+        default=None,
+        help=("Routing metadata: preferred model tier (known: opus, sonnet, haiku)"),
+    )
+    task_create_parser.add_argument(
+        "--effort-hint",
+        dest="effort_hint",
+        default=None,
+        choices=["low", "medium", "high"],
+        help="Routing metadata: preferred effort envelope",
+    )
 
     task_approve_parser = task_sub.add_parser(
         "approve", help="Transition a task packet to 'approved' status"
@@ -4219,6 +4311,46 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="no_archive",
         help="Keep the packet in active queue (do not archive)",
+    )
+    # Outcome detail flags (issue #2169 Slice C). All optional — the
+    # enriched task_completed payload is keyed off these so downstream
+    # reporting can compare recommended vs actual routing.
+    task_complete_parser.add_argument(
+        "--recommended-lane",
+        dest="recommended_lane",
+        default=None,
+        help=(
+            "Outcome: lane the advisor (if any) recommended before dispatch. "
+            "Used by outcome-join reporting to measure recommendation accuracy."
+        ),
+    )
+    task_complete_parser.add_argument(
+        "--token-spend",
+        dest="token_spend",
+        type=int,
+        default=None,
+        help="Outcome: observed token spend for this packet (input+output).",
+    )
+    task_complete_parser.add_argument(
+        "--elapsed-seconds",
+        dest="elapsed_seconds",
+        type=float,
+        default=None,
+        help="Outcome: wall-clock elapsed time in seconds from dispatch to completion.",
+    )
+    task_complete_parser.add_argument(
+        "--review-rounds",
+        dest="review_rounds",
+        type=int,
+        default=None,
+        help="Outcome: number of review iterations required (0 = clean pass).",
+    )
+    task_complete_parser.add_argument(
+        "--shipped-outcome",
+        dest="shipped_outcome",
+        default=None,
+        choices=["merged", "abandoned", "rolled_back", "blocked", "other"],
+        help="Outcome: final disposition of the packet's shipped output.",
     )
 
     # inbox (Platform-3 message bus)
