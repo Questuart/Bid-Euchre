@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from bid_euchre.ops.lane_heartbeat import read_heartbeat
 from bid_euchre.ops.status import (
     LaneStatus,
     StatusReport,
@@ -40,6 +41,59 @@ from bid_euchre.ops.status import (
 )
 
 logger = logging.getLogger("ops.dashboard")
+
+
+def _format_age(seconds: int | None) -> str:
+    """Format an age in seconds compactly (``45s``, ``3m12s``, ``1h2m``).
+
+    Mirrors :func:`scripts.internal.ops._format_age` — kept local to avoid
+    reaching into the CLI module from the library.  Keep the two in sync.
+    """
+    if seconds is None:
+        return "\u2014"  # em dash
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        m, s = divmod(seconds, 60)
+        return f"{m}m{s}s"
+    h, rem = divmod(seconds, 3600)
+    m = rem // 60
+    return f"{h}h{m}m"
+
+
+def _heartbeat_age_seconds(lane: LaneStatus, now: datetime) -> int | None:
+    """Return the age of the lane's heartbeat in seconds, or ``None``.
+
+    Reads the heartbeat file at
+    ``<lane.worktree_path>/.claude/runtime/lane_status/<lane.lane_id>.json``.
+    A missing file, malformed JSON, or unparseable timestamp yields
+    ``None`` so the caller can fall back to the legacy render path
+    without raising.
+    """
+    worktree_path = lane.worktree_path
+    if not worktree_path:
+        return None
+    heartbeat_dir = Path(worktree_path) / ".claude" / "runtime" / "lane_status"
+    try:
+        hb = read_heartbeat(lane.lane_id, runtime_dir=heartbeat_dir)
+    except Exception:  # pragma: no cover — defensive
+        return None
+    if hb is None:
+        return None
+    try:
+        updated = datetime.fromisoformat(hb.updated_at.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    age = (now - updated).total_seconds()
+    if age < 0:
+        return 0
+    return int(age)
+
 
 # ---------------------------------------------------------------------------
 # Default visibility policy
@@ -524,6 +578,9 @@ def _format_lane_line(
     Returns:
         Formatted line string.
     """
+    # Normalize ``now`` so helpers receive a concrete datetime.
+    effective_now = now if now is not None else datetime.now(timezone.utc)
+
     # State badge
     if lane.attention_needed:
         state_badge = f"[{lane.state}!]"
@@ -539,8 +596,16 @@ def _format_lane_line(
         task_info = lane.session_task
     elif lane.state == "likely_active" and lane.liveness_source:
         task_info = f"likely active (via {lane.liveness_source})"
+        if lane.liveness_source == "heartbeat":
+            age_s = _heartbeat_age_seconds(lane, effective_now)
+            if age_s is not None:
+                task_info = f"likely active (via heartbeat, {_format_age(age_s)} ago)"
     elif lane.state == "stale" and lane.liveness_source:
         task_info = f"stale (via {lane.liveness_source})"
+        if lane.liveness_source == "heartbeat":
+            age_s = _heartbeat_age_seconds(lane, effective_now)
+            if age_s is not None:
+                task_info = f"stale (via heartbeat, {_format_age(age_s)} ago)"
     elif lane.session_task:
         task_info = f"idle, last: {lane.session_task}"
     else:
