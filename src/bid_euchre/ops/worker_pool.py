@@ -117,27 +117,20 @@ def get_lane_domain(lane_id: str) -> str | None:
 LANE_DOMAINS: dict[str, str | None] = _get_lane_domains()
 
 
-# ---------------------------------------------------------------------------
-# Fixed dispatch policy (token economy Slice D, #2169)
-# ---------------------------------------------------------------------------
+# Fixed dispatch policy (token economy Slice D, #2169).
 #
-# Low-risk task_type categories inherit a conservative model/effort default at
-# dispatch time. These defaults are applied only when the packet does not
-# already carry an explicit ``model_hint`` / ``effort_hint`` in metadata:
-# packet-level routing hints always win over the category default. Unlisted
-# task_type values (e.g. "feature", "bugfix", "refactor") preserve current
-# dispatch behavior — no model/effort coercion, no metadata write.
-#
-# Adaptive/advisory routing (Slice E) will *read* the resolved policy but not
-# overwrite it. The scorer operates on ``model_hint`` / ``effort_hint`` /
-# ``task_type`` as inputs and records its recommendation separately.
-#
-# Metadata keys written at dispatch time when a resolution occurs:
-#   resolved_model  — effective model tier carried into the lane
-#   resolved_effort — effective effort envelope carried into the lane
-# These are dispatch-time record-keeping fields, not routing inputs; they are
-# intentionally separate from the ``model_hint`` / ``effort_hint`` contract
-# documented in :mod:`bid_euchre.ops.task_queue`.
+# Low-risk task_type categories inherit a conservative model/effort default
+# at dispatch time. Defaults apply only when the packet has no explicit
+# ``model_hint`` / ``effort_hint``: packet-level hints always win.
+
+# Unlisted task_type values (feature, bugfix, refactor, investigation)
+# preserve current dispatch behavior — no model/effort coercion and no
+# metadata write. Adaptive routing (Slice E) *reads* the resolved policy
+# but does not overwrite it.
+
+# Metadata keys ``resolved_model`` and ``resolved_effort`` are written at
+# dispatch when a resolution occurs. They are record-keeping fields, not
+# routing inputs — see :mod:`bid_euchre.ops.task_queue` for the hint contract.
 
 #: Task-type → (model, effort) table applied when the packet has no hints.
 #:

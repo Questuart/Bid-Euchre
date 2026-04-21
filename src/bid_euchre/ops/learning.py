@@ -50,18 +50,12 @@ logger = logging.getLogger("ops.learning")
 # Policy knobs — deliberately unlocked. Bump POLICY_VERSION on any change.
 # ---------------------------------------------------------------------------
 
-#: Weights applied to the four score components.
-#:
-#: - ``clean_rate`` — higher clean-merge rate (shipped_outcome=="merged" AND
-#:   review_rounds<=1) is better.
-#: - ``token_efficiency`` — normalized inverse of ``avg_tokens_per_packet``
-#:   across the current candidate set. Higher = cheaper.
-#: - ``cycle_time`` — normalized inverse of ``avg_elapsed_seconds`` across
-#:   the current candidate set. Higher = faster.
-#: - ``rework_penalty`` — subtracts ``max(0, avg_review_rounds - 1.0)``.
-#:
-#: Weights intentionally do not sum to 1.0 so operators can read the
-#: relative contribution directly without renormalizing.
+#: Weights applied to the four score components. Component definitions:
+#: ``clean_rate`` (higher = cleaner merges), ``token_efficiency`` and
+#: ``cycle_time`` (normalized inverses, higher = cheaper/faster),
+#: ``rework_penalty`` (subtracts max(0, avg_review_rounds - 1.0)). Weights
+#: intentionally do not sum to 1.0 so operators can read relative
+#: contribution directly without renormalizing.
 SCORE_WEIGHTS: dict[str, float] = {
     "clean_rate": 1.0,
     "token_efficiency": 0.5,
