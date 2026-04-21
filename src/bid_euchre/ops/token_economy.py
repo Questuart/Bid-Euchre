@@ -160,23 +160,11 @@ class SessionRecord:
     primary_success: str | None = None
     user_satisfaction_counts: dict[str, int] = field(default_factory=dict)
 
-    # Slice B (v3): per-session observed model + effort (null-safe).
-    #
-    # ``model`` is the majority-by-output-tokens model observed in the
-    # session's assistant messages; ``model_mix`` is populated only when
-    # more than one distinct model contributed to the session and maps
-    # model → output tokens attributed to it. Session-meta rows (legacy
-    # import path) leave both fields at their defaults because the source
-    # format predates per-message model capture.
-    #
-    # ``effort`` is reserved for Slice D/E — at Slice B baseline it
-    # remains ``None`` on every row and surfaces as the ``"unknown"``
-    # bucket in rollups.
-    #
-    # Cache-token fields were tracked in ``_JNLSessionAgg`` pre-Slice-B
-    # but discarded when building records. Persisting them now so
-    # ``ModelBucket`` / ``EffortBucket`` can expose cache breakdown
-    # without a second rescan.
+    # Slice B (v3, null-safe): majority-by-output-tokens model, mix map
+    # (populated only when >1 model observed), effort reserved for
+    # Slice D/E (baseline=None → "unknown" bucket), and cache-token
+    # breakdown carried alongside input/output totals. See module-level
+    # shaping plan at plans/sessions/2026-04-20_token_economy_slice_b.md.
     model: str | None = None
     model_mix: dict[str, int] = field(default_factory=dict)
     effort: str | None = None
@@ -1606,15 +1594,9 @@ def lane_summary(*, output_dir: Path | None = None) -> list[LaneStats]:
 
 
 # ---------------------------------------------------------------------------
-# Slice B (issue #2169): lane × model × effort rollups
-#
-# These are additive to the existing lane/throughput surfaces. All five
-# summary functions are on-demand — they read the existing store files and
-# do not persist anything new. The null-safety contract (§3.5 of the
-# shaping plan) is enforced by the ``UNKNOWN_BUCKET`` constant: no
-# ``None`` model ever collapses into a default model; it surfaces as its
-# own bucket row so operators can see exactly how much of the store
-# cannot yet be attributed.
+# Slice B (issue #2169): additive lane × model × effort rollups. On-demand
+# readers — no new persisted state. Null-safety (§3.5) is enforced by
+# UNKNOWN_BUCKET: None never coerces to a default, it surfaces its own row.
 # ---------------------------------------------------------------------------
 
 
