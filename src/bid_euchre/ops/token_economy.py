@@ -2314,3 +2314,196 @@ def dashboard_token_economy(
         "anti_patterns": anti_patterns,
         "store_status": status_dict,
     }
+
+
+# ---------------------------------------------------------------------------
+# Outcome join — task_completed events × lane attribution (issue #2169 Slice C)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TaskOutcomeRecord:
+    """One completed packet joined with its routing context and token spend.
+
+    Read-only substrate for downstream advisors and reports. Built from the
+    append-only ``task_completed`` event log plus, when available, lane token
+    totals from :func:`lane_summary`.  The join does not mutate either source.
+
+    Attributes
+    ----------
+    packet_id
+        Stable identifier of the completed packet.
+    title
+        Human-readable title from the packet.
+    pr_number
+        Associated PR, if recorded on completion.
+    completed_at
+        Event timestamp for the ``task_completed`` record.
+    actual_lane
+        Lane that actually shipped the packet (from the completion event's
+        ``lane_id`` — duplicated into the payload as ``actual_lane`` for
+        convenience).
+    recommended_lane
+        Advisor-recommended lane, if any. ``None`` when no advisor produced
+        a recommendation for this packet.
+    recommendation_match
+        ``True`` when ``recommended_lane == actual_lane``.  ``None`` when no
+        recommendation was recorded (so the rate of non-None matches can be
+        compared against the rate of None cleanly).
+    task_type, complexity_estimate, model_hint, effort_hint
+        Routing metadata in effect at dispatch, copied from the packet.
+    token_spend
+        Packet-level token spend reported on completion (operator-provided).
+    elapsed_seconds
+        Wall-clock dispatch→completion time reported on completion.
+    review_rounds
+        Review iterations reported on completion (0 = clean pass).
+    shipped_outcome
+        Final disposition (merged / abandoned / rolled_back / blocked / other).
+    lane_total_tokens
+        Sum of all token usage attributed to ``actual_lane`` across the whole
+        token-economy store. Present when the lane is attributed in the store,
+        ``None`` otherwise. This is a lane-wide figure (not per-packet) — it
+        exists so downstream reports can relate packet-level spend to lane-level
+        spend when the operator did not supply ``token_spend`` on the CLI.
+    """
+
+    packet_id: str
+    title: str
+    pr_number: int | None
+    completed_at: str
+    actual_lane: str
+    recommended_lane: str | None
+    recommendation_match: bool | None
+    task_type: str | None
+    complexity_estimate: int | None
+    model_hint: str | None
+    effort_hint: str | None
+    token_spend: int | None
+    elapsed_seconds: float | None
+    review_rounds: int | None
+    shipped_outcome: str | None
+    lane_total_tokens: int | None
+
+
+def _read_task_completed_events(events_dir: Path) -> list[dict[str, Any]]:
+    """Read task_completed events from the event log, newest first.
+
+    Returns an empty list when the log is missing — callers should treat an
+    empty result as "no outcomes yet," not an error.
+    """
+    events_file = events_dir / "events.jsonl"
+    if not events_file.exists():
+        return []
+
+    matched: list[dict[str, Any]] = []
+    try:
+        with events_file.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("event_type") != "task_completed":
+                    continue
+                matched.append(event)
+    except OSError as exc:
+        logger.warning("Cannot read %s for outcome join: %s", events_file, exc)
+        return []
+
+    # Newest first — consistent with read_events() in events.py.
+    matched.reverse()
+    return matched
+
+
+def join_outcomes_with_token_economy(
+    *,
+    events_dir: Path | None = None,
+    output_dir: Path | None = None,
+) -> list[TaskOutcomeRecord]:
+    """Join task_completed events with lane-level token economy rollups.
+
+    Reads the durable ``events.jsonl`` log at ``events_dir`` and correlates
+    each ``task_completed`` event with the lane totals computed by
+    :func:`lane_summary`.  The result is a list of :class:`TaskOutcomeRecord`
+    suitable for downstream reporting (Slice D/E fixed policy and advisor
+    scorer inputs).
+
+    **Contract (issue #2169 Slice C):**
+
+    - Read-only. No dispatch behavior change, no store mutation.
+    - Tolerant of missing fields: events written by older CLI versions that
+      lack routing metadata or outcome detail yield records with ``None``
+      for those fields rather than being dropped.
+    - Deterministic ordering: output is sorted by ``completed_at`` ascending.
+
+    Parameters
+    ----------
+    events_dir
+        Override for events directory. Defaults to ``.claude/runtime/events``.
+    output_dir
+        Token-economy store path passed to :func:`lane_summary`. Defaults to
+        the repo runtime path.
+
+    Returns
+    -------
+    list[TaskOutcomeRecord]
+        One record per ``task_completed`` event, oldest first.
+    """
+    effective_events_dir = (
+        events_dir if events_dir is not None else Path(".claude/runtime/events")
+    )
+
+    events = _read_task_completed_events(effective_events_dir)
+    if not events:
+        return []
+
+    # Build a lane_id → total_tokens map from the token economy rollup.
+    # This is lane-wide (not per-packet) — it is included as a reference
+    # signal, not a measurement of this packet's spend.
+    lane_totals: dict[str, int] = {}
+    try:
+        for ls in lane_summary(output_dir=output_dir):
+            lane_totals[ls.lane_id] = ls.total_tokens
+    except Exception as exc:  # pragma: no cover — defensive
+        # Never fail the outcome join because token economy is unavailable.
+        logger.debug("lane_summary unavailable for outcome join: %s", exc)
+
+    records: list[TaskOutcomeRecord] = []
+    for event in events:
+        payload = event.get("payload") or {}
+        actual_lane = payload.get("actual_lane") or event.get("lane_id") or "unknown"
+        recommended_lane = payload.get("recommended_lane")
+        recommendation_match: bool | None
+        if recommended_lane is None:
+            recommendation_match = None
+        else:
+            recommendation_match = recommended_lane == actual_lane
+
+        records.append(
+            TaskOutcomeRecord(
+                packet_id=payload.get("packet_id") or "",
+                title=payload.get("title") or "",
+                pr_number=payload.get("pr_number"),
+                completed_at=event.get("timestamp") or "",
+                actual_lane=actual_lane,
+                recommended_lane=recommended_lane,
+                recommendation_match=recommendation_match,
+                task_type=payload.get("task_type"),
+                complexity_estimate=payload.get("complexity_estimate"),
+                model_hint=payload.get("model_hint"),
+                effort_hint=payload.get("effort_hint"),
+                token_spend=payload.get("token_spend"),
+                elapsed_seconds=payload.get("elapsed_seconds"),
+                review_rounds=payload.get("review_rounds"),
+                shipped_outcome=payload.get("shipped_outcome"),
+                lane_total_tokens=lane_totals.get(actual_lane),
+            )
+        )
+
+    # Sort oldest first — downstream reports tend to scan chronologically.
+    records.sort(key=lambda r: r.completed_at)
+    return records

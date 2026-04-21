@@ -843,3 +843,174 @@ class TestUpdatePacketMetadata:
         reloaded = load_packet(pkt.packet_id, tmp_path)
         assert reloaded is not None
         assert reloaded.metadata["pr_number"] == 55
+
+
+# ---------------------------------------------------------------------------
+# Routing metadata (issue #2169 Slice C)
+# ---------------------------------------------------------------------------
+
+
+class TestRoutingMetadataConstants:
+    """Verify the routing metadata contract constants are stable."""
+
+    def test_routing_keys_frozenset(self) -> None:
+        from bid_euchre.ops.task_queue import ROUTING_METADATA_KEYS
+
+        assert ROUTING_METADATA_KEYS == frozenset(
+            {"task_type", "complexity_estimate", "model_hint", "effort_hint"}
+        )
+
+    def test_task_type_taxonomy_non_empty(self) -> None:
+        from bid_euchre.ops.task_queue import VALID_TASK_TYPES
+
+        # These are the values downstream callers rely on; adding values is
+        # fine (advisory-only), but removing any would silently break
+        # outcome rollups. Lock the current set.
+        required = {"docs", "tests", "feature", "bugfix", "ops", "review"}
+        assert required.issubset(VALID_TASK_TYPES)
+
+    def test_model_hints_known(self) -> None:
+        from bid_euchre.ops.task_queue import VALID_MODEL_HINTS
+
+        assert "opus" in VALID_MODEL_HINTS
+        assert "sonnet" in VALID_MODEL_HINTS
+
+    def test_effort_hints(self) -> None:
+        from bid_euchre.ops.task_queue import VALID_EFFORT_HINTS
+
+        assert VALID_EFFORT_HINTS == frozenset({"low", "medium", "high"})
+
+    def test_complexity_range_bounds(self) -> None:
+        from bid_euchre.ops.task_queue import MAX_COMPLEXITY, MIN_COMPLEXITY
+
+        assert MIN_COMPLEXITY == 1
+        assert MAX_COMPLEXITY == 5
+
+
+class TestRoutingMetadataAccessors:
+    """Verify accessors return correctly-typed values or None."""
+
+    def test_get_task_type_present(self) -> None:
+        from bid_euchre.ops.task_queue import get_task_type
+
+        pkt = create_packet("t", "d", metadata={"task_type": "docs"})
+        assert get_task_type(pkt) == "docs"
+
+    def test_get_task_type_absent(self) -> None:
+        from bid_euchre.ops.task_queue import get_task_type
+
+        pkt = create_packet("t", "d")
+        assert get_task_type(pkt) is None
+
+    def test_get_task_type_wrong_type_returns_none(self) -> None:
+        from bid_euchre.ops.task_queue import get_task_type
+
+        # Legacy packets may contain non-string values — accessor
+        # must silently ignore them rather than raising.
+        pkt = create_packet("t", "d", metadata={"task_type": 42})
+        assert get_task_type(pkt) is None
+
+    def test_get_complexity_in_range(self) -> None:
+        from bid_euchre.ops.task_queue import get_complexity
+
+        pkt = create_packet("t", "d", metadata={"complexity_estimate": 3})
+        assert get_complexity(pkt) == 3
+
+    def test_get_complexity_out_of_range_returns_none(self) -> None:
+        from bid_euchre.ops.task_queue import get_complexity
+
+        pkt = create_packet("t", "d", metadata={"complexity_estimate": 99})
+        assert get_complexity(pkt) is None
+
+    def test_get_complexity_rejects_bool(self) -> None:
+        from bid_euchre.ops.task_queue import get_complexity
+
+        # bool is an int subclass — accessor must reject it so ``True``
+        # doesn't silently masquerade as complexity 1.
+        pkt = create_packet("t", "d", metadata={"complexity_estimate": True})
+        assert get_complexity(pkt) is None
+
+    def test_get_model_hint(self) -> None:
+        from bid_euchre.ops.task_queue import get_model_hint
+
+        pkt = create_packet("t", "d", metadata={"model_hint": "sonnet"})
+        assert get_model_hint(pkt) == "sonnet"
+
+    def test_get_effort_hint(self) -> None:
+        from bid_euchre.ops.task_queue import get_effort_hint
+
+        pkt = create_packet("t", "d", metadata={"effort_hint": "low"})
+        assert get_effort_hint(pkt) == "low"
+
+
+class TestValidateRoutingMetadata:
+    """validate_routing_metadata() classifies errors vs warnings correctly."""
+
+    def test_empty_metadata_is_clean(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        errors, warnings = validate_routing_metadata({})
+        assert errors == []
+        assert warnings == []
+
+    def test_known_values_clean(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        errors, warnings = validate_routing_metadata(
+            {
+                "task_type": "docs",
+                "complexity_estimate": 2,
+                "model_hint": "sonnet",
+                "effort_hint": "low",
+            }
+        )
+        assert errors == []
+        assert warnings == []
+
+    def test_unknown_task_type_is_warning_not_error(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        errors, warnings = validate_routing_metadata({"task_type": "novel_work"})
+        assert errors == []
+        assert any("novel_work" in w for w in warnings)
+
+    def test_unknown_model_hint_is_warning(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        errors, warnings = validate_routing_metadata({"model_hint": "gpt-5"})
+        assert errors == []
+        assert any("gpt-5" in w for w in warnings)
+
+    def test_complexity_out_of_range_is_error(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        errors, _ = validate_routing_metadata({"complexity_estimate": 7})
+        assert any("complexity_estimate" in e for e in errors)
+
+    def test_complexity_wrong_type_is_error(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        errors, _ = validate_routing_metadata({"complexity_estimate": "high"})
+        assert any("complexity_estimate" in e for e in errors)
+
+    def test_complexity_bool_is_error(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        # bool is an int subclass — reject True/False explicitly so it
+        # cannot be smuggled through as complexity 1 / 0.
+        errors, _ = validate_routing_metadata({"complexity_estimate": True})
+        assert any("complexity_estimate" in e for e in errors)
+
+    def test_task_type_wrong_type_is_error(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        errors, _ = validate_routing_metadata({"task_type": 42})
+        assert any("task_type" in e for e in errors)
+
+    def test_effort_hint_unknown_is_error(self) -> None:
+        from bid_euchre.ops.task_queue import validate_routing_metadata
+
+        # effort_hint is a tightly-bounded enum (not taxonomy-evolving),
+        # so unknowns are errors, not warnings.
+        errors, _ = validate_routing_metadata({"effort_hint": "yolo"})
+        assert any("effort_hint" in e for e in errors)

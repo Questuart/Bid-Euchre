@@ -3021,6 +3021,176 @@ class TestTaskCreate:
         assert "src/*.py" in out
         assert "make check-quiet" in out
 
+    # ------------------------------------------------------------------
+    # Routing metadata flags (issue #2169 Slice C)
+    # ------------------------------------------------------------------
+
+    def test_task_create_with_full_routing_metadata(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """All four routing metadata flags are persisted into packet.metadata."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Routed task",
+                "--task-type",
+                "feature",
+                "--complexity-estimate",
+                "3",
+                "--model-hint",
+                "sonnet",
+                "--effort-hint",
+                "medium",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["metadata"]["task_type"] == "feature"
+        assert data["metadata"]["complexity_estimate"] == 3
+        assert data["metadata"]["model_hint"] == "sonnet"
+        assert data["metadata"]["effort_hint"] == "medium"
+
+    def test_task_create_partial_routing_metadata(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Only supplied routing flags appear in metadata; omitted keys are absent."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Partial routed task",
+                "--task-type",
+                "bugfix",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["metadata"].get("task_type") == "bugfix"
+        # Unspecified keys should not be injected.
+        assert "complexity_estimate" not in data["metadata"]
+        assert "model_hint" not in data["metadata"]
+        assert "effort_hint" not in data["metadata"]
+
+    def test_task_create_no_routing_metadata_leaves_metadata_empty(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A task created without any routing flags has an empty metadata dict."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "No routing task",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        # metadata is always present (default = {}) but should be empty here.
+        assert data["metadata"] == {}
+
+    def test_task_create_rejects_out_of_range_complexity(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """complexity_estimate outside [1, 5] is an error (rc=1) and nothing is persisted."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Too-complex task",
+                "--complexity-estimate",
+                "9",
+            ]
+        )
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "Routing metadata error" in err
+        assert "complexity_estimate" in err
+
+    def test_task_create_unknown_task_type_warns_but_succeeds(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Unknown task_type emits a warning but still persists the value (evolvable taxonomy)."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Exotic task",
+                "--task-type",
+                "exotic_new_category",
+            ]
+        )
+        captured = capsys.readouterr()
+        assert rc == 0
+        data = json.loads(captured.out)
+        assert data["metadata"]["task_type"] == "exotic_new_category"
+        # Warning emitted to stderr, not an error
+        assert "Routing metadata warning" in captured.err
+        assert "task_type" in captured.err
+
+    def test_task_create_effort_hint_choices_enforced_by_argparse(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """argparse enforces --effort-hint choices (low/medium/high); invalid → SystemExit."""
+        import ops
+
+        with pytest.raises(SystemExit):
+            ops.main(
+                [
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "task",
+                    "create",
+                    "--title",
+                    "Bad effort",
+                    "--effort-hint",
+                    "gigantic",
+                ]
+            )
+
 
 class TestTaskDispatch:
     """Verify ``task dispatch`` CLI subcommand."""
@@ -3573,6 +3743,200 @@ class TestTaskComplete:
                 break
 
         assert complete_subparser is not None, "Expected 'task complete' subcommand"
+
+    # ------------------------------------------------------------------
+    # Enriched task_completed event payload (issue #2169 Slice C)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _read_task_completed_events(runtime_dir: Path) -> list[dict[str, object]]:
+        """Helper: read all ``task_completed`` events from the runtime events dir."""
+        events_dir = runtime_dir / "events"
+        events: list[dict[str, object]] = []
+        for ef in sorted(events_dir.glob("*.jsonl")):
+            for line in ef.read_text().splitlines():
+                if line.strip():
+                    events.append(json.loads(line))
+        return [e for e in events if e.get("event_type") == "task_completed"]
+
+    def test_task_complete_enriches_event_payload_with_outcome_detail(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """``task complete`` with outcome flags writes them into the event payload."""
+        import ops
+
+        packet_id = self._create_dispatched_packet(runtime_dir, plans_dir, capsys)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+                "--summary",
+                "Shipped to prod",
+                "--pr",
+                "9999",
+                "--by",
+                "author-c",
+                "--recommended-lane",
+                "author-a",
+                "--token-spend",
+                "1234",
+                "--elapsed-seconds",
+                "600.5",
+                "--review-rounds",
+                "2",
+                "--shipped-outcome",
+                "merged",
+            ]
+        )
+        assert rc == 0
+
+        events = self._read_task_completed_events(runtime_dir)
+        assert len(events) == 1, f"Expected 1 task_completed event, got {len(events)}"
+        payload = events[0]["payload"]
+        assert isinstance(payload, dict)
+        # Outcome detail — sourced from CLI flags.
+        assert payload["actual_lane"] == "author-c"
+        assert payload["recommended_lane"] == "author-a"
+        assert payload["token_spend"] == 1234
+        assert payload["elapsed_seconds"] == 600.5
+        assert payload["review_rounds"] == 2
+        assert payload["shipped_outcome"] == "merged"
+        # Routing context keys — always present even when packet has no metadata.
+        for key in ("task_type", "complexity_estimate", "model_hint", "effort_hint"):
+            assert key in payload, f"Expected routing key {key!r} in payload"
+
+    def test_task_complete_copies_routing_metadata_from_packet(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Routing metadata on the packet flows through to the event payload."""
+        import ops
+
+        from bid_euchre.ops.task_queue import transition_status
+
+        # Create a packet with routing metadata via CLI
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Routed completable",
+                "--owner",
+                "author-a",
+                "--task-type",
+                "feature",
+                "--complexity-estimate",
+                "4",
+                "--model-hint",
+                "opus",
+                "--effort-hint",
+                "high",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        tq_root = runtime_dir / "task_queue"
+        transition_status(packet_id, "approved", tq_root)
+        transition_status(packet_id, "dispatched", tq_root)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+                "--summary",
+                "Done",
+                "--by",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+
+        events = self._read_task_completed_events(runtime_dir)
+        assert len(events) == 1
+        payload = events[0]["payload"]
+        assert isinstance(payload, dict)
+        assert payload["task_type"] == "feature"
+        assert payload["complexity_estimate"] == 4
+        assert payload["model_hint"] == "opus"
+        assert payload["effort_hint"] == "high"
+
+    def test_task_complete_preserves_none_for_missing_outcome_flags(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Outcome keys are always present; missing flags serialize as None."""
+        import ops
+
+        packet_id = self._create_dispatched_packet(runtime_dir, plans_dir, capsys)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+                "--summary",
+                "No outcome detail",
+                "--by",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+
+        events = self._read_task_completed_events(runtime_dir)
+        assert len(events) == 1
+        payload = events[0]["payload"]
+        assert isinstance(payload, dict)
+        # Missing outcome flags => None, but key must exist (stable schema).
+        assert payload["recommended_lane"] is None
+        assert payload["token_spend"] is None
+        assert payload["elapsed_seconds"] is None
+        assert payload["review_rounds"] is None
+        assert payload["shipped_outcome"] is None
+        # actual_lane falls back to completed_by or packet.owner.
+        assert payload["actual_lane"] == "author-a"
+
+    def test_task_complete_shipped_outcome_choices_enforced(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """argparse enforces the --shipped-outcome choice set; invalid → SystemExit."""
+        import ops
+
+        packet_id = self._create_dispatched_packet(runtime_dir, plans_dir, capsys)
+
+        with pytest.raises(SystemExit):
+            ops.main(
+                [
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "task",
+                    "complete",
+                    packet_id,
+                    "--shipped-outcome",
+                    "not_a_valid_outcome",
+                ]
+            )
 
 
 class TestPriorityChoicesContract:

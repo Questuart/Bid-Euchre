@@ -56,6 +56,72 @@ VALID_ACK_ACTIONS = frozenset({"approve", "edit", "redirect", "reject"})
 VALID_RESULT_STATUSES = frozenset({"completed", "failed", "blocked"})
 
 # ---------------------------------------------------------------------------
+# Routing metadata contract (issue #2169 — token-economy Slice C)
+# ---------------------------------------------------------------------------
+
+ROUTING_METADATA_CONTRACT_DOC = """\
+TaskPacket.metadata remains dict[str, Any] to preserve the frozen dataclass
+extension point, but four keys are reserved for routing/learning inputs.
+Downstream consumers (fixed-policy controls, advisory dispatch scorer,
+outcome-join reporting) rely on these keys being stable and, when present,
+being drawn from the documented value spaces below.
+
+All keys are OPTIONAL. A packet without any routing metadata is always
+legal and never rejected. Validation is advisory via
+:func:`validate_routing_metadata`; the TaskPacket dataclass itself does not
+enforce routing-key typing so existing callers that store unrelated metadata
+keep working without change.
+
+Key semantics:
+  task_type           — coarse classification used by the advisor scorer
+                        and outcome rollups. Must be a non-empty str when
+                        present; preferred values are in VALID_TASK_TYPES
+                        (advisory — unknown values are a warning, not a
+                        hard error, so the taxonomy can evolve without
+                        breaking legacy packets).
+  complexity_estimate — integer 1..5 inclusive, orchestrator-assigned at
+                        dispatch time. Higher = more complex.
+  model_hint          — preferred model tier for the task. Known values in
+                        VALID_MODEL_HINTS; unknown values are a warning.
+  effort_hint         — preferred effort envelope (token budget / think
+                        depth). Known values in VALID_EFFORT_HINTS.
+"""
+
+ROUTING_METADATA_KEYS: frozenset[str] = frozenset(
+    {"task_type", "complexity_estimate", "model_hint", "effort_hint"}
+)
+
+# Preferred task_type taxonomy. Unknown values do not hard-fail — they are
+# surfaced by validate_routing_metadata() as advisory warnings so downstream
+# reporting can highlight unknowns without blocking dispatch.
+VALID_TASK_TYPES: frozenset[str] = frozenset(
+    {
+        "docs",
+        "tests",
+        "convention",
+        "feature",
+        "bugfix",
+        "ops",
+        "review",
+        "investigation",
+        "refactor",
+    }
+)
+
+# Known model hints. The steward runs on Claude Code; these mirror the
+# public Claude 4 model tier names. Unknown values are a warning, not an
+# error — the enum is expected to evolve with model releases.
+VALID_MODEL_HINTS: frozenset[str] = frozenset({"opus", "sonnet", "haiku"})
+
+# Effort hints. Represent the orchestrator's budget intent; the worker lane
+# may still adjust within its own policy.
+VALID_EFFORT_HINTS: frozenset[str] = frozenset({"low", "medium", "high"})
+
+# Complexity estimate is an integer 1..5 inclusive.
+MIN_COMPLEXITY: int = 1
+MAX_COMPLEXITY: int = 5
+
+# ---------------------------------------------------------------------------
 # Lane topology — provided by the adapter layer
 # ---------------------------------------------------------------------------
 
@@ -642,6 +708,147 @@ def apply_ack(
         return rejected_pkt  # Return the final state before archive
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Routing metadata accessors and validation (issue #2169 — Slice C)
+# ---------------------------------------------------------------------------
+#
+# These helpers are the stable public surface for reading routing metadata
+# off a TaskPacket. Use them instead of indexing ``packet.metadata`` directly
+# so that future schema migrations (e.g. promoting routing keys to top-level
+# fields) can be made in one place.
+
+
+def get_task_type(packet: TaskPacket) -> str | None:
+    """Return the packet's ``task_type`` routing metadata, or ``None`` if absent.
+
+    Unknown values are returned as-is; the taxonomy is advisory, not
+    enforced (see :func:`validate_routing_metadata`).
+    """
+    value = packet.metadata.get("task_type")
+    if value is None:
+        return None
+    # Defensive cast: JSON round-trips can produce non-str values for legacy
+    # packets. Treat anything that isn't a non-empty string as absent.
+    if not isinstance(value, str) or not value:
+        return None
+    return value
+
+
+def get_complexity(packet: TaskPacket) -> int | None:
+    """Return the packet's ``complexity_estimate`` or ``None`` if absent/invalid.
+
+    Values outside ``1..5`` are treated as absent so callers never consume a
+    bad value silently.
+    """
+    value = packet.metadata.get("complexity_estimate")
+    if value is None:
+        return None
+    # JSON integers survive round-trip; reject bool (which is an int subclass
+    # in Python) and any non-integer to keep the scorer input type-safe.
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value < MIN_COMPLEXITY or value > MAX_COMPLEXITY:
+        return None
+    return value
+
+
+def get_model_hint(packet: TaskPacket) -> str | None:
+    """Return the packet's ``model_hint`` or ``None`` if absent.
+
+    Unknown values are returned as-is; callers that must restrict to
+    :data:`VALID_MODEL_HINTS` should filter after reading.
+    """
+    value = packet.metadata.get("model_hint")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        return None
+    return value
+
+
+def get_effort_hint(packet: TaskPacket) -> str | None:
+    """Return the packet's ``effort_hint`` or ``None`` if absent."""
+    value = packet.metadata.get("effort_hint")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        return None
+    return value
+
+
+def validate_routing_metadata(
+    metadata: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    """Validate routing metadata keys against the documented contract.
+
+    Returns a ``(errors, warnings)`` tuple:
+
+    - **errors** — type/range violations that reject a user-facing create
+      call (e.g. ``complexity_estimate=7``, ``task_type=42``).  CLI callers
+      should surface these as a non-zero exit.
+    - **warnings** — values that are well-typed but outside the currently
+      known enum (unknown ``task_type``, unknown ``model_hint`` /
+      ``effort_hint``).  Downstream reporting can highlight these without
+      blocking dispatch, which keeps the taxonomy evolvable.
+
+    This function is intentionally *not* called from ``TaskPacket.__post_init__``
+    — existing callers that store arbitrary metadata keys must keep working.
+    Enforcement happens at the CLI ``task create`` boundary so new packets
+    land with clean routing metadata while archived packets remain loadable.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    task_type = metadata.get("task_type")
+    if task_type is not None:
+        if not isinstance(task_type, str) or not task_type:
+            errors.append(f"task_type must be a non-empty string, got {task_type!r}")
+        elif task_type not in VALID_TASK_TYPES:
+            warnings.append(
+                f"task_type {task_type!r} is not in the preferred taxonomy "
+                f"{sorted(VALID_TASK_TYPES)}"
+            )
+
+    complexity = metadata.get("complexity_estimate")
+    if complexity is not None:
+        # bool is a subclass of int — reject it explicitly so True doesn't
+        # become complexity 1.
+        if isinstance(complexity, bool) or not isinstance(complexity, int):
+            errors.append(
+                f"complexity_estimate must be an int in "
+                f"[{MIN_COMPLEXITY}, {MAX_COMPLEXITY}], got {complexity!r}"
+            )
+        elif complexity < MIN_COMPLEXITY or complexity > MAX_COMPLEXITY:
+            errors.append(
+                f"complexity_estimate {complexity} outside allowed range "
+                f"[{MIN_COMPLEXITY}, {MAX_COMPLEXITY}]"
+            )
+
+    model_hint = metadata.get("model_hint")
+    if model_hint is not None:
+        if not isinstance(model_hint, str) or not model_hint:
+            errors.append(f"model_hint must be a non-empty string, got {model_hint!r}")
+        elif model_hint not in VALID_MODEL_HINTS:
+            warnings.append(
+                f"model_hint {model_hint!r} not in known set "
+                f"{sorted(VALID_MODEL_HINTS)}"
+            )
+
+    effort_hint = metadata.get("effort_hint")
+    if effort_hint is not None:
+        if not isinstance(effort_hint, str) or not effort_hint:
+            errors.append(
+                f"effort_hint must be a non-empty string, got {effort_hint!r}"
+            )
+        elif effort_hint not in VALID_EFFORT_HINTS:
+            errors.append(
+                f"effort_hint {effort_hint!r} not in allowed set "
+                f"{sorted(VALID_EFFORT_HINTS)}"
+            )
+
+    return errors, warnings
 
 
 def update_packet_metadata(
