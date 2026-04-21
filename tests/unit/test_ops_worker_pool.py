@@ -15,10 +15,13 @@ from bid_euchre.ops.worker_pool import (
     _PASTE_BRACKET_DELAY,
     DEFAULT_TMUX_SESSION,
     IDLE_PARK_MINUTES,
+    LANE_DEFAULT_POLICY,
     LANE_DOMAINS,
     MAX_ACTIVE_AUTHORS,
     PARKED_RETIRE_MINUTES,
     POOL_STATUSES,
+    RESOLVED_EFFORT_KEY,
+    RESOLVED_MODEL_KEY,
     PoolAction,
     PoolSnapshot,
     WorkerState,
@@ -47,6 +50,7 @@ from bid_euchre.ops.worker_pool import (
     refresh_all_idle,
     refresh_worker,
     reset_worktree,
+    resolve_dispatch_policy,
     retire_worker,
     run_pool_maintenance,
     select_worker,
@@ -4349,3 +4353,278 @@ class TestParkWorkerWithCleanup:
         result = park_worker("author-a", runtime_dir=runtime_dir)
         assert result.executed is True
         assert "orphaned" not in result.reason
+
+
+# ---------------------------------------------------------------------------
+# Slice D: fixed dispatch policy (token economy #2169)
+# ---------------------------------------------------------------------------
+
+
+def _make_packet(
+    *,
+    packet_id: str = "pkt1",
+    metadata: dict | None = None,
+    status: str = "approved",
+) -> object:
+    """Build a TaskPacket with optional routing metadata for policy tests."""
+    from bid_euchre.ops.task_queue import TaskPacket
+
+    return TaskPacket(
+        packet_id=packet_id,
+        title="Test",
+        description="Test task",
+        owner=None,
+        created_by="orchestrator",
+        created_at="2026-03-22T12:00:00Z",
+        status=status,
+        metadata=metadata or {},
+    )
+
+
+class TestLaneDefaultPolicyTable:
+    """The low-risk policy table is conservative and narrow on purpose."""
+
+    def test_table_is_nonempty(self) -> None:
+        assert len(LANE_DEFAULT_POLICY) >= 1
+
+    def test_low_risk_task_types_included(self) -> None:
+        """Slice D scope: ops, review, docs, tests, convention."""
+        expected = {"ops", "review", "docs", "tests", "convention"}
+        assert expected.issubset(LANE_DEFAULT_POLICY.keys())
+
+    def test_complex_work_types_excluded(self) -> None:
+        """Complex work (feature/bugfix/refactor) must not be tuned yet."""
+        for task_type in ("feature", "bugfix", "refactor", "investigation"):
+            assert task_type not in LANE_DEFAULT_POLICY, (
+                f"Slice D should not coerce {task_type!r} — "
+                f"complex work waits for Slice F evaluation"
+            )
+
+    def test_all_defaults_are_sonnet_medium(self) -> None:
+        """Initial rollout is uniformly conservative: sonnet/medium."""
+        for task_type, (model, effort) in LANE_DEFAULT_POLICY.items():
+            assert model == "sonnet", f"{task_type}: expected sonnet, got {model!r}"
+            assert effort == "medium", f"{task_type}: expected medium, got {effort!r}"
+
+
+class TestResolveDispatchPolicy:
+    """Resolver precedence: packet hint > category default > None."""
+
+    def test_no_metadata_returns_none(self) -> None:
+        pkt = _make_packet()
+        assert resolve_dispatch_policy(pkt) == (None, None)
+
+    def test_unlisted_task_type_no_coercion(self) -> None:
+        """Complex task_type without hints returns (None, None)."""
+        pkt = _make_packet(metadata={"task_type": "feature"})
+        assert resolve_dispatch_policy(pkt) == (None, None)
+
+    def test_unknown_task_type_no_coercion(self) -> None:
+        """Unknown task_type (outside taxonomy) is a no-op, not an error."""
+        pkt = _make_packet(metadata={"task_type": "mystery-work"})
+        assert resolve_dispatch_policy(pkt) == (None, None)
+
+    def test_low_risk_task_type_applies_defaults(self) -> None:
+        """docs + no hints → sonnet/medium."""
+        pkt = _make_packet(metadata={"task_type": "docs"})
+        assert resolve_dispatch_policy(pkt) == ("sonnet", "medium")
+
+    def test_all_low_risk_task_types_resolve(self) -> None:
+        for task_type in LANE_DEFAULT_POLICY:
+            pkt = _make_packet(metadata={"task_type": task_type})
+            model, effort = resolve_dispatch_policy(pkt)
+            assert (model, effort) == LANE_DEFAULT_POLICY[task_type]
+
+    def test_model_hint_wins_over_category_default(self) -> None:
+        """Packet hint always wins, even for low-risk task_types."""
+        pkt = _make_packet(
+            metadata={"task_type": "docs", "model_hint": "opus"},
+        )
+        model, effort = resolve_dispatch_policy(pkt)
+        assert model == "opus"
+        # Effort still picks up the category default since no hint was set.
+        assert effort == "medium"
+
+    def test_effort_hint_wins_over_category_default(self) -> None:
+        pkt = _make_packet(
+            metadata={"task_type": "docs", "effort_hint": "high"},
+        )
+        model, effort = resolve_dispatch_policy(pkt)
+        assert model == "sonnet"  # category default
+        assert effort == "high"  # hint wins
+
+    def test_both_hints_win_over_category(self) -> None:
+        pkt = _make_packet(
+            metadata={
+                "task_type": "docs",
+                "model_hint": "opus",
+                "effort_hint": "high",
+            },
+        )
+        assert resolve_dispatch_policy(pkt) == ("opus", "high")
+
+    def test_hint_without_task_type(self) -> None:
+        """model_hint without task_type: only the hint applies."""
+        pkt = _make_packet(metadata={"model_hint": "sonnet"})
+        assert resolve_dispatch_policy(pkt) == ("sonnet", None)
+
+    def test_hint_for_complex_task_type(self) -> None:
+        """model_hint set on unlisted task_type still wins."""
+        pkt = _make_packet(
+            metadata={"task_type": "feature", "model_hint": "sonnet"},
+        )
+        assert resolve_dispatch_policy(pkt) == ("sonnet", None)
+
+    def test_invalid_hint_type_treated_as_absent(self) -> None:
+        """Non-string hint values fall through to the category default."""
+        pkt = _make_packet(
+            metadata={"task_type": "docs", "model_hint": 42},
+        )
+        model, effort = resolve_dispatch_policy(pkt)
+        # 42 is not a valid hint, get_model_hint returns None → category default
+        assert model == "sonnet"
+        assert effort == "medium"
+
+    def test_empty_string_hint_treated_as_absent(self) -> None:
+        pkt = _make_packet(
+            metadata={"task_type": "docs", "model_hint": ""},
+        )
+        assert resolve_dispatch_policy(pkt) == ("sonnet", "medium")
+
+
+class TestDispatchWritesResolvedPolicy:
+    """dispatch_to_worker records resolved model/effort in packet metadata."""
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_writes_defaults_for_low_risk_task(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """task_type=docs + no hints → saved packet has resolved_model=sonnet."""
+        mock_load.return_value = _make_packet(metadata={"task_type": "docs"})
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        # save_packet is called with the dispatched packet that carries the
+        # resolved metadata.
+        mock_save.assert_called()
+        saved_pkt = mock_save.call_args[0][0]
+        assert saved_pkt.metadata.get(RESOLVED_MODEL_KEY) == "sonnet"
+        assert saved_pkt.metadata.get(RESOLVED_EFFORT_KEY) == "medium"
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_honors_packet_level_hints(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Explicit hints are recorded verbatim as resolved_* metadata."""
+        mock_load.return_value = _make_packet(
+            metadata={"model_hint": "opus", "effort_hint": "high"},
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        saved_pkt = mock_save.call_args[0][0]
+        assert saved_pkt.metadata.get(RESOLVED_MODEL_KEY) == "opus"
+        assert saved_pkt.metadata.get(RESOLVED_EFFORT_KEY) == "high"
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_no_coercion_for_unlisted_task_type(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """task_type=feature + no hints → no resolved_* keys added."""
+        mock_load.return_value = _make_packet(metadata={"task_type": "feature"})
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        saved_pkt = mock_save.call_args[0][0]
+        assert RESOLVED_MODEL_KEY not in saved_pkt.metadata
+        assert RESOLVED_EFFORT_KEY not in saved_pkt.metadata
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_no_metadata_preserves_current_behavior(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Packet with no routing metadata: dispatch still works, no resolved_*."""
+        mock_load.return_value = _make_packet()
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        saved_pkt = mock_save.call_args[0][0]
+        # dispatched_at is always set; resolved_* keys are opt-in.
+        assert "dispatched_at" in saved_pkt.metadata
+        assert RESOLVED_MODEL_KEY not in saved_pkt.metadata
+        assert RESOLVED_EFFORT_KEY not in saved_pkt.metadata
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_partial_hint_fills_from_category(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """model_hint set + docs task_type → effort fills from category."""
+        mock_load.return_value = _make_packet(
+            metadata={"task_type": "docs", "model_hint": "opus"},
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        saved_pkt = mock_save.call_args[0][0]
+        assert saved_pkt.metadata.get(RESOLVED_MODEL_KEY) == "opus"
+        assert saved_pkt.metadata.get(RESOLVED_EFFORT_KEY) == "medium"
