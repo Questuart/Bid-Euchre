@@ -31,6 +31,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HOOK_SH = REPO_ROOT / "scripts" / "internal" / "hooks" / "permission_denied_alert.sh"
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "classifier_denial_sample.json"
+RESOLVE_LANE_LIB = REPO_ROOT / ".claude" / "hooks" / "lib" / "resolve-lane-id.sh"
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +105,12 @@ def _run_hook(
     """
     project_dir = project_dir or tmp_path / "project"
     project_dir.mkdir(parents=True, exist_ok=True)
+    # Stage the canonical lane-id resolver library under the tmp project
+    # dir so the hook can source it the same way it does in production
+    # (#2690 — resolver previously lived inline in each hook).
+    lib_dst = project_dir / ".claude" / "hooks" / "lib" / "resolve-lane-id.sh"
+    lib_dst.parent.mkdir(parents=True, exist_ok=True)
+    lib_dst.write_text(RESOLVE_LANE_LIB.read_text(encoding="utf-8"), encoding="utf-8")
     bin_dir = tmp_path / "bin"
     uv_capture = tmp_path / "uv_argv.log"
     _write_mock_uv(bin_dir, uv_capture)

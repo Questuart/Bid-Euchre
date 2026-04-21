@@ -58,29 +58,14 @@ write_request(req, emit_event=True)
   # Resolve the calling lane the same way post-merge-notify.sh does so
   # the two hooks agree on ownership. Best-effort — a failure here never
   # blocks PR creation.
+  # Canonical resolver — previously missing analyst-* which broke the
+  # #2701 PR write-back for analyst-lane PRs on the auto-merge path.
   LANE_ID=""
-  if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
-    LANE_ID=$(echo "$CLAUDE_AGENT_NAME" | sed 's/^steward-//')
-  fi
-  if [ -z "$LANE_ID" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
-    DIR_NAME=$(basename "$CLAUDE_PROJECT_DIR")
-    case "$DIR_NAME" in
-      *steward-author-scratch) LANE_ID="author-scratch" ;;
-      *steward-author-b)       LANE_ID="author-b" ;;
-      *steward-author-c)       LANE_ID="author-c" ;;
-      *steward-author-d)       LANE_ID="author-d" ;;
-      *steward-author)         LANE_ID="author-a" ;;
-      *steward-brws-author-a)  LANE_ID="brws-author-a" ;;
-      *steward-brws-author-b)  LANE_ID="brws-author-b" ;;
-      *steward-brws-author-c)  LANE_ID="brws-author-c" ;;
-      *steward-brws-author-d)  LANE_ID="brws-author-d" ;;
-      *steward-flex-a)         LANE_ID="flex-a" ;;
-      *steward-flex-b)         LANE_ID="flex-b" ;;
-      *steward-flex-c)         LANE_ID="flex-c" ;;
-      *steward-flex-d)         LANE_ID="flex-d" ;;
-      *steward-review)         LANE_ID="review" ;;
-      *steward-ops)            LANE_ID="ops" ;;
-    esac
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && \
+     [ -r "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh" ]; then
+    # shellcheck disable=SC1091
+    . "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh"
+    LANE_ID=$(resolve_lane_id)
   fi
 
   if [ -n "$LANE_ID" ]; then

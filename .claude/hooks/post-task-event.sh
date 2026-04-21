@@ -21,20 +21,17 @@ if [ "$EXIT_CODE" != "0" ]; then
     exit 0
 fi
 
-# Resolve lane_id from worktree directory name
-# e.g., Bid-Euchre-steward-author-c → author-c
+# Resolve lane_id via the canonical helper (#2690). Previously this hook
+# only handled author-a/b/c/d + review + ops, emitting task_completed
+# events with lane_id="unknown" for every analyst/flex/brws merge —
+# the event stream was structurally blind to >10 fleet lanes.
 LANE_ID="unknown"
-if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
-    DIR_NAME=$(basename "$CLAUDE_PROJECT_DIR")
-    case "$DIR_NAME" in
-        *steward-author-scratch) LANE_ID="author-scratch" ;;
-        *steward-author-b)       LANE_ID="author-b" ;;
-        *steward-author-c)       LANE_ID="author-c" ;;
-        *steward-author-d)       LANE_ID="author-d" ;;
-        *steward-author)         LANE_ID="author-a" ;;
-        *steward-review)         LANE_ID="review" ;;
-        *steward-ops)            LANE_ID="ops" ;;
-    esac
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && \
+   [ -r "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh" ]; then
+    # shellcheck disable=SC1091
+    . "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh"
+    RESOLVED=$(resolve_lane_id)
+    [ -n "$RESOLVED" ] && LANE_ID="$RESOLVED"
 fi
 
 # Check for task-relevant patterns in the command

@@ -64,33 +64,24 @@ fi
 # ---------------------------------------------------------------------------
 # Step 2 — derive lane id
 # ---------------------------------------------------------------------------
+# Resolve via the canonical helper (#2690) and then apply the
+# caller-specific fallbacks that this hook is responsible for:
+# Bid-Euchre → "main", wildcard sed, and finally hostname. None of
+# those belong in the shared helper because they would silently widen
+# other callers (e.g., lane-heartbeat would start writing to a
+# phantom "main" lane).
 LANE=""
-if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
-  LANE=$(printf '%s' "$CLAUDE_AGENT_NAME" | sed 's/^steward-//')
-elif [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && \
+   [ -r "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh" ]; then
+  # shellcheck disable=SC1091
+  . "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh"
+  LANE=$(resolve_lane_id)
+fi
+if [ -z "$LANE" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
   DIR_NAME=$(basename "$CLAUDE_PROJECT_DIR" 2>/dev/null || echo "")
   case "$DIR_NAME" in
-    *steward-author-scratch) LANE="author-scratch" ;;
-    *steward-author-b)       LANE="author-b" ;;
-    *steward-author-c)       LANE="author-c" ;;
-    *steward-author-d)       LANE="author-d" ;;
-    *steward-author)         LANE="author-a" ;;
-    *steward-brws-author-a)  LANE="brws-author-a" ;;
-    *steward-brws-author-b)  LANE="brws-author-b" ;;
-    *steward-brws-author-c)  LANE="brws-author-c" ;;
-    *steward-brws-author-d)  LANE="brws-author-d" ;;
-    *steward-analyst-b)      LANE="analyst-b" ;;
-    *steward-analyst-c)      LANE="analyst-c" ;;
-    *steward-analyst-d)      LANE="analyst-d" ;;
-    *steward-analyst)        LANE="analyst-a" ;;
-    *steward-flex-a)         LANE="flex-a" ;;
-    *steward-flex-b)         LANE="flex-b" ;;
-    *steward-flex-c)         LANE="flex-c" ;;
-    *steward-flex-d)         LANE="flex-d" ;;
-    *steward-review)         LANE="review" ;;
-    *steward-ops)            LANE="ops" ;;
-    Bid-Euchre)              LANE="main" ;;
-    *)                       LANE=$(printf '%s' "$DIR_NAME" | sed 's/^Bid-Euchre-steward-//' | sed 's/^Bid-Euchre/main/') ;;
+    Bid-Euchre) LANE="main" ;;
+    *)          LANE=$(printf '%s' "$DIR_NAME" | sed 's/^Bid-Euchre-steward-//' | sed 's/^Bid-Euchre/main/') ;;
   esac
 fi
 # Final fallback: hostname. Never let LANE be empty.

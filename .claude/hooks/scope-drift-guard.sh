@@ -27,27 +27,15 @@ if [[ "$TRIMMED" != "git commit"* ]]; then
   exit 0
 fi
 
-# Determine lane identity
-LANE_ID="${CLAUDE_AGENT_NAME:-}"
-if [ -z "$LANE_ID" ]; then
-  # Fallback: parse from project directory name
-  PROJ_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-  DIR_NAME=$(basename "$PROJ_DIR")
-  case "$DIR_NAME" in
-    *steward-author)    LANE_ID="author-a" ;;
-    *steward-author-b)  LANE_ID="author-b" ;;
-    *steward-author-c)  LANE_ID="author-c" ;;
-    *steward-author-d)  LANE_ID="author-d" ;;
-    *steward-author-scratch) LANE_ID="author-scratch" ;;
-    *brws-author-a)     LANE_ID="brws-author-a" ;;
-    *brws-author-b)     LANE_ID="brws-author-b" ;;
-    *brws-author-c)     LANE_ID="brws-author-c" ;;
-    *brws-author-d)     LANE_ID="brws-author-d" ;;
-    *steward-flex-a)    LANE_ID="flex-a" ;;
-    *steward-flex-b)    LANE_ID="flex-b" ;;
-    *steward-flex-c)    LANE_ID="flex-c" ;;
-    *)                  LANE_ID="" ;;
-  esac
+# Determine lane identity via the canonical helper (#2690). Before this,
+# analyst-*, flex-d, brws-b/c, review, and ops lanes all silently
+# skipped scope enforcement because the case statement fell through.
+LANE_ID=""
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && \
+   [ -r "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh" ]; then
+  # shellcheck disable=SC1091
+  . "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh"
+  LANE_ID=$(resolve_lane_id)
 fi
 
 if [ -z "$LANE_ID" ]; then
