@@ -61,8 +61,8 @@ def _load_audit_module():
 # They should only decrease as decoupling work proceeds.  If a PR increases
 # coupling, either fix the regression or update the threshold with justification.
 
-NON_COSMETIC_THRESHOLD = 260  # hard-block + soft-coupling (baseline: 253)
-HARD_BLOCK_THRESHOLD = 135  # hard-block only (baseline: 130)
+NON_COSMETIC_THRESHOLD = 253  # hard-block + soft-coupling (pinned to baseline)
+HARD_BLOCK_THRESHOLD = 130  # hard-block only (pinned to baseline)
 
 
 # ---------------------------------------------------------------------------
