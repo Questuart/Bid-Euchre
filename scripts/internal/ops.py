@@ -41,6 +41,7 @@ Usage:
     uv run python scripts/internal/ops.py task approve PACKET_ID [--json]
     uv run python scripts/internal/ops.py task dispatch PACKET_ID LANE_ID [--approve] [--json]
     uv run python scripts/internal/ops.py task accept PACKET_ID --lane LANE [--json]
+    uv run python scripts/internal/ops.py task update-metadata PACKET_ID [--pr-number N] [--lane LANE] [--json]
     uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--prioritized] [--json]
     uv run python scripts/internal/ops.py inbox stats [--json]
     uv run python scripts/internal/ops.py inbox ack MSG_ID --lane LANE [--json]
@@ -1938,9 +1939,71 @@ def cmd_task(args: argparse.Namespace) -> int:
                 print("  (archived)")
         return 0
 
+    elif action == "update-metadata":
+        # #2701 — pr_number write-back from post-pr-review.sh.
+        from bid_euchre.ops.task_queue import update_packet_metadata
+
+        packet_id = args.packet_id
+        lane = getattr(args, "lane", None)
+        pr_number = getattr(args, "pr_number", None)
+
+        # packet_id == '-' means "resolve the active dispatched packet
+        # for --lane". Hooks use this to avoid re-implementing lookup.
+        if packet_id == "-":
+            if not lane:
+                print(
+                    "--lane is required when packet_id is '-'.",
+                    file=sys.stderr,
+                )
+                return 1
+            dispatched = tq.list_packets(status="dispatched", owner=lane)
+            if not dispatched:
+                # Not an error — the hook can fire for PRs that don't
+                # correspond to a dispatched packet (e.g., ops-lane
+                # manual PRs). Exit 0 with a clear message.
+                if not args.json:
+                    print(f"No dispatched packet for lane {lane!r} — skipped.")
+                else:
+                    print(json.dumps({"updated": None, "reason": "no_packet"}))
+                return 0
+            if len(dispatched) > 1:
+                # Scope-lock invariant says one dispatched packet per lane;
+                # pick the most recently dispatched to be deterministic.
+                dispatched.sort(
+                    key=lambda p: (p.metadata or {}).get("dispatched_at", p.created_at),
+                    reverse=True,
+                )
+            packet_id = dispatched[0].packet_id
+
+        updates: dict[str, Any] = {}
+        if pr_number is not None:
+            updates["pr_number"] = pr_number
+
+        if not updates:
+            print(
+                "No metadata updates specified (use --pr-number).",
+                file=sys.stderr,
+            )
+            return 1
+
+        updated = update_packet_metadata(packet_id, updates, task_queue_root)
+        if updated is None:
+            print(f"Packet {packet_id!r} not found.", file=sys.stderr)
+            return 1
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(updated), indent=2, default=str))
+        else:
+            keys = ", ".join(sorted(updates.keys()))
+            print(f"Updated metadata on {updated.packet_id}: {keys}")
+        return 0
+
     else:
         print(
-            "Usage: ops.py task {list|show|create|approve|dispatch|accept|complete}",
+            "Usage: ops.py task "
+            "{list|show|create|approve|dispatch|accept|complete|update-metadata}",
             file=sys.stderr,
         )
         return 1
@@ -4549,6 +4612,35 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         choices=["merged", "abandoned", "rolled_back", "blocked", "other"],
         help="Outcome: final disposition of the packet's shipped output.",
+    )
+
+    # task update-metadata (#2701 — pr_number write-back from hooks)
+    task_update_metadata_parser = task_sub.add_parser(
+        "update-metadata",
+        help=(
+            "Merge metadata keys into an existing packet. Used by the "
+            "post-pr-review.sh hook to record pr_number so the orchestrator "
+            "reconciler can complete the packet when the PR is merged."
+        ),
+    )
+    task_update_metadata_parser.add_argument(
+        "packet_id", help="The packet ID to update"
+    )
+    task_update_metadata_parser.add_argument(
+        "--pr-number",
+        type=int,
+        default=None,
+        dest="pr_number",
+        help="Write the PR number onto packet.metadata.pr_number.",
+    )
+    task_update_metadata_parser.add_argument(
+        "--lane",
+        default=None,
+        help=(
+            "If provided without packet_id == '-', resolve the active "
+            "dispatched packet owned by this lane and update it. Pass "
+            "packet_id='-' to force resolution by --lane."
+        ),
     )
 
     # inbox (Platform-3 message bus)

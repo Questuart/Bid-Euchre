@@ -49,6 +49,48 @@ req = ReviewRequest(
 write_request(req, emit_event=True)
 " 2>/dev/null || true
 
+  # --- #2701 — write PR number back onto the active dispatched packet ---
+  # This feeds the orchestrator-side reconcile_dispatched_packets() pass in
+  # monitor.py.  Without this, the reconciler has no way to map a packet
+  # to a PR state on the auto-merge.yml path (which bypasses the local
+  # post-merge-notify.sh hook entirely).
+  #
+  # Resolve the calling lane the same way post-merge-notify.sh does so
+  # the two hooks agree on ownership. Best-effort — a failure here never
+  # blocks PR creation.
+  LANE_ID=""
+  if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
+    LANE_ID=$(echo "$CLAUDE_AGENT_NAME" | sed 's/^steward-//')
+  fi
+  if [ -z "$LANE_ID" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    DIR_NAME=$(basename "$CLAUDE_PROJECT_DIR")
+    case "$DIR_NAME" in
+      *steward-author-scratch) LANE_ID="author-scratch" ;;
+      *steward-author-b)       LANE_ID="author-b" ;;
+      *steward-author-c)       LANE_ID="author-c" ;;
+      *steward-author-d)       LANE_ID="author-d" ;;
+      *steward-author)         LANE_ID="author-a" ;;
+      *steward-brws-author-a)  LANE_ID="brws-author-a" ;;
+      *steward-brws-author-b)  LANE_ID="brws-author-b" ;;
+      *steward-brws-author-c)  LANE_ID="brws-author-c" ;;
+      *steward-brws-author-d)  LANE_ID="brws-author-d" ;;
+      *steward-flex-a)         LANE_ID="flex-a" ;;
+      *steward-flex-b)         LANE_ID="flex-b" ;;
+      *steward-flex-c)         LANE_ID="flex-c" ;;
+      *steward-flex-d)         LANE_ID="flex-d" ;;
+      *steward-review)         LANE_ID="review" ;;
+      *steward-ops)            LANE_ID="ops" ;;
+    esac
+  fi
+
+  if [ -n "$LANE_ID" ]; then
+    # packet_id='-' triggers lane-based resolution in the CLI.
+    # Exit 0 is expected on "no dispatched packet" — the hook also
+    # fires for ops-lane manual PRs that have no packet at all.
+    uv run python scripts/internal/ops.py task update-metadata "-" \
+      --lane "$LANE_ID" --pr-number "$PR_NUM" >/dev/null 2>&1 || true
+  fi
+
   # Inform the agent that a review was enqueued (informational only —
   # no longer triggers /reviewing-changes).
   cat <<'EOF'

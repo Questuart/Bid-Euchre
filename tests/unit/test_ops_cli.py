@@ -3939,6 +3939,229 @@ class TestTaskComplete:
             )
 
 
+class TestTaskUpdateMetadata:
+    """Verify ``task update-metadata`` CLI subcommand (#2701)."""
+
+    def test_writes_pr_number_onto_packet(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Updating a packet writes pr_number into its metadata."""
+        import ops
+
+        from bid_euchre.ops.task_queue import load_packet, transition_status
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "UM test",
+                "--owner",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        tq_root = runtime_dir / "task_queue"
+        transition_status(packet_id, "approved", tq_root)
+        transition_status(packet_id, "dispatched", tq_root)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "update-metadata",
+                packet_id,
+                "--pr-number",
+                "1234",
+            ]
+        )
+        assert rc == 0
+
+        pkt = load_packet(packet_id, tq_root)
+        assert pkt is not None
+        assert pkt.metadata["pr_number"] == 1234
+        # Status unchanged by metadata update
+        assert pkt.status == "dispatched"
+
+    def test_dash_packet_id_resolves_by_lane(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Passing packet_id='-' with --lane resolves the dispatched packet."""
+        import ops
+
+        from bid_euchre.ops.task_queue import load_packet, transition_status
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Dash-resolve test",
+                "--owner",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        tq_root = runtime_dir / "task_queue"
+        transition_status(packet_id, "approved", tq_root)
+        transition_status(packet_id, "dispatched", tq_root)
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "update-metadata",
+                "-",
+                "--lane",
+                "author-b",
+                "--pr-number",
+                "9999",
+            ]
+        )
+        assert rc == 0
+
+        pkt = load_packet(packet_id, tq_root)
+        assert pkt is not None
+        assert pkt.metadata["pr_number"] == 9999
+
+    def test_dash_without_lane_fails(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """packet_id='-' requires --lane."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "update-metadata",
+                "-",
+                "--pr-number",
+                "1",
+            ]
+        )
+        assert rc == 1
+        assert "--lane is required" in capsys.readouterr().err
+
+    def test_no_dispatched_packet_for_lane_exits_zero(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """When no dispatched packet matches --lane, command exits 0 silently.
+
+        The hook fires for any ``gh pr create`` — including ops/manual PRs
+        that do not belong to any dispatched packet. Returning 0 keeps the
+        hook non-fatal.
+        """
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "update-metadata",
+                "-",
+                "--lane",
+                "author-c",
+                "--pr-number",
+                "1",
+            ]
+        )
+        assert rc == 0
+
+    def test_nonexistent_packet_returns_error(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Unknown packet_id (literal, not '-') returns exit 1."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "update-metadata",
+                "nonexistent_pkt",
+                "--pr-number",
+                "1",
+            ]
+        )
+        assert rc == 1
+
+    def test_update_metadata_without_fields_fails(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Must pass at least one update flag (--pr-number)."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "update-metadata",
+                "some-pkt",
+            ]
+        )
+        assert rc == 1
+        assert "No metadata updates specified" in capsys.readouterr().err
+
+    def test_update_metadata_subparser_exists(self) -> None:
+        """Verify the 'task update-metadata' subparser is properly registered."""
+        import ops
+
+        parser = ops.build_parser()
+
+        task_subparser = None
+        for action in parser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                task_subparser = action.choices.get("task")
+                break
+
+        assert task_subparser is not None, "Expected 'task' subcommand"
+
+        update_subparser = None
+        for action in task_subparser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                update_subparser = action.choices.get("update-metadata")
+                break
+
+        assert (
+            update_subparser is not None
+        ), "Expected 'task update-metadata' subcommand"
+
+
 class TestPriorityChoicesContract:
     """Verify CLI --priority choices stay in sync with VALID_PRIORITIES."""
 
