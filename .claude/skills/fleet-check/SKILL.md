@@ -64,9 +64,11 @@ Check for completed tasks and dispatch new work:
 # Check task queue for completed items
 uv run python scripts/internal/ops.py task list
 
-# Check per-lane state to find idle lanes (heartbeat-aware, post-#2415)
+# Check per-lane state to find idle lanes (heartbeat-aware, post-#2415).
+# Only true `idle` lanes are dispatchable; `stale` lanes need triage first
+# (they may be mid-work with a lagging heartbeat) — see #2711.
 uv run python scripts/internal/ops.py --json lane status --all | \
-  jq -r '.[] | select(.phase == "idle" or .phase == "stale") | .lane_id'
+  jq -r '.[] | select(.phase == "idle") | .lane_id'
 ```
 
 For each completed task:

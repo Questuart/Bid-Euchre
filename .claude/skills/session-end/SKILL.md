@@ -125,10 +125,11 @@ tmux send-keys -t "$PANE" Enter
 After dispatching `/park`, **wait for the lane to confirm**. Read the pane
 contents and look for the final line of the `/park` skill output, which
 reports the number of cron jobs deleted and that `CronList` is now empty.
-Use the capture-pane skill:
+Use the `/capture-pane` skill (or the underlying `tmux capture-pane`
+invocation it wraps):
 
 ```bash
-uv run python scripts/internal/ops.py capture-pane --lane <lane>
+tmux capture-pane -t steward:<window>.<pane> -p -S -50
 ```
 
 The lane is safely parked when the pane shows:

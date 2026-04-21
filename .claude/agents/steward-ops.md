@@ -36,9 +36,11 @@ an author-lane responsibility by design.
 
 If the repo state contradicts what the dashboard shows, or a lane's
 heartbeat pattern is ambiguous (dead vs. deep-in-a-long-step), surface the
-uncertainty to the orchestrator with the evidence you have rather than
-asserting a nominal or critical status. One round of clarification is
-cheap; a confidently-wrong status drives wrong recovery actions downstream.
+uncertainty to the current caller (the orchestrator when launched as part
+of the fleet, or the human operator when ops is invoked directly with no
+orchestrator present) with the evidence you have rather than asserting a
+nominal or critical status. One round of clarification is cheap; a
+confidently-wrong status drives wrong recovery actions downstream.
 
 ## Primary Status Surface
 
