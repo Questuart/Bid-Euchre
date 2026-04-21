@@ -468,6 +468,48 @@ def build_dashboard_view(
 # ---------------------------------------------------------------------------
 
 
+def _format_age_seconds_short(seconds: float | int | None) -> str:
+    """Compact human age string for dashboard token-economy header."""
+    if seconds is None:
+        return "unknown"
+    s = max(int(seconds), 0)
+    if s < 60:
+        return f"{s}s"
+    m = s // 60
+    if m < 60:
+        return f"{m}m"
+    h = m // 60
+    m %= 60
+    if h < 24:
+        return f"{h}h{m:02d}m"
+    d = h // 24
+    h %= 24
+    return f"{d}d{h:02d}h"
+
+
+def _format_token_economy_header(status: dict[str, Any] | None) -> str:
+    """Render the token economy section header with a staleness marker.
+
+    ``status`` is the ``store_status`` sub-dict attached by
+    :func:`bid_euchre.ops.token_economy.dashboard_token_economy`.  When the
+    status is missing (older callers) or indicates the store is fresh, the
+    header is the plain ``"Token Economy"`` label so the dashboard appearance
+    does not regress for healthy stores.
+
+    Empty stores (``store_status.empty`` True) never reach this path because
+    ``dashboard_token_economy`` returns ``{}`` for empty stores and the
+    dashboard hides the section entirely.
+    """
+    if not status:
+        return "Token Economy"
+    if status.get("stale"):
+        age = _format_age_seconds_short(status.get("age_seconds"))
+        if not status.get("attributions_present", True):
+            return f"Token Economy [STALE: {age} old; attributions missing]"
+        return f"Token Economy [STALE: {age} old]"
+    return "Token Economy"
+
+
 def _format_lane_line(
     lane: LaneStatus,
     *,
@@ -616,7 +658,10 @@ def format_dashboard_text(
     te = view.token_economy
     if te:
         lines.append("")
-        lines.append("Token Economy")
+        # Prepend a staleness/empty marker when the store is not fresh.
+        # store_status is attached by dashboard_token_economy() on the
+        # with-data path (empty stores still hide the section entirely).
+        lines.append(_format_token_economy_header(te.get("store_status")))
         overview = te.get("overview", {})
         if overview:
             lines.append(

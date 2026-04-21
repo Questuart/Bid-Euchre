@@ -28,6 +28,7 @@ from bid_euchre.ops.token_economy import (
     SessionAttribution,
     SessionRecord,
     ThroughputMetrics,
+    TotalsReconciliation,
     UsageSummary,
     _ensure_imported,
     _is_session_complete,
@@ -39,6 +40,7 @@ from bid_euchre.ops.token_economy import (
     infer_lane_from_path,
     join_to_packets,
     lane_summary,
+    reconcile_totals,
     throughput_summary,
     usage_summary,
     validate_facet,
@@ -1789,3 +1791,248 @@ class TestIncompleteSessionExclusion:
         result = throughput_summary(output_dir=output_dir)
         assert result.total_sessions == 0
         assert result.total_tokens == 0
+
+
+# ---------------------------------------------------------------------------
+# Totals parity reconciliation (reconcile_totals)
+# ---------------------------------------------------------------------------
+
+
+class TestReconcileTotals:
+    """Verify cross-surface totals parity between summary/lanes/throughput."""
+
+    def test_empty_store_is_ok(self, output_dir: Path) -> None:
+        """An empty store has no divergence to warn about."""
+        parity = reconcile_totals(output_dir=output_dir)
+        assert isinstance(parity, TotalsReconciliation)
+        assert parity.summary_sessions == 0
+        assert parity.lanes_sessions == 0
+        assert parity.throughput_sessions == 0
+        assert parity.attribution_gap == 0
+        assert parity.token_parity_delta == 0
+        assert parity.warnings == []
+        assert parity.ok is True
+
+    def test_fully_attributed_sessions_agree(self, output_dir: Path) -> None:
+        """Summary and lanes agree exactly when every session is attributed."""
+        sessions = [
+            _make_session_record(
+                "s1", input_tokens=100, output_tokens=400, git_commits=2
+            ),
+            _make_session_record(
+                "s2", input_tokens=300, output_tokens=700, git_commits=1
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+        # Attributions mirror the sessions 1:1 with matching totals.
+        attributions = [
+            {
+                "session_id": "s1",
+                "lane_id": "author-a",
+                "worktree_class": "platform",
+                "input_tokens": 100,
+                "output_tokens": 400,
+                "duration_minutes": 30,
+                "git_commits": 2,
+                "lines_added": 0,
+                "lines_removed": 0,
+            },
+            {
+                "session_id": "s2",
+                "lane_id": "author-b",
+                "worktree_class": "platform",
+                "input_tokens": 300,
+                "output_tokens": 700,
+                "duration_minutes": 30,
+                "git_commits": 1,
+                "lines_added": 0,
+                "lines_removed": 0,
+            },
+        ]
+        _write_attributions(output_dir, attributions)
+
+        parity = reconcile_totals(output_dir=output_dir)
+        assert parity.summary_sessions == 2
+        assert parity.lanes_sessions == 2
+        assert parity.summary_tokens == 1500
+        assert parity.lanes_tokens == 1500
+        assert parity.token_parity_delta == 0
+        assert parity.commit_parity_delta == 0
+        assert parity.attribution_gap == 0
+        assert parity.ok is True
+
+    def test_attribution_gap_is_flagged(self, output_dir: Path) -> None:
+        """Imported sessions with no attribution records produce a warning."""
+        sessions = [
+            _make_session_record("s1", input_tokens=100, output_tokens=400),
+            _make_session_record("s2", input_tokens=300, output_tokens=700),
+        ]
+        _write_sessions(output_dir, sessions)
+        # Only one attribution row — simulating attribute_sessions never ran
+        # for the second session.
+        _write_attributions(
+            output_dir,
+            [
+                {
+                    "session_id": "s1",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 100,
+                    "output_tokens": 400,
+                    "duration_minutes": 30,
+                    "git_commits": 1,
+                    "lines_added": 0,
+                    "lines_removed": 0,
+                },
+            ],
+        )
+
+        parity = reconcile_totals(output_dir=output_dir)
+        assert parity.attribution_gap == 1
+        assert parity.ok is False
+        assert any("Attribution gap" in w for w in parity.warnings)
+
+    def test_incomplete_sessions_not_warned(self, output_dir: Path) -> None:
+        """Excluded-incomplete-session gap is documented, not warned.
+
+        throughput_summary explicitly excludes sessions lacking
+        duration_minutes — that is a correct design, not drift.  The parity
+        check must NOT warn about this legitimate difference.
+        """
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=100,
+                output_tokens=400,
+                duration_minutes=30,
+                git_commits=1,
+            ),
+        ]
+        # Second session is in-progress: duration is None.
+        incomplete = {
+            "session_id": "s2",
+            "project_path": "/tmp",
+            "start_time": "2026-03-21T10:00:00Z",
+            "input_tokens": 200,
+            "output_tokens": 500,
+            "duration_minutes": None,
+            "git_commits": 0,
+            "lines_added": 0,
+            "lines_removed": 0,
+        }
+        _write_sessions(output_dir, [*sessions, incomplete])
+        _write_attributions(
+            output_dir,
+            [
+                {
+                    "session_id": "s1",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 100,
+                    "output_tokens": 400,
+                    "duration_minutes": 30,
+                    "git_commits": 1,
+                    "lines_added": 0,
+                    "lines_removed": 0,
+                },
+                {
+                    "session_id": "s2",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 200,
+                    "output_tokens": 500,
+                    "duration_minutes": 0,
+                    "git_commits": 0,
+                    "lines_added": 0,
+                    "lines_removed": 0,
+                },
+            ],
+        )
+
+        parity = reconcile_totals(output_dir=output_dir)
+        # throughput excludes 1 incomplete session
+        assert parity.incomplete_sessions == 1
+        # but summary and lanes include both — no warning.
+        assert parity.attribution_gap == 0
+        assert parity.token_parity_delta == 0
+        assert parity.ok is True, (
+            f"Incomplete-session exclusion must not trigger a drift warning; "
+            f"got warnings: {parity.warnings}"
+        )
+
+    def test_token_mismatch_beyond_tolerance_flags_warning(
+        self, output_dir: Path
+    ) -> None:
+        """Large attribution-token drift (not explained by exclusions) warns."""
+        # 1 summary session of 10,000 tokens ...
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=4000,
+                output_tokens=6000,
+                git_commits=1,
+                duration_minutes=30,
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+        # ... but the attribution claims only 5000 tokens for s1 —
+        # a mismatch that is NOT accounted for by incomplete-session
+        # exclusion (throughput would also see 10,000).
+        _write_attributions(
+            output_dir,
+            [
+                {
+                    "session_id": "s1",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 2000,
+                    "output_tokens": 3000,
+                    "duration_minutes": 30,
+                    "git_commits": 1,
+                    "lines_added": 0,
+                    "lines_removed": 0,
+                },
+            ],
+        )
+
+        parity = reconcile_totals(output_dir=output_dir)
+        assert parity.summary_tokens == 10000
+        assert parity.lanes_tokens == 5000
+        assert parity.token_parity_delta == 5000
+        # 5000 > 1% of 10000 → above the 1000-token floor tolerance.
+        assert parity.ok is False
+        assert any("Token parity delta" in w for w in parity.warnings)
+
+    def test_commit_mismatch_is_always_warned(self, output_dir: Path) -> None:
+        """Any non-zero commit delta warns — commits are not excluded by design."""
+        sessions = [
+            _make_session_record(
+                "s1",
+                input_tokens=100,
+                output_tokens=400,
+                git_commits=3,
+                duration_minutes=30,
+            ),
+        ]
+        _write_sessions(output_dir, sessions)
+        _write_attributions(
+            output_dir,
+            [
+                {
+                    "session_id": "s1",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 100,
+                    "output_tokens": 400,
+                    "duration_minutes": 30,
+                    "git_commits": 1,
+                    "lines_added": 0,
+                    "lines_removed": 0,
+                },
+            ],
+        )
+
+        parity = reconcile_totals(output_dir=output_dir)
+        assert parity.commit_parity_delta == 2
+        assert parity.ok is False
+        assert any("Commit parity" in w for w in parity.warnings)

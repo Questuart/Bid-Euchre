@@ -665,6 +665,118 @@ class TestFormatDashboardText:
         assert "15,000 tok/commit" in text
 
 
+class TestTokenEconomyStoreStatusRendering:
+    """Dashboard header rendering for token-economy store staleness.
+
+    Regression guards for Slice A of the token-economy restart plan:
+    - Fresh / missing status → plain "Token Economy" header (no marker).
+    - Stale store → "[STALE: <age>]" marker.
+    - Missing attributions → "attributions missing" suffix in marker.
+    - Empty store (``token_economy == {}``) → section hidden entirely.
+    """
+
+    def _make_view(self, *, token_economy: dict | None = None) -> DashboardView:
+        now = datetime(2026, 4, 20, 12, 0, 0, tzinfo=timezone.utc)
+        return DashboardView(
+            generated_at=now.isoformat(),
+            foreground=DashboardSection(title="Foreground Lanes", lanes=[]),
+            background=DashboardSection(title="Background Lanes", lanes=[]),
+            token_economy=token_economy or {},
+        )
+
+    def _overview_stub(self) -> dict:
+        return {
+            "overview": {
+                "total_tokens": 100_000,
+                "session_count": 5,
+                "total_git_commits": 3,
+                "tokens_per_hour": 5000,
+                "output_input_ratio": 2.1,
+                "net_lines": 42,
+            },
+            "top_lanes": [],
+        }
+
+    def test_fresh_store_renders_plain_header(self) -> None:
+        te = self._overview_stub()
+        te["store_status"] = {
+            "exists": True,
+            "empty": False,
+            "stale": False,
+            "usage_file_mtime": "2026-04-20T11:50:00+00:00",
+            "age_seconds": 600.0,
+            "stale_threshold_seconds": 3600,
+            "session_count": 5,
+            "attributions_present": True,
+            "last_import_timestamp": "2026-04-20T11:50:00+00:00",
+            "store_path": "/tmp/store",
+        }
+        view = self._make_view(token_economy=te)
+        text = format_dashboard_text(view)
+        # Plain header, no STALE marker
+        assert "Token Economy" in text
+        assert "STALE" not in text
+        assert "attributions missing" not in text
+
+    def test_missing_store_status_renders_plain_header(self) -> None:
+        """Back-compat: token_economy without store_status key renders unmarked."""
+        te = self._overview_stub()
+        # No "store_status" key at all
+        view = self._make_view(token_economy=te)
+        text = format_dashboard_text(view)
+        assert "Token Economy" in text
+        assert "STALE" not in text
+
+    def test_stale_store_renders_stale_marker(self) -> None:
+        te = self._overview_stub()
+        # 7200 seconds = 2h → marker should contain "2h"
+        te["store_status"] = {
+            "exists": True,
+            "empty": False,
+            "stale": True,
+            "usage_file_mtime": "2026-04-20T10:00:00+00:00",
+            "age_seconds": 7200.0,
+            "stale_threshold_seconds": 3600,
+            "session_count": 5,
+            "attributions_present": True,
+            "last_import_timestamp": "2026-04-20T10:00:00+00:00",
+            "store_path": "/tmp/store",
+        }
+        view = self._make_view(token_economy=te)
+        text = format_dashboard_text(view)
+        assert "Token Economy [STALE:" in text
+        # 2h window should surface
+        assert "2h" in text.split("Token Economy [STALE:")[1].split("]")[0]
+        # attributions_present=True → no attributions suffix
+        assert "attributions missing" not in text
+
+    def test_stale_store_missing_attributions_adds_suffix(self) -> None:
+        te = self._overview_stub()
+        te["store_status"] = {
+            "exists": True,
+            "empty": False,
+            "stale": True,
+            "usage_file_mtime": "2026-04-20T09:00:00+00:00",
+            "age_seconds": 10800.0,
+            "stale_threshold_seconds": 3600,
+            "session_count": 5,
+            "attributions_present": False,
+            "last_import_timestamp": None,
+            "store_path": "/tmp/store",
+        }
+        view = self._make_view(token_economy=te)
+        text = format_dashboard_text(view)
+        assert "Token Economy [STALE:" in text
+        assert "attributions missing" in text
+
+    def test_empty_store_hides_section(self) -> None:
+        """Empty token_economy dict hides the whole section — contract preservation."""
+        view = self._make_view(token_economy={})
+        text = format_dashboard_text(view)
+        # No Token Economy header at all
+        assert "Token Economy" not in text
+
+
 # ---------------------------------------------------------------------------
 # Tests: format_dashboard_json
 # ---------------------------------------------------------------------------
