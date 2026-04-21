@@ -149,9 +149,15 @@ async def lifespan(app: FastAPI):
                     text("ALTER TABLE matches ADD COLUMN play_strategy_version TEXT")
                 )
             logger.info("Migration: added play_strategy_version column to matches")
-        except (OperationalError, ProgrammingError):
+        except (OperationalError, ProgrammingError) as exc:
             # SQLite raises OperationalError, PostgreSQL raises ProgrammingError
-            # for duplicate-column errors (#2532, #2632).
+            # for duplicate-column errors (#2532, #2632).  Only swallow those —
+            # re-raise anything else (connection errors, permission issues,
+            # disk-full, bogus schema) so startup fails loudly instead of
+            # silently claiming the column is present (#2653).
+            msg = str(exc).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                raise
             logger.info(
                 "Migration: play_strategy_version column already present (concurrent)"
             )
