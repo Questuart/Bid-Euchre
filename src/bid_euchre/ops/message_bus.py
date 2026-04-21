@@ -1211,6 +1211,15 @@ def escalate_unacked(
         # Don't escalate escalation messages (avoid infinite chains)
         if rec.get("message_type") == "escalation":
             continue
+        # Don't escalate supervisor_alert rollups (#2700) — they are
+        # idempotent summaries of fleet state, re-emitted every monitor
+        # cycle. Escalating them creates a self-feeding cascade where
+        # each new supervisor_alert becomes the next cycle's escalation
+        # trigger. Real HIGH conditions surface through dedicated message
+        # types (blocker, escalation from ops-monitor, approval_stall),
+        # which remain escalation-eligible.
+        if rec.get("message_type") == "supervisor_alert":
+            continue
         # Skip if an active escalation already exists for this message (#1610)
         if mid in already_escalated:
             continue

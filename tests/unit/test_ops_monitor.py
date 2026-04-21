@@ -1748,7 +1748,15 @@ class TestCheckEscalations:
         assert call_kwargs[1]["max_age_minutes"] == ESCALATION_AGE_MINUTES
 
     def test_integration_with_real_bus(self, tmp_path: Path) -> None:
-        """End-to-end: ops sends alert, don't ack, verify escalation fires."""
+        """End-to-end: ops sends a blocker, don't ack, verify escalation fires.
+
+        Uses ``message_type="blocker"`` rather than ``supervisor_alert``:
+        per #2700, ``supervisor_alert`` rollups are exempt from escalation
+        because they are idempotent summaries of fleet state re-emitted
+        every cycle. Real SLA-relevant messages (blocker, escalation from
+        ops-monitor, approval_stall) remain escalation-eligible, which is
+        what this integration test now verifies.
+        """
         from bid_euchre.ops.message_bus import (
             create_message,
             send_message,
@@ -1757,11 +1765,12 @@ class TestCheckEscalations:
         bus_root = tmp_path / "bus"
         events_dir = tmp_path / "events"
 
-        # ops sends an alert to orchestrator
+        # ops sends a blocker to orchestrator — still escalation-eligible
+        # because blocker is not a rollup message type.
         msg = create_message(
             from_lane="ops",
             to_lane="orchestrator",
-            message_type="supervisor_alert",
+            message_type="blocker",
             priority="high",
             summary="3 HIGH findings",
         )
@@ -1779,6 +1788,49 @@ class TestCheckEscalations:
         assert findings[0].severity == SEVERITY_HIGH
         assert findings[0].category == "escalation"
         assert len(findings[0].details["escalation_ids"]) >= 1
+
+    def test_integration_supervisor_alert_no_self_cascade(self, tmp_path: Path) -> None:
+        """Unacked supervisor_alerts must NOT trigger a HIGH escalation (#2700).
+
+        Regression for the self-feeding cascade: monitor was emitting a
+        supervisor_alert each cycle, then on the next cycle finding its own
+        prior supervisor_alerts unacked and escalating them — which in turn
+        produced a new HIGH finding, feeding the next cycle.
+        """
+        from bid_euchre.ops.message_bus import (
+            create_message,
+            send_message,
+        )
+
+        bus_root = tmp_path / "bus"
+        events_dir = tmp_path / "events"
+
+        # Simulate two unacked ops→orchestrator supervisor_alerts from
+        # prior monitor cycles.
+        for i in range(2):
+            msg = create_message(
+                from_lane="ops",
+                to_lane="orchestrator",
+                message_type="supervisor_alert",
+                priority="high",
+                summary=f"Monitor cycle {i} rollup",
+            )
+            send_message(msg, bus_root, events_dir=events_dir)
+
+        findings = check_escalations(
+            bus_root=bus_root,
+            events_dir=events_dir,
+            max_age_minutes=0,
+        )
+
+        # No HIGH finding — supervisor_alerts are exempt from escalation
+        assert all(
+            f.severity != SEVERITY_HIGH for f in findings
+        ), "supervisor_alerts must not trigger HIGH escalation (self-cascade)"
+        # Single info finding: "No unacked alerts to escalate."
+        assert len(findings) == 1
+        assert findings[0].severity == SEVERITY_INFO
+        assert "No unacked" in findings[0].summary
 
     def test_integration_no_escalation_when_acked(self, tmp_path: Path) -> None:
         """End-to-end: ops sends alert, ack it, verify no escalation."""
