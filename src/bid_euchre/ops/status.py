@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from bid_euchre.ops.lane_heartbeat import read_heartbeat
+
 logger = logging.getLogger("ops.status")
 
 DEFAULT_RUNTIME_DIR = Path(".claude/runtime")
@@ -447,6 +449,31 @@ class _LivenessProbe:
     detail: str  # human-readable explanation
 
 
+def _resolve_heartbeat_dir(
+    worktree_path: str | None,
+    runtime_dir: Path | None,
+) -> Path | None:
+    """Resolve the lane_status directory for heartbeat reads.
+
+    Precedence (issue #2415, PR 2/3):
+
+    1. If ``worktree_path`` is supplied, use
+       ``<worktree_path>/.claude/runtime/lane_status``.  This is the
+       cross-worktree read path — the orchestrator reading another
+       lane's heartbeat, where PR #2686's hook wrote it.
+    2. If ``runtime_dir`` is supplied (but no worktree_path), use
+       ``<runtime_dir>/lane_status``.  This matches unit tests and
+       self-reads where the caller already knows the local runtime root.
+    3. Otherwise return ``None`` so ``read_heartbeat`` falls through to
+       its own CWD-based default (``.claude/runtime/lane_status``).
+    """
+    if worktree_path:
+        return Path(worktree_path) / ".claude" / "runtime" / "lane_status"
+    if runtime_dir is not None:
+        return runtime_dir / "lane_status"
+    return None
+
+
 def _probe_fallback_liveness(
     lane_id: str,
     *,
@@ -458,11 +485,21 @@ def _probe_fallback_liveness(
     stale_minutes: int,
     worktree_path: str | None = None,
     check_worktree: bool = True,
+    runtime_dir: Path | None = None,
+    check_process_tree: bool = False,
+    tmux_session: str = "steward",
 ) -> _LivenessProbe:
     """Check repo-local signals for lane activity beyond registry session_id.
 
     Examines (in priority order):
 
+    0. **Lane heartbeat file** — if
+       ``.claude/runtime/lane_status/<lane_id>.json`` was written within
+       ``stale_minutes``, the lane recorded a PostToolUse tick recently.
+       This is the primary fix for issue #2415 failure mode F1: a lane
+       running ``make check-quiet`` emits a heartbeat after every tool
+       call and stays ``likely_active`` through the duration of the run.
+       Introduced as consumer of PR #2686's writer.
     1. **Recent events** — if the lane has an event within ``stale_minutes``,
        it was recently active.
     2. **In-progress tasks** — if the lane has an in-progress task with a
@@ -475,6 +512,15 @@ def _probe_fallback_liveness(
        ``subprocess.TimeoutExpired``, etc.) are caught and the signal is
        silently skipped so that a subprocess failure never blocks status
        aggregation.
+
+    After all signals have been evaluated, the probe optionally runs a
+    **process-tree reconciler** (opt-in via ``check_process_tree=True``).
+    If no signal yielded a fresh determination, and the lane's pane shell
+    has a live ``make``/``pytest``/``ruff`` child process, the probe
+    upgrades to ``likely_active`` with ``source="process_tree"``.  This
+    catches the "heartbeat hook silently stalled but validation is still
+    running" case (analyst-b design §3 hybrid). The reconciler never
+    downgrades a fresh signal — it only upgrades stale/idle results.
 
     Returns a ``_LivenessProbe`` indicating whether the lane is likely live,
     stale (evidence exists but is aging), or genuinely idle.
@@ -492,6 +538,16 @@ def _probe_fallback_liveness(
             subprocess is used as the lowest-priority liveness signal.
         check_worktree: If False, skip the dirty-worktree subprocess check
             entirely.  Default True.
+        runtime_dir: Runtime directory root (e.g. ``.claude/runtime``).
+            Used to locate the heartbeat directory
+            (``<runtime_dir>/lane_status``).  When ``None``, the heartbeat
+            reader falls back to its own default.
+        check_process_tree: Opt-in flag to consult the pane's OS process
+            tree as a reconciler.  Defaults to ``False`` so dashboard
+            renders remain subprocess-free.  Enabled by the
+            ``ops.py lane status`` CLI.
+        tmux_session: tmux session name to resolve the pane target for
+            the process-tree probe.  Default ``"steward"``.
 
     Returns:
         ``_LivenessProbe`` with the determination.
@@ -500,6 +556,62 @@ def _probe_fallback_liveness(
 
     stale_candidate: _LivenessProbe | None = None
     stale_age: float = float("inf")
+
+    # --- Signal 0: Lane heartbeat file (PostToolUse writer, PR #2686) ---
+    # The heartbeat is updated after every tool call, so a lane running
+    # `make check-quiet` for 30 min produces a fresh heartbeat per
+    # intermediate sub-command.  This is the primary signal that fixes
+    # issue #2415 F1 (lanes flipping to `[stale!]` while actively working).
+    #
+    # Cross-worktree resolution: PR #2686's hook CDs to ``$CLAUDE_PROJECT_DIR``
+    # before writing, so each lane's heartbeat file lives under its own
+    # worktree at ``<worktree_path>/.claude/runtime/lane_status/<lane>.json``.
+    # When the orchestrator (or any other lane) reads another lane's
+    # heartbeat, it must look at *that lane's* worktree — not its own.
+    # ``worktree_path`` comes from the worktree registry entry for the
+    # target lane.  When ``worktree_path`` is absent (unregistered lane,
+    # tests with no registry), we fall back to ``runtime_dir`` / CWD so
+    # self-reads and unit tests keep working.
+    #
+    # Missing file ⇒ fall through to S1-S5 (back-compat with sessions that
+    # predate the writer).  Malformed/unparseable ⇒ same.  See
+    # lane_heartbeat.read_heartbeat for the graceful-degradation contract.
+    #
+    # If neither ``worktree_path`` nor ``runtime_dir`` was supplied, skip
+    # Signal 0 entirely.  Falling through to ``read_heartbeat``'s CWD-relative
+    # default would leak the current process's own heartbeat directory into
+    # probe results — e.g. pytest running in a lane worktree would read that
+    # lane's hook-written heartbeats for every lane_id being probed, which
+    # poisons unit tests that rely on a clean idle baseline.
+    heartbeat_dir = _resolve_heartbeat_dir(worktree_path, runtime_dir)
+    hb = (
+        read_heartbeat(lane_id, runtime_dir=heartbeat_dir)
+        if heartbeat_dir is not None
+        else None
+    )
+    if hb is not None:
+        hb_updated = _parse_iso_timestamp(hb.updated_at)
+        if hb_updated is not None:
+            age = max(0.0, (now - hb_updated).total_seconds())
+            last_tool_label = hb.last_tool or "?"
+            if age <= threshold_seconds:
+                return _LivenessProbe(
+                    is_likely_live=True,
+                    is_stale=False,
+                    source="heartbeat",
+                    detail=(f"heartbeat {int(age)}s ago (last_tool={last_tool_label})"),
+                )
+            if stale_candidate is None or age < stale_age:
+                stale_age = age
+                stale_candidate = _LivenessProbe(
+                    is_likely_live=False,
+                    is_stale=True,
+                    source="heartbeat",
+                    detail=(
+                        f"heartbeat {int(age / 60)}m ago "
+                        f"(>{stale_minutes}m threshold)"
+                    ),
+                )
 
     # --- Signal 1: Recent events for this lane ---
     last_event = _find_last_event_for_lane(events, lane_id)
@@ -644,6 +756,49 @@ def _probe_fallback_liveness(
                 exc_info=True,
             )
 
+    # --- Reconciler: Process-tree probe (opt-in, upgrade-only) ---
+    # If all data-driven signals indicate stale/idle, consult the OS
+    # process tree as a last-line reconciler.  This catches two failure
+    # modes that the data signals can't see:
+    #
+    # 1. The PostToolUse heartbeat hook silently stopped firing (Claude
+    #    Code upgrade, settings drift, hook crash) but validation is
+    #    still running.  `make check-quiet` will live-persist in pgrep
+    #    even if no heartbeat file has been written for an hour.
+    # 2. A lane has been working on a single long Bash call (typically
+    #    `make check-quiet` or a long `pytest`) that exceeds
+    #    ``stale_minutes``.  The heartbeat is fresh in this case too, but
+    #    this reconciler is the authoritative fallback when the heartbeat
+    #    writer has stalled.
+    #
+    # The reconciler is opt-in (``check_process_tree=False`` by default)
+    # because it requires 1-2 subprocesses per lane and would add
+    # noticeable latency to frequent dashboard renders.  The
+    # ``ops.py lane status`` CLI enables it; the dashboard does not
+    # (see analyst-b design §3 back-compat note).
+    if check_process_tree:
+        try:
+            if _probe_process_tree(
+                lane_id,
+                tmux_session=tmux_session,
+                runtime_dir=runtime_dir,
+            ):
+                return _LivenessProbe(
+                    is_likely_live=True,
+                    is_stale=False,
+                    source="process_tree",
+                    detail="active validation process in lane pane tree",
+                )
+        except Exception as exc:  # noqa: BLE001
+            # Subprocess / tmux resolution failures must not block status
+            # aggregation.  Same policy as the dirty-worktree signal above.
+            logger.debug(
+                "process-tree probe failed for %s, skipping reconciler: %s",
+                lane_id,
+                exc,
+                exc_info=True,
+            )
+
     # --- No fresh evidence found ---
     if stale_candidate is not None:
         return stale_candidate
@@ -656,6 +811,42 @@ def _probe_fallback_liveness(
     )
 
 
+def _probe_process_tree(
+    lane_id: str,
+    *,
+    tmux_session: str = "steward",
+    runtime_dir: Path | None = None,
+) -> bool:
+    """Reconciler: return True if the lane's pane has a live validation proc.
+
+    Delegates to :func:`bid_euchre.ops.monitor._detect_background_validation`,
+    which uses ``tmux display-message`` + ``pgrep -P`` to discover
+    ``make``/``pytest``/``ruff`` children of the lane's shell PID.  The
+    implementation is kept in ``monitor`` so the approval-stall detector
+    and status probe share a single code path for process-tree lookup.
+
+    Args:
+        lane_id: The lane identifier.
+        tmux_session: tmux session name (default: ``"steward"``).
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        ``True`` if a validation process is detected.  ``False`` on any
+        failure (no pane, no subprocess tools available, timeout) — the
+        reconciler is strictly upgrade-only and must never be the cause
+        of a negative state change.
+    """
+    from bid_euchre.ops.monitor import _detect_background_validation
+
+    return bool(
+        _detect_background_validation(
+            lane_id,
+            tmux_session=tmux_session,
+            runtime_dir=runtime_dir,
+        )
+    )
+
+
 def synthesize_lane_activity(
     lanes_data: list[dict[str, Any]],
     sessions_by_lane: dict[str, dict[str, Any]],
@@ -665,6 +856,8 @@ def synthesize_lane_activity(
     now: datetime | None = None,
     stale_minutes: int = STALE_MINUTES,
     check_worktree: bool = True,
+    runtime_dir: Path | None = None,
+    check_process_tree: bool = False,
 ) -> list[LaneStatus]:
     """Synthesize lane-activity view from existing repo-local state.
 
@@ -673,10 +866,14 @@ def synthesize_lane_activity(
     current task, PR linkage, and attention flags.
 
     When ``has_active_session`` is False for a lane, the function runs a
-    fallback liveness probe checking recent events, in-progress tasks,
-    session metadata, and registry timestamps. Lanes with fresh evidence
-    are marked ``"likely_active"``; lanes with stale evidence become
-    ``"stale"``; lanes with no evidence remain ``"idle"``.
+    fallback liveness probe checking (in order): the lane heartbeat file
+    (PR #2686 writer), recent events, in-progress tasks, session metadata,
+    and registry timestamps. Lanes with fresh evidence are marked
+    ``"likely_active"``; lanes with stale evidence become ``"stale"``;
+    lanes with no evidence remain ``"idle"``.  When ``check_process_tree``
+    is True, a process-tree reconciler upgrades stale/idle lanes to
+    ``"likely_active"`` (with ``liveness_source="process_tree"``) if a
+    validation process is running in the lane's pane tree.
 
     Args:
         lanes_data: Worktree registry entries.
@@ -689,6 +886,13 @@ def synthesize_lane_activity(
         check_worktree: If False, skip the dirty-worktree subprocess probe
             in the fallback liveness check.  Useful for fast status queries
             when 7+ worktrees would each spawn a ``git status`` subprocess.
+        runtime_dir: Runtime directory root (e.g. ``.claude/runtime``).
+            Threaded through to the heartbeat reader and process-tree
+            reconciler.  When ``None`` each helper uses its own default.
+        check_process_tree: Opt-in reconciler flag.  Defaults to ``False``
+            for render-path callers (dashboard) to avoid the
+            ``tmux display-message`` + ``pgrep`` subprocess cost per lane.
+            The ``ops.py lane status`` CLI enables it.
 
     Returns:
         List of enriched LaneStatus objects.
@@ -751,6 +955,8 @@ def synthesize_lane_activity(
                 now=now,
                 stale_minutes=stale_minutes,
                 check_worktree=check_worktree,
+                runtime_dir=runtime_dir,
+                check_process_tree=check_process_tree,
             )
             probe_detail = probe.detail
             if probe.is_likely_live:
@@ -966,6 +1172,7 @@ def aggregate_status(
     runtime_dir: Path | None = None,
     *,
     check_worktree: bool = True,
+    check_process_tree: bool = False,
 ) -> StatusReport:
     """Build a unified status report across lanes, sessions, and tasks.
 
@@ -974,6 +1181,10 @@ def aggregate_status(
         check_worktree: If False, skip dirty-worktree subprocess probes
             in the fallback liveness check.  Saves ~1 ``git status``
             subprocess per idle lane (7+ with all protected worktrees).
+        check_process_tree: If True, enable the process-tree reconciler
+            in the fallback liveness check.  Costs 1 ``tmux
+            display-message`` + 1 ``pgrep`` per stale/idle lane and is
+            disabled by default.  Enabled by ``ops.py lane status``.
 
     Returns:
         StatusReport with categorized entries and warnings.
@@ -1037,6 +1248,8 @@ def aggregate_status(
         tasks_by_lane,
         events,
         check_worktree=check_worktree,
+        runtime_dir=runtime_dir,
+        check_process_tree=check_process_tree,
     )
 
     # Session metadata files are preserved for resume/audit — they are

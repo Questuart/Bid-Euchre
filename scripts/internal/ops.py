@@ -72,8 +72,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from _repo_utils import find_repo_root
 
@@ -2992,13 +2993,210 @@ def cmd_lane(args: argparse.Namespace) -> int:
             print("Error: tmux capture-pane timed out", file=sys.stderr)
             return 1
 
+    elif action == "status":
+        return _cmd_lane_status(args)
+
     else:
         print(
             "Usage: ops.py lane refresh <lane-id> | --all-idle\n"
             "       ops.py lane check-approvals\n"
-            "       ops.py lane peek <lane-id> [--lines N]"
+            "       ops.py lane peek <lane-id> [--lines N]\n"
+            "       ops.py lane status [--lane <id>|--all] [--json] "
+            "[--no-process-tree]"
         )
         return 1
+
+
+def _cmd_lane_status(args: argparse.Namespace) -> int:
+    """Render structured per-lane status (issue #2415, PR 2/3).
+
+    Reads aggregate lane status + the PR #2686 heartbeat writer output and
+    prints a table (or JSON) with phase, freshness, last tool, and a
+    summary line per lane.  Subprocess-free by default aside from the
+    opt-in process-tree reconciler (on by default for this CLI; suppress
+    with ``--no-process-tree``).
+    """
+    from bid_euchre.ops.lane_heartbeat import read_heartbeat
+    from bid_euchre.ops.status import aggregate_status
+
+    # ``lane_id`` is the positional arg; ``--lane`` is the kwarg alias.
+    # Accept either.  Collision (both set with different values) is an error.
+    positional_lane: str | None = getattr(args, "lane_id", None)
+    flag_lane: str | None = getattr(args, "lane_flag", None)
+    if positional_lane and flag_lane and positional_lane != flag_lane:
+        print(
+            "Error: lane id given via positional and --lane disagree",
+            file=sys.stderr,
+        )
+        return 1
+    lane_filter: str | None = positional_lane or flag_lane
+    show_all: bool = bool(getattr(args, "all", False))
+    as_json: bool = bool(args.json)
+    # Process-tree reconciler defaults ON for the CLI (analyst-b design §3
+    # hybrid: CLI is the opt-in consumer that pays the subprocess cost).
+    # Operators can disable it via --no-process-tree for subprocess-free
+    # queries (e.g. inside a hook or high-frequency monitoring loop).
+    check_process_tree: bool = not bool(getattr(args, "no_process_tree", False))
+
+    if not show_all and not lane_filter:
+        print(
+            "Error: either a lane id, --all, or --lane <id> is required",
+            file=sys.stderr,
+        )
+        return 1
+
+    report = aggregate_status(
+        args.runtime_dir,
+        check_worktree=False,
+        check_process_tree=check_process_tree,
+    )
+
+    # Heartbeat dir resolution is per-lane.  PR #2686's hook writes into
+    # each lane's own worktree, so the orchestrator must read from
+    # ``<worktree_path>/.claude/runtime/lane_status`` for every other
+    # lane.  ``_resolve_heartbeat_dir`` encapsulates that precedence
+    # (worktree_path > runtime_dir > CWD default).
+    from bid_euchre.ops.status import _resolve_heartbeat_dir
+
+    # Filter lanes per CLI flags
+    if lane_filter and not show_all:
+        lanes_subset = [lane for lane in report.lanes if lane.lane_id == lane_filter]
+        if not lanes_subset:
+            print(f"Error: lane '{lane_filter}' not found in registry", file=sys.stderr)
+            return 1
+    else:
+        lanes_subset = list(report.lanes)
+
+    # Build row data: one dict per lane
+    rows: list[dict[str, Any]] = []
+    for lane in lanes_subset:
+        heartbeat_dir = _resolve_heartbeat_dir(
+            lane.worktree_path or None,
+            args.runtime_dir,
+        )
+        hb = read_heartbeat(lane.lane_id, runtime_dir=heartbeat_dir)
+        hb_age_s: int | None = None
+        hb_last_tool: str | None = None
+        hb_phase: str | None = None
+        if hb is not None:
+            updated = _parse_iso(hb.updated_at)
+            if updated is not None:
+                hb_age_s = int(
+                    max(0.0, (datetime.now(timezone.utc) - updated).total_seconds())
+                )
+            hb_last_tool = hb.last_tool
+            hb_phase = hb.phase
+
+        rows.append(
+            {
+                "lane_id": lane.lane_id,
+                "lane_class": lane.lane_class,
+                "phase": lane.state,
+                "has_active_session": lane.has_active_session,
+                "liveness_source": lane.liveness_source,
+                "attention_needed": lane.attention_needed,
+                "attention_reason": lane.attention_reason,
+                "current_task_id": lane.current_task_id,
+                "current_task_title": lane.current_task_title,
+                "heartbeat": {
+                    "present": hb is not None,
+                    "age_seconds": hb_age_s,
+                    "last_tool": hb_last_tool,
+                    "phase": hb_phase,
+                }
+                if hb is not None
+                else {"present": False},
+                "summary": _lane_summary(lane, hb_last_tool, hb_age_s),
+            }
+        )
+
+    if as_json:
+        print(json.dumps(rows, indent=2, default=str))
+        return 0
+
+    # Text render: fixed-width columns.  Widened lane_id to 15 chars to
+    # fit `brws-author-*` and similar.
+    header = f"{'LANE':<15} {'PHASE':<14} {'FRESH':<12} " f"{'LAST_TOOL':<10} SUMMARY"
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        age = (
+            row["heartbeat"].get("age_seconds")
+            if row["heartbeat"].get("present")
+            else None
+        )
+        fresh = _format_age(age) if age is not None else "—"
+        last_tool = (
+            (row["heartbeat"].get("last_tool") or "—")
+            if row["heartbeat"].get("present")
+            else "—"
+        )
+        marker = "!" if row["attention_needed"] else " "
+        print(
+            f"{row['lane_id']:<15} "
+            f"{row['phase']:<13}{marker} "
+            f"{fresh:<12} "
+            f"{last_tool:<10} "
+            f"{row['summary']}"
+        )
+    return 0
+
+
+def _format_age(seconds: int | None) -> str:
+    """Format an age in seconds compactly (e.g. ``45s``, ``3m12s``, ``1h2m``)."""
+    if seconds is None:
+        return "—"
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        m, s = divmod(seconds, 60)
+        return f"{m}m{s}s"
+    h, rem = divmod(seconds, 3600)
+    m = rem // 60
+    return f"{h}h{m}m"
+
+
+def _parse_iso(text: str) -> Any:
+    """Local ISO-8601 parser tolerant of ``Z`` suffix.
+
+    Mirrors ``lane_heartbeat._parse_iso`` to avoid importing a
+    module-private helper.  Returns a timezone-aware datetime or ``None``.
+    """
+    if not isinstance(text, str) or not text:
+        return None
+    candidate = text
+    if candidate.endswith("Z"):
+        candidate = candidate[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(candidate)
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _lane_summary(lane: Any, last_tool: str | None, hb_age_s: int | None) -> str:
+    """Build a short human-readable summary line for a lane.
+
+    Priority:
+    1. Blocked / attention_needed: surface the attention_reason.
+    2. In-progress task: ``"<task_title> (task <id>)"``.
+    3. Fresh heartbeat: ``"heartbeat <tool> <age>"``.
+    4. Idle: default label.
+    """
+    if lane.attention_needed and lane.attention_reason:
+        return lane.attention_reason
+    if lane.current_task_title:
+        tid = lane.current_task_id or "?"
+        return f"{lane.current_task_title} (task {tid})"
+    if last_tool is not None and hb_age_s is not None:
+        return f"heartbeat {last_tool} {_format_age(hb_age_s)}"
+    if lane.liveness_source == "registry":
+        return "session active"
+    if lane.state == "idle":
+        return "no active session"
+    return lane.state
 
 
 def cmd_workers(args: argparse.Namespace) -> int:
@@ -4502,6 +4700,44 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=80,
         help="Number of scrollback lines to capture (default: 80)",
+    )
+
+    # ``lane status`` — structured per-lane state (issue #2415, PR 2/3).
+    # Consumes the PR #2686 heartbeat writer and optionally the
+    # process-tree reconciler.
+    lane_status_parser = lane_sub.add_parser(
+        "status",
+        help=(
+            "Structured per-lane state (heartbeat + process-tree reconciler). "
+            "Issue #2415, PR 2/3."
+        ),
+    )
+    lane_status_parser.add_argument(
+        "lane_id",
+        nargs="?",
+        default=None,
+        help="Lane ID to query (e.g. author-a). Omit with --all.",
+    )
+    lane_status_parser.add_argument(
+        "--lane",
+        dest="lane_flag",
+        default=None,
+        help="Alias for the positional lane_id argument.",
+    )
+    lane_status_parser.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="Render status for every registered lane.",
+    )
+    lane_status_parser.add_argument(
+        "--no-process-tree",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip the process-tree reconciler (disables tmux + pgrep "
+            "subprocesses). Use when only the heartbeat signal is needed."
+        ),
     )
 
     # workers (Platform-7: worker pool lifecycle management)
