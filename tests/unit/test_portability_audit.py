@@ -123,18 +123,49 @@ class TestPortabilityAudit:
             f"'uv run python scripts/internal/audit_portability.py' for details."
         )
 
-    def test_all_severity_levels_present(self, audit) -> None:
-        """Verify the audit detects all three severity levels.
+    def test_patterns_detect_reference_fixture(self, tmp_path) -> None:
+        """Every defined pattern must detect its reference example.
 
-        If a severity level disappears entirely, the pattern definitions
-        may have broken.
+        This is a pattern-regression test: it scans a synthetic fixture file
+        containing one known-matching line per pattern and asserts the audit
+        detects all of them.  Unlike a presence-based invariant over the real
+        ops package, this test does not rely on any particular coupling being
+        present in source — a successful decoupling effort that removes all
+        hard-block hits from ``ops/`` will not perversely fail this gate.
+
+        If a pattern regex breaks, the corresponding pattern name will be
+        missing from ``detected`` and the assertion will pinpoint which one.
         """
-        sev = audit.by_severity()
-        assert (
-            sev.get("hard-block", 0) > 0
-        ), "Expected hard-block coupling to be detected"
-        assert sev.get("soft-coupling", 0) > 0, "Expected soft-coupling to be detected"
-        assert sev.get("cosmetic", 0) > 0, "Expected cosmetic coupling to be detected"
+        mod = _load_audit_module()
+
+        # One reference line per pattern, in the same order as PATTERNS.  Each
+        # line is crafted to match exactly one pattern's "primary" intent; some
+        # incidental overlaps are expected (e.g. "Bid-Euchre" substrings also
+        # match docstring-bid-euchre) but do not affect this detection test.
+        fixture_lines = [
+            '_WORKTREE = "Bid-Euchre-steward-author"',  # worktree-name-literal
+            '_PROJECT = "Bid-Euchre"',  # project-name-literal
+            '_REPO = "Questuart/Bid-Euchre"',  # repo-slug-literal
+            'prefix_strip = "Bid-Euchre-steward-"',  # steward-prefix-regex
+            '_TMUX_SESSION = "steward"',  # tmux-session-default
+            '_BRANCH = "codex/steward-foo"',  # branch-prefix-codex-steward
+            '_STATUS_CTX = "reviewing-changes"',  # review-context-name
+            '_RECOVERY = "Bid-Euchre-steward-review"',  # recovery-template-paths
+            '_LANE = "author-a"',  # lane-name-in-code
+            '_TITLE = "Bid Euchre framework"',  # docstring-bid-euchre
+            '_RUNTIME = ".claude/runtime/state"',  # runtime-dir-claude
+        ]
+        fixture_file = tmp_path / "coupling_fixture.py"
+        fixture_file.write_text("\n".join(fixture_lines) + "\n")
+
+        hits = mod.scan_file(fixture_file, mod.PATTERNS, rel_to=tmp_path)
+        detected = {h.pattern_name for h in hits}
+        expected = {p.name for p in mod.PATTERNS}
+        missing = expected - detected
+        assert not missing, (
+            f"Patterns failed to detect their reference hit: {sorted(missing)}. "
+            f"A regex may have been broken."
+        )
 
     def test_adapter_files_excluded_from_lane_names(self, audit) -> None:
         """Lane name hits should not appear in adapter files.
