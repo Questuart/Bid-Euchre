@@ -120,30 +120,16 @@ LANE_DOMAINS: dict[str, str | None] = _get_lane_domains()
 # ---------------------------------------------------------------------------
 # Fixed dispatch policy (token economy Slice D, #2169)
 # ---------------------------------------------------------------------------
-#
-# Low-risk task_type categories inherit a conservative model/effort default at
-# dispatch time. These defaults are applied only when the packet does not
-# already carry an explicit ``model_hint`` / ``effort_hint`` in metadata:
-# packet-level routing hints always win over the category default. Unlisted
-# task_type values (e.g. "feature", "bugfix", "refactor") preserve current
-# dispatch behavior — no model/effort coercion, no metadata write.
-#
-# Adaptive/advisory routing (Slice E) will *read* the resolved policy but not
-# overwrite it. The scorer operates on ``model_hint`` / ``effort_hint`` /
-# ``task_type`` as inputs and records its recommendation separately.
-#
-# Metadata keys written at dispatch time when a resolution occurs:
-#   resolved_model  — effective model tier carried into the lane
-#   resolved_effort — effective effort envelope carried into the lane
-# These are dispatch-time record-keeping fields, not routing inputs; they are
-# intentionally separate from the ``model_hint`` / ``effort_hint`` contract
-# documented in :mod:`bid_euchre.ops.task_queue`.
 
-#: Task-type → (model, effort) table applied when the packet has no hints.
-#:
-#: Only low-risk categories are listed on purpose. Complex implementation
-#: work (feature, bugfix, refactor, investigation) is excluded until measured
-#: evidence from Slice F shows the cheaper path is safe.
+#: Task-type → (model, effort) table applied at dispatch when the packet has
+#: no explicit ``model_hint`` / ``effort_hint``. Packet-level hints always win
+#: over the category default. Only low-risk categories are listed on purpose:
+#: complex implementation work (feature, bugfix, refactor, investigation)
+#: preserves current dispatch behavior and will be tuned only after Slice F
+#: evaluation shows the cheaper path is safe. See
+#: :func:`resolve_dispatch_policy` for the full precedence contract and
+#: ``plans/sessions/2026-04-20_token_economy_restart_plan.md`` §Slice D for
+#: the governing plan.
 LANE_DEFAULT_POLICY: dict[str, tuple[str, str]] = {
     "ops": ("sonnet", "medium"),
     "review": ("sonnet", "medium"),
@@ -152,10 +138,16 @@ LANE_DEFAULT_POLICY: dict[str, tuple[str, str]] = {
     "convention": ("sonnet", "medium"),
 }
 
-#: Metadata key used to record the effective model for a dispatched packet.
+#: Metadata key used to record the effective model tier on a dispatched
+#: packet. Written by :func:`dispatch_to_worker` when
+#: :func:`resolve_dispatch_policy` returns a non-``None`` model. Intended as
+#: a dispatch-time record-keeping field for downstream audit and the Slice E
+#: advisory scorer — not a routing input (those remain ``model_hint`` /
+#: ``effort_hint`` in :mod:`bid_euchre.ops.task_queue`).
 RESOLVED_MODEL_KEY: str = "resolved_model"
 
-#: Metadata key used to record the effective effort for a dispatched packet.
+#: Metadata key used to record the effective effort envelope on a dispatched
+#: packet. See :data:`RESOLVED_MODEL_KEY` for the contract.
 RESOLVED_EFFORT_KEY: str = "resolved_effort"
 
 
