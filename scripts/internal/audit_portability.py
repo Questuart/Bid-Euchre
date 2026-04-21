@@ -51,7 +51,7 @@ PATTERNS: list[CouplingPattern] = [
     # -- Hard-block: string literals that embed the project name -----------
     CouplingPattern(
         name="worktree-name-literal",
-        regex=r'"Bid-Euchre-steward-[^"]*"',
+        regex=r"""["']Bid-Euchre-steward-[^"']*["']""",
         severity="hard-block",
         description=(
             "Hard-coded worktree directory names (e.g., "
@@ -60,7 +60,7 @@ PATTERNS: list[CouplingPattern] = [
     ),
     CouplingPattern(
         name="project-name-literal",
-        regex=r'"Bid-Euchre"',
+        regex=r"""["']Bid-Euchre["']""",
         severity="hard-block",
         description=(
             "Hard-coded project name string.  Should come from adapter config "
