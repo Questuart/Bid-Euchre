@@ -2571,6 +2571,47 @@ class TestEscalateUnacked:
         )
         assert len(escalation_ids) == 1
 
+    def test_escalate_unacked_skips_supervisor_alert(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """supervisor_alert rollups are exempt from escalation (#2700).
+
+        Monitor emits a supervisor_alert every cycle as an idempotent rollup
+        of current fleet state. Escalating unacked rollups creates a
+        self-feeding cascade — each new rollup becomes the next cycle's
+        escalation trigger, producing a HIGH finding which then triggers
+        another rollup. Exempting supervisor_alert matches the existing
+        exemption for ``escalation`` messages. Real SLA-relevant message
+        types (blocker, assignment, etc.) remain escalation-eligible.
+        """
+        # Send one supervisor_alert (should be skipped) and one blocker
+        # (should still escalate).
+        rollup = create_message(
+            "ops", "orch", "supervisor_alert", "Fleet rollup", priority="high"
+        )
+        blocker = create_message(
+            "ops", "orch", "blocker", "Real blocker", priority="high"
+        )
+        send_message(rollup, bus_root, events_dir=events_dir)
+        send_message(blocker, bus_root, events_dir=events_dir)
+
+        escalation_ids = escalate_unacked(
+            "ops", "orch", max_age_minutes=0, bus_root=bus_root, events_dir=events_dir
+        )
+
+        # Only the blocker should have been escalated.
+        assert (
+            len(escalation_ids) == 1
+        ), "supervisor_alert rollup must not be escalated (self-cascade fix)"
+        inbox = read_inbox("orch", bus_root, auto_expire=False, limit=100)
+        escalated_parents = {
+            m.get("parent_message_id")
+            for m in inbox
+            if m["message_id"] == escalation_ids[0]
+        }
+        assert blocker.message_id in escalated_parents
+        assert rollup.message_id not in escalated_parents
+
 
 # ---------------------------------------------------------------------------
 # Priority-grouped inbox read (read_inbox_prioritized)
