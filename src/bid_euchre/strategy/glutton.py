@@ -21,7 +21,7 @@ from .base import Strategy, card_value_for_dump
 # GluttonStrategy or GluttonIsolatedStrategy. See
 # docs/02_agent/STRATEGY_VERSIONING.md for the semver rules and PR
 # changelog template.
-GLUTTON_STRATEGY_VERSION = "0.11.0"
+GLUTTON_STRATEGY_VERSION = "0.11.1"
 """Changelog:
 
 - 0.7.0 — Initial versioned baseline (PR #2529)
@@ -44,6 +44,15 @@ GLUTTON_STRATEGY_VERSION = "0.11.0"
   trick-completion detection for 3-player loner/moon tricks.
   Gated behind ``cash_winners_on_lead`` for high/low.
   Category: MINOR.
+- 0.11.1 — Void-backed check skips sitting-out seats (#2654).
+  In loner hands the sitting-out partner never plays a card, so
+  ``_void_suits_by_seat[sit_out]`` stays empty forever. The prior
+  ``all(opp void)`` check spuriously returned False whenever the
+  sitting-out seat fell into a defender's ``opp_seats`` tuple,
+  blocking defenders from ever firing the void-backed lead against
+  a loner caller. The fix tracks ``_seats_played`` from
+  ``observe_play`` and filters ``opp_seats`` to active seats once
+  plays have been observed. Category: PATCH.
 """
 
 
@@ -173,6 +182,13 @@ class GluttonStrategy(Strategy):
             2: set(),
             3: set(),
         }
+        # Seats that have played at least one card in the current hand.
+        # Used by ``_opponents_void_in_suit`` to skip sitting-out seats in
+        # loner/moon hands — a seat that never plays can never demonstrate
+        # a void, so it would otherwise block void-backed checks for
+        # defenders whose ``opp_seats`` tuple includes the sitting-out
+        # partner (#2654).
+        self._seats_played: Set[int] = set()
         # Contract context (set by on_hand_start)
         self._contract_type: str = "high"
         self._trump_suit: Optional[str] = None
@@ -208,6 +224,7 @@ class GluttonStrategy(Strategy):
         """Reset per-hand state at the start of each hand."""
         self._seen_counts = {}
         self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
+        self._seats_played = set()
         self._contract_type = contract_type
         self._trump_suit = trump_suit
         self._player_index = player_index
@@ -227,6 +244,11 @@ class GluttonStrategy(Strategy):
         """Track played cards and infer voids from play patterns."""
         # Increment seen count (clamp at 2 for double deck)
         self._seen_counts[card] = min(2, self._seen_counts.get(card, 0) + 1)
+
+        # Track that this seat has played at least one card this hand.
+        # Used to distinguish active seats from the sitting-out partner
+        # in loner/moon hands (#2654).
+        self._seats_played.add(player_index)
 
         # Infer voids: if a player didn't follow suit, they're void in led suit
         if len(trick_plays) >= 1:
@@ -257,20 +279,40 @@ class GluttonStrategy(Strategy):
                 self._last_won_lead_seat = None
 
     def _opponents_void_in_suit(self, suit: str, player_index: int) -> bool:
-        """Return True if both logical opponents are void in the given suit.
+        """Return True if every *active* logical opponent is void in the suit.
 
-        When both opponents have demonstrated a void (via failed follow-suit
-        in ``observe_play``), any card in that suit is a guaranteed winner
-        regardless of rank — opponents cannot follow suit and therefore
-        cannot beat the lead (#2627).
+        When every active opponent has demonstrated a void (via failed
+        follow-suit in ``observe_play``), any card in that suit is a
+        guaranteed winner regardless of rank — opponents cannot follow suit
+        and therefore cannot beat the lead (#2627).
 
-        Works correctly for both loner (only 2 active opponents) and regular
-        hands (partner winning = team wins, so leading into a voided suit
-        is safe).
+        Loner/moon handling (#2654): the sitting-out partner never plays
+        a card, so ``_void_suits_by_seat[sit_out]`` stays empty for the
+        whole hand. If a defender's ``opp_seats`` tuple includes the
+        sitting-out seat, the plain ``all(opp void)`` check would return
+        False forever, blocking the void-backed lead even when the single
+        active opponent has clearly voided the suit. To fix this, we
+        filter ``opp_seats`` down to seats that have actually played a
+        card this hand (``_seats_played``). In normal 4-player hands all
+        opponents eventually appear in ``_seats_played`` after trick 1,
+        so filtering is a no-op. In loner hands it correctly reduces the
+        check to the single active opponent.
+
+        Before any plays are observed (``_seats_played`` empty, e.g. the
+        caller leading trick 1), we leave ``opp_seats`` unfiltered; no
+        voids are known yet anyway, so the result is ``False`` either way.
         """
         opp_seats = ((player_index + 1) % 4, (player_index + 3) % 4)
+        if self._seats_played:
+            active_opp_seats = tuple(
+                opp for opp in opp_seats if opp in self._seats_played
+            )
+        else:
+            active_opp_seats = opp_seats
+        if not active_opp_seats:
+            return False
         return all(
-            suit in self._void_suits_by_seat.get(opp, set()) for opp in opp_seats
+            suit in self._void_suits_by_seat.get(opp, set()) for opp in active_opp_seats
         )
 
     def _threat_copies_remaining(
@@ -980,6 +1022,9 @@ class GluttonIsolatedStrategy(Strategy):
             2: set(),
             3: set(),
         }
+        # Seats that have played at least one card in the current hand.
+        # Mirror of :attr:`GluttonStrategy._seats_played` (#2654).
+        self._seats_played: Set[int] = set()
         # Contract context (set by on_hand_start)
         self._contract_type: str = "high"
         self._trump_suit: Optional[str] = None
@@ -1019,6 +1064,7 @@ class GluttonIsolatedStrategy(Strategy):
         """Reset per-hand state at the start of each hand."""
         self._seen_counts = {}
         self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
+        self._seats_played = set()
         self._contract_type = contract_type
         self._trump_suit = trump_suit
         self._player_index = player_index
@@ -1038,6 +1084,9 @@ class GluttonIsolatedStrategy(Strategy):
         """Track played cards and infer voids from play patterns."""
         # Increment seen count (clamp at 2 for double deck)
         self._seen_counts[card] = min(2, self._seen_counts.get(card, 0) + 1)
+
+        # Track seats that have played at least one card this hand (#2654).
+        self._seats_played.add(player_index)
 
         # Infer voids: if a player didn't follow suit, they're void in led suit
         if len(trick_plays) >= 1:
@@ -1108,13 +1157,22 @@ class GluttonIsolatedStrategy(Strategy):
         return True
 
     def _opponents_void_in_suit(self, suit: str, player_index: int) -> bool:
-        """Return True if both logical opponents are void in the given suit.
+        """Return True if every *active* logical opponent is void in the suit.
 
-        Mirror of :meth:`GluttonStrategy._opponents_void_in_suit` (#2627).
+        Mirror of :meth:`GluttonStrategy._opponents_void_in_suit` (#2627,
+        #2654 sitting-out filter).
         """
         opp_seats = ((player_index + 1) % 4, (player_index + 3) % 4)
+        if self._seats_played:
+            active_opp_seats = tuple(
+                opp for opp in opp_seats if opp in self._seats_played
+            )
+        else:
+            active_opp_seats = opp_seats
+        if not active_opp_seats:
+            return False
         return all(
-            suit in self._void_suits_by_seat.get(opp, set()) for opp in opp_seats
+            suit in self._void_suits_by_seat.get(opp, set()) for opp in active_opp_seats
         )
 
     def _count_effective_suit(self, hand: List[Card], suit: str) -> int:
