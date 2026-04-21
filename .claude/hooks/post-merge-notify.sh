@@ -68,33 +68,14 @@ if [ -n "$PR_NUM" ]; then
     # Gap C: sentinel is created AFTER successful execution (see below)
 fi
 
-# Resolve lane_id (fallback for Gap B)
+# Resolve lane_id (fallback for Gap B). Sourced helper centralizes the
+# 19-case fleet table — see .claude/hooks/lib/resolve-lane-id.sh (#2690).
 LANE_ID=""
-
-# Try CLAUDE_AGENT_NAME first (e.g., "steward-author-c" -> "author-c")
-if [ -n "${CLAUDE_AGENT_NAME:-}" ]; then
-    LANE_ID=$(echo "$CLAUDE_AGENT_NAME" | sed 's/^steward-//')
-fi
-
-# Fall back to CLAUDE_PROJECT_DIR directory name parsing
-if [ -z "$LANE_ID" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
-    DIR_NAME=$(basename "$CLAUDE_PROJECT_DIR")
-    case "$DIR_NAME" in
-        *steward-author-scratch) LANE_ID="author-scratch" ;;
-        *steward-author-b)       LANE_ID="author-b" ;;
-        *steward-author-c)       LANE_ID="author-c" ;;
-        *steward-author-d)       LANE_ID="author-d" ;;
-        *steward-author)         LANE_ID="author-a" ;;
-        *steward-brws-author-a)  LANE_ID="brws-author-a" ;;
-        *steward-brws-author-b)  LANE_ID="brws-author-b" ;;
-        *steward-brws-author-c)  LANE_ID="brws-author-c" ;;
-        *steward-brws-author-d)  LANE_ID="brws-author-d" ;;
-        *steward-flex-a)         LANE_ID="flex-a" ;;
-        *steward-flex-b)         LANE_ID="flex-b" ;;
-        *steward-flex-c)         LANE_ID="flex-c" ;;
-        *steward-review)         LANE_ID="review" ;;
-        *steward-ops)            LANE_ID="ops" ;;
-    esac
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && \
+   [ -r "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh" ]; then
+    # shellcheck disable=SC1091
+    . "${CLAUDE_PROJECT_DIR}/.claude/hooks/lib/resolve-lane-id.sh"
+    LANE_ID=$(resolve_lane_id)
 fi
 
 # ---------------------------------------------------------------------------

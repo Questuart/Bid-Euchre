@@ -15,6 +15,10 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Exception: .claude/hooks/lib/ is the steward hook shared-library dir
+# (see .claude/hooks/lib/resolve-lane-id.sh). It is not a Python venv.
+!.claude/hooks/lib/
+!.claude/hooks/lib/**
 parts/
 sdist/
 var/
