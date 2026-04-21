@@ -470,7 +470,21 @@ def _expire_stale_on_read(
         except (ValueError, TypeError):
             continue
         if current_time - created_ts > ttl:
-            updated = _update_inbox_status(mid, lane_id, "expired", bus_root)
+            try:
+                updated = _update_inbox_status(mid, lane_id, "expired", bus_root)
+            except ValueError:
+                # Race: a concurrent reader/writer already transitioned this
+                # message to a terminal state between our unlocked snapshot
+                # and this update.  The desired end state (terminal) is
+                # already reached — treat as a no-op.  Mirrors the pattern
+                # used in bulk_ack_matching (#2668).  See #2708 for the
+                # incident that motivated this guard.
+                logger.debug(
+                    "Skipped auto-expire of %s on read: race with concurrent "
+                    "writer (message already in terminal state)",
+                    mid,
+                )
+                continue
             if updated:
                 by_id[mid] = updated
                 logger.debug("Auto-expired message %s on read (TTL=%s)", mid, ttl)
