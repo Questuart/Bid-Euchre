@@ -50,16 +50,18 @@ REQUIRED_FIELDS: frozenset[str] = frozenset(
         "legal_actions",
         "chosen_action",
         "game_state",
-        "counterfactual",
         "decision_time_ms",
         "timestamp",
     }
 )
 
-# Fields that appear only on certain decision types (e.g. glutton_action
-# on human play decisions).  Tests should accept these as valid extras.
+# Fields that appear only on certain decision types and are omitted when null,
+# saving bytes on non-human rows.  Both counterfactual fields share this
+# omit-when-null pattern (see #2645 and the glutton_action precedent in
+# PR #2616).  Tests should accept these as valid extras.
 OPTIONAL_FIELDS: frozenset[str] = frozenset(
     {
+        "counterfactual",
         "glutton_action",
     }
 )
@@ -126,16 +128,17 @@ def decision_to_jsonl(
         "legal_actions": legal_actions,
         "chosen_action": chosen_action,
         "game_state": game_state,
-        "counterfactual": (
-            json.loads(decision_row.counterfactual_json)
-            if decision_row.counterfactual_json
-            else None
-        ),
         "decision_time_ms": decision_row.decision_time_ms,
         "timestamp": timestamp,
     }
 
-    # Include glutton counterfactual when present (human play decisions).
+    # Include GBT bid counterfactual when present (human bid decisions).
+    # Omit when null to save bytes on non-human rows (#2645), matching the
+    # glutton_action pattern below.
+    if decision_row.counterfactual_json is not None:
+        result["counterfactual"] = json.loads(decision_row.counterfactual_json)
+
+    # Include glutton play counterfactual when present (human play decisions).
     if decision_row.glutton_action_json is not None:
         result["glutton_action"] = json.loads(decision_row.glutton_action_json)
 
