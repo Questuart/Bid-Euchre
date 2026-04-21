@@ -48,7 +48,36 @@ def _write_mock_uv(bin_dir: Path, capture_file: Path) -> Path:
     bin_dir.mkdir(parents=True, exist_ok=True)
     shim = bin_dir / "uv"
     shim.write_text(
-        "#!/usr/bin/env bash\n" f'printf "%s\\n" "$@" >> "{capture_file}"\n' "exit 0\n",
+        f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" >> "{capture_file}"\nexit 0\n',
+        encoding="utf-8",
+    )
+    shim.chmod(shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    return shim
+
+
+def _write_failing_construct_jq(bin_dir: Path) -> Path:
+    """Shim `jq` that forces the hand-rolled fallback path.
+
+    The hook invokes jq twice:
+      1. To parse stdin fields (`jq -r '.tool_name // ...'`).
+      2. To build the final JSON record (`jq -nc --arg ...`).
+
+    This shim passes (1) through to the real jq but fails (2) by exiting
+    non-zero whenever `-nc` is present in argv. That forces RECORD="" inside
+    the hook, which activates the `_esc`-based hand-rolled fallback that
+    this test suite is exercising.
+    """
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    shim = bin_dir / "jq"
+    shim.write_text(
+        "#!/usr/bin/env bash\n"
+        'for arg in "$@"; do\n'
+        '  if [ "$arg" = "-nc" ]; then\n'
+        "    exit 1\n"
+        "  fi\n"
+        "done\n"
+        "# Fall through to the real jq on the system PATH (without bin_dir).\n"
+        'PATH="/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin" exec jq "$@"\n',
         encoding="utf-8",
     )
     shim.chmod(shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
@@ -61,17 +90,25 @@ def _run_hook(
     stdin_payload: str,
     lane_env: str | None = "author-b",
     project_dir: Path | None = None,
+    force_fallback: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     """Run the hook with a controlled PATH, env, and CLAUDE_PROJECT_DIR.
 
     Returns (completed_process, uv_capture_path, project_dir) so callers can
     assert on the JSONL log contents and the ops.py argv.
+
+    When ``force_fallback`` is True, installs a jq shim that breaks only the
+    JSON-construction call (`jq -nc ...`) so the hook's hand-rolled ``_esc``
+    fallback runs. This is how the control-char escape tests exercise the
+    fallback path that #2691 targets.
     """
     project_dir = project_dir or tmp_path / "project"
     project_dir.mkdir(parents=True, exist_ok=True)
     bin_dir = tmp_path / "bin"
     uv_capture = tmp_path / "uv_argv.log"
     _write_mock_uv(bin_dir, uv_capture)
+    if force_fallback:
+        _write_failing_construct_jq(bin_dir)
 
     # Keep the minimal PATH the hook needs (jq, sed, date, bash builtins, the
     # mock uv). Use /usr/bin + /bin for coreutils and prepend bin_dir so the
@@ -245,6 +282,146 @@ class TestLaneDerivation:
         record = _read_denial_record(project_dir)
         # Must never be empty (would break ops.py --from validation)
         assert record["lane"], record
+
+
+# ---------------------------------------------------------------------------
+# Hand-rolled fallback JSON escaping (#2691)
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackControlCharEscape:
+    """When jq is unavailable for record construction, the hand-rolled
+    fallback must still emit valid JSON even if the classifier message
+    contains control characters (newlines, tabs, CR, other C0 controls).
+
+    Regression for #2691: pre-fix, the fallback only escaped ``\\`` and ``"``,
+    so a single multi-line classifier message would corrupt every subsequent
+    line in the JSONL file, silently breaking jq-based tooling.
+    """
+
+    def test_fallback_with_embedded_newline_produces_valid_jsonl(
+        self, tmp_path: Path
+    ) -> None:
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "rule_matched": "MultilineRule",
+                "message": "first line\nsecond line\nthird line",
+            }
+        )
+        result, _, project_dir = _run_hook(
+            tmp_path, stdin_payload=payload, force_fallback=True
+        )
+        assert result.returncode == 0, result.stderr
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        log = (
+            project_dir
+            / ".claude"
+            / "runtime"
+            / "classifier_denials"
+            / f"{today}.jsonl"
+        )
+        raw = log.read_text(encoding="utf-8")
+        # Each non-empty line in the JSONL file must parse on its own — if
+        # the newline in "message" leaked through, the second line would be
+        # an orphan fragment and json.loads would fail.
+        lines = [ln for ln in raw.splitlines() if ln.strip()]
+        assert (
+            len(lines) == 1
+        ), f"expected exactly one JSONL line, got {len(lines)}: {raw!r}"
+        record = json.loads(lines[0])
+        assert record["message"] == "first line\nsecond line\nthird line"
+        assert record["rule"] == "MultilineRule"
+
+    def test_fallback_escapes_tab_and_carriage_return(self, tmp_path: Path) -> None:
+        payload = json.dumps(
+            {
+                "tool_name": "Edit",
+                "rule_matched": "WhitespaceRule",
+                "message": "col1\tcol2\rwrap",
+            }
+        )
+        result, _, project_dir = _run_hook(
+            tmp_path, stdin_payload=payload, force_fallback=True
+        )
+        assert result.returncode == 0, result.stderr
+        record = _read_denial_record(project_dir)
+        # After json.loads, the original bytes should be restored exactly.
+        assert record["message"] == "col1\tcol2\rwrap"
+
+    def test_fallback_escapes_c0_controls_as_unicode(self, tmp_path: Path) -> None:
+        # U+0001 and U+001F — arbitrary C0 control chars that should be
+        # emitted as \u0001 / \u001f, not passed through raw.
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "rule_matched": "CtrlRule",
+                "message": "before\u0001mid\u001fafter",
+            }
+        )
+        result, _, project_dir = _run_hook(
+            tmp_path, stdin_payload=payload, force_fallback=True
+        )
+        assert result.returncode == 0, result.stderr
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        log = (
+            project_dir
+            / ".claude"
+            / "runtime"
+            / "classifier_denials"
+            / f"{today}.jsonl"
+        )
+        raw_line = log.read_text(encoding="utf-8").strip()
+        # The raw file content must contain escaped unicode, not the raw bytes
+        assert "\\u0001" in raw_line, raw_line
+        assert "\\u001f" in raw_line, raw_line
+        # And the record must still round-trip through json.loads
+        record = json.loads(raw_line)
+        assert record["message"] == "before\u0001mid\u001fafter"
+
+    def test_fallback_preserves_existing_backslash_and_quote_escapes(
+        self, tmp_path: Path
+    ) -> None:
+        # Regression guard: the extended _esc must not break the two original
+        # escape cases (`\` and `"`).
+        payload = json.dumps(
+            {
+                "tool_name": "Write",
+                "rule_matched": "QuoteRule",
+                "message": 'path="C:\\temp" says "hello"',
+            }
+        )
+        result, _, project_dir = _run_hook(
+            tmp_path, stdin_payload=payload, force_fallback=True
+        )
+        assert result.returncode == 0, result.stderr
+        record = _read_denial_record(project_dir)
+        assert record["message"] == 'path="C:\\temp" says "hello"'
+
+    def test_fallback_is_actually_taken(self, tmp_path: Path) -> None:
+        # Sanity check that the shim forces the fallback branch. We can't
+        # directly assert which branch ran, but the construct-jq shim exits
+        # non-zero on `-nc`, which forces RECORD="" and activates _esc. If
+        # the jq-shim ever stopped working, every other test in this class
+        # would silently start covering only the jq-happy-path.
+        import subprocess as sp
+
+        bin_dir = tmp_path / "bin"
+        _write_failing_construct_jq(bin_dir)
+        # The shim must exit 1 for -nc
+        r = sp.run(
+            [str(bin_dir / "jq"), "-nc", "."], capture_output=True, text=True, timeout=5
+        )
+        assert r.returncode != 0, "shim should fail on -nc"
+        # The shim must pass through non-construct calls
+        r2 = sp.run(
+            [str(bin_dir / "jq"), "-r", '.foo // "x"'],
+            input='{"foo":"bar"}',
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        assert r2.returncode == 0 and r2.stdout.strip() == "bar", r2
 
 
 # ---------------------------------------------------------------------------
