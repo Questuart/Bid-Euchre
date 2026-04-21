@@ -557,32 +557,9 @@ def _probe_fallback_liveness(
     stale_candidate: _LivenessProbe | None = None
     stale_age: float = float("inf")
 
-    # --- Signal 0: Lane heartbeat file (PostToolUse writer, PR #2686) ---
-    # The heartbeat is updated after every tool call, so a lane running
-    # `make check-quiet` for 30 min produces a fresh heartbeat per
-    # intermediate sub-command.  This is the primary signal that fixes
-    # issue #2415 F1 (lanes flipping to `[stale!]` while actively working).
-    #
-    # Cross-worktree resolution: PR #2686's hook CDs to ``$CLAUDE_PROJECT_DIR``
-    # before writing, so each lane's heartbeat file lives under its own
-    # worktree at ``<worktree_path>/.claude/runtime/lane_status/<lane>.json``.
-    # When the orchestrator (or any other lane) reads another lane's
-    # heartbeat, it must look at *that lane's* worktree — not its own.
-    # ``worktree_path`` comes from the worktree registry entry for the
-    # target lane.  When ``worktree_path`` is absent (unregistered lane,
-    # tests with no registry), we fall back to ``runtime_dir`` / CWD so
-    # self-reads and unit tests keep working.
-    #
-    # Missing file ⇒ fall through to S1-S5 (back-compat with sessions that
-    # predate the writer).  Malformed/unparseable ⇒ same.  See
-    # lane_heartbeat.read_heartbeat for the graceful-degradation contract.
-    #
-    # If neither ``worktree_path`` nor ``runtime_dir`` was supplied, skip
-    # Signal 0 entirely.  Falling through to ``read_heartbeat``'s CWD-relative
-    # default would leak the current process's own heartbeat directory into
-    # probe results — e.g. pytest running in a lane worktree would read that
-    # lane's hook-written heartbeats for every lane_id being probed, which
-    # poisons unit tests that rely on a clean idle baseline.
+    # Signal 0: lane heartbeat (PR #2686 writer). See docstring §0.
+    # Skip when neither worktree_path nor runtime_dir is supplied to avoid
+    # leaking the caller's CWD-relative default into probe results.
     heartbeat_dir = _resolve_heartbeat_dir(worktree_path, runtime_dir)
     hb = (
         read_heartbeat(lane_id, runtime_dir=heartbeat_dir)
@@ -756,26 +733,8 @@ def _probe_fallback_liveness(
                 exc_info=True,
             )
 
-    # --- Reconciler: Process-tree probe (opt-in, upgrade-only) ---
-    # If all data-driven signals indicate stale/idle, consult the OS
-    # process tree as a last-line reconciler.  This catches two failure
-    # modes that the data signals can't see:
-    #
-    # 1. The PostToolUse heartbeat hook silently stopped firing (Claude
-    #    Code upgrade, settings drift, hook crash) but validation is
-    #    still running.  `make check-quiet` will live-persist in pgrep
-    #    even if no heartbeat file has been written for an hour.
-    # 2. A lane has been working on a single long Bash call (typically
-    #    `make check-quiet` or a long `pytest`) that exceeds
-    #    ``stale_minutes``.  The heartbeat is fresh in this case too, but
-    #    this reconciler is the authoritative fallback when the heartbeat
-    #    writer has stalled.
-    #
-    # The reconciler is opt-in (``check_process_tree=False`` by default)
-    # because it requires 1-2 subprocesses per lane and would add
-    # noticeable latency to frequent dashboard renders.  The
-    # ``ops.py lane status`` CLI enables it; the dashboard does not
-    # (see analyst-b design §3 back-compat note).
+    # Reconciler: opt-in process-tree probe (see docstring). Upgrade-only —
+    # never downgrades a fresh signal. Catches stalled-heartbeat-but-live cases.
     if check_process_tree:
         try:
             if _probe_process_tree(
