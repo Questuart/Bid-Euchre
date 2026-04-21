@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -284,3 +285,112 @@ def test_known_phases_cover_documented_vocabulary() -> None:
     """Guard rail: the KNOWN_PHASES constant must match the README doc."""
     # If this set changes, update .claude/runtime/lane_status/README.md.
     assert KNOWN_PHASES == {"implementing", "validating", "waiting", "idle"}
+
+
+# ---------------------------------------------------------------------------
+# Shell writer parity (issue #2689)
+# ---------------------------------------------------------------------------
+#
+# The PostToolUse hook has a pure-shell writer at
+# .claude/hooks/lane-heartbeat-post-tool.sh that was rewritten to drop the
+# per-tool-call ``uv run python`` spawn.  The Python writer in this module
+# remains the canonical reference and stays available as a test/fallback
+# path.  These tests lock the invariant that the two writers produce
+# compatible on-disk schemas — any divergence is a regression that would
+# break consumers.
+
+
+_HOOK_PATH = (
+    Path(__file__).resolve().parents[2]
+    / ".claude"
+    / "hooks"
+    / "lane-heartbeat-post-tool.sh"
+)
+
+
+def _run_shell_writer(runtime_dir: Path, lane: str, tool_name: str) -> None:
+    """Invoke the shell hook with a controlled env to write a heartbeat."""
+    env = {
+        **os.environ,
+        "CLAUDE_AGENT_NAME": f"steward-{lane}",
+        "CLAUDE_HEARTBEAT_RUNTIME_DIR": str(runtime_dir),
+    }
+    # Scrub inherited project dir so the lane comes from the agent name
+    # alone, making the test deterministic on any host.
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    env.pop("CLAUDE_SESSION_ID", None)
+    subprocess.run(
+        ["bash", str(_HOOK_PATH)],
+        input=json.dumps({"tool_name": tool_name}),
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=10,
+        check=True,
+    )
+
+
+@pytest.mark.skipif(not _HOOK_PATH.exists(), reason="hook script not present")
+def test_shell_writer_schema_matches_python_writer(tmp_path: Path) -> None:
+    """Shell-produced heartbeat has the same keys + primitive values.
+
+    This is the single strongest invariant across the two writers: their
+    on-disk JSON schemas must agree on every field consumers read.  The
+    timestamp, pid, and session_id fields naturally differ (they reflect
+    the writing process); everything else must match.
+    """
+    shell_dir = tmp_path / "shell"
+    _run_shell_writer(shell_dir, lane="author-a", tool_name="Bash")
+
+    py_dir = tmp_path / "python"
+    py_dir.mkdir()
+    write_heartbeat("author-a", tool_name="Bash", runtime_dir=py_dir)
+
+    shell_json = json.loads((shell_dir / "author-a.json").read_text())
+    py_json = json.loads((py_dir / "author-a.json").read_text())
+
+    assert sorted(shell_json.keys()) == sorted(py_json.keys()), (
+        "shell and python writers must emit the same key set; divergence "
+        "means consumers could see different shapes depending on which "
+        "writer ran"
+    )
+    # Schema-fixed fields: identical values.
+    assert shell_json["schema_version"] == py_json["schema_version"]
+    assert shell_json["lane_id"] == py_json["lane_id"]
+    assert shell_json["last_tool"] == py_json["last_tool"]
+    assert shell_json["phase"] == py_json["phase"]
+    assert shell_json["extras"] == py_json["extras"]
+
+
+@pytest.mark.skipif(not _HOOK_PATH.exists(), reason="hook script not present")
+def test_shell_writer_output_round_trips_through_reader(tmp_path: Path) -> None:
+    """read_heartbeat must accept shell-produced files as-is.
+
+    The reader is the canonical consumer of the on-disk format.  If this
+    test fails, the shell writer has drifted from the schema defined by
+    :class:`Heartbeat.from_json` and the fleet dashboard (PR 3/3 of
+    #2415) will silently drop the lane's heartbeat on the floor.
+    """
+    _run_shell_writer(tmp_path, lane="author-b", tool_name="Edit")
+    hb = read_heartbeat("author-b", runtime_dir=tmp_path)
+    assert hb is not None, "canonical reader rejected shell-produced file"
+    assert hb.lane_id == "author-b"
+    assert hb.last_tool == "Edit"
+    assert hb.schema_version == SCHEMA_VERSION
+
+
+@pytest.mark.skipif(not _HOOK_PATH.exists(), reason="hook script not present")
+def test_shell_writer_is_fresh_against_wall_clock(tmp_path: Path) -> None:
+    """Newly shell-written heartbeats are fresh by the default threshold.
+
+    The shell writer stamps with ``date -u +"%Y-%m-%dT%H:%M:%SZ"`` and
+    must produce a parseable ISO timestamp that :func:`is_fresh` treats
+    as current.
+    """
+    _run_shell_writer(tmp_path, lane="author-c", tool_name="Bash")
+    hb = read_heartbeat("author-c", runtime_dir=tmp_path)
+    assert hb is not None
+    assert is_fresh(hb), (
+        f"shell-produced heartbeat not fresh against wall clock; "
+        f"updated_at={hb.updated_at!r}"
+    )
