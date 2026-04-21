@@ -142,19 +142,36 @@ more than one observed model, naïvely attaching the full day's
 outcomes and inflates the headline productivity ratio. Slice B resolves
 this with **output-token-share weighting** at the lane-day granularity:
 
-- Let `T_m` be observed output tokens for model `m` in the lane-day and
-  `T = sum(T_m)` for all observed models. Share `w_m = T_m / T`.
+- Let `T_m` be observed output tokens for model `m` in the lane-day,
+  where the set of `m` values **includes `unknown`** when legacy
+  session-meta rows (which have no <message>.model) contributed tokens
+  to that lane-day. `T = sum(T_m)` over all buckets `m` (known models
+  plus `unknown`). Share `w_m = T_m / T`.
 - For each `task_completed` event in the lane-day, its outcome count
-  (1 completed, 1 shipped or 1 churned per §3.5 enum mapping) is
-  allocated to each model `m` as `w_m * count`. Fractional allocations
-  accumulate in `float` and are rounded to `int` **only at CLI/JSON
-  render** (dataclass stores `float`).
-- When a lane-day has sessions from exactly one observed model, `w_m = 1`
-  and allocation is trivially integer-preserving — this is the common
-  case and produces no behavior change relative to the simpler spec.
-- Lane-days whose only observed model is `unknown` (all-legacy
-  session-meta rows) fall entirely into the `unknown` model bucket;
-  their outcomes are not redistributed.
+  (1 completed, 1 shipped, 1 churned, 1 blocked, or 1 other per §3.2
+  enum mapping) is allocated to each bucket `m` as `w_m * count`.
+  Fractional allocations accumulate in `float` and are rounded to
+  `int` **only at CLI/JSON render** (dataclass stores `float`).
+- When a lane-day has tokens attributed to exactly one bucket
+  (`known-model-only` or `unknown-only`), `w = 1` for that bucket and
+  allocation is trivially integer-preserving — this is the common case
+  and matches the simpler non-weighted attribution.
+- Mixed lane-days (both known-model sessions *and* legacy `unknown`
+  sessions) allocate a real share to the `unknown` bucket; this
+  preserves the §3.5 null-safety contract that `unknown` remains a
+  first-class bucket rather than being starved by the weighting.
+- **`synthetic` is excluded from the weighting denominator.** The
+  `<synthetic>` model label is emitted by Claude Code for compaction
+  traffic — it represents tool-side summarisation, not productive
+  model spend, and is already surfaced in `by-model` tables as a
+  distinct informational bucket (§2.6 degradation matrix). Including
+  it in `T` would depress the productivity ratio for the real model
+  on any lane-day with compaction activity. Slice B therefore computes
+  `T = sum(T_m for m in observed if m != "synthetic")`; lane-days
+  whose *only* observed model is `synthetic` (compaction-only day) get
+  `T = 0` and contribute zero outcome allocation to any production
+  bucket while still being counted in the `by-model` table's tokens
+  column.
 
 This yields the requested `model × work-outcome` rollup at lane-day
 granularity. It is explicitly labelled "directional" in §7 (matching
@@ -170,10 +187,10 @@ reviewers can compare.
 
 | Record class | model | effort | Rollup behaviour |
 |--------------|-------|--------|------------------|
-| Fresh project-jsonl, single model | captured | `unknown` until D/E | Counted in `by_model` with real model; `by_effort` → `unknown` bucket |
-| project-jsonl, mixed model in one session | see §3.1 | `unknown` | Tokens split per-model by iteration; session counted once |
-| Legacy session-meta | `unknown` bucket | `unknown` bucket | Totals preserved; cannot break down by model |
-| project-jsonl with `<synthetic>` model only | `synthetic` bucket | `unknown` | Counted separately — surfaced but not rolled into production totals |
+| Fresh project-jsonl, single model | captured | `unknown` until D/E | Counted in `by_model` with real model (session_count contributes 1.0); `by_effort` → `unknown` bucket |
+| project-jsonl, mixed model in one session | see §3.1 | `unknown` | Tokens split per-model by message.model (§3.1); session_count split fractionally by output-token share across the observed models — contributions sum to exactly 1.0 across the mixed-model buckets, so the top-line total never inflates. CLI renders fractional session counts as `⌈N⌉*` to make the fractional contribution visible |
+| Legacy session-meta | `unknown` bucket | `unknown` bucket | Totals preserved; cannot break down by model. session_count contributes 1.0 to the `unknown` bucket |
+| project-jsonl with `<synthetic>` model only | `synthetic` bucket | `unknown` | Counted separately — surfaced but excluded from outcome-share weighting (§2.5) so compaction traffic does not dilute productivity ratios |
 
 No record class produces an error; no record class is silently dropped.
 
@@ -195,10 +212,20 @@ class SessionRecord:
                                           # "claude-sonnet-4-6",
                                           # "synthetic", or None
     model_mix: dict[str, int] = field(default_factory=dict)
-                                          # Only populated when >1 model
-                                          # seen; maps model → output_tokens
-                                          # attributed to that model via
-                                          # the usage.iterations array
+                                          # Only populated when >1 distinct
+                                          # message.model value observed in
+                                          # the session. Maps model →
+                                          # output_tokens summed from each
+                                          # assistant message's
+                                          # message.usage.output_tokens,
+                                          # keyed on that message's
+                                          # message.model field (§2.1).
+                                          # Built message-by-message at scan
+                                          # time — <message>.usage.iterations
+                                          # is a token-counter array that
+                                          # does not carry a per-iteration
+                                          # model label and is therefore not
+                                          # used for attribution.
     effort: str | None = None             # Slice B emits None at baseline;
                                           # D/E populate via hint → effort
                                           # promotion pathway
@@ -226,8 +253,15 @@ Add to `token_economy.py`:
 ```python
 @dataclass
 class ModelBucket:
-    model: str                       # or the literal "unknown"
-    session_count: int
+    model: str                       # observed message.model, or the
+                                      # literal "unknown" or "synthetic"
+    # session_count is a float so mixed-model sessions can be split
+    # proportionally by output-token share (see §2.6). Single-model
+    # sessions contribute exactly 1.0 to their bucket; mixed-model
+    # sessions contribute fractional weight to each observed bucket.
+    # Rendered as an integer (with a trailing "*" when fractional) by
+    # the CLI/dashboard.
+    session_count: float
     total_tokens: int
     input_tokens: int
     output_tokens: int
@@ -238,9 +272,14 @@ class ModelBucket:
 
 @dataclass
 class EffortBucket:
-    effort: str                      # "low" | "standard" | "extended" |
+    # The real `--effort-hint` enum in `scripts/internal/ops.py` is
+    # `low|medium|high` (see task_create_parser, line ~4444). Slice B
+    # surfaces the same three values plus `unknown` for sessions that
+    # lack a packet effort hint; no translation layer is introduced.
+    effort: str                      # "low" | "medium" | "high" |
                                       # "unknown"
-    session_count: int
+    session_count: float             # fractional for the same reason as
+                                      # ModelBucket
     total_tokens: int
     git_commits: int | None = None
 
@@ -248,7 +287,7 @@ class EffortBucket:
 class LaneModelRow:
     lane_id: str
     model: str
-    session_count: int
+    session_count: float
     total_tokens: int
     git_commits: int | None
 
@@ -256,7 +295,7 @@ class LaneModelRow:
 class LaneEffortRow:
     lane_id: str
     effort: str
-    session_count: int
+    session_count: float
     total_tokens: int
     git_commits: int | None
 
@@ -342,10 +381,28 @@ and means:
   by glob). `src/bid_euchre/ops/events.py` drains completed records
   from the active log into the archive — reading only the active log
   would make the Slice B rollup depend on retention state rather than
-  task history. Records are de-duplicated by `event_id` on read so a
-  mid-drain race does not double-count. Callers may pass `events_dir`
-  to override the location; both files are optional on disk (a fresh
-  lane may have only the active log, a long-lived lane may have both).
+  task history.
+- **Duplication model.** `append_event` in
+  `src/bid_euchre/ops/events.py` writes records whose schema is
+  `{timestamp, event_type, source, lane_id, payload}` — there is no
+  `event_id` field, and the `task_completed` payload built by
+  `task_complete` in `scripts/internal/ops.py` does not add one. Slice
+  B therefore **does not** require Slice-B to introduce a new
+  event-schema column. Instead:
+  1. `drain_events` holds an `fcntl.flock()` for the entire
+     read→filter→rename→archive cycle and serializes with
+     `append_event` (see the M7 concurrency note in
+     `src/bid_euchre/ops/events.py`), so a single record is never
+     visible in both logs simultaneously after drain completes.
+  2. For defensive reading (drain crash between rename and archive
+     append leaves duplicates impossible but drops rows; operator-run
+     manual archive edits could introduce duplicates), Slice B
+     de-duplicates via the tuple
+     `(timestamp, lane_id, json.dumps(payload, sort_keys=True))`
+     computed from existing fields. No schema change required.
+- Callers may pass `events_dir` to override the location; both files
+  are optional on disk (a fresh lane may have only the active log, a
+  long-lived lane may have both).
 
 Caching, if profiling later reveals a hot path, is out of scope for
 Slice B.
@@ -647,6 +704,20 @@ No new test files needed; all three already exist from Slice A.
   match `usage_summary`.
 - `test_effort_summary_all_unknown_at_baseline` — single `unknown`
   bucket with full token total.
+- `test_effort_bucket_enum_matches_cli` — the EffortBucket `effort`
+  domain is exactly `{"low", "medium", "high", "unknown"}` and the
+  `--effort-hint` CLI enum in `scripts/internal/ops.py` is exactly
+  `{"low", "medium", "high"}`; adding a fourth hint value without
+  updating this test fails.
+- `test_mixed_session_count_is_fractional` — a single JSONL session
+  with 70% opus / 30% sonnet output tokens produces
+  session_count=0.7 for opus and 0.3 for sonnet in `model_summary`;
+  both rows' session counts sum to 1.0.
+- `test_synthetic_excluded_from_outcome_weighting` — lane-day with 80%
+  opus + 20% synthetic + 1 merged task_completed event produces
+  shipped_count=1.0 on opus and 0.0 on synthetic. A
+  compaction-only lane-day (100% synthetic, 1 task_completed event)
+  produces zero outcome allocation and does not raise.
 - `test_lane_model_summary_respects_attribution` — lane IDs match
   existing `lane_summary()` output.
 - `test_model_outcome_summary_lane_day_join` — fixture with known
