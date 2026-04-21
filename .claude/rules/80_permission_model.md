@@ -23,6 +23,48 @@
   `.claude/autoMode.defaults.reference.json` for drift detection — see the
   sibling README.
 
+## Activation — how auto mode actually turns on
+
+While auto mode is still in research preview, `defaultMode: "auto"` in
+`.claude/settings.json` is a **routing default**, not an **enablement flag**.
+The CLI only activates auto mode when the launch command includes
+`--permission-mode auto`. Without the flag, a session whose `defaultMode` is
+`"auto"` still starts in `bypassPermissions` — the classifier gate does not
+engage and `PermissionDenied` events are never emitted.
+
+Two consequences for the fleet (#2685):
+
+1. **Every tmux pane launched by `steward-session.sh` must include
+   `--permission-mode auto`.** The launcher script (`.claude/tmux/steward-session.sh`)
+   passes the flag to each `$CLAUDE_BIN` invocation — orchestrator, ops, review,
+   all four analyst/author/browser/flex panes, 19 launches total. On
+   orchestrator restarts the flag is placed before `$ORCH_CHANNEL_FLAGS` so the
+   channel-flags expansion is deterministic.
+2. **Every headless subprocess launch must include the flag explicitly.**
+   The autonomous review coordinator spawns `claude` via `subprocess.run` in
+   `scripts/internal/review_lane_runner.py::invoke_review`. That argv list
+   must carry `--permission-mode auto` alongside `--agent steward-review`.
+   Any future headless launch surface (plan-review adapters, one-shot
+   `claude --print` invocations, batch review harnesses) must carry the flag
+   too — there is no implicit inheritance from shared settings.
+
+Both surfaces are locked down with structural tests:
+
+- `tests/unit/test_steward_session.py::TestPermissionModeAuto` asserts every
+  `$CLAUDE_BIN` launch line in the tmux script contains the flag. Adding a
+  new lane without the flag fails the test.
+- `tests/unit/test_review_lane_runner.py::TestInvokeReviewPermissionMode`
+  mocks `subprocess.run` and asserts the argv list passed to `claude`
+  contains `--permission-mode auto`.
+
+**Rollout note:** Landing the flag alone does not activate auto mode on
+running lanes — existing sessions continue in their launched mode until they
+restart. The operator must restart the fleet (or individual lanes) for the
+fix to take effect. See #2685 for discovery context; the discovery was made
+during review-lane restart in session 2026-04-20, when the lane respawned as
+`bypassPermissions` despite `defaultMode: "auto"` being set in the committed
+settings.
+
 ## Why auto mode over `bypassPermissions`
 
 The fleet previously ran `bypassPermissions`, which auto-approves everything
