@@ -1740,6 +1740,186 @@ class TestTTLAutoExpireOnRead:
         assert len(acked) == 1
         assert acked[0]["status"] == "acked"
 
+    def test_auto_expire_idempotent_on_concurrent_expired(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """read_inbox must not crash when a message is already expired.
+
+        Regression test for #2708: ``_expire_stale_on_read`` formerly
+        re-invoked ``_update_inbox_status(..., "expired")`` based on a
+        stale pre-expire snapshot.  When a concurrent writer (or an
+        earlier ``expired`` record already present in the file) had
+        already transitioned the message, the subsequent call raised
+        ``ValueError: Invalid transition 'expired' -> 'expired'``,
+        making every inbox read fail.
+
+        This simulates the race by appending a ``pending`` record and
+        then an ``expired`` record for the same ``message_id`` before
+        reading.  The reader's ``by_id`` dedup picks the latest record
+        (``expired``), so the skip-set guard covers it — but we assert
+        the contract here to lock in the behavior regardless of who
+        wins the dedup race.
+        """
+        from bid_euchre.ops.message_bus import (
+            _append_jsonl,
+            _inbox_lock_path,
+            _inbox_path,
+        )
+
+        inbox_file = _inbox_path("target", bus_root)
+        lock_file = _inbox_lock_path("target", bus_root)
+
+        msg = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Race with concurrent expiry",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Simulate a concurrent writer that already transitioned this
+        # message to "expired" before our read.  Append directly via
+        # the inbox writer to bypass the state-machine guard.
+        current_raw = [line for line in inbox_file.read_text().splitlines() if line]
+        latest = json.loads(current_raw[-1])
+        expired_record = {**latest, "status": "expired"}
+        _append_jsonl(inbox_file, expired_record, lock_file)
+
+        pre_lines = len(inbox_file.read_text().splitlines())
+
+        # Read well past the TTL — must NOT raise ValueError.  The
+        # latest record is "expired", so dedup + skip-set already
+        # cover this path — but the guard protects against the case
+        # where a concurrent writer lands between our snapshot and
+        # our update.
+        future_time = time.time() + 100
+        inbox = read_inbox("target", bus_root, now=future_time)
+
+        assert len(inbox) == 1
+        assert inbox[0]["status"] == "expired"
+        # No additional expired record written (idempotent)
+        post_lines = len(inbox_file.read_text().splitlines())
+        assert post_lines == pre_lines
+
+    def test_auto_expire_survives_stale_snapshot_race(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Direct test of the #2708 race path: stale by_id + concurrent expiry.
+
+        Builds a ``by_id`` snapshot that still shows ``pending`` (as
+        the reader would have built before yielding to the concurrent
+        writer), then appends an ``expired`` record to the inbox file
+        (the "concurrent writer" step), then calls
+        ``_expire_stale_on_read`` directly.  Before the fix this raised
+        ``ValueError: Invalid transition 'expired' -> 'expired'``.
+        After the fix the caller's guard swallows the race and
+        continues.
+        """
+        from bid_euchre.ops.message_bus import (
+            _append_jsonl,
+            _expire_stale_on_read,
+            _inbox_lock_path,
+            _inbox_path,
+            _read_inbox_raw,
+        )
+
+        inbox_file = _inbox_path("target", bus_root)
+        lock_file = _inbox_lock_path("target", bus_root)
+
+        msg = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Stale snapshot race",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(msg, bus_root, events_dir=events_dir)
+
+        # Build a by_id snapshot from the file as it exists pre-race.
+        # At this point the message is "pending".
+        raw_pre = _read_inbox_raw("target", bus_root)
+        by_id: dict[str, Any] = {}
+        for rec in raw_pre:
+            mid = rec.get("message_id")
+            if mid:
+                by_id[mid] = rec
+        assert by_id[msg.message_id]["status"] == "pending"
+
+        # Simulate the concurrent writer landing an "expired" record
+        # between our snapshot and our update.
+        latest = dict(raw_pre[-1])
+        expired_record = {**latest, "status": "expired"}
+        _append_jsonl(inbox_file, expired_record, lock_file)
+
+        pre_lines = len(inbox_file.read_text().splitlines())
+
+        # Now call _expire_stale_on_read with the stale by_id.  The
+        # message still looks "pending" from the snapshot's POV, so
+        # the skip-set does NOT filter it out.  Before the fix this
+        # raised ValueError.  After the fix, the ValueError is caught
+        # and the message is left in by_id as-is (terminal state was
+        # already reached by the concurrent writer).
+        future_time = time.time() + 100
+        _expire_stale_on_read(by_id, "target", bus_root, now=future_time)
+
+        # No additional expired record written by the racing call
+        post_lines = len(inbox_file.read_text().splitlines())
+        assert post_lines == pre_lines
+
+    def test_auto_expire_mixed_stale_and_fresh(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Multiple stale messages: mix of already-expired and not — all converge.
+
+        Three TTL-stale messages.  One is pre-expired (simulating a
+        concurrent writer that already transitioned it).  ``read_inbox``
+        must not raise, and all three must end in ``expired``.
+        """
+        from bid_euchre.ops.message_bus import (
+            _append_jsonl,
+            _inbox_lock_path,
+            _inbox_path,
+        )
+
+        inbox_file = _inbox_path("target", bus_root)
+        lock_file = _inbox_lock_path("target", bus_root)
+
+        ids = []
+        for i in range(3):
+            m = create_message(
+                "a",
+                "target",
+                "assignment",
+                f"Stale {i}",
+                payload={"ttl_seconds": 1},
+            )
+            send_message(m, bus_root, events_dir=events_dir)
+            ids.append(m.message_id)
+
+        # Pre-expire the first message via a direct append
+        raw_pre = [
+            json.loads(line) for line in inbox_file.read_text().splitlines() if line
+        ]
+        first_record = next(r for r in raw_pre if r["message_id"] == ids[0])
+        _append_jsonl(
+            inbox_file,
+            {**first_record, "status": "expired"},
+            lock_file,
+        )
+
+        # Read well past the TTL — must not raise
+        future_time = time.time() + 100
+        inbox = read_inbox("target", bus_root, now=future_time)
+
+        # All three messages are present and expired
+        assert len(inbox) == 3
+        statuses = {m["message_id"]: m["status"] for m in inbox}
+        for mid in ids:
+            assert (
+                statuses[mid] == "expired"
+            ), f"Expected {mid} to be expired, got {statuses[mid]}"
+
     def test_no_ttl_never_auto_expires(self, bus_root: Path, events_dir: Path) -> None:
         """Messages with ttl_seconds=None are never auto-expired on read."""
         msg = create_message(
