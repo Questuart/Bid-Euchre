@@ -18,7 +18,8 @@ dimension that downstream slices (D/E) will populate. The telemetry
 extension must:
 
 1. Capture the real per-session model signal that already lives in JSONL
-   (`message.model`) with no new upstream emission.
+   (the `$.message.model` field on assistant records) with no new
+   upstream emission.
 2. Accept an `effort` dimension that is almost entirely `null/unknown` at
    baseline and degrade gracefully until Slices D/E start populating it.
 3. Expose additive CLI + dashboard surfaces — do not remove or rewire the
@@ -53,11 +54,11 @@ Observed:
 
 | Field | Path | Availability | Notes |
 |-------|------|--------------|-------|
-| model | `message.model` | **100%** of assistant messages | Values seen: `claude-opus-4-7`, `claude-sonnet-4-6`, `<synthetic>` |
-| service_tier | `message.usage.service_tier` | 100% | Uniform `"standard"` in live data — not a useful effort proxy yet |
-| speed | `message.usage.speed` | ~99.9% | Uniform `"standard"` — also not a useful effort proxy |
+| model | `$.message.model` (JSONL field) | **100%** of assistant messages | Values seen: `claude-opus-4-7`, `claude-sonnet-4-6`, `<synthetic>` |
+| service_tier | `$.message.usage.service_tier` (JSONL field) | 100% | Uniform `"standard"` in live data — not a useful effort proxy yet |
+| speed | `$.message.usage.speed` (JSONL field) | ~99.9% | Uniform `"standard"` — also not a useful effort proxy |
 | thinking block | `message.content[].type == "thinking"` | Present but empty-redacted in JSONL | Proves extended-thinking *was* invoked without revealing contents — usable as a weak "effort:extended" binary proxy |
-| input/output tokens | `message.usage.{input,output,cache_creation_input,cache_read_input}_tokens` | 100% | Already aggregated in `_scan_jsonl_file` |
+| input/output tokens | `$.message.usage.*_tokens` (input, output, cache_creation_input, cache_read_input) | 100% | Already aggregated in `_scan_jsonl_file` |
 
 **Model mixing within a session.** In a 25-session sample, 24 were
 single-model and 1 contained two distinct models (opus + synthetic).
@@ -113,8 +114,9 @@ Slice C already shipped (PR #2694) and writes enriched
 - `model_hint` / `effort_hint` on the event = the **declared** routing
   intent set at packet creation. Present on every packet that used the
   metadata helpers, `None` on legacy packets.
-- The **observed** per-session model comes from JSONL
-  (`message.model`). This is the independent signal Slice B introduces.
+- The **observed** per-session model comes from JSONL (the
+  `$.message.model` field). This is the independent signal Slice B
+  introduces.
 
 These two signals are deliberately kept separate. Divergence between
 declared `model_hint` and observed model is a future routing-fidelity
@@ -271,8 +273,10 @@ def model_outcome_summary(
 ### 3.4 Storage location and retention
 
 No new files. All rollups are **computed on demand** from the existing
-`session_usage.jsonl` + `session_attributions.jsonl` store under
-`.claude/runtime/token_economy/`. This mirrors `lane_summary()` today
+store files `.claude/runtime/token_economy/session_usage.jsonl` and
+`.claude/runtime/token_economy/session_attributions.jsonl` (both
+gitignored runtime artifacts; not tracked in the repo). This mirrors
+`lane_summary()` today
 and means:
 
 - No retention policy change.
@@ -471,7 +475,7 @@ Token Economy
 
 Rules:
 
-1. Section appears only when `by_model.buckets` is non-empty **and** at
+1. Section appears only when the `by_model → buckets` list is non-empty **and** at
    least one non-`unknown` bucket exists. On a fresh checkout with
    only legacy session-meta data, the section is suppressed rather
    than printed as "unknown 100%".
@@ -494,10 +498,11 @@ logic.
 
 ## 6. Baseline-report impact — recommendation
 
-**Recommendation: Produce a new standalone Slice B report at
-`plans/sessions/2026-04-20_token_economy_slice_b_report.md`** alongside
-the implementation PR. Do **not** re-issue or mutate the Slice A
-baseline.
+**Recommendation: Produce a new standalone Slice B report as part of
+the Slice B implementation PR** (target filename
+`plans/sessions/2026-04-20_token_economy_slice_b_report.md`, created
+by the implementation PR — not this shaping PR). Do **not** re-issue
+or mutate the Slice A baseline.
 
 Rationale:
 
@@ -549,7 +554,7 @@ No new test files needed; all three already exist from Slice A.
 
 ### 7.2 Required test cases (names are normative)
 
-**`test_token_economy.py`:**
+**Cases in tests/unit/test_token_economy.py:**
 
 - `test_scan_jsonl_single_model_session` — assistant messages all
   `claude-opus-4-7` → `model="claude-opus-4-7"`, `model_mix={}`.
@@ -565,7 +570,7 @@ No new test files needed; all three already exist from Slice A.
 - `test_null_safe_unknown_bucket` — `unknown` row counted in totals
   but excluded from per-model ratio denominators.
 
-**`test_ops_token_economy.py`:**
+**Cases in tests/unit/test_ops_token_economy.py:**
 
 - `test_model_summary_shape` — returns `list[ModelBucket]`; totals
   match `usage_summary`.
@@ -581,7 +586,7 @@ No new test files needed; all three already exist from Slice A.
 - `test_reconcile_includes_by_model_parity` — mismatch surfaces
   `[DRIFT]` with the new hint text.
 
-**`test_ops_dashboard.py`:**
+**Cases in tests/unit/test_ops_dashboard.py:**
 
 - `test_dashboard_by_model_rendered_when_non_unknown_present`.
 - `test_dashboard_by_model_suppressed_when_only_unknown` — legacy-only
@@ -635,7 +640,8 @@ plans/sessions/2026-04-20_token_economy_slice_b_report.md   (new)
 **Out of scope (explicit):**
 
 - Any change to `src/bid_euchre/ops/task_queue.py` (that's Slice C —
-  already shipped #2694) or `worker_pool.py` (Slice D/E).
+  already shipped #2694) or `src/bid_euchre/ops/worker_pool.py`
+  (Slice D/E).
 - Any change to `scripts/internal/ops.py task complete` event shape
   (Slice C).
 - Any new telemetry emission point — Slice B consumes existing JSONL
@@ -688,16 +694,17 @@ The implementation PR is ready for review when:
 3. All named test cases in §7.2 exist and pass.
 4. Dashboard output on a real store shows the `By model` sub-section;
    dashboard output on a store with only session-meta suppresses it.
-5. `plans/sessions/2026-04-20_token_economy_slice_b_report.md` is
-   included in the PR with §§1-6 filled, reusing the Slice A report
-   reproduction discipline.
+5. A new Slice B report file (target filename
+   `plans/sessions/2026-04-20_token_economy_slice_b_report.md`) is
+   included in the implementation PR with §§1-6 filled, reusing the
+   Slice A report reproduction discipline.
 6. PR body cites §8.4 commands and links this shaping plan.
 
 ### 8.6 Known risks and mitigations
 
 | Risk | Mitigation |
 |------|------------|
-| JSONL scanner now reads every assistant message for model — increases CPU for `usage import --force` | Model capture is cheap (`dict.get` per message); existing scan already walks every message for token aggregation, so incremental cost is negligible. Add a micro-benchmark test in `test_token_economy.py` that asserts scan-time for a 1000-message fixture stays within 2× current baseline. |
+| JSONL scanner now reads every assistant message for model — increases CPU for `usage import --force` | Model capture is cheap (`dict.get` per message); existing scan already walks every message for token aggregation, so incremental cost is negligible. Add a micro-benchmark test in `tests/unit/test_token_economy.py` that asserts scan-time for a 1000-message fixture stays within 2× current baseline. |
 | `effort` dimension is almost entirely `unknown` at Slice B ship — operator may read this as a bug | Dashboard suppresses `by-effort` until D/E populate it; CLI prints an explicit "effort dimension not yet populated" note. |
 | Mixed-model sessions (opus + synthetic) could be misattributed | `model_mix` preserves the raw split. Slice B report excludes `synthetic`-only sessions from premium-spend ratios to avoid double-counting compaction overhead. |
 | Schema bump to v3 could break external consumers | Only the repo-owned CLI + dashboard consume this store. Reader tolerates v2 rows indefinitely via `.get(...)` semantics. |
