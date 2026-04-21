@@ -27,6 +27,11 @@ throughput_summary
     Compute throughput-normalized token metrics.
 detect_anti_patterns
     Flag high-waste usage patterns.
+store_status
+    Introspect the on-disk store: existence, emptiness, staleness, age.
+reconcile_totals
+    Cross-check totals across summary/lanes/throughput surfaces and surface
+    disagreements as warnings.
 dashboard_token_economy
     Build a dashboard-ready dict with token economy sections.
 """
@@ -1778,6 +1783,327 @@ def _is_store_stale(output_dir: Path) -> bool:
     return age > _STALE_THRESHOLD_SECONDS
 
 
+# ---------------------------------------------------------------------------
+# Store introspection (staleness + empty-store visibility)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class StoreStatus:
+    """Observable state of the token economy on-disk store.
+
+    Pure introspection — :func:`store_status` never mutates the store.
+
+    Attributes
+    ----------
+    exists
+        True when ``session_usage.jsonl`` exists (even if empty).
+    empty
+        True when the store has zero usable session records.  This covers both
+        the "never-imported" case (file missing or zero bytes) and the
+        "file present but no parseable rows" case.
+    stale
+        True when the store should be refreshed before trusting its contents.
+        Mirrors :func:`_is_store_stale`: True when missing, empty, attributions
+        missing, or the usage file is older than
+        :data:`stale_threshold_seconds`.
+    usage_file_mtime
+        ISO-8601 UTC timestamp of ``session_usage.jsonl``'s last modification,
+        or None when the file does not exist.
+    age_seconds
+        Seconds since ``session_usage.jsonl`` was last modified, or None when
+        the file does not exist.  Operators can convert to human-friendly
+        units (e.g. hours) for surfacing.
+    stale_threshold_seconds
+        The threshold above which the store is considered stale.  Surfaced so
+        callers can explain *why* the store was flagged.
+    session_count
+        Number of records in ``session_usage.jsonl`` (zero for empty stores).
+    attributions_present
+        True when ``session_attributions.jsonl`` exists and is non-empty.
+    last_import_timestamp
+        ISO-8601 timestamp of the most recent ``import_timestamp`` value
+        across records in the store, or None when empty.  Distinct from
+        :attr:`usage_file_mtime`: a record's ``import_timestamp`` records when
+        the record was produced, while the file mtime tracks the most recent
+        write (which may be an attribution rebuild).
+    store_path
+        Absolute path to the resolved output directory.  Useful for debugging
+        when operators ask "which store was checked?".
+    """
+
+    exists: bool = False
+    empty: bool = True
+    stale: bool = True
+    usage_file_mtime: str | None = None
+    age_seconds: float | None = None
+    stale_threshold_seconds: int = _STALE_THRESHOLD_SECONDS
+    session_count: int = 0
+    attributions_present: bool = False
+    last_import_timestamp: str | None = None
+    store_path: str = ""
+
+
+def _count_session_records(usage_file: Path) -> tuple[int, str | None]:
+    """Return (record_count, max_import_timestamp) from the usage JSONL.
+
+    Streams the file line-by-line so large stores do not balloon memory.
+    Malformed JSON lines are skipped (matching the rest of the loader
+    surface).  Returns ``(0, None)`` when the file is missing or empty.
+    """
+    if not usage_file.exists():
+        return 0, None
+    count = 0
+    max_ts: str | None = None
+    try:
+        with usage_file.open(encoding="utf-8") as fh:
+            for raw_line in fh:
+                stripped = raw_line.strip()
+                if not stripped:
+                    continue
+                try:
+                    rec = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(rec, dict):
+                    continue
+                count += 1
+                ts = rec.get("import_timestamp")
+                if isinstance(ts, str) and ts:
+                    if max_ts is None or ts > max_ts:
+                        max_ts = ts
+    except OSError as exc:
+        logger.warning("Cannot read %s for introspection: %s", usage_file, exc)
+    return count, max_ts
+
+
+def store_status(*, output_dir: Path | None = None) -> StoreStatus:
+    """Introspect the on-disk token economy store.
+
+    This function never mutates the store — it only observes file presence,
+    size, mtime, and record count.  Safe to call from the dashboard or CLI
+    regardless of import state.
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to repo runtime path.
+
+    Returns
+    -------
+    StoreStatus
+        Observable state including staleness, emptiness, and age.  When the
+        output directory cannot be resolved (e.g. called outside a repo),
+        returns an :class:`StoreStatus` with ``exists=False, empty=True,
+        stale=True`` and ``store_path=""``.
+    """
+    try:
+        resolved_output = _resolve_output_dir(output_dir)
+    except ValueError:
+        return StoreStatus()
+
+    usage_file = resolved_output / "session_usage.jsonl"
+    attr_file = resolved_output / "session_attributions.jsonl"
+
+    status = StoreStatus(
+        stale_threshold_seconds=_STALE_THRESHOLD_SECONDS,
+        store_path=str(resolved_output),
+    )
+
+    status.exists = usage_file.exists()
+    status.attributions_present = attr_file.exists() and attr_file.stat().st_size > 0
+
+    if status.exists:
+        mtime = usage_file.stat().st_mtime
+        status.usage_file_mtime = datetime.fromtimestamp(
+            mtime, tz=timezone.utc
+        ).isoformat()
+        status.age_seconds = max(datetime.now(timezone.utc).timestamp() - mtime, 0.0)
+
+    count, max_import_ts = _count_session_records(usage_file)
+    status.session_count = count
+    status.empty = count == 0
+    status.last_import_timestamp = max_import_ts
+
+    # Reuse the canonical staleness predicate so there is one source of truth
+    # for the "should this be refreshed?" question.
+    status.stale = _is_store_stale(resolved_output)
+
+    return status
+
+
+# ---------------------------------------------------------------------------
+# Totals parity — cross-surface reconciliation
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TotalsReconciliation:
+    """Cross-surface parity check for ``usage summary``, ``lanes``, ``throughput``.
+
+    The three CLI surfaces draw on different underlying slices of the store:
+
+    - ``usage_summary`` — all rows in ``session_usage.jsonl``.
+    - ``lane_summary`` — all rows in ``session_attributions.jsonl`` (built
+      1:1 from sessions via :func:`attribute_sessions`).
+    - ``throughput_summary`` — sessions with ``duration_minutes`` set
+      (i.e. complete sessions only).
+
+    The three surfaces *should* agree when attributions are fresh and there
+    are no in-progress sessions.  When they diverge, :func:`reconcile_totals`
+    reports the delta and flags meaningful discrepancies as ``warnings`` so
+    operators can spot silent drift (e.g. "we only attributed 80% of
+    imported sessions") without hard-failing the CLI.
+
+    Attributes
+    ----------
+    summary_sessions, summary_tokens, summary_commits
+        Totals from ``usage_summary`` (all sessions).
+    lanes_sessions, lanes_tokens, lanes_commits
+        Totals from ``lane_summary`` (all attributions).
+    throughput_sessions, throughput_tokens, throughput_commits
+        Totals from ``throughput_summary`` (complete sessions only).
+    incomplete_sessions
+        ``summary_sessions - throughput_sessions``. Expected to be ≥0 and is
+        NOT warned about — it is a legitimate artifact of in-progress work.
+    attribution_gap
+        ``summary_sessions - lanes_sessions``.  A positive value means some
+        imported sessions lack attribution records; flagged as a warning when
+        non-zero.
+    token_parity_delta
+        ``summary_tokens - lanes_tokens``.  Warned when exceeding the
+        ``parity_tolerance`` (1% of ``summary_tokens`` or 1000, whichever is
+        larger).
+    commit_parity_delta
+        ``summary_commits - lanes_commits``.  Warned when non-zero.
+    warnings
+        Human-readable discrepancy descriptions.  Empty means all surfaces
+        agree (modulo the documented incomplete-session exclusion).
+    ok
+        Shortcut: ``True`` when ``warnings`` is empty.
+    """
+
+    summary_sessions: int = 0
+    summary_tokens: int = 0
+    summary_commits: int = 0
+    lanes_sessions: int = 0
+    lanes_tokens: int = 0
+    lanes_commits: int = 0
+    throughput_sessions: int = 0
+    throughput_tokens: int = 0
+    throughput_commits: int = 0
+    incomplete_sessions: int = 0
+    attribution_gap: int = 0
+    token_parity_delta: int = 0
+    commit_parity_delta: int = 0
+    warnings: list[str] = field(default_factory=list)
+    ok: bool = True
+
+
+def _parity_tolerance(summary_tokens: int) -> int:
+    """Return the acceptable token delta between surfaces.
+
+    Small rounding differences are expected (e.g. when incomplete sessions
+    with partial token counts are excluded from lane attributions).  The
+    tolerance scales with the store size so small stores are not warned on
+    trivial rounding, and large stores still catch percentage drift.
+    """
+    # 1% of summary tokens, floor at 1000.  A 1000-token floor is below a
+    # single realistic message round-trip, so it cannot mask real drift.
+    return max(summary_tokens // 100, 1000)
+
+
+def reconcile_totals(*, output_dir: Path | None = None) -> TotalsReconciliation:
+    """Reconcile totals across ``summary``, ``lanes``, and ``throughput`` surfaces.
+
+    Does not modify the store.  Intended for display inside ``usage summary``
+    and as a standalone sanity check operators can run after an import.
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to repo runtime path.
+
+    Returns
+    -------
+    TotalsReconciliation
+        Totals from each surface plus a list of warnings for unexpected
+        divergences.  ``warnings`` is empty when all surfaces agree (modulo
+        the documented incomplete-session exclusion).
+    """
+    try:
+        resolved_output = _resolve_output_dir(output_dir)
+    except ValueError:
+        return TotalsReconciliation()
+
+    summary = usage_summary(output_dir=resolved_output)
+    lanes = lane_summary(output_dir=resolved_output)
+    throughput = throughput_summary(output_dir=resolved_output)
+
+    lanes_sessions_total = sum(ls.session_count for ls in lanes)
+    lanes_tokens_total = sum(ls.total_tokens for ls in lanes)
+    lanes_commits_total = sum(ls.git_commits for ls in lanes)
+
+    incomplete = max(summary.session_count - throughput.total_sessions, 0)
+    attr_gap = summary.session_count - lanes_sessions_total
+    token_delta = summary.total_tokens - lanes_tokens_total
+    commit_delta = summary.total_git_commits - lanes_commits_total
+
+    tolerance = _parity_tolerance(summary.total_tokens)
+
+    warnings: list[str] = []
+
+    # Attribution gap: sessions imported but not attributed.  Legitimate only
+    # right after import_usage_data() before attribute_sessions() has run.
+    if attr_gap != 0:
+        if attr_gap > 0:
+            warnings.append(
+                f"Attribution gap: {attr_gap} imported session(s) lack "
+                f"attribution records (run `usage attribute`)."
+            )
+        else:
+            warnings.append(
+                f"Attribution surplus: {-attr_gap} attribution record(s) "
+                "without matching session_usage rows (store corruption?)."
+            )
+
+    # Token parity: summary vs sum-of-lanes.  Attribution is 1:1 so totals
+    # should match exactly when the attribution gap is zero.
+    if abs(token_delta) > tolerance:
+        warnings.append(
+            f"Token parity delta {token_delta:+,} tokens between "
+            f"`usage summary` ({summary.total_tokens:,}) and "
+            f"sum-of-`usage lanes` ({lanes_tokens_total:,}); "
+            f"tolerance ±{tolerance:,}."
+        )
+
+    # Commit parity: any non-zero delta is worth surfacing.
+    if commit_delta != 0:
+        warnings.append(
+            f"Commit parity delta {commit_delta:+d} commits between "
+            f"`usage summary` ({summary.total_git_commits}) and "
+            f"sum-of-`usage lanes` ({lanes_commits_total})."
+        )
+
+    return TotalsReconciliation(
+        summary_sessions=summary.session_count,
+        summary_tokens=summary.total_tokens,
+        summary_commits=summary.total_git_commits,
+        lanes_sessions=lanes_sessions_total,
+        lanes_tokens=lanes_tokens_total,
+        lanes_commits=lanes_commits_total,
+        throughput_sessions=throughput.total_sessions,
+        throughput_tokens=throughput.total_tokens,
+        throughput_commits=throughput.total_commits,
+        incomplete_sessions=incomplete,
+        attribution_gap=attr_gap,
+        token_parity_delta=token_delta,
+        commit_parity_delta=commit_delta,
+        warnings=warnings,
+        ok=not warnings,
+    )
+
+
 def _ensure_imported(output_dir: Path) -> None:
     """Auto-import usage data if the store is empty or stale.
 
@@ -1896,7 +2222,16 @@ def dashboard_token_economy(
 
     sessions = _load_sessions(resolved_output)
     if not sessions:
+        # Preserve the existing ``{}`` contract for empty stores (callers
+        # such as build_dashboard_view treat ``{}`` as "hide the section").
+        # Store-status introspection is exposed through the CLI and the
+        # ``store_status()`` public function for operators who need to
+        # distinguish "no data yet" from "store broken".
         return {}
+
+    # Capture store status for the with-data path so the dashboard can
+    # render a staleness marker on the token-economy section (#2169 Slice A).
+    status_dict = asdict(store_status(output_dir=resolved_output))
 
     # Overview
     s = usage_summary(output_dir=resolved_output)
@@ -1977,4 +2312,5 @@ def dashboard_token_economy(
         "efficient_lanes": efficient_lanes,
         "throughput": throughput,
         "anti_patterns": anti_patterns,
+        "store_status": status_dict,
     }

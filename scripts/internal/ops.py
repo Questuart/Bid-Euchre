@@ -61,6 +61,8 @@ Usage:
     uv run python scripts/internal/ops.py usage lanes [--output-dir DIR] [--json]
     uv run python scripts/internal/ops.py usage throughput [--output-dir DIR] [--json]
     uv run python scripts/internal/ops.py usage anti-patterns [--output-dir DIR] [--json]
+    uv run python scripts/internal/ops.py usage status [--output-dir DIR] [--json]
+    uv run python scripts/internal/ops.py usage reconcile [--output-dir DIR] [--json]
     uv run python scripts/internal/ops.py away status [--last-interaction ISO] [--idle N] [--away N] [--extended-away N] [--json]
     uv run python scripts/internal/ops.py away reorder [--preferred-lane LANE] [--status STATUS] [--json]
 """
@@ -3169,17 +3171,31 @@ def cmd_usage(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "summary":
-        from bid_euchre.ops.token_economy import usage_summary
-
-        result = usage_summary(
-            output_dir=getattr(args, "output_dir", None),
+        from bid_euchre.ops.token_economy import (
+            reconcile_totals,
+            store_status,
+            usage_summary,
         )
+
+        out_dir = getattr(args, "output_dir", None)
+        status = store_status(output_dir=out_dir)
+        result = usage_summary(output_dir=out_dir)
+        parity = reconcile_totals(output_dir=out_dir)
 
         if args.json:
             from dataclasses import asdict
 
-            print(json.dumps(asdict(result), indent=2, default=str))
+            payload = {
+                "store_status": asdict(status),
+                "summary": asdict(result),
+                "reconciliation": asdict(parity),
+            }
+            print(json.dumps(payload, indent=2, default=str))
         else:
+            # Store-status banner first so stale/empty is visible even when
+            # the rest of the summary looks fine at a glance.
+            print(_format_store_status_banner(status))
+            print()
             print("Token Economy Summary")
             print("=" * 50)
             print(f"  Sessions:            {result.session_count}")
@@ -3207,6 +3223,9 @@ def cmd_usage(args: argparse.Namespace) -> int:
             print(f"    Assistant msgs:    {result.total_assistant_messages}")
             print(f"    Assist/User:       {result.assistant_user_ratio:.1f}x")
             print(f"    Tool errors:       {result.total_tool_errors}")
+            # Parity footer: surfaces silent drift across CLI surfaces.
+            print()
+            print(_format_parity_footer(parity))
         return 0
 
     elif action == "lanes":
@@ -3296,12 +3315,161 @@ def cmd_usage(args: argparse.Namespace) -> int:
                     print(f"    {f.description}")
         return 0
 
+    elif action == "status":
+        from bid_euchre.ops.token_economy import store_status
+
+        status = store_status(output_dir=getattr(args, "output_dir", None))
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(status), indent=2, default=str))
+        else:
+            print(_format_store_status_banner(status))
+            print()
+            print(f"  Store path:           {status.store_path or 'N/A'}")
+            print(f"  Exists:               {status.exists}")
+            print(f"  Empty:                {status.empty}")
+            print(f"  Stale:                {status.stale}")
+            print(f"  Session count:        {status.session_count}")
+            print(f"  Attributions:         {status.attributions_present}")
+            mtime_display = status.usage_file_mtime or "—"
+            print(f"  Usage file mtime:     {mtime_display}")
+            age_display = (
+                _format_age_seconds(status.age_seconds)
+                if status.age_seconds is not None
+                else "—"
+            )
+            print(f"  Age:                  {age_display}")
+            threshold_display = _format_age_seconds(status.stale_threshold_seconds)
+            print(f"  Stale threshold:      {threshold_display}")
+            import_ts = status.last_import_timestamp or "—"
+            print(f"  Last import stamp:    {import_ts}")
+        return 0
+
+    elif action == "reconcile":
+        from bid_euchre.ops.token_economy import reconcile_totals
+
+        parity = reconcile_totals(output_dir=getattr(args, "output_dir", None))
+
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(parity), indent=2, default=str))
+        else:
+            print("Token Economy Totals Reconciliation")
+            print("=" * 60)
+            print(
+                f"  {'Surface':<14s} {'Sessions':>10s} {'Tokens':>14s} "
+                f"{'Commits':>10s}"
+            )
+            print("-" * 60)
+            print(
+                f"  {'summary':<14s} {parity.summary_sessions:>10d} "
+                f"{parity.summary_tokens:>14,d} {parity.summary_commits:>10d}"
+            )
+            print(
+                f"  {'lanes (Σ)':<14s} {parity.lanes_sessions:>10d} "
+                f"{parity.lanes_tokens:>14,d} {parity.lanes_commits:>10d}"
+            )
+            print(
+                f"  {'throughput':<14s} {parity.throughput_sessions:>10d} "
+                f"{parity.throughput_tokens:>14,d} {parity.throughput_commits:>10d}"
+            )
+            print()
+            print(
+                f"  Incomplete sessions (expected, excluded from throughput): "
+                f"{parity.incomplete_sessions}"
+            )
+            print(f"  Attribution gap:     {parity.attribution_gap}")
+            print(f"  Token parity delta:  {parity.token_parity_delta:+,d}")
+            print(f"  Commit parity delta: {parity.commit_parity_delta:+d}")
+            print()
+            print(_format_parity_footer(parity))
+        return 0
+
     else:
         print(
-            "Usage: ops.py usage {import|attribute|summary|lanes|throughput|anti-patterns}",
+            "Usage: ops.py usage {import|attribute|summary|lanes|throughput|"
+            "anti-patterns|status|reconcile}",
             file=sys.stderr,
         )
         return 1
+
+
+def _format_age_seconds(seconds: float | int) -> str:
+    """Format a duration in seconds as a compact human-friendly string.
+
+    Used by the ``usage status`` / ``usage summary`` banners so operators can
+    tell at a glance how stale the store is.  Returns strings like ``"2m"``,
+    ``"47m"``, ``"3h12m"``, ``"2d4h"``.
+    """
+    s = max(int(seconds), 0)
+    if s < 60:
+        return f"{s}s"
+    m = s // 60
+    if m < 60:
+        return f"{m}m"
+    h = m // 60
+    m %= 60
+    if h < 24:
+        return f"{h}h{m:02d}m"
+    d = h // 24
+    h %= 24
+    return f"{d}d{h:02d}h"
+
+
+def _format_store_status_banner(status) -> str:  # noqa: ANN001
+    """Return a single-line banner summarizing the store's freshness.
+
+    Accepts a :class:`token_economy.StoreStatus`; typed as ``Any`` to avoid
+    a runtime import penalty in the CLI happy path.
+    """
+    if not status.exists or status.empty:
+        if not status.exists:
+            body = "no store present (run `usage import`)"
+        else:
+            body = "store exists but empty (run `usage import`)"
+        return f"Store status: [EMPTY] {body}"
+    if status.stale:
+        age = (
+            _format_age_seconds(status.age_seconds)
+            if status.age_seconds is not None
+            else "unknown"
+        )
+        threshold = _format_age_seconds(status.stale_threshold_seconds)
+        if not status.attributions_present:
+            extra = " attributions missing;"
+        else:
+            extra = ""
+        return (
+            f"Store status: [STALE]{extra} last refresh {age} ago "
+            f"(threshold {threshold}) — consider `usage import` + `usage attribute`"
+        )
+    age = (
+        _format_age_seconds(status.age_seconds)
+        if status.age_seconds is not None
+        else "just now"
+    )
+    return f"Store status: [fresh] last refresh {age} ago"
+
+
+def _format_parity_footer(parity) -> str:  # noqa: ANN001
+    """Return a human-readable reconciliation footer.
+
+    Accepts a :class:`token_economy.TotalsReconciliation`; typed as ``Any``
+    to avoid a runtime import in the CLI hot path.
+    """
+    if parity.ok:
+        return (
+            "Totals parity: [OK] summary, lanes, throughput agree "
+            f"(incomplete sessions excluded from throughput: "
+            f"{parity.incomplete_sessions})"
+        )
+    lines = ["Totals parity: [DRIFT] cross-surface totals disagree:"]
+    for w in parity.warnings:
+        lines.append(f"  - {w}")
+    return "\n".join(lines)
 
 
 def cmd_away(args: argparse.Namespace) -> int:
@@ -4455,6 +4623,28 @@ def build_parser() -> argparse.ArgumentParser:
         "anti-patterns", help="Detect high-waste usage patterns"
     )
     usage_ap_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_status_parser = usage_sub.add_parser(
+        "status",
+        help="Introspect the token economy store (existence, staleness, age)",
+    )
+    usage_status_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_reconcile_parser = usage_sub.add_parser(
+        "reconcile",
+        help="Cross-check totals across summary/lanes/throughput surfaces",
+    )
+    usage_reconcile_parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,

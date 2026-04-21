@@ -10,8 +10,10 @@ import json
 from pathlib import Path
 
 from bid_euchre.ops.token_economy import (
+    _STALE_THRESHOLD_SECONDS,
     SCHEMA_VERSION,
     SessionRecord,
+    StoreStatus,
     _build_record_from_jsonl,
     _compute_duration_minutes,
     _infer_lane_from_slug,
@@ -22,6 +24,7 @@ from bid_euchre.ops.token_economy import (
     import_project_jsonl,
     import_usage_data,
     infer_lane_from_path,
+    store_status,
 )
 
 # ---------------------------------------------------------------------------
@@ -905,3 +908,151 @@ class TestImportUsageData:
         result = import_usage_data(usage_dir=usage_dir, output_dir=output_dir)
         assert result.sessions_imported == 1
         assert result.sessions_skipped == 0
+
+
+# ---------------------------------------------------------------------------
+# store_status — staleness visibility and empty-store surfacing
+# ---------------------------------------------------------------------------
+
+
+def _write_session_rows(
+    output_dir: Path, count: int, *, import_timestamp: str = "2026-04-20T00:00:00+00:00"
+) -> None:
+    """Write ``count`` minimal session rows with the given import_timestamp.
+
+    Uses the public session_usage.jsonl schema (dict-per-line) so the tests
+    exercise the same loader the production code uses.
+    """
+    usage_file = output_dir / "session_usage.jsonl"
+    with usage_file.open("w", encoding="utf-8") as fh:
+        for i in range(count):
+            fh.write(
+                json.dumps(
+                    {
+                        "session_id": f"s{i}",
+                        "input_tokens": 100,
+                        "output_tokens": 200,
+                        "import_timestamp": import_timestamp,
+                    }
+                )
+                + "\n"
+            )
+
+
+def _write_attr_rows(output_dir: Path, count: int) -> None:
+    """Write ``count`` minimal attribution rows to session_attributions.jsonl."""
+    attr_file = output_dir / "session_attributions.jsonl"
+    with attr_file.open("w", encoding="utf-8") as fh:
+        for i in range(count):
+            fh.write(json.dumps({"session_id": f"s{i}", "lane_id": "author-a"}) + "\n")
+
+
+class TestStoreStatus:
+    """Verify store_status introspects without mutating and surfaces staleness."""
+
+    def test_missing_store_reports_empty_and_stale(self, tmp_path: Path) -> None:
+        status = store_status(output_dir=tmp_path)
+        assert isinstance(status, StoreStatus)
+        assert status.exists is False
+        assert status.empty is True
+        assert status.stale is True
+        assert status.session_count == 0
+        assert status.attributions_present is False
+        assert status.usage_file_mtime is None
+        assert status.age_seconds is None
+        assert status.last_import_timestamp is None
+        assert status.store_path == str(tmp_path)
+
+    def test_empty_file_reports_empty(self, tmp_path: Path) -> None:
+        (tmp_path / "session_usage.jsonl").write_text("")
+        status = store_status(output_dir=tmp_path)
+        assert status.exists is True
+        assert status.empty is True
+        # Empty file is still stale per the canonical predicate.
+        assert status.stale is True
+        assert status.session_count == 0
+
+    def test_fresh_store_reports_not_stale(self, tmp_path: Path) -> None:
+        _write_session_rows(tmp_path, count=3)
+        _write_attr_rows(tmp_path, count=3)
+        status = store_status(output_dir=tmp_path)
+        assert status.exists is True
+        assert status.empty is False
+        assert status.stale is False
+        assert status.session_count == 3
+        assert status.attributions_present is True
+        assert status.usage_file_mtime is not None
+        # Just-written files should have near-zero age.
+        assert status.age_seconds is not None
+        assert status.age_seconds >= 0
+
+    def test_aged_store_reports_stale(self, tmp_path: Path) -> None:
+        """Staleness visibility: a usage file older than the threshold is stale.
+
+        Simulates the "import ran a long time ago and was never refreshed"
+        failure mode Slice A needs to make visible.
+        """
+        _write_session_rows(tmp_path, count=2)
+        _write_attr_rows(tmp_path, count=2)
+        usage_file = tmp_path / "session_usage.jsonl"
+        # Backdate both mtime and atime beyond the stale threshold.
+        old_ts = usage_file.stat().st_mtime - (_STALE_THRESHOLD_SECONDS + 60)
+        import os as _os
+
+        _os.utime(usage_file, (old_ts, old_ts))
+        status = store_status(output_dir=tmp_path)
+        assert status.exists is True
+        assert status.empty is False
+        assert (
+            status.stale is True
+        ), "Store older than threshold must be visible as stale"
+        assert status.age_seconds is not None
+        assert status.age_seconds > _STALE_THRESHOLD_SECONDS
+
+    def test_missing_attributions_reports_stale(self, tmp_path: Path) -> None:
+        """Usage present but attributions missing: store is stale."""
+        _write_session_rows(tmp_path, count=1)
+        # Intentionally omit attributions file.
+        status = store_status(output_dir=tmp_path)
+        assert status.attributions_present is False
+        assert status.stale is True
+
+    def test_last_import_timestamp_picks_maximum(self, tmp_path: Path) -> None:
+        """last_import_timestamp is the max across all records."""
+        usage_file = tmp_path / "session_usage.jsonl"
+        rows = [
+            {"session_id": "s1", "import_timestamp": "2026-04-18T10:00:00+00:00"},
+            {"session_id": "s2", "import_timestamp": "2026-04-20T10:00:00+00:00"},
+            {"session_id": "s3", "import_timestamp": "2026-04-19T10:00:00+00:00"},
+        ]
+        with usage_file.open("w", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+        _write_attr_rows(tmp_path, count=3)
+        status = store_status(output_dir=tmp_path)
+        assert status.last_import_timestamp == "2026-04-20T10:00:00+00:00"
+
+    def test_malformed_rows_do_not_crash_introspection(self, tmp_path: Path) -> None:
+        """A single malformed line must not raise — introspection is best-effort."""
+        usage_file = tmp_path / "session_usage.jsonl"
+        usage_file.write_text(
+            '{"session_id": "s1"}\n' "this is not json\n" '{"session_id": "s2"}\n',
+            encoding="utf-8",
+        )
+        _write_attr_rows(tmp_path, count=2)
+        status = store_status(output_dir=tmp_path)
+        # Two valid rows counted; the malformed line is skipped.
+        assert status.session_count == 2
+        assert status.empty is False
+
+    def test_introspection_does_not_mutate_store(self, tmp_path: Path) -> None:
+        """Call twice and verify file mtimes are unchanged."""
+        _write_session_rows(tmp_path, count=1)
+        _write_attr_rows(tmp_path, count=1)
+        usage_file = tmp_path / "session_usage.jsonl"
+        attr_file = tmp_path / "session_attributions.jsonl"
+        mtime_before = (usage_file.stat().st_mtime, attr_file.stat().st_mtime)
+        store_status(output_dir=tmp_path)
+        store_status(output_dir=tmp_path)
+        mtime_after = (usage_file.stat().st_mtime, attr_file.stat().st_mtime)
+        assert mtime_before == mtime_after
