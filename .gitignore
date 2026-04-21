@@ -221,6 +221,10 @@ CLAUDE.local.md
 !.claude/runtime/task_state/
 .claude/runtime/task_state/*
 !.claude/runtime/task_state/README.md
+!.claude/runtime/lane_status/
+.claude/runtime/lane_status/*
+!.claude/runtime/lane_status/README.md
+!.claude/runtime/lane_status/.gitignore
 
 # =============================================================================
 # Backup and temporary files
