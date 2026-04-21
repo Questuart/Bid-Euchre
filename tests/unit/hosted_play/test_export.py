@@ -1144,3 +1144,67 @@ class TestGluttonCounterfactualExport:
 
         result = decision_to_jsonl(decision, match, hand)
         assert "glutton_action" not in result
+
+
+# ---------------------------------------------------------------------------
+# GBT bid counterfactual export tests (#2645)
+# ---------------------------------------------------------------------------
+
+
+class TestBidCounterfactualExport:
+    """Verify ``counterfactual`` is optional: present only when non-null.
+
+    Schema unification (#2645): both counterfactual fields share the
+    omit-when-null pattern.  ``counterfactual`` lives in OPTIONAL_FIELDS,
+    not REQUIRED_FIELDS.
+    """
+
+    def test_counterfactual_is_optional_not_required(self):
+        """Schema constant: ``counterfactual`` must be an OPTIONAL field."""
+        from web.export import OPTIONAL_FIELDS, REQUIRED_FIELDS
+
+        assert "counterfactual" in OPTIONAL_FIELDS
+        assert "counterfactual" not in REQUIRED_FIELDS
+
+    def test_counterfactual_included_when_present(self, db_session):
+        """counterfactual field appears in export for decisions that have it."""
+        player = create_test_player(db_session)
+        match = create_test_match(db_session, player_id=player.id)
+        hand = create_test_hand(db_session, match)
+        cf_payload = {"n": 3, "contract": "H"}
+        decision = create_test_decision(
+            db_session,
+            match,
+            hand,
+            phase="bid",
+            actor_type="human",
+            decision_source="human",
+            counterfactual_json=json.dumps(cf_payload),
+        )
+
+        result = decision_to_jsonl(decision, match, hand)
+        assert "counterfactual" in result
+        assert result["counterfactual"] == cf_payload
+
+    def test_counterfactual_absent_when_null(self, db_session):
+        """counterfactual field is omitted for decisions without it.
+
+        This is the key behaviour change from #2645: previously the field was
+        always emitted as ``null`` on non-human rows, wasting bytes.  Now it
+        is omitted entirely, matching the glutton_action precedent (PR #2616).
+        """
+        player = create_test_player(db_session)
+        match = create_test_match(db_session, player_id=player.id)
+        hand = create_test_hand(db_session, match)
+        # AI bid row — no counterfactual_json set.
+        decision = create_test_decision(
+            db_session,
+            match,
+            hand,
+            phase="bid",
+            actor_type="ai",
+            decision_source="heuristic",
+        )
+
+        result = decision_to_jsonl(decision, match, hand)
+        assert "counterfactual" not in result
