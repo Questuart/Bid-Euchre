@@ -3,22 +3,45 @@
 #
 # Part of issue #2415 / PR 1 of 3 (writer-only).  The heartbeat file at
 # .claude/runtime/lane_status/<lane_id>.json records when this lane last
-# completed a tool call; future PRs will use it to fix the F1 dashboard
-# failure mode where actively running lanes are mislabeled as [stale!].
+# completed a tool call; later PRs wire it into the dashboard classifier
+# so actively running lanes are not mislabeled as [stale!].
 #
-# Invariants:
+# PURE SHELL IMPLEMENTATION (issue #2689, PR <TBD>)
+# -------------------------------------------------
+# This hook was previously a ~60ms `uv run python` spawn per tool call.
+# Measurement:  19 lanes × hundreds of tool calls/session × fleet-long
+# operation made that startup cost a real steady-state tax.  The payload
+# is a 7-field flat JSON dict, so interpreter startup was the dominant
+# cost — not the ~1ms of actual work.  This rewrite emits the same JSON
+# via `printf` + atomic `mv`, dropping steady-state cost to < 10ms.
+#
+# The canonical schema + reader lives in
+# ``src/bid_euchre/ops/lane_heartbeat.py``; the Python writer there is
+# retained as a test fixture generator and fallback for any non-hook
+# caller that might appear.  Contract parity between this shell writer
+# and the Python writer is locked by
+# ``tests/unit/test_lane_heartbeat_hook.py``.
+#
+# Invariants (unchanged from PR 1):
 #   1. ALWAYS exits 0.  A failed heartbeat must never block a tool call
 #      or cause the hook to be unregistered.
-#   2. Bounded wall-clock time.  The heartbeat write runs under a 2s
-#      `timeout` so a pathologically slow Python start never stalls the
-#      tool-call pipeline.
-#   3. No consumer is wired up yet — this file is strictly additive.
+#   2. Bounded wall-clock time.  The steady-state work is < 10ms; the
+#      outer `timeout: 10` in .claude/settings.json bounds any pathological
+#      case (e.g. a hung `jq`).
+#   3. No consumer needs to change — the on-disk JSON shape matches what
+#      `write_heartbeat` in lane_heartbeat.py produces.
 #
 # Lane resolution matches post-merge-notify.sh so the writer emits the
 # same lane_id that the rest of the steward fleet uses.
 #
 # The tool_name is read from the PostToolUse JSON payload on stdin (the
 # standard mechanism; there is no CLAUDE_TOOL_NAME env var).
+#
+# Runtime dir override:
+#   The heartbeat directory can be overridden via
+#   ``CLAUDE_HEARTBEAT_RUNTIME_DIR`` for tests.  Production hook
+#   invocations never set this; they use the default
+#   ``$CLAUDE_PROJECT_DIR/.claude/runtime/lane_status``.
 
 # Strict mode inside the hook body; we override the exit behavior at the
 # end so a mid-script failure still yields exit 0 to the harness.
@@ -69,50 +92,68 @@ if [ -z "$LANE_ID" ]; then
     exit 0
 fi
 
-# Run the writer under a bounded timeout so a slow `uv run` cold start
-# cannot stall the tool-call pipeline.  Failure for any reason — missing
-# uv, import error, OSError on the runtime dir — is swallowed.
-#
-# Timeout strategy: prefer GNU ``timeout`` (Linux fleet hosts) and fall
-# back to ``gtimeout`` (macOS with coreutils).  On hosts with neither we
-# run unwrapped and rely on the in-Python ``signal.alarm(2)`` self-kill
-# as the bound on wall-clock time.  This keeps the hook portable across
-# Linux and macOS dev laptops without drifting from the 2s budget.
-#
-# The writer gets the tool name via an env var rather than shell
-# interpolation to avoid quoting hazards if a tool name ever contains
-# special characters.
+# Resolve the runtime dir.  Explicit override via env wins (used by
+# contract tests); otherwise default to
+# $CLAUDE_PROJECT_DIR/.claude/runtime/lane_status — matching the default
+# used by write_heartbeat() in lane_heartbeat.py when called from CWD =
+# project root.
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-if command -v timeout >/dev/null 2>&1; then
-    TIMEOUT_CMD="timeout 2"
-elif command -v gtimeout >/dev/null 2>&1; then
-    TIMEOUT_CMD="gtimeout 2"
+RUNTIME_DIR="${CLAUDE_HEARTBEAT_RUNTIME_DIR:-$PROJECT_DIR/.claude/runtime/lane_status}"
+
+# Create the runtime dir.  If this fails (e.g. parent is a regular file,
+# or an unwritable mount) we exit 0 — heartbeats are advisory, never
+# blocking.
+mkdir -p "$RUNTIME_DIR" 2>/dev/null || exit 0
+
+# Build the JSON payload.  All numeric and schema-controlled fields are
+# interpolated directly; the two free-text fields (tool name, session id)
+# go through `jq -Rcn 'inputs'` so embedded quotes, backslashes, tabs,
+# and unicode are encoded to valid JSON.  Fallback to `null` if jq is
+# unavailable or the encoding fails — `null` is schema-compatible with
+# Heartbeat.from_json which maps None to the Optional[str] fields.
+SESSION_ID="${CLAUDE_SESSION_ID:-}"
+if command -v jq >/dev/null 2>&1; then
+    if [ -n "$TOOL_NAME" ]; then
+        LAST_TOOL_JSON=$(printf '%s' "$TOOL_NAME" | jq -Rsc '.' 2>/dev/null || echo 'null')
+    else
+        LAST_TOOL_JSON='null'
+    fi
+    if [ -n "$SESSION_ID" ]; then
+        SESSION_JSON=$(printf '%s' "$SESSION_ID" | jq -Rsc '.' 2>/dev/null || echo 'null')
+    else
+        SESSION_JSON='null'
+    fi
 else
-    TIMEOUT_CMD=""
+    LAST_TOOL_JSON='null'
+    SESSION_JSON='null'
 fi
 
-(
-    cd "$PROJECT_DIR" 2>/dev/null || true
-    LANE_ID="$LANE_ID" LAST_TOOL="$TOOL_NAME" \
-        $TIMEOUT_CMD uv run --quiet python -c '
-import os
-import signal
+# Timestamp in ISO-8601 with Z suffix (matches _iso() in lane_heartbeat.py).
+TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+PID=$$
 
-# In-Python timeout as portable fallback when coreutils `timeout` is
-# missing.  SIGALRM self-terminates the process so uv cold start can
-# never stall the tool-call pipeline past the 2-second budget.
-try:
-    signal.alarm(2)
-except (AttributeError, ValueError):
-    # Windows or unusual runtime — skip the alarm; the outer timeout
-    # wrapper is the primary defense in those environments.
-    pass
+TARGET="$RUNTIME_DIR/$LANE_ID.json"
+TMP="$RUNTIME_DIR/$LANE_ID.json.tmp"
 
-from bid_euchre.ops.lane_heartbeat import write_heartbeat
+# Keys sorted alphabetically to match the Python writer's
+# json.dumps(..., sort_keys=True) output byte-for-byte on the shared
+# fields.  If Python ever changes sort order, the schema-parity test
+# will catch it.
+printf '{"extras": {}, "last_tool": %s, "lane_id": "%s", "phase": null, "pid": %d, "schema_version": 1, "session_id": %s, "updated_at": "%s"}\n' \
+    "$LAST_TOOL_JSON" \
+    "$LANE_ID" \
+    "$PID" \
+    "$SESSION_JSON" \
+    "$TS" \
+    > "$TMP" 2>/dev/null || exit 0
 
-tool = os.environ.get("LAST_TOOL") or None
-write_heartbeat(os.environ["LANE_ID"], tool_name=tool)
-' >/dev/null 2>&1 || true
-) || true
+# Atomic rename.  `mv -f` within a single directory is atomic on POSIX,
+# matching the `os.replace` invariant in the Python writer.
+mv -f "$TMP" "$TARGET" 2>/dev/null || {
+    # Cleanup a stray tempfile if the rename itself failed.  We still
+    # exit 0 — heartbeat writes are best-effort.
+    rm -f "$TMP" 2>/dev/null
+    exit 0
+}
 
 exit 0
