@@ -4628,3 +4628,173 @@ class TestDispatchWritesResolvedPolicy:
         saved_pkt = mock_save.call_args[0][0]
         assert saved_pkt.metadata.get(RESOLVED_MODEL_KEY) == "opus"
         assert saved_pkt.metadata.get(RESOLVED_EFFORT_KEY) == "medium"
+
+
+# ---------------------------------------------------------------------------
+# Slice E (#2169): shadow-mode dispatch advisor
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchAdvisorShadowMode:
+    """Structural invariants for the adaptive dispatch advisor.
+
+    The advisor emits a ranked recommendation as a durable event but must
+    never alter the lane actually dispatched. These tests pin that contract
+    at the ``dispatch_to_worker`` boundary.
+    """
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_advisor_never_mutates_dispatch_decision(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Even if the advisor strongly prefers a different lane, the
+        returned lane_id is the caller's choice verbatim.
+        """
+        from bid_euchre.ops import learning
+
+        mock_load.return_value = _make_packet()
+        mock_snapshot.return_value = _make_pool(
+            [
+                _make_worker("author-a", "idle"),
+                _make_worker("author-b", "idle"),
+                _make_worker("author-d", "idle"),
+            ]
+        )
+
+        # Advisor always prefers author-d — dispatch must still go to caller.
+        def _always_d(*args, **kwargs):  # noqa: ARG001
+            return [
+                learning.LaneRecommendation(
+                    lane_id="author-d",
+                    score=99.0,
+                    reasons=("mocked",),
+                    features=learning.LaneFeatures(lane_id="author-d"),
+                ),
+            ]
+
+        monkeypatch.setattr(learning, "recommend_lanes", _always_d)
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+        # The returned action references the caller-supplied lane, not the
+        # advisor's preferred lane.
+        assert result.lane_id == "author-a"
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_emits_one_recommendation_event(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Exactly one ``dispatch_recommendation`` event per dispatch call."""
+        from bid_euchre.ops.events import EVENTS_FILE
+
+        mock_load.return_value = _make_packet()
+        mock_snapshot.return_value = _make_pool(
+            [
+                _make_worker("author-a", "idle"),
+                _make_worker("author-b", "idle"),
+            ]
+        )
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        events_file = runtime_dir / "events" / EVENTS_FILE
+        assert events_file.exists(), "dispatch should have emitted an event"
+
+        advisor_events = [
+            json.loads(line)
+            for line in events_file.read_text().splitlines()
+            if line.strip() and '"dispatch_recommendation"' in line
+        ]
+        assert len(advisor_events) == 1
+        payload = advisor_events[0]["payload"]
+        assert payload["selected_lane"] == "author-a"
+        assert "candidates" in payload
+        assert payload["policy_version"]
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_advisor_failure_does_not_fail_dispatch(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A crashing advisor is logged but dispatch still completes."""
+        from bid_euchre.ops import learning
+
+        mock_load.return_value = _make_packet()
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+
+        def _boom(*args, **kwargs):  # noqa: ARG001
+            raise RuntimeError("synthetic advisor crash")
+
+        monkeypatch.setattr(learning, "log_recommendation_for_dispatch", _boom)
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+        assert result.error is None
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_advisor_disabled_mode_emits_no_event(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """ADVISOR_MODE='disabled' skips event emission entirely."""
+        from bid_euchre.ops import learning
+        from bid_euchre.ops.events import EVENTS_FILE
+
+        monkeypatch.setattr(learning, "ADVISOR_MODE", "disabled")
+
+        mock_load.return_value = _make_packet()
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+
+        result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+        assert result.executed is True
+
+        events_file = runtime_dir / "events" / EVENTS_FILE
+        if events_file.exists():
+            advisor_events = [
+                line
+                for line in events_file.read_text().splitlines()
+                if '"dispatch_recommendation"' in line
+            ]
+            assert advisor_events == []
