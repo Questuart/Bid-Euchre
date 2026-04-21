@@ -1163,19 +1163,25 @@ class TestBulkAckMessages:
         assert all(ev["payload"].get("bulk") is True for ev in ack_events)
 
     def test_bulk_ack_with_age_filter(self, bus_root: Path, events_dir: Path) -> None:
-        """Only messages older than cutoff are acked when age filter is used."""
-        from datetime import datetime, timezone
+        """Only messages older than cutoff are acked when age filter is used.
+
+        Uses a synthetic created_at 5h in the past — older than the 4h
+        filter cutoff, but still inside the default 24h TTL so the
+        post-#2699 in-memory lazy-expiry pass does not intercept it.
+        """
+        from datetime import datetime, timedelta, timezone
 
         m1 = create_message("a", "target", "assignment", "Old task")
         m2 = create_message("a", "target", "progress", "New task")
         send_message(m1, bus_root, events_dir=events_dir)
         send_message(m2, bus_root, events_dir=events_dir)
 
-        # Patch m1's created_at to be very old by rewriting the inbox
+        # Patch m1's created_at to 5h ago — beyond the 4h filter cutoff,
+        # but safely inside the 24h DEFAULT_TTL_SECONDS window.
         inbox_path = bus_root / "inbox" / "target.jsonl"
         lines = inbox_path.read_text().strip().split("\n")
         patched: list[str] = []
-        old_ts = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc).strftime(
+        old_ts = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
         for line in lines:
@@ -1185,7 +1191,7 @@ class TestBulkAckMessages:
             patched.append(json.dumps(rec))
         inbox_path.write_text("\n".join(patched) + "\n")
 
-        # Cutoff: 4 hours — only m1 (very old) should match
+        # Cutoff: 4 hours — only m1 (5h old) should match
         cutoff_ts = datetime.now(timezone.utc).timestamp() - 4 * 3600
 
         def older_than_cutoff(msg: dict) -> bool:
@@ -1314,49 +1320,52 @@ class TestBulkAckTerminalStates:
         self,
         bus_root: Path,
         events_dir: Path,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Simulate a race where a message transitions to terminal state
-        between the bulk-ack snapshot and the per-message update.  The
-        underlying ``_update_inbox_status`` raises ``ValueError``; bulk-ack
-        must catch it and tally the message as skipped_terminal."""
+        """Observable contract for #2668: a message that is pending in the
+        raw snapshot but transitions to terminal *before* the ack commit
+        is counted as ``skipped_terminal`` rather than aborting the batch.
+
+        Post-#2699 the whole read-mutate-rewrite happens under the inbox
+        flock, so a true concurrent-writer race inside ``bulk_ack_messages``
+        is no longer reachable. The equivalent observable is the in-memory
+        lazy-expiry pass: a TTL-stale pending record is expired before the
+        ack partition, and if the filter still matches it, it lands in
+        ``skipped_terminal`` while the rest of the batch acks cleanly.
+        """
         m1 = create_message("a", "target", "assignment", "Pending 1")
-        m2 = create_message("a", "target", "assignment", "Races to expired")
+        # m2: pending with a very short TTL — will be lazily expired in-memory
+        m2 = create_message(
+            "a",
+            "target",
+            "assignment",
+            "Stale TTL expires mid-batch",
+            payload={"ttl_seconds": 1},
+        )
         m3 = create_message("a", "target", "assignment", "Pending 2")
         send_message(m1, bus_root, events_dir=events_dir)
         send_message(m2, bus_root, events_dir=events_dir)
         send_message(m3, bus_root, events_dir=events_dir)
 
-        # Monkeypatch _update_inbox_status so that the first call for m2
-        # raises ValueError (simulating the race).  Other calls pass
-        # through to the real implementation.
-        import bid_euchre.ops.message_bus as mb
-
-        real_update = mb._update_inbox_status
-
-        def racing_update(*args: Any, **kwargs: Any) -> Any:
-            # Positional signature: message_id, lane_id, new_status, bus_root
-            message_id = args[0] if args else kwargs.get("message_id")
-            new_status = args[2] if len(args) > 2 else kwargs.get("new_status")
-            if message_id == m2.message_id and new_status == "acked":
-                raise ValueError(
-                    f"Invalid transition 'expired' -> 'acked' for "
-                    f"message {message_id!r}; allowed: (terminal)"
-                )
-            return real_update(*args, **kwargs)
-
-        monkeypatch.setattr(mb, "_update_inbox_status", racing_update)
-
+        # Pass ``now`` well past m2's TTL; m1/m3 use the default 24h TTL
+        # so they stay pending. Lazy expiry transitions m2 to expired in
+        # memory before the ack partition — matching the historical race
+        # semantics the old _update_inbox_status mid-batch ValueError
+        # path was defending.
+        future = time.time() + 60  # 60s after the messages were created
         result = bulk_ack_messages(
-            "target", lambda _: True, bus_root, events_dir=events_dir
+            "target", lambda _: True, bus_root, events_dir=events_dir, now=future
         )
-        # m1 and m3 acked; m2 counted as skipped due to race
         assert len(result.acked) == 2
         assert {r["message_id"] for r in result.acked} == {
             m1.message_id,
             m3.message_id,
         }
         assert result.skipped_terminal == 1
+
+        # Side effect: m2 is persisted as expired in the rewritten inbox
+        inbox = read_inbox("target", bus_root, status="expired")
+        assert len(inbox) == 1
+        assert inbox[0]["message_id"] == m2.message_id
 
     def test_bulk_ack_result_is_tuple_unpackable(
         self, bus_root: Path, events_dir: Path
@@ -1371,6 +1380,256 @@ class TestBulkAckTerminalStates:
         )
         assert len(acked) == 1
         assert skipped == 0
+
+
+# ---------------------------------------------------------------------------
+# Bulk ack — single-pass rewrite (#2699)
+# ---------------------------------------------------------------------------
+
+
+class TestBulkAckSinglePass:
+    """Regression tests for #2699 — ``bulk_ack_messages`` must perform
+    exactly one raw-inbox read and one rewrite regardless of match count.
+    """
+
+    def test_bulk_ack_single_read_single_write(
+        self,
+        bus_root: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Instrument open() to assert that bulk_ack performs O(1) I/O
+        shape: one read of the inbox, one write of the tmp file,
+        regardless of M matched messages."""
+        import builtins
+
+        import bid_euchre.ops.message_bus as mb
+
+        # Seed 20 pending messages — all will match the filter.
+        for i in range(20):
+            m = create_message("a", "target", "assignment", f"Task {i}")
+            send_message(m, bus_root, events_dir=events_dir)
+
+        # ``_read_inbox_raw`` is NOT called by the new code path — count
+        # calls to prove that.
+        read_raw_calls = {"n": 0}
+        real_read = mb._read_inbox_raw
+
+        def counting_read(lane_id: str, root: Path) -> list[dict[str, Any]]:
+            read_raw_calls["n"] += 1
+            return real_read(lane_id, root)
+
+        monkeypatch.setattr(mb, "_read_inbox_raw", counting_read)
+
+        inbox_path = bus_root / "inbox" / "target.jsonl"
+        tmp_path = inbox_path.with_suffix(".jsonl.tmp")
+        opens = {"read_inbox": 0, "write_tmp": 0}
+        builtin_open = builtins.open
+
+        def counting_open(file, mode="r", *args, **kwargs):
+            path_str = str(file)
+            if path_str == str(inbox_path) and ("r" == mode or mode.startswith("r")):
+                opens["read_inbox"] += 1
+            elif path_str == str(tmp_path) and ("w" in mode):
+                opens["write_tmp"] += 1
+            return builtin_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", counting_open)
+
+        result = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+
+        # Fan-out should be irrelevant — read once, rewrite once.
+        assert read_raw_calls["n"] == 0, (
+            "bulk_ack_messages should not call _read_inbox_raw "
+            "(that was the O(N²) regression source in #2699)"
+        )
+        # Exactly one streaming read of the inbox file.
+        assert opens["read_inbox"] == 1
+        # Exactly one write of the tmp file (then atomic rename).
+        assert opens["write_tmp"] == 1
+        # And all 20 messages got acked.
+        assert len(result.acked) == 20
+        assert result.skipped_terminal == 0
+
+    def test_bulk_ack_large_inbox_under_budget(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """5000 pending messages, ack all, wall-clock under 2s.
+
+        Today's O(N²) path would take ~100s+ on 5000 messages because
+        each ack re-reads the growing inbox. The single-pass rewrite
+        makes this a simple O(N) read + O(N) write.
+        """
+        import time as _time
+
+        count = 5000
+        for i in range(count):
+            m = create_message("a", "target", "assignment", f"Task {i}")
+            send_message(m, bus_root, events_dir=events_dir)
+
+        start = _time.perf_counter()
+        result = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+        elapsed = _time.perf_counter() - start
+
+        assert len(result.acked) == count
+        assert result.skipped_terminal == 0
+        assert elapsed < 2.0, (
+            f"bulk_ack on {count} messages took {elapsed:.2f}s "
+            f"(expected <2.0s; O(N²) regression suspected)"
+        )
+
+    def test_bulk_ack_preserves_ttl_expiry_side_effect(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """A TTL-stale pending message that is *not* matched by filter_fn
+        must still be transitioned to ``expired`` and persisted in the
+        rewritten inbox — parity with the lazy-expiry side effect that
+        ``read_inbox`` has today."""
+        # m1: stale, matches filter
+        m_match = create_message(
+            "a",
+            "target",
+            "assignment",
+            "alpha expired",
+            payload={"ttl_seconds": 1},
+        )
+        # m2: stale, does NOT match filter — still must be expired
+        m_nomatch = create_message(
+            "a",
+            "target",
+            "assignment",
+            "bravo expired",
+            payload={"ttl_seconds": 1},
+        )
+        # m3: fresh, does NOT match filter — stays pending
+        m_fresh = create_message("a", "target", "progress", "fresh pending")
+        send_message(m_match, bus_root, events_dir=events_dir)
+        send_message(m_nomatch, bus_root, events_dir=events_dir)
+        send_message(m_fresh, bus_root, events_dir=events_dir)
+
+        future = time.time() + 3600  # 1h past — TTL=1 expires both stale msgs
+        result = bulk_ack_messages(
+            "target",
+            lambda msg: "alpha" in msg.get("summary", ""),
+            bus_root,
+            events_dir=events_dir,
+            now=future,
+        )
+
+        # Nothing acked (m_match was expired in-memory before partition,
+        # so it lands in skipped_terminal).
+        assert len(result.acked) == 0
+        assert result.skipped_terminal == 1
+
+        # Read inbox: m_match and m_nomatch now expired, m_fresh pending
+        # (read_inbox also applies lazy expiry, but the rewrite already
+        # persisted the transition, so ordering doesn't matter).
+        expired_recs = read_inbox(
+            "target", bus_root, status="expired", auto_expire=False
+        )
+        assert {r["message_id"] for r in expired_recs} == {
+            m_match.message_id,
+            m_nomatch.message_id,
+        }
+
+        pending_recs = read_inbox(
+            "target", bus_root, status="pending", auto_expire=False
+        )
+        assert len(pending_recs) == 1
+        assert pending_recs[0]["message_id"] == m_fresh.message_id
+
+    def test_bulk_ack_dedup_after_rewrite(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Inbox pre-seeded with 3 records for the same message_id; after
+        bulk_ack, the on-disk inbox contains exactly one record per id.
+
+        The inbox file is append-only in normal operation, but after the
+        single-pass rewrite the latest-wins dedup has been flushed to
+        disk — mirroring ``compact_inbox`` semantics.
+        """
+        m = create_message("a", "target", "assignment", "multi-record")
+        send_message(m, bus_root, events_dir=events_dir)
+
+        # Manually append 2 more records for the same id, simulating
+        # pending -> delivered -> pending retry history.
+        inbox_path = bus_root / "inbox" / "target.jsonl"
+        base = json.loads(inbox_path.read_text().strip().split("\n")[0])
+        with open(inbox_path, "a") as f:
+            f.write(json.dumps({**base, "status": "delivered"}) + "\n")
+            f.write(json.dumps({**base, "status": "pending"}) + "\n")
+
+        # Pre-condition: 3 raw lines for 1 unique id
+        raw_before = [
+            line for line in inbox_path.read_text().split("\n") if line.strip()
+        ]
+        assert len(raw_before) == 3
+
+        result = bulk_ack_messages(
+            "target", lambda _: True, bus_root, events_dir=events_dir
+        )
+        assert len(result.acked) == 1
+
+        # Post-condition: 1 raw line for 1 unique id (deduplicated).
+        raw_after = [
+            line for line in inbox_path.read_text().split("\n") if line.strip()
+        ]
+        assert len(raw_after) == 1
+        rec = json.loads(raw_after[0])
+        assert rec["message_id"] == m.message_id
+        assert rec["status"] == "acked"
+
+    def test_bulk_ack_urgent_not_expired(
+        self, bus_root: Path, events_dir: Path
+    ) -> None:
+        """Urgent (P0) past-TTL pending messages are never auto-expired
+        — parity with :func:`_expire_stale_on_read`. When bulk_ack_messages
+        runs on a past-TTL urgent, it either acks (if matched) or leaves
+        pending (if unmatched), but never transitions to ``expired``.
+        """
+        m_urgent = create_message(
+            "a",
+            "target",
+            "assignment",
+            "urgent stale",
+            priority="urgent",
+            payload={"ttl_seconds": 1},
+        )
+        send_message(m_urgent, bus_root, events_dir=events_dir)
+
+        future = time.time() + 3600  # well past TTL=1
+
+        # Filter does NOT match — urgent stays pending, does not expire.
+        result = bulk_ack_messages(
+            "target",
+            lambda _: False,
+            bus_root,
+            events_dir=events_dir,
+            now=future,
+        )
+        assert len(result.acked) == 0
+        assert result.skipped_terminal == 0
+
+        pending = read_inbox("target", bus_root, status="pending", auto_expire=False)
+        assert len(pending) == 1
+        assert pending[0]["message_id"] == m_urgent.message_id
+
+        # Same precondition but filter matches — urgent is acked normally,
+        # not routed through expiry.
+        result = bulk_ack_messages(
+            "target",
+            lambda _: True,
+            bus_root,
+            events_dir=events_dir,
+            now=future,
+        )
+        assert len(result.acked) == 1
+        assert result.acked[0]["message_id"] == m_urgent.message_id
+        assert result.skipped_terminal == 0
 
 
 # ---------------------------------------------------------------------------
