@@ -120,9 +120,37 @@ RECORD=$(jq -nc \
   2>/dev/null) || RECORD=""
 
 if [ -z "$RECORD" ]; then
-  # Hand-rolled fallback (escape backslashes + double quotes only)
+  # Hand-rolled fallback. Escapes per RFC 8259 §7:
+  #   - `\` → `\\`, `"` → `\"`
+  #   - named short escapes for \b \t \n \f \r
+  #   - remaining C0 control chars (U+0000–U+001F) → \uXXXX
+  # Uses awk (not sed) because sed cannot process embedded newlines in a
+  # single invocation without non-portable GNU-only extensions, and a single
+  # unescaped newline in the message would corrupt every subsequent line in
+  # the JSONL file (see #2691).
   _esc() {
-    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+    printf '%s' "$1" | LC_ALL=C awk '
+      BEGIN {
+        for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i
+      }
+      { buf = (NR == 1 ? $0 : buf "\n" $0) }
+      END {
+        n = length(buf)
+        for (i = 1; i <= n; i++) {
+          c = substr(buf, i, 1)
+          v = ord[c] + 0
+          if (c == "\\")            printf "\\\\"
+          else if (c == "\"")       printf "\\\""
+          else if (v == 8)          printf "\\b"
+          else if (v == 9)          printf "\\t"
+          else if (v == 10)         printf "\\n"
+          else if (v == 12)         printf "\\f"
+          else if (v == 13)         printf "\\r"
+          else if (v > 0 && v < 32) printf "\\u%04x", v
+          else                      printf "%s", c
+        }
+      }
+    '
   }
   RECORD=$(printf '{"ts":"%s","lane":"%s","tool":"%s","rule":"%s","message":"%s"}' \
     "$(_esc "$TIMESTAMP")" \
