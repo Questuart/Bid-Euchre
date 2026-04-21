@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -1293,3 +1293,128 @@ class TestDashboardByModelPanel:
         # Token economy section exists and exposes by_model.
         assert "token_economy" in round_tripped
         assert "by_model" in round_tripped["token_economy"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: _format_lane_line heartbeat-age rendering (issue #2415 PR 3/3)
+# ---------------------------------------------------------------------------
+
+
+from bid_euchre.ops.dashboard import _format_lane_line  # noqa: E402
+
+
+def _make_heartbeat_lane(
+    lane_id: str,
+    *,
+    worktree_path: Path,
+    state: str,
+    liveness_source: str | None,
+) -> LaneStatus:
+    """Build a LaneStatus whose worktree_path points at a real directory."""
+    return LaneStatus(
+        lane_id=lane_id,
+        lane_class="author",
+        worktree_path=str(worktree_path),
+        branch="feat/demo",
+        lifecycle_class="persistent",
+        has_active_session=False,
+        state=state,
+        liveness_source=liveness_source,
+    )
+
+
+def _write_hb(
+    worktree_path: Path,
+    lane_id: str,
+    *,
+    updated_at: datetime,
+) -> None:
+    heartbeat_dir = worktree_path / ".claude" / "runtime" / "lane_status"
+    heartbeat_dir.mkdir(parents=True, exist_ok=True)
+    ts = updated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    payload = {
+        "schema_version": 1,
+        "lane_id": lane_id,
+        "pid": 4242,
+        "session_id": None,
+        "updated_at": ts,
+        "last_tool": "Bash",
+        "phase": None,
+        "extras": {},
+    }
+    (heartbeat_dir / f"{lane_id}.json").write_text(json.dumps(payload, sort_keys=True))
+
+
+class TestFormatLaneLineHeartbeat:
+    """Heartbeat-age rendering in ``_format_lane_line`` (issue #2415 PR 3/3)."""
+
+    def test_no_heartbeat_events_source_unchanged(self, tmp_path: Path) -> None:
+        """Parity: non-heartbeat liveness sources render the legacy string."""
+        lane = _make_heartbeat_lane(
+            "author-a",
+            worktree_path=tmp_path,
+            state="likely_active",
+            liveness_source="events",
+        )
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        line = _format_lane_line(lane, now=now)
+        assert "likely active (via events)" in line
+        assert "heartbeat" not in line
+
+    def test_heartbeat_likely_active_includes_age(self, tmp_path: Path) -> None:
+        """Fresh heartbeat: render ``likely active (via heartbeat, 15s ago)``."""
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        _write_hb(tmp_path, "author-a", updated_at=now - timedelta(seconds=15))
+        lane = _make_heartbeat_lane(
+            "author-a",
+            worktree_path=tmp_path,
+            state="likely_active",
+            liveness_source="heartbeat",
+        )
+        line = _format_lane_line(lane, now=now)
+        assert "likely active (via heartbeat, 15s ago)" in line
+
+    def test_heartbeat_stale_includes_age(self, tmp_path: Path) -> None:
+        """Stale-state heartbeat still renders the age, not just the source."""
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        _write_hb(tmp_path, "author-a", updated_at=now - timedelta(minutes=5))
+        lane = _make_heartbeat_lane(
+            "author-a",
+            worktree_path=tmp_path,
+            state="stale",
+            liveness_source="heartbeat",
+        )
+        line = _format_lane_line(lane, now=now)
+        # 5m = 300s → "5m0s ago"
+        assert "stale (via heartbeat, 5m0s ago)" in line
+
+    def test_heartbeat_missing_falls_back_gracefully(self, tmp_path: Path) -> None:
+        """Missing heartbeat file: no traceback; fall back to ``via heartbeat``."""
+        # No heartbeat written — directory exists but no JSON file.
+        lane = _make_heartbeat_lane(
+            "author-a",
+            worktree_path=tmp_path,
+            state="likely_active",
+            liveness_source="heartbeat",
+        )
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        line = _format_lane_line(lane, now=now)
+        assert "likely active (via heartbeat)" in line
+        # Must not include an age token.
+        assert "ago" not in line
+
+    def test_heartbeat_malformed_falls_back_gracefully(self, tmp_path: Path) -> None:
+        """Corrupt heartbeat file: render without raising."""
+        heartbeat_dir = tmp_path / ".claude" / "runtime" / "lane_status"
+        heartbeat_dir.mkdir(parents=True, exist_ok=True)
+        (heartbeat_dir / "author-a.json").write_text("{not json")
+        lane = _make_heartbeat_lane(
+            "author-a",
+            worktree_path=tmp_path,
+            state="likely_active",
+            liveness_source="heartbeat",
+        )
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        line = _format_lane_line(lane, now=now)
+        assert "likely active (via heartbeat)" in line
+        assert "ago" not in line

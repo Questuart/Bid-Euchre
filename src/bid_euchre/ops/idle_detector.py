@@ -27,6 +27,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from bid_euchre.ops.events import append_event, read_events
+from bid_euchre.ops.lane_heartbeat import (
+    DEFAULT_FRESHNESS_SECONDS,
+    is_fresh,
+    read_heartbeat,
+)
 
 logger = logging.getLogger("ops.idle_detector")
 
@@ -111,14 +116,58 @@ def _find_last_meaningful_event(
     return None
 
 
+def _resolve_heartbeat_dir_for_lane(
+    worktree_path: str | None,
+    runtime_dir: Path | None,
+) -> Path | None:
+    """Resolve the ``lane_status`` directory for a registered lane.
+
+    Mirrors :func:`bid_euchre.ops.status._resolve_heartbeat_dir` precedence
+    so the idle detector reads heartbeats from exactly the location PR
+    #2686's hook writes them.  See that function's docstring for the full
+    contract; this local copy exists to avoid importing the heavy status
+    module from the lightweight idle detector.
+
+    Precedence:
+
+    1. ``<worktree_path>/.claude/runtime/lane_status`` — cross-worktree
+       reads when the registry records a lane's worktree root.
+    2. ``<runtime_dir>/lane_status`` — self-read / test fallback.
+    3. ``None`` — let :func:`read_heartbeat` use its own CWD default.
+    """
+    if worktree_path:
+        return Path(worktree_path) / ".claude" / "runtime" / "lane_status"
+    if runtime_dir is not None:
+        return runtime_dir / "lane_status"
+    return None
+
+
 def _get_active_lane_ids(
     runtime_dir: Path | None = None,
+    *,
+    now: datetime | None = None,
+    threshold_seconds: int = DEFAULT_FRESHNESS_SECONDS,
 ) -> list[str]:
     """Return lane IDs that are currently active.
 
-    Uses a lightweight check: reads the worktree registry for lanes with
-    an active session_id.  This avoids importing the full status module's
-    heavy aggregation machinery.
+    A lane counts as active when **either** of the following holds and the
+    lane is not on the :data:`CONTROL_PLANE_LANES` exclusion list:
+
+    - The worktree registry records a non-empty ``session_id`` for the
+      lane (legacy behavior).
+    - The lane has a fresh heartbeat file at
+      ``<worktree_path>/.claude/runtime/lane_status/<lane_id>.json``
+      written within ``threshold_seconds`` (issue #2415 failure-mode F1:
+      ``make check-quiet`` runs drop ``session_id`` to null for the
+      duration, but the PostToolUse hook keeps the heartbeat fresh).
+
+    Control-plane lanes (``orchestrator``, ``ops``, ``review``) are
+    excluded from both signals — a fresh orchestrator heartbeat does not
+    keep the fleet from auto-shutoff.
+
+    Heartbeat reads are bounded O(lanes); no subprocesses are spawned.
+    A missing or malformed heartbeat falls back to the legacy
+    ``session_id``-only semantics.
     """
     if runtime_dir is None:
         runtime_dir = Path(".claude/runtime")
@@ -136,8 +185,27 @@ def _get_active_lane_ids(
         except (OSError, ValueError):
             continue
         lane_id = data.get("lane_id", "")
+        if not lane_id or lane_id in CONTROL_PLANE_LANES:
+            continue
+
         session_id = data.get("session_id")
-        if session_id and lane_id and lane_id not in CONTROL_PLANE_LANES:
+        if session_id:
+            active.append(lane_id)
+            continue
+
+        # Session is cleared (either never set or dropped during a
+        # subprocess run) — consult the heartbeat before declaring the
+        # lane idle.  Registry ``worktree_path`` points the reader at the
+        # lane's own ``.claude/runtime/lane_status/`` directory.
+        worktree_path = data.get("worktree_path")
+        heartbeat_dir = _resolve_heartbeat_dir_for_lane(worktree_path, runtime_dir)
+        if heartbeat_dir is None:
+            continue
+        try:
+            hb = read_heartbeat(lane_id, runtime_dir=heartbeat_dir)
+        except Exception:  # pragma: no cover — defensive
+            continue
+        if is_fresh(hb, threshold_seconds=threshold_seconds, now=now):
             active.append(lane_id)
 
     return active
@@ -173,8 +241,11 @@ def is_fleet_idle(
     # 1. Find the last meaningful event
     last_event_ts = _find_last_meaningful_event(events_dir)
 
-    # 2. Check for currently active lanes
-    active_lanes = _get_active_lane_ids(runtime_dir)
+    # 2. Check for currently active lanes.  ``now`` is threaded through
+    #    so heartbeat freshness is evaluated against the same clock the
+    #    caller supplied (critical for deterministic tests and for
+    #    consistent "idle_minutes" accounting).
+    active_lanes = _get_active_lane_ids(runtime_dir, now=now)
 
     # If any lane is actively running, the fleet is not idle
     if active_lanes:

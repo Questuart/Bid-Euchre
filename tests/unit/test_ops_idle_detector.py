@@ -744,3 +744,223 @@ class TestExecuteShutoff:
         assert result.executed is True
         assert result.event_logged is True
         assert result.idle_status.idle is True
+
+
+# ---------------------------------------------------------------------------
+# Tests: heartbeat-aware _get_active_lane_ids (issue #2415 PR 3/3)
+# ---------------------------------------------------------------------------
+
+
+def _write_heartbeat_file(
+    runtime_dir: Path,
+    lane_id: str,
+    *,
+    updated_at: datetime,
+    last_tool: str | None = "Bash",
+    worktree_path: Path | None = None,
+) -> Path:
+    """Write a heartbeat JSON file at the location the lane hook would use.
+
+    When ``worktree_path`` is provided, writes under
+    ``<worktree_path>/.claude/runtime/lane_status/`` (the cross-worktree
+    read path).  Otherwise writes under ``<runtime_dir>/lane_status/``.
+    """
+    if worktree_path is not None:
+        heartbeat_dir = worktree_path / ".claude" / "runtime" / "lane_status"
+    else:
+        heartbeat_dir = runtime_dir / "lane_status"
+    heartbeat_dir.mkdir(parents=True, exist_ok=True)
+    path = heartbeat_dir / f"{lane_id}.json"
+    ts = updated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    payload = {
+        "schema_version": 1,
+        "lane_id": lane_id,
+        "pid": 12345,
+        "session_id": None,
+        "updated_at": ts,
+        "last_tool": last_tool,
+        "phase": None,
+        "extras": {},
+    }
+    path.write_text(json.dumps(payload, sort_keys=True))
+    return path
+
+
+def _register_lane_with_worktree(
+    runtime_dir: Path,
+    lane_id: str,
+    *,
+    session_id: str | None,
+    worktree_path: Path | None,
+) -> None:
+    """Write a worktree registry entry recording an optional worktree path."""
+    registry = runtime_dir / "worktree_registry"
+    entry: dict[str, object] = {"lane_id": lane_id, "session_id": session_id}
+    if worktree_path is not None:
+        entry["worktree_path"] = str(worktree_path)
+    (registry / f"{lane_id}.json").write_text(json.dumps(entry))
+
+
+class TestGetActiveLaneIdsHeartbeat:
+    """Heartbeat-aware coverage for the PR 3/3 gate (issue #2415 F1)."""
+
+    def test_no_heartbeat_session_id_only_unchanged(self, runtime_dir: Path) -> None:
+        """Parity: lanes with session_id and no heartbeat still count as active."""
+        _register_lane(runtime_dir, "author-a", session_id="sess-001")
+        assert _get_active_lane_ids(runtime_dir) == ["author-a"]
+
+    def test_no_heartbeat_no_session_id_inactive(self, runtime_dir: Path) -> None:
+        """Parity: lanes without session_id or heartbeat remain inactive."""
+        _register_lane(runtime_dir, "author-a", session_id=None)
+        assert _get_active_lane_ids(runtime_dir) == []
+
+    def test_fresh_heartbeat_no_session_id_is_active(
+        self, tmp_path: Path, runtime_dir: Path
+    ) -> None:
+        """F1 regression: fresh heartbeat keeps the lane active despite null session_id."""
+        worktree = tmp_path / "wt_author_a"
+        worktree.mkdir()
+        _register_lane_with_worktree(
+            runtime_dir,
+            "author-a",
+            session_id=None,
+            worktree_path=worktree,
+        )
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        _write_heartbeat_file(
+            runtime_dir,
+            "author-a",
+            updated_at=now - timedelta(seconds=15),
+            worktree_path=worktree,
+        )
+        result = _get_active_lane_ids(runtime_dir, now=now)
+        assert result == ["author-a"]
+
+    def test_stale_heartbeat_no_session_id_is_inactive(
+        self, tmp_path: Path, runtime_dir: Path
+    ) -> None:
+        """A heartbeat aged past the freshness threshold does not count."""
+        worktree = tmp_path / "wt_author_a"
+        worktree.mkdir()
+        _register_lane_with_worktree(
+            runtime_dir,
+            "author-a",
+            session_id=None,
+            worktree_path=worktree,
+        )
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        _write_heartbeat_file(
+            runtime_dir,
+            "author-a",
+            updated_at=now - timedelta(minutes=30),
+            worktree_path=worktree,
+        )
+        # Default lane_heartbeat threshold is 600s (10m) — 30m is well past it.
+        result = _get_active_lane_ids(runtime_dir, now=now)
+        assert result == []
+
+    def test_heartbeat_control_plane_excluded(
+        self, tmp_path: Path, runtime_dir: Path
+    ) -> None:
+        """A fresh heartbeat for a control-plane lane does not count toward active."""
+        worktree = tmp_path / "wt_orch"
+        worktree.mkdir()
+        _register_lane_with_worktree(
+            runtime_dir,
+            "orchestrator",
+            session_id=None,
+            worktree_path=worktree,
+        )
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        _write_heartbeat_file(
+            runtime_dir,
+            "orchestrator",
+            updated_at=now - timedelta(seconds=10),
+            worktree_path=worktree,
+        )
+        assert _get_active_lane_ids(runtime_dir, now=now) == []
+
+    def test_heartbeat_cross_worktree_resolution(
+        self, tmp_path: Path, runtime_dir: Path
+    ) -> None:
+        """Reader resolves the heartbeat at the registry-recorded worktree path."""
+        # The heartbeat file lives under the lane's OWN worktree, not the
+        # caller's runtime_dir. This mirrors the orchestrator reading a
+        # remote lane's hook output.
+        worktree = tmp_path / "some_other_worktree"
+        worktree.mkdir()
+        _register_lane_with_worktree(
+            runtime_dir,
+            "author-b",
+            session_id=None,
+            worktree_path=worktree,
+        )
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        _write_heartbeat_file(
+            runtime_dir,
+            "author-b",
+            updated_at=now - timedelta(seconds=30),
+            worktree_path=worktree,
+        )
+        # A heartbeat placed under runtime_dir/lane_status must NOT satisfy
+        # the lookup when the registry records a different worktree_path.
+        # Use a very stale fallback so even if the resolver mistakenly
+        # consults it, freshness still fails.
+        _write_heartbeat_file(
+            runtime_dir,
+            "author-b",
+            updated_at=now - timedelta(minutes=60),
+            worktree_path=None,  # writes under runtime_dir/lane_status
+        )
+        result = _get_active_lane_ids(runtime_dir, now=now)
+        assert result == ["author-b"]
+
+    def test_fleet_idle_returns_not_idle_on_fresh_heartbeat_only(
+        self, tmp_path: Path, events_dir: Path, runtime_dir: Path
+    ) -> None:
+        """is_fleet_idle integration: fresh heartbeat with null session → idle=False."""
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        _register_lane_with_worktree(
+            runtime_dir,
+            "author-a",
+            session_id=None,
+            worktree_path=worktree,
+        )
+        now = datetime(2026, 4, 21, 12, 0, 0, tzinfo=timezone.utc)
+        _write_heartbeat_file(
+            runtime_dir,
+            "author-a",
+            updated_at=now - timedelta(seconds=20),
+            worktree_path=worktree,
+        )
+        # Also seed a stale meaningful event so idle_minutes has something
+        # to report.
+        _write_event(
+            events_dir, "task_completed", now - timedelta(minutes=200), "author-a"
+        )
+        result = is_fleet_idle(
+            threshold_minutes=90,
+            events_dir=events_dir,
+            runtime_dir=runtime_dir,
+            now=now,
+        )
+        assert result.idle is False
+        assert "author-a" in result.active_lanes
+
+    def test_malformed_heartbeat_falls_back_to_session_id(
+        self, tmp_path: Path, runtime_dir: Path
+    ) -> None:
+        """A malformed heartbeat file must not mask or disturb session_id gating."""
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        _register_lane_with_worktree(
+            runtime_dir,
+            "author-a",
+            session_id=None,
+            worktree_path=worktree,
+        )
+        heartbeat_dir = worktree / ".claude" / "runtime" / "lane_status"
+        heartbeat_dir.mkdir(parents=True, exist_ok=True)
+        (heartbeat_dir / "author-a.json").write_text("{not valid json")
+        assert _get_active_lane_ids(runtime_dir) == []
