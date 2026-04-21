@@ -695,10 +695,7 @@ The implementation PR is ready for review when:
 3. All named test cases in §7.2 exist and pass.
 4. Dashboard output on a real store shows the `By model` sub-section;
    dashboard output on a store with only session-meta suppresses it.
-5. A new Slice B report file — the implementation PR adds a new file
-   at `plans/sessions/2026-04-20_token_economy_slice_b_report.md` —
-   with §§1-6 filled, reusing the Slice A report reproduction
-   discipline.
+5. A new Slice B report file — the implementation PR will add a new file at `plans/sessions/2026-04-20_token_economy_slice_b_report.md` — with §§1-6 filled, reusing the Slice A report reproduction discipline.
 6. PR body cites §8.4 commands and links this shaping plan.
 
 ### 8.6 Known risks and mitigations
