@@ -118,6 +118,101 @@ LANE_DOMAINS: dict[str, str | None] = _get_lane_domains()
 
 
 # ---------------------------------------------------------------------------
+# Fixed dispatch policy (token economy Slice D, #2169)
+# ---------------------------------------------------------------------------
+#
+# Low-risk task_type categories inherit a conservative model/effort default at
+# dispatch time. These defaults are applied only when the packet does not
+# already carry an explicit ``model_hint`` / ``effort_hint`` in metadata:
+# packet-level routing hints always win over the category default. Unlisted
+# task_type values (e.g. "feature", "bugfix", "refactor") preserve current
+# dispatch behavior — no model/effort coercion, no metadata write.
+#
+# Adaptive/advisory routing (Slice E) will *read* the resolved policy but not
+# overwrite it. The scorer operates on ``model_hint`` / ``effort_hint`` /
+# ``task_type`` as inputs and records its recommendation separately.
+#
+# Metadata keys written at dispatch time when a resolution occurs:
+#   resolved_model  — effective model tier carried into the lane
+#   resolved_effort — effective effort envelope carried into the lane
+# These are dispatch-time record-keeping fields, not routing inputs; they are
+# intentionally separate from the ``model_hint`` / ``effort_hint`` contract
+# documented in :mod:`bid_euchre.ops.task_queue`.
+
+#: Task-type → (model, effort) table applied when the packet has no hints.
+#:
+#: Only low-risk categories are listed on purpose. Complex implementation
+#: work (feature, bugfix, refactor, investigation) is excluded until measured
+#: evidence from Slice F shows the cheaper path is safe.
+LANE_DEFAULT_POLICY: dict[str, tuple[str, str]] = {
+    "ops": ("sonnet", "medium"),
+    "review": ("sonnet", "medium"),
+    "docs": ("sonnet", "medium"),
+    "tests": ("sonnet", "medium"),
+    "convention": ("sonnet", "medium"),
+}
+
+#: Metadata key used to record the effective model for a dispatched packet.
+RESOLVED_MODEL_KEY: str = "resolved_model"
+
+#: Metadata key used to record the effective effort for a dispatched packet.
+RESOLVED_EFFORT_KEY: str = "resolved_effort"
+
+
+def resolve_dispatch_policy(
+    packet: Any,
+) -> tuple[str | None, str | None]:
+    """Resolve the effective model and effort for a packet at dispatch time.
+
+    Precedence (Slice D, #2169):
+
+    1. Packet-level ``model_hint`` / ``effort_hint`` always wins when present.
+    2. Otherwise, low-risk ``task_type`` categories fall back to
+       :data:`LANE_DEFAULT_POLICY` (conservative sonnet/medium).
+    3. Any other combination (missing task_type, unlisted task_type, unknown
+       values) returns ``None`` for that field — no coercion.
+
+    The hints are resolved independently, so a packet with an explicit
+    ``model_hint`` but no ``effort_hint`` still picks up the category default
+    for effort. This matches the "hints are additive routing inputs" contract
+    from Slice C.
+
+    Args:
+        packet: A :class:`~bid_euchre.ops.task_queue.TaskPacket` or any object
+            with a ``metadata`` mapping that carries routing keys.
+
+    Returns:
+        A ``(model, effort)`` tuple. Either or both may be ``None`` when no
+        applicable policy exists; callers should treat ``None`` as
+        "preserve current dispatch behavior, do not coerce".
+    """
+    # Deferred import to match the rest of this module — task_queue imports
+    # lane config, which imports worker_pool constants in some codepaths.
+    from bid_euchre.ops.task_queue import (
+        get_effort_hint,
+        get_model_hint,
+        get_task_type,
+    )
+
+    model = get_model_hint(packet)
+    effort = get_effort_hint(packet)
+
+    # Fast-path: nothing more to resolve once both are explicit.
+    if model is not None and effort is not None:
+        return model, effort
+
+    task_type = get_task_type(packet)
+    if task_type in LANE_DEFAULT_POLICY:
+        default_model, default_effort = LANE_DEFAULT_POLICY[task_type]
+        if model is None:
+            model = default_model
+        if effort is None:
+            effort = default_effort
+
+    return model, effort
+
+
+# ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
@@ -1730,6 +1825,17 @@ def dispatch_to_worker(
         meta["dispatched_at"] = datetime.now(timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
+
+        # Slice D (#2169): record the effective model/effort resolved from
+        # packet hints + the low-risk task_type defaults. The resolver is a
+        # no-op for packets without hints and without a listed task_type, so
+        # existing dispatch flows are unaffected.
+        resolved_model, resolved_effort = resolve_dispatch_policy(packet)
+        if resolved_model is not None:
+            meta[RESOLVED_MODEL_KEY] = resolved_model
+        if resolved_effort is not None:
+            meta[RESOLVED_EFFORT_KEY] = resolved_effort
+
         pkt_data["metadata"] = meta
         updated_pkt = TaskPacket(**pkt_data)
         save_packet(updated_pkt, task_queue_root)
