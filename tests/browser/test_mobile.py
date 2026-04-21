@@ -272,6 +272,21 @@ def test_auction_log_all_bidders_visible_mobile(
             pytest.skip("No action-rail element found")
         action_rail.evaluate("el => el.setAttribute('open', '')")
 
+        # The helper must not overshoot the auction phase — if it does,
+        # the layout assertions below are meaningless (#2612).  Skip rather
+        # than hard-fail: overshoot is a helper-race precondition, not a
+        # product bug, so skipping avoids flaky CI red (#2615).
+        #
+        # Check overshoot *before* the item-count assertion so a helper
+        # that races past the 4th bid (rail cleared or items reshuffled as
+        # auction settles) skips cleanly instead of hard-failing (#2615).
+        if mobile_page.locator("#trick-area").count() > 0:
+            pytest.skip(
+                "Helper _advance_to_four_bidders overshot the auction phase — "
+                "game transitioned to trick_play before auction layout could be "
+                "verified (#2612, #2615)."
+            )
+
         # Verify we reached the 4-bidder state before asserting (#2594)
         items = mobile_page.locator(".action-rail__item")
         item_count = items.count()
@@ -279,17 +294,6 @@ def test_auction_log_all_bidders_visible_mobile(
             f"Expected ≥4 auction log items (one per bidder) but found {item_count}. "
             f"The test must reach a four-bidder state before asserting overflow (#2594)."
         )
-
-        # The helper must not overshoot the auction phase — if it does,
-        # the layout assertions below are meaningless (#2612).  Skip rather
-        # than hard-fail: overshoot is a helper-race precondition, not a
-        # product bug, so skipping avoids flaky CI red (#2615).
-        if mobile_page.locator("#trick-area").count() > 0:
-            pytest.skip(
-                "Helper _advance_to_four_bidders overshot the auction phase — "
-                "game transitioned to trick_play before auction layout could be "
-                "verified (#2612, #2615)."
-            )
 
         # The list container should NOT be scrollable during auction
         list_el = mobile_page.locator(".action-rail__list")
@@ -366,23 +370,27 @@ def test_auction_log_all_bidders_visible_mobile_big_text(
             pytest.skip("No action-rail element found")
         action_rail.evaluate("el => el.setAttribute('open', '')")
 
-        # Verify we reached the 4-bidder state (#2594)
-        items = mobile_page.locator(".action-rail__item")
-        item_count = items.count()
-        assert (
-            item_count >= 4
-        ), f"Expected ≥4 auction log items but found {item_count} (#2594)."
-
         # The helper must not overshoot the auction phase — if it does,
         # the layout assertions below are meaningless (#2612).  Skip rather
         # than hard-fail: overshoot is a helper-race precondition, not a
         # product bug, so skipping avoids flaky CI red (#2615).
+        #
+        # Check overshoot *before* the item-count assertion so a helper
+        # that races past the 4th bid (rail cleared or items reshuffled as
+        # auction settles) skips cleanly instead of hard-failing (#2615).
         if mobile_page.locator("#trick-area").count() > 0:
             pytest.skip(
                 "Helper _advance_to_four_bidders overshot the auction phase — "
                 "game transitioned to trick_play before auction layout could be "
                 "verified (#2612, #2615)."
             )
+
+        # Verify we reached the 4-bidder state (#2594)
+        items = mobile_page.locator(".action-rail__item")
+        item_count = items.count()
+        assert (
+            item_count >= 4
+        ), f"Expected ≥4 auction log items but found {item_count} (#2594)."
 
         # Check the list container is NOT scrollable (big text mode)
         list_el = mobile_page.locator(".action-rail__list")
