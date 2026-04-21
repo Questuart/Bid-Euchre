@@ -563,6 +563,79 @@ def _format_lane_line(
     )
 
 
+def _format_dashboard_by_model(by_model: dict[str, Any] | None) -> list[str]:
+    """Render the token-economy ``By model`` sub-section.
+
+    Slice B (#2169) rules:
+
+    1. Suppress the panel entirely when no non-``unknown`` bucket exists
+       — a store that contains only legacy session-meta / pre-Slice-B
+       JSONL rows would otherwise render as "unknown 100%" which is
+       noise, not signal.
+    2. Render at most four non-``unknown`` buckets. Any remaining
+       non-``unknown`` buckets are folded into a single ``other`` row so
+       the section stays bounded as the model zoo grows (haiku,
+       synthetic-classifier-N, …).
+    3. The ``unknown`` bucket is always shown when it exists and carries
+       tokens — the operator must be able to see how much of the fleet
+       cannot yet be attributed.
+    """
+    if not isinstance(by_model, dict):
+        return []
+    buckets = by_model.get("buckets") or []
+    if not buckets:
+        return []
+    non_unknown = [b for b in buckets if b.get("model") != "unknown"]
+    if not non_unknown:
+        return []
+
+    total_tokens = by_model.get("total_tokens") or 0
+    # Sort non-unknown by total_tokens descending (model_summary already
+    # sorts; we re-sort defensively in case the CLI or JSON consumer
+    # reordered the list).
+    non_unknown = sorted(
+        non_unknown, key=lambda b: b.get("total_tokens") or 0, reverse=True
+    )
+
+    visible = non_unknown[:4]
+    tail = non_unknown[4:]
+
+    def fmt_row(label: str, tokens: int, commits: int | None) -> str:
+        pct = (tokens / total_tokens * 100) if total_tokens > 0 else 0.0
+        commits_str = f"{commits:>3d} commits" if commits else "—"
+        return (
+            f"    {label:<18s} {tokens / 1_000_000:>5.1f}M tok "
+            f"({pct:>4.1f}%)  {commits_str}"
+        )
+
+    out: list[str] = ["  By model:"]
+    for b in visible:
+        out.append(
+            fmt_row(
+                b.get("model", "?"),
+                int(b.get("total_tokens") or 0),
+                b.get("git_commits"),
+            )
+        )
+    if tail:
+        tail_tokens = sum(int(b.get("total_tokens") or 0) for b in tail)
+        tail_commits = sum(int(b.get("git_commits") or 0) for b in tail)
+        out.append(
+            fmt_row("other", tail_tokens, tail_commits if tail_commits > 0 else None)
+        )
+    # Unknown always last, as a disclosure row.
+    unknown_bucket = next((b for b in buckets if b.get("model") == "unknown"), None)
+    if unknown_bucket and int(unknown_bucket.get("total_tokens") or 0) > 0:
+        out.append(
+            fmt_row(
+                "unknown",
+                int(unknown_bucket.get("total_tokens") or 0),
+                unknown_bucket.get("git_commits"),
+            )
+        )
+    return out
+
+
 def format_dashboard_text(
     view: DashboardView,
     *,
@@ -685,6 +758,14 @@ def format_dashboard_text(
                     f"    {tl['lane_id']:<18s} {tl['total_tokens']:>10,d} tok"
                     f"  {tpc_str}"
                 )
+
+        # Slice B (v3): by-model sub-section. Suppressed on stores that
+        # contain only session-meta / pre-Slice-B JSONL rows (every
+        # bucket would be ``unknown`` and mislead the operator).
+        by_model = te.get("by_model", {})
+        by_model_lines = _format_dashboard_by_model(by_model)
+        if by_model_lines:
+            lines.extend(by_model_lines)
 
         anti_patterns = te.get("anti_patterns", [])
         if anti_patterns:

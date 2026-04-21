@@ -2036,3 +2036,333 @@ class TestReconcileTotals:
         assert parity.commit_parity_delta == 2
         assert parity.ok is False
         assert any("Commit parity" in w for w in parity.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Slice B (issue #2169) — lane × model × effort rollup tests
+# ---------------------------------------------------------------------------
+
+
+def _make_slice_b_session(
+    session_id: str,
+    *,
+    model: str | None = None,
+    model_mix: dict | None = None,
+    effort: str | None = None,
+    input_tokens: int = 100,
+    output_tokens: int = 500,
+    git_commits: int = 1,
+    start_time: str = "2026-04-20T10:00:00Z",
+    schema_version: int = 3,
+) -> dict:
+    """Build a v3 session record with Slice B fields populated."""
+    rec = _make_session_record(
+        session_id,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        git_commits=git_commits,
+        start_time=start_time,
+    )
+    rec["schema_version"] = schema_version
+    if model is not None:
+        rec["model"] = model
+    if model_mix is not None:
+        rec["model_mix"] = model_mix
+    if effort is not None:
+        rec["effort"] = effort
+    return rec
+
+
+class TestModelSummary:
+    def test_model_summary_shape(self, output_dir: Path) -> None:
+        """Returns list[ModelBucket]; totals match usage_summary."""
+        from bid_euchre.ops.token_economy import ModelBucket, model_summary
+
+        _write_sessions(
+            output_dir,
+            [
+                _make_slice_b_session(
+                    "s1",
+                    model="claude-opus-4-7",
+                    input_tokens=100,
+                    output_tokens=500,
+                ),
+                _make_slice_b_session(
+                    "s2",
+                    model="claude-opus-4-7",
+                    input_tokens=200,
+                    output_tokens=300,
+                ),
+                _make_slice_b_session(
+                    "s3", model="synthetic", input_tokens=50, output_tokens=50
+                ),
+            ],
+        )
+        buckets = model_summary(output_dir=output_dir)
+        assert all(isinstance(b, ModelBucket) for b in buckets)
+        # Sorted by total_tokens descending.
+        labels = [b.model for b in buckets]
+        assert labels == ["claude-opus-4-7", "synthetic"]
+        total = sum(b.total_tokens for b in buckets)
+        summary = usage_summary(output_dir=output_dir)
+        assert total == summary.total_tokens
+
+    def test_model_summary_splits_model_mix_by_output_share(
+        self, output_dir: Path
+    ) -> None:
+        """Mixed-model session splits tokens across buckets proportionally.
+
+        Session count lands on the majority row only (no double-counting).
+        """
+        from bid_euchre.ops.token_economy import model_summary
+
+        _write_sessions(
+            output_dir,
+            [
+                # Single mixed session: 70 opus, 30 synthetic output tokens.
+                _make_slice_b_session(
+                    "mixed-1",
+                    model="claude-opus-4-7",
+                    model_mix={"claude-opus-4-7": 70, "synthetic": 30},
+                    input_tokens=1000,
+                    output_tokens=100,
+                ),
+            ],
+        )
+        buckets = model_summary(output_dir=output_dir)
+        by_label = {b.model: b for b in buckets}
+        assert "claude-opus-4-7" in by_label
+        assert "synthetic" in by_label
+        # Session count on majority row only.
+        assert by_label["claude-opus-4-7"].session_count == 1
+        assert by_label["synthetic"].session_count == 0
+        # Output tokens split in proportion to mix.
+        assert by_label["claude-opus-4-7"].output_tokens == 70
+        assert by_label["synthetic"].output_tokens == 30
+
+
+class TestEffortSummary:
+    def test_effort_summary_all_unknown_at_baseline(self, output_dir: Path) -> None:
+        """With no effort signal, every session buckets as 'unknown'."""
+        from bid_euchre.ops.token_economy import effort_summary
+
+        _write_sessions(
+            output_dir,
+            [
+                _make_slice_b_session("s1", model="claude-opus-4-7"),
+                _make_slice_b_session("s2", model="claude-opus-4-7"),
+            ],
+        )
+        buckets = effort_summary(output_dir=output_dir)
+        assert len(buckets) == 1
+        assert buckets[0].effort == "unknown"
+        assert buckets[0].session_count == 2
+
+
+class TestLaneModelSummary:
+    def test_lane_model_summary_respects_attribution(self, output_dir: Path) -> None:
+        """Lane IDs in the cross-tab match lane_summary output."""
+        from bid_euchre.ops.token_economy import (
+            lane_model_summary,
+            lane_summary,
+        )
+
+        _write_sessions(
+            output_dir,
+            [
+                _make_slice_b_session(
+                    "s1",
+                    model="claude-opus-4-7",
+                    input_tokens=100,
+                    output_tokens=500,
+                ),
+                _make_slice_b_session(
+                    "s2",
+                    model="synthetic",
+                    input_tokens=50,
+                    output_tokens=100,
+                ),
+            ],
+        )
+        _write_attributions(
+            output_dir,
+            [
+                {
+                    "session_id": "s1",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 100,
+                    "output_tokens": 500,
+                    "duration_minutes": 30,
+                    "git_commits": 1,
+                    "lines_added": 20,
+                    "lines_removed": 5,
+                },
+                {
+                    "session_id": "s2",
+                    "lane_id": "author-b",
+                    "worktree_class": "platform",
+                    "input_tokens": 50,
+                    "output_tokens": 100,
+                    "duration_minutes": 15,
+                    "git_commits": 1,
+                    "lines_added": 10,
+                    "lines_removed": 0,
+                },
+            ],
+        )
+
+        rows = lane_model_summary(output_dir=output_dir)
+        row_lanes = {r.lane_id for r in rows}
+        summary_lanes = {ls.lane_id for ls in lane_summary(output_dir=output_dir)}
+        assert row_lanes == summary_lanes
+        # One row per (lane, model) pair.
+        assert (("author-a", "claude-opus-4-7")) in {(r.lane_id, r.model) for r in rows}
+        assert (("author-b", "synthetic")) in {(r.lane_id, r.model) for r in rows}
+
+
+class TestModelOutcomeSummary:
+    def test_model_outcome_summary_lane_day_join(self, tmp_path: Path) -> None:
+        """Sessions + task_completed events merge on (lane, day)."""
+        from bid_euchre.ops.token_economy import model_outcome_summary
+
+        output_dir = tmp_path / "store"
+        output_dir.mkdir()
+        events_dir = tmp_path / "events"
+        events_dir.mkdir()
+
+        # One session on lane author-a, day 2026-04-20, model opus.
+        _write_sessions(
+            output_dir,
+            [
+                _make_slice_b_session(
+                    "s1",
+                    model="claude-opus-4-7",
+                    input_tokens=100,
+                    output_tokens=500,
+                    start_time="2026-04-20T10:00:00Z",
+                ),
+            ],
+        )
+        _write_attributions(
+            output_dir,
+            [
+                {
+                    "session_id": "s1",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 100,
+                    "output_tokens": 500,
+                    "duration_minutes": 30,
+                    "git_commits": 1,
+                    "lines_added": 10,
+                    "lines_removed": 0,
+                },
+            ],
+        )
+
+        # One shipped event on the same (lane, day).
+        event = {
+            "timestamp": "2026-04-20T12:00:00+00:00",
+            "event_type": "task_completed",
+            "source": "ops.test",
+            "lane_id": "author-a",
+            "payload": {
+                "packet_id": "pkt-1",
+                "title": "test",
+                "actual_lane": "author-a",
+                "shipped_outcome": "merged",
+            },
+        }
+        (events_dir / "events.jsonl").write_text(
+            json.dumps(event) + "\n", encoding="utf-8"
+        )
+
+        rows = model_outcome_summary(output_dir=output_dir, events_dir=events_dir)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.model == "claude-opus-4-7"
+        assert row.lane_days == 1
+        assert row.session_count == 1
+        assert row.task_completed_count == 1
+        assert row.shipped_count == 1
+        assert row.churned_count == 0
+
+    def test_model_outcome_summary_missing_events_dir(self, tmp_path: Path) -> None:
+        """Missing events dir returns rows with zero outcome counts."""
+        from bid_euchre.ops.token_economy import model_outcome_summary
+
+        output_dir = tmp_path / "store"
+        output_dir.mkdir()
+        _write_sessions(
+            output_dir,
+            [
+                _make_slice_b_session(
+                    "s1",
+                    model="claude-opus-4-7",
+                    start_time="2026-04-20T10:00:00Z",
+                ),
+            ],
+        )
+        _write_attributions(
+            output_dir,
+            [
+                {
+                    "session_id": "s1",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 100,
+                    "output_tokens": 500,
+                    "duration_minutes": 30,
+                    "git_commits": 1,
+                    "lines_added": 0,
+                    "lines_removed": 0,
+                },
+            ],
+        )
+        # Point events_dir at a non-existent path — should not raise.
+        rows = model_outcome_summary(
+            output_dir=output_dir,
+            events_dir=tmp_path / "does_not_exist",
+        )
+        assert len(rows) == 1
+        assert rows[0].task_completed_count == 0
+        assert rows[0].shipped_count == 0
+
+
+class TestReconcileByModelParity:
+    def test_reconcile_includes_by_model_parity(self, output_dir: Path) -> None:
+        """by_model_tokens is tracked; when all sessions have a model,
+        parity is zero and OK."""
+        _write_sessions(
+            output_dir,
+            [
+                _make_slice_b_session(
+                    "s1",
+                    model="claude-opus-4-7",
+                    input_tokens=100,
+                    output_tokens=500,
+                    git_commits=1,
+                ),
+            ],
+        )
+        _write_attributions(
+            output_dir,
+            [
+                {
+                    "session_id": "s1",
+                    "lane_id": "author-a",
+                    "worktree_class": "platform",
+                    "input_tokens": 100,
+                    "output_tokens": 500,
+                    "duration_minutes": 30,
+                    "git_commits": 1,
+                    "lines_added": 0,
+                    "lines_removed": 0,
+                },
+            ],
+        )
+        parity = reconcile_totals(output_dir=output_dir)
+        assert parity.by_model_tokens == 600
+        # Same-model attribution produces zero parity delta.
+        assert parity.by_model_token_parity_delta == 0

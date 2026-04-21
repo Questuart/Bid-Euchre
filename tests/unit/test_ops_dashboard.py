@@ -1149,3 +1149,147 @@ class TestDashboardWatchFlag:
             assert "summary" in data
         # "Watch stopped." should go to stderr, not stdout
         assert "Watch stopped." not in output
+
+
+# ---------------------------------------------------------------------------
+# Slice B (issue #2169) — by_model panel rendering
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardByModelPanel:
+    """Verify the Slice B ``By model`` sub-section of the dashboard."""
+
+    @staticmethod
+    def _view_with_by_model(by_model: dict) -> DashboardView:
+        now = datetime(2026, 4, 20, 12, 0, 0, tzinfo=timezone.utc)
+        return DashboardView(
+            generated_at=now.isoformat(),
+            foreground=DashboardSection(title="Foreground Lanes", lanes=[]),
+            background=DashboardSection(title="Background Lanes", lanes=[]),
+            token_economy={
+                "overview": {
+                    "total_tokens": by_model.get("total_tokens", 0),
+                    "session_count": 1,
+                    "total_git_commits": 1,
+                    "tokens_per_hour": 0,
+                    "output_input_ratio": 2.0,
+                    "net_lines": 0,
+                },
+                "top_lanes": [],
+                "by_model": by_model,
+            },
+        )
+
+    def test_dashboard_by_model_rendered_when_non_unknown_present(
+        self,
+    ) -> None:
+        view = self._view_with_by_model(
+            {
+                "buckets": [
+                    {
+                        "model": "claude-opus-4-7",
+                        "total_tokens": 2_000_000,
+                        "session_count": 20,
+                        "git_commits": 10,
+                    },
+                    {
+                        "model": "unknown",
+                        "total_tokens": 500_000,
+                        "session_count": 5,
+                        "git_commits": 0,
+                    },
+                ],
+                "total_tokens": 2_500_000,
+                "unknown_fraction": 0.2,
+            }
+        )
+        now = datetime(2026, 4, 20, 12, 0, 0, tzinfo=timezone.utc)
+        text = format_dashboard_text(view, now=now)
+        assert "By model:" in text
+        assert "claude-opus-4-7" in text
+        # Unknown is disclosed as a row when it carries tokens.
+        assert "unknown" in text
+
+    def test_dashboard_by_model_suppressed_when_only_unknown(self) -> None:
+        """Store with only legacy rows → panel is entirely suppressed.
+
+        Renders no "By model:" header so the dashboard stays signal.
+        """
+        view = self._view_with_by_model(
+            {
+                "buckets": [
+                    {
+                        "model": "unknown",
+                        "total_tokens": 1_000_000,
+                        "session_count": 10,
+                        "git_commits": 5,
+                    }
+                ],
+                "total_tokens": 1_000_000,
+                "unknown_fraction": 1.0,
+            }
+        )
+        now = datetime(2026, 4, 20, 12, 0, 0, tzinfo=timezone.utc)
+        text = format_dashboard_text(view, now=now)
+        assert "By model:" not in text
+
+    def test_dashboard_by_model_folds_tail_into_other(self) -> None:
+        """>4 non-unknown models collapse the tail into an ``other`` row."""
+        buckets = [
+            {
+                "model": f"model-{i}",
+                "total_tokens": (100 - i) * 100_000,
+                "session_count": 5,
+                "git_commits": 1,
+            }
+            for i in range(6)
+        ]
+        view = self._view_with_by_model(
+            {
+                "buckets": buckets,
+                "total_tokens": sum(b["total_tokens"] for b in buckets),
+                "unknown_fraction": 0.0,
+            }
+        )
+        now = datetime(2026, 4, 20, 12, 0, 0, tzinfo=timezone.utc)
+        text = format_dashboard_text(view, now=now)
+        assert "By model:" in text
+        assert "other" in text
+        # First four rendered verbatim; last two fold into ``other``.
+        assert "model-0" in text
+        assert "model-3" in text
+        # model-4 / model-5 collapsed into the ``other`` fold — they do not
+        # show up as their own rows.
+        # (Sanity check: we can tell by count of explicit model-N label
+        # lines in the text.)
+        explicit_count = sum(1 for i in range(6) if f"model-{i}" in text)
+        # Only the first four are rendered as their own rows.
+        assert explicit_count == 4
+
+    def test_dashboard_json_always_includes_by_model_key(self) -> None:
+        """JSON contract: ``by_model`` key is always present for scripting.
+
+        Whether or not the panel renders in text, the JSON surface must
+        keep a stable shape so downstream consumers can safely key into it.
+        """
+        view = self._view_with_by_model(
+            {
+                "buckets": [
+                    {
+                        "model": "unknown",
+                        "total_tokens": 0,
+                        "session_count": 0,
+                        "git_commits": 0,
+                    }
+                ],
+                "total_tokens": 0,
+                "unknown_fraction": 0.0,
+            }
+        )
+        data = format_dashboard_json(view)
+        # ``format_dashboard_json`` returns a dict; round-trip through
+        # ``json.dumps`` to assert the shape is serializable without loss.
+        round_tripped = json.loads(json.dumps(data))
+        # Token economy section exists and exposes by_model.
+        assert "token_economy" in round_tripped
+        assert "by_model" in round_tripped["token_economy"]

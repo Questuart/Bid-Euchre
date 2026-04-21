@@ -3430,6 +3430,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
 
     elif action == "summary":
         from bid_euchre.ops.token_economy import (
+            model_summary,
             reconcile_totals,
             store_status,
             usage_summary,
@@ -3439,6 +3440,9 @@ def cmd_usage(args: argparse.Namespace) -> int:
         status = store_status(output_dir=out_dir)
         result = usage_summary(output_dir=out_dir)
         parity = reconcile_totals(output_dir=out_dir)
+        # Slice B (§4.4): one-line by-model trailer. Pulled lazily so the
+        # summary path does not slow the CLI on empty stores.
+        by_model = model_summary(output_dir=out_dir) if result.session_count else []
 
         if args.json:
             from dataclasses import asdict
@@ -3447,6 +3451,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
                 "store_status": asdict(status),
                 "summary": asdict(result),
                 "reconciliation": asdict(parity),
+                "by_model": [asdict(b) for b in by_model],
             }
             print(json.dumps(payload, indent=2, default=str))
         else:
@@ -3481,6 +3486,22 @@ def cmd_usage(args: argparse.Namespace) -> int:
             print(f"    Assistant msgs:    {result.total_assistant_messages}")
             print(f"    Assist/User:       {result.assistant_user_ratio:.1f}x")
             print(f"    Tool errors:       {result.total_tool_errors}")
+            # Slice B (§4.4): condensed by-model trailer. Keep it to one
+            # logical line so existing consumers that tail the summary for
+            # final parity output are unaffected.
+            if by_model:
+                total_by_model_tokens = sum(b.total_tokens for b in by_model)
+                top = by_model[:3]
+                if total_by_model_tokens > 0:
+                    parts = []
+                    for b in top:
+                        pct = b.total_tokens / total_by_model_tokens * 100.0
+                        parts.append(f"{b.model} {pct:.0f}%")
+                    trailer = ", ".join(parts)
+                    if len(by_model) > 3:
+                        trailer = f"{trailer}, … ({len(by_model) - 3} more)"
+                    print()
+                    print(f"  By model:              {trailer}")
             # Parity footer: surfaces silent drift across CLI surfaces.
             print()
             print(_format_parity_footer(parity))
@@ -3633,6 +3654,13 @@ def cmd_usage(args: argparse.Namespace) -> int:
                 f"  {'throughput':<14s} {parity.throughput_sessions:>10d} "
                 f"{parity.throughput_tokens:>14,d} {parity.throughput_commits:>10d}"
             )
+            # Slice B (v3): by-model totals row. Sessions/commits columns
+            # are dashed because the by-model rollup is a directional split
+            # that does not own the session count (lanes does).
+            print(
+                f"  {'by-model (Σ)':<14s} {'—':>10s} "
+                f"{parity.by_model_tokens:>14,d} {'—':>10s}"
+            )
             print()
             print(
                 f"  Incomplete sessions (expected, excluded from throughput): "
@@ -3641,14 +3669,202 @@ def cmd_usage(args: argparse.Namespace) -> int:
             print(f"  Attribution gap:     {parity.attribution_gap}")
             print(f"  Token parity delta:  {parity.token_parity_delta:+,d}")
             print(f"  Commit parity delta: {parity.commit_parity_delta:+d}")
+            print(
+                f"  Model parity delta:  " f"{parity.by_model_token_parity_delta:+,d}"
+            )
             print()
             print(_format_parity_footer(parity))
+        return 0
+
+    elif action == "by-model":
+        from bid_euchre.ops.token_economy import model_summary, usage_summary
+
+        out_dir = getattr(args, "output_dir", None)
+        buckets = model_summary(output_dir=out_dir)
+        total_tokens = sum(b.total_tokens for b in buckets)
+        unknown_tokens = sum(b.total_tokens for b in buckets if b.model == "unknown")
+        unknown_fraction = unknown_tokens / total_tokens if total_tokens > 0 else 0.0
+
+        if args.json:
+            from dataclasses import asdict
+
+            payload = {
+                "buckets": [asdict(b) for b in buckets],
+                "total_tokens": total_tokens,
+                "unknown_fraction": unknown_fraction,
+            }
+            print(json.dumps(payload, indent=2, default=str))
+        else:
+            # Cross-check against the whole-store reference so operators can
+            # tell at a glance whether the split covers the full store.
+            summary = usage_summary(output_dir=out_dir)
+            if not buckets:
+                print(
+                    "No token economy data. "
+                    "Run: ops.py usage import && ops.py usage attribute"
+                )
+            else:
+                print("Per-Model Token Usage (Slice B)")
+                print("=" * 80)
+                print(
+                    f"  {'Model':<32s} {'Sessions':>8s} {'Tokens':>12s} "
+                    f"{'% total':>8s} {'Commits':>8s}"
+                )
+                print("-" * 80)
+                for b in buckets:
+                    pct = (
+                        (b.total_tokens / total_tokens * 100.0)
+                        if total_tokens > 0
+                        else 0.0
+                    )
+                    commits = f"{b.git_commits:d}" if b.git_commits is not None else "—"
+                    print(
+                        f"  {b.model:<32s} {b.session_count:>8d} "
+                        f"{b.total_tokens:>12,d} {pct:>7.1f}% {commits:>8s}"
+                    )
+                print("-" * 80)
+                print(
+                    f"  {'— total —':<32s} {'':>8s} "
+                    f"{total_tokens:>12,d} {'':>8s} {'':>8s}"
+                )
+                if unknown_fraction > 0.10:
+                    print(
+                        f"  [disclosure] Unknown-model fraction: "
+                        f"{unknown_fraction:.1%} of tokens are in the "
+                        f"`unknown` bucket (legacy session-meta or "
+                        f"pre-Slice-B JSONL rows). Run "
+                        f"`usage import --force` to rescan."
+                    )
+                # Cross-check: tokens covered vs tokens in store.
+                if total_tokens != summary.total_tokens:
+                    delta = summary.total_tokens - total_tokens
+                    print(
+                        f"  [parity] by-model total ({total_tokens:,}) "
+                        f"differs from summary total "
+                        f"({summary.total_tokens:,}) by {delta:+,}. "
+                        f"See `usage reconcile`."
+                    )
+        return 0
+
+    elif action == "by-effort":
+        from bid_euchre.ops.token_economy import effort_summary
+
+        out_dir = getattr(args, "output_dir", None)
+        buckets = effort_summary(output_dir=out_dir)
+        total_tokens = sum(b.total_tokens for b in buckets)
+
+        if args.json:
+            from dataclasses import asdict
+
+            payload = {
+                "buckets": [asdict(b) for b in buckets],
+                "total_tokens": total_tokens,
+            }
+            print(json.dumps(payload, indent=2, default=str))
+        else:
+            if not buckets:
+                print(
+                    "No token economy data. "
+                    "Run: ops.py usage import && ops.py usage attribute"
+                )
+            else:
+                print("Per-Effort Token Usage (Slice B)")
+                print("=" * 70)
+                print(
+                    f"  {'Effort':<20s} {'Sessions':>8s} {'Tokens':>12s} "
+                    f"{'% total':>8s} {'Commits':>8s}"
+                )
+                print("-" * 70)
+                for b in buckets:
+                    pct = (
+                        (b.total_tokens / total_tokens * 100.0)
+                        if total_tokens > 0
+                        else 0.0
+                    )
+                    commits = f"{b.git_commits:d}" if b.git_commits is not None else "—"
+                    print(
+                        f"  {b.effort:<20s} {b.session_count:>8d} "
+                        f"{b.total_tokens:>12,d} {pct:>7.1f}% {commits:>8s}"
+                    )
+                print("-" * 70)
+                print(
+                    f"  {'— total —':<20s} {'':>8s} "
+                    f"{total_tokens:>12,d} {'':>8s} {'':>8s}"
+                )
+                # At Slice B baseline, every row is `unknown` — disclose the
+                # dimension status so operators don't mistake that for drift.
+                if len(buckets) == 1 and buckets[0].effort == "unknown":
+                    print(
+                        "  [disclosure] No sessions carry a declared effort "
+                        "signal yet (Slice B baseline). The effort dimension "
+                        "becomes populated once TaskPacket effort_hint → "
+                        "session effort wiring lands (Slices D/E)."
+                    )
+        return 0
+
+    elif action == "by-model-outcome":
+        from bid_euchre.ops.token_economy import model_outcome_summary
+
+        out_dir = getattr(args, "output_dir", None)
+        events_dir = getattr(args, "events_dir", None)
+        rows = model_outcome_summary(
+            output_dir=out_dir,
+            events_dir=events_dir,
+        )
+
+        if args.json:
+            from dataclasses import asdict
+
+            # Stable schema: wrap in an object so future fields (e.g., a
+            # store-level disclosure footer) can be added without breaking
+            # consumers that parse the rows array.
+            payload = {
+                "rows": [asdict(r) for r in rows],
+                "caveat": (
+                    "Directional, not inferential: lane-day granularity "
+                    "means outcome counts are attributed to all models "
+                    "present on the same (lane, day) in proportion to "
+                    "session share. See Slice B §2.5."
+                ),
+            }
+            print(json.dumps(payload, indent=2, default=str))
+        else:
+            if not rows:
+                print(
+                    "No model × outcome data. Ensure both session_usage and "
+                    "events are populated."
+                )
+            else:
+                print("Per-Model Work Outcomes (Slice B — directional)")
+                print("=" * 90)
+                print(
+                    f"  {'Model':<32s} {'LaneDays':>8s} {'Sessions':>8s} "
+                    f"{'Tokens':>12s} {'Tasks':>6s} {'Shipped':>7s} "
+                    f"{'Churned':>7s}"
+                )
+                print("-" * 90)
+                for r in rows:
+                    print(
+                        f"  {r.model:<32s} {r.lane_days:>8d} "
+                        f"{r.session_count:>8d} {r.total_tokens:>12,d} "
+                        f"{r.task_completed_count:>6d} "
+                        f"{r.shipped_count:>7d} {r.churned_count:>7d}"
+                    )
+                print("-" * 90)
+                print(
+                    "  [caveat] Directional, not inferential. Lane-day "
+                    "granularity means outcome counts are attributed to "
+                    "every model present on that (lane, day) in proportion "
+                    "to session share. Do not cite these numbers as "
+                    "per-packet causation. See Slice B §2.5."
+                )
         return 0
 
     else:
         print(
             "Usage: ops.py usage {import|attribute|summary|lanes|throughput|"
-            "anti-patterns|status|reconcile}",
+            "anti-patterns|status|reconcile|by-model|by-effort|"
+            "by-model-outcome}",
             file=sys.stderr,
         )
         return 1
@@ -5017,6 +5233,52 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    # Slice B (issue #2169): lane × model × effort rollups.
+    # All three subcommands below are additive — existing subcommands keep
+    # their current output shape (byte-for-byte) so the Slice A reconcile
+    # parity gate continues to pass.
+    usage_by_model_parser = usage_sub.add_parser(
+        "by-model",
+        help="Aggregate sessions by observed model (Slice B)",
+    )
+    usage_by_model_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_by_effort_parser = usage_sub.add_parser(
+        "by-effort",
+        help="Aggregate sessions by declared effort dimension (Slice B)",
+    )
+    usage_by_effort_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+
+    usage_by_model_outcome_parser = usage_sub.add_parser(
+        "by-model-outcome",
+        help=(
+            "Model × work-outcome rollup at lane-day granularity "
+            "(directional, not inferential — see Slice B §2.5)"
+        ),
+    )
+    usage_by_model_outcome_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Token economy store directory (default: .claude/runtime/token_economy/)",
+    )
+    usage_by_model_outcome_parser.add_argument(
+        "--events-dir",
+        type=Path,
+        default=None,
+        help="Event log directory (default: .claude/runtime/events/)",
     )
 
     # away (Platform-9b: operator away-mode detection and queue reorder)

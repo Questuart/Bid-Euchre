@@ -5720,3 +5720,131 @@ class TestServiceProviderWiring:
         assert d["monitor"] == "MonitorService"
         assert d["task_queue"] == "TaskQueueService"
         assert d["worker_pool"] == "WorkerPoolService"
+
+
+# ---------------------------------------------------------------------------
+# Slice B (issue #2169) — CLI / rollup consistency gate
+# ---------------------------------------------------------------------------
+
+
+class TestUsageByModelCliMatchesLibrary:
+    """Schema-consistency gate between ``usage by-model --json`` and the
+    :func:`model_summary` library surface.
+
+    If the CLI serialization ever drifts from the dataclass contract
+    (renamed field, shape change, sort-order drift), this test flags it
+    so operators' dashboards and the reconcile-parity check cannot
+    silently disagree.
+    """
+
+    def test_by_model_cli_matches_library(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from dataclasses import asdict
+
+        import ops
+
+        from bid_euchre.ops.token_economy import model_summary
+
+        # Write a tiny two-session store.
+        store = tmp_path / "store"
+        store.mkdir()
+        usage = store / "session_usage.jsonl"
+        rows = [
+            {
+                "session_id": "s1",
+                "schema_version": 3,
+                "source_type": "project-jsonl",
+                "input_tokens": 100,
+                "output_tokens": 500,
+                "model": "claude-opus-4-7",
+                "git_commits": 1,
+                "imported_at": "2026-04-20T10:00:00Z",
+                "duration_minutes": 30,
+                "start_time": "2026-04-20T10:00:00Z",
+            },
+            {
+                "session_id": "s2",
+                "schema_version": 3,
+                "source_type": "project-jsonl",
+                "input_tokens": 50,
+                "output_tokens": 200,
+                "model": "synthetic",
+                "git_commits": 0,
+                "imported_at": "2026-04-20T11:00:00Z",
+                "duration_minutes": 15,
+                "start_time": "2026-04-20T11:00:00Z",
+            },
+        ]
+        with usage.open("w", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+
+        # Direct library call.
+        buckets = model_summary(output_dir=store)
+        lib_payload = [asdict(b) for b in buckets]
+
+        # CLI call — reuse the same ops module; JSON to stdout.
+        # --json is a global flag (must precede the subcommand).
+        rc = ops.main(
+            [
+                "--json",
+                "usage",
+                "by-model",
+                "--output-dir",
+                str(store),
+            ]
+        )
+        captured = capsys.readouterr()
+        assert rc == 0, captured.err
+        cli_payload = json.loads(captured.out)
+
+        # CLI wraps buckets in an object with totals; verify both.
+        assert cli_payload["buckets"] == lib_payload
+        assert cli_payload["total_tokens"] == sum(
+            b["total_tokens"] for b in lib_payload
+        )
+
+    def test_by_effort_cli_smokes(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`usage by-effort --json` returns a stable object with buckets + total."""
+        import ops
+
+        store = tmp_path / "store"
+        store.mkdir()
+        usage = store / "session_usage.jsonl"
+        usage.write_text(
+            json.dumps(
+                {
+                    "session_id": "s1",
+                    "schema_version": 3,
+                    "source_type": "project-jsonl",
+                    "input_tokens": 100,
+                    "output_tokens": 500,
+                    "git_commits": 1,
+                    "imported_at": "2026-04-20T10:00:00Z",
+                    "duration_minutes": 30,
+                    "start_time": "2026-04-20T10:00:00Z",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        rc = ops.main(
+            [
+                "--json",
+                "usage",
+                "by-effort",
+                "--output-dir",
+                str(store),
+            ]
+        )
+        captured = capsys.readouterr()
+        assert rc == 0, captured.err
+        payload = json.loads(captured.out)
+        assert "buckets" in payload
+        assert "total_tokens" in payload
+        # Slice B baseline: every session buckets under 'unknown'.
+        assert payload["buckets"][0]["effort"] == "unknown"

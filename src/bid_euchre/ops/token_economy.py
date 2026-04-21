@@ -38,6 +38,7 @@ dashboard_token_economy
 
 from __future__ import annotations
 
+import collections
 import hashlib
 import json
 import logging
@@ -52,8 +53,22 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Schema version — bump when normalized record format changes
+#
+# History:
+#   v1 — legacy session-meta only.
+#   v2 — added project-jsonl scanner (#1770).
+#   v3 — added per-session observed model + effort dimensions for token
+#        economy Slice B (#2169). Readers tolerate v2 rows via ``.get(...)``
+#        semantics; new fields default to ``None`` / ``{}`` / ``0``.
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+#: Canonical "unknown" bucket label used by Slice B model/effort rollups.
+#:
+#: The null-safety contract (§3.5 of the Slice B shaping plan) makes this a
+#: first-class bucket value, not a placeholder. Legacy session-meta rows and
+#: v2 JSONL rows (no ``model`` field) both surface under this label.
+UNKNOWN_BUCKET = "unknown"
 
 # Default source directories
 DEFAULT_USAGE_DIR = Path.home() / ".claude" / "usage-data"
@@ -144,6 +159,29 @@ class SessionRecord:
     friction_detail: str | None = None
     primary_success: str | None = None
     user_satisfaction_counts: dict[str, int] = field(default_factory=dict)
+
+    # Slice B (v3): per-session observed model + effort (null-safe).
+    #
+    # ``model`` is the majority-by-output-tokens model observed in the
+    # session's assistant messages; ``model_mix`` is populated only when
+    # more than one distinct model contributed to the session and maps
+    # model → output tokens attributed to it. Session-meta rows (legacy
+    # import path) leave both fields at their defaults because the source
+    # format predates per-message model capture.
+    #
+    # ``effort`` is reserved for Slice D/E — at Slice B baseline it
+    # remains ``None`` on every row and surfaces as the ``"unknown"``
+    # bucket in rollups.
+    #
+    # Cache-token fields were tracked in ``_JNLSessionAgg`` pre-Slice-B
+    # but discarded when building records. Persisting them now so
+    # ``ModelBucket`` / ``EffortBucket`` can expose cache breakdown
+    # without a second rescan.
+    model: str | None = None
+    model_mix: dict[str, int] = field(default_factory=dict)
+    effort: str | None = None
+    cache_creation_tokens: int | None = None
+    cache_read_tokens: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +387,11 @@ class _JNLSessionAgg:
     git_branch: str = ""
     git_commits: int = 0
     git_pushes: int = 0
+    # Slice B (v3): per-message model counter, keyed by model string
+    # (e.g. ``"claude-opus-4-7"``, ``"claude-sonnet-4-6"``, ``"synthetic"``).
+    # Values are the output tokens attributed to that model so the
+    # session-level ``model`` can be picked as majority-by-output-tokens.
+    models: collections.Counter[str] = field(default_factory=collections.Counter)
 
 
 def _scan_jsonl_file(path: Path) -> _JNLSessionAgg | None:
@@ -417,16 +460,29 @@ def _scan_jsonl_file(path: Path) -> _JNLSessionAgg | None:
                     msg = obj.get("message")
                     if isinstance(msg, dict):
                         usage = msg.get("usage")
+                        msg_output_tokens = 0
                         if isinstance(usage, dict):
                             has_usage = True
                             agg.input_tokens += _safe_int(usage.get("input_tokens"))
-                            agg.output_tokens += _safe_int(usage.get("output_tokens"))
+                            msg_output_tokens = _safe_int(usage.get("output_tokens"))
+                            agg.output_tokens += msg_output_tokens
                             agg.cache_creation_tokens += _safe_int(
                                 usage.get("cache_creation_input_tokens")
                             )
                             agg.cache_read_tokens += _safe_int(
                                 usage.get("cache_read_input_tokens")
                             )
+
+                        # Slice B (v3): capture the model actually used
+                        # for this assistant message. Attributed by output
+                        # tokens so the session-level ``model`` is the
+                        # majority-of-spend model, not just the first one
+                        # seen. When ``usage`` is absent we still record
+                        # the model with a zero-token vote so single-turn
+                        # sessions without usage never lose their model.
+                        model_name = msg.get("model")
+                        if isinstance(model_name, str) and model_name:
+                            agg.models[model_name] += msg_output_tokens
 
                         # Count git commits/pushes from Bash tool_use blocks
                         content = msg.get("content")
@@ -489,6 +545,23 @@ def _build_record_from_jsonl(
     """Build a SessionRecord from aggregated JSONL data."""
     duration = _compute_duration_minutes(agg.first_timestamp, agg.last_timestamp)
 
+    # Slice B (v3): resolve session-level model as majority-by-output-tokens.
+    #
+    # ``model_mix`` is stored only when >1 distinct model contributed — this
+    # keeps the common single-model case cheap on disk and lets analysts
+    # detect mixed-model sessions just by checking whether the field is
+    # non-empty.
+    model: str | None = None
+    model_mix: dict[str, int] = {}
+    if agg.models:
+        if len(agg.models) == 1:
+            (model,) = agg.models.keys()
+        else:
+            # most_common() breaks ties by first-insertion order, which is
+            # stable for our Counter since we increment once per message.
+            model = agg.models.most_common(1)[0][0]
+            model_mix = dict(agg.models)
+
     rec = SessionRecord(
         session_id=agg.session_id,
         source_path=str(source_path),
@@ -504,6 +577,16 @@ def _build_record_from_jsonl(
         output_tokens=agg.output_tokens,
         git_commits=agg.git_commits if agg.git_commits > 0 else None,
         git_pushes=agg.git_pushes if agg.git_pushes > 0 else None,
+        model=model,
+        model_mix=model_mix,
+        # effort stays None at Slice B baseline — D/E populate it.
+        effort=None,
+        cache_creation_tokens=(
+            agg.cache_creation_tokens if agg.cache_creation_tokens > 0 else None
+        ),
+        cache_read_tokens=(
+            agg.cache_read_tokens if agg.cache_read_tokens > 0 else None
+        ),
     )
 
     # Store lane_id in project_path if we inferred it from slug but
@@ -1522,6 +1605,461 @@ def lane_summary(*, output_dir: Path | None = None) -> list[LaneStats]:
     return sorted(by_lane.values(), key=lambda x: x.total_tokens, reverse=True)
 
 
+# ---------------------------------------------------------------------------
+# Slice B (issue #2169): lane × model × effort rollups
+#
+# These are additive to the existing lane/throughput surfaces. All five
+# summary functions are on-demand — they read the existing store files and
+# do not persist anything new. The null-safety contract (§3.5 of the
+# shaping plan) is enforced by the ``UNKNOWN_BUCKET`` constant: no
+# ``None`` model ever collapses into a default model; it surfaces as its
+# own bucket row so operators can see exactly how much of the store
+# cannot yet be attributed.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ModelBucket:
+    """Session + token totals grouped by observed model.
+
+    ``git_commits`` is ``None`` when every contributing session had zero
+    commits (e.g. all control-plane / read-only sessions) so downstream
+    renderers can draw an em-dash rather than a misleading ``0``.
+    """
+
+    model: str
+    session_count: int = 0
+    total_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    git_commits: int | None = None
+
+
+@dataclass
+class EffortBucket:
+    """Session + token totals grouped by declared effort dimension."""
+
+    effort: str
+    session_count: int = 0
+    total_tokens: int = 0
+    git_commits: int | None = None
+
+
+@dataclass
+class LaneModelRow:
+    """Per-(lane, model) cross-tab row for `usage lanes --by model`."""
+
+    lane_id: str
+    model: str
+    session_count: int = 0
+    total_tokens: int = 0
+    git_commits: int | None = None
+
+
+@dataclass
+class LaneEffortRow:
+    """Per-(lane, effort) cross-tab row for `usage lanes --by effort`."""
+
+    lane_id: str
+    effort: str
+    session_count: int = 0
+    total_tokens: int = 0
+    git_commits: int | None = None
+
+
+@dataclass
+class ModelOutcomeRow:
+    """Directional (lane, day)-granularity join of JSONL model signal
+    with ``task_completed`` event outcomes.
+
+    See §2.5 of the Slice B shaping plan for the directional-not-inferential
+    contract: a lane-day can contain multiple packets and multiple
+    sessions, so per-packet causation cannot be proven at this join
+    granularity.
+    """
+
+    model: str
+    lane_days: int = 0
+    session_count: int = 0
+    total_tokens: int = 0
+    task_completed_count: int = 0
+    shipped_count: int = 0
+    churned_count: int = 0
+
+
+# Outcome disposition conventions (case-insensitive):
+#
+# Shipped-side labels are resolved to ``shipped_count``; abandonment-side
+# labels are resolved to ``churned_count``. Unknown labels increment
+# ``task_completed_count`` only. Keeping this explicit (rather than a
+# global allowlist of "good" labels) lets the report footer disclose
+# which labels it treats as which without the operator having to grep
+# the code.
+_SHIPPED_OUTCOME_LABELS: frozenset[str] = frozenset(
+    {"shipped", "merged", "completed", "success"}
+)
+_CHURNED_OUTCOME_LABELS: frozenset[str] = frozenset(
+    {"abandoned", "reverted", "rolled_back", "failed", "blocked"}
+)
+
+
+def _classify_outcome(shipped_outcome: str | None) -> str | None:
+    """Map a ``shipped_outcome`` event field to ``"shipped"`` / ``"churned"`` / ``None``."""
+    if not shipped_outcome:
+        return None
+    label = shipped_outcome.strip().lower()
+    if not label:
+        return None
+    if label in _SHIPPED_OUTCOME_LABELS:
+        return "shipped"
+    if label in _CHURNED_OUTCOME_LABELS:
+        return "churned"
+    return None
+
+
+def _session_model_label(rec: dict[str, Any]) -> str:
+    """Return the model bucket label for a session record.
+
+    Legacy v2 session-meta rows and pre-Slice-B v2 JSONL rows have no
+    ``model`` field — both surface as the ``"unknown"`` bucket per the
+    null-safety contract. No coercion to a default model is performed.
+    """
+    model = rec.get("model")
+    if isinstance(model, str) and model.strip():
+        return model
+    return UNKNOWN_BUCKET
+
+
+def _session_effort_label(rec: dict[str, Any]) -> str:
+    """Return the effort bucket label for a session record.
+
+    At Slice B baseline every row surfaces as ``"unknown"``. Slices D/E
+    populate the field through the hint → effort promotion pathway.
+    """
+    effort = rec.get("effort")
+    if isinstance(effort, str) and effort.strip():
+        return effort
+    return UNKNOWN_BUCKET
+
+
+def _session_day(rec: dict[str, Any]) -> str | None:
+    """Extract the UTC day (YYYY-MM-DD) from a session's start_time."""
+    start = rec.get("start_time")
+    if not isinstance(start, str) or not start:
+        return None
+    # Tolerate trailing Z and sub-second precision.
+    try:
+        dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.astimezone(timezone.utc).date().isoformat()
+
+
+def _event_day(ts: str | None) -> str | None:
+    """Extract the UTC day (YYYY-MM-DD) from an event timestamp."""
+    if not isinstance(ts, str) or not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.astimezone(timezone.utc).date().isoformat()
+
+
+def _finalize_git_commits(bucket: ModelBucket | EffortBucket) -> None:
+    """Collapse zero-commit buckets to ``None``.
+
+    A ``git_commits`` of ``None`` tells renderers "draw an em-dash" rather
+    than "the bucket really contributed zero commits". We only emit ``None``
+    when every contributing session was a non-committing session (control
+    plane, read-only, session-meta legacy rows without commit capture).
+    """
+    if bucket.git_commits == 0:
+        bucket.git_commits = None
+
+
+def model_summary(*, output_dir: Path | None = None) -> list[ModelBucket]:
+    """Aggregate sessions grouped by observed model.
+
+    Mirrors :func:`lane_summary` in shape: returns a list sorted by
+    ``total_tokens`` descending, with a single ``unknown`` bucket for
+    sessions that never carried a model signal (legacy session-meta,
+    pre-Slice-B JSONL rows).
+
+    Parameters
+    ----------
+    output_dir
+        Path to the token economy store. Defaults to the repo runtime path.
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    sessions = _load_sessions(resolved_output)
+    if not sessions:
+        return []
+
+    by_model: dict[str, ModelBucket] = {}
+    for rec in sessions:
+        label = _session_model_label(rec)
+
+        # When model_mix is present, split input/output tokens across the
+        # contributing models by their output-token share. This matches
+        # the shaping plan §3.1 intent that mixed-model sessions still
+        # split correctly across buckets while counting the session once
+        # under its majority bucket.
+        mix = rec.get("model_mix") or {}
+        if isinstance(mix, dict) and len(mix) > 1 and label != UNKNOWN_BUCKET:
+            total_mix_out = sum(int(v) for v in mix.values() if isinstance(v, int))
+            for sub_model, sub_out in mix.items():
+                if not isinstance(sub_model, str) or not isinstance(sub_out, int):
+                    continue
+                bucket = by_model.setdefault(sub_model, ModelBucket(model=sub_model))
+                share = sub_out / total_mix_out if total_mix_out > 0 else 0.0
+                bucket.input_tokens += int((rec.get("input_tokens") or 0) * share)
+                bucket.output_tokens += sub_out
+                bucket.cache_read_tokens += int(
+                    (rec.get("cache_read_tokens") or 0) * share
+                )
+                bucket.cache_creation_tokens += int(
+                    (rec.get("cache_creation_tokens") or 0) * share
+                )
+                # Session count and git_commits land on the majority row
+                # only (below); sub-rows receive token share only to avoid
+                # double-counting sessions.
+            # Majority row gets the session count + commits.
+            majority = by_model.setdefault(label, ModelBucket(model=label))
+            majority.session_count += 1
+            majority.git_commits = (majority.git_commits or 0) + int(
+                rec.get("git_commits") or 0
+            )
+        else:
+            bucket = by_model.setdefault(label, ModelBucket(model=label))
+            bucket.session_count += 1
+            bucket.input_tokens += int(rec.get("input_tokens") or 0)
+            bucket.output_tokens += int(rec.get("output_tokens") or 0)
+            bucket.cache_read_tokens += int(rec.get("cache_read_tokens") or 0)
+            bucket.cache_creation_tokens += int(rec.get("cache_creation_tokens") or 0)
+            bucket.git_commits = (bucket.git_commits or 0) + int(
+                rec.get("git_commits") or 0
+            )
+
+    for bucket in by_model.values():
+        bucket.total_tokens = bucket.input_tokens + bucket.output_tokens
+        _finalize_git_commits(bucket)
+
+    return sorted(by_model.values(), key=lambda b: b.total_tokens, reverse=True)
+
+
+def effort_summary(*, output_dir: Path | None = None) -> list[EffortBucket]:
+    """Aggregate sessions grouped by declared effort dimension.
+
+    At Slice B baseline this returns a single ``unknown`` bucket covering
+    the full store — no JSONL source currently emits a distinct effort
+    signal. Slices D/E populate the dimension through the TaskPacket
+    ``effort_hint`` → session ``effort`` promotion pathway (not scoped
+    here).
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    sessions = _load_sessions(resolved_output)
+    if not sessions:
+        return []
+
+    by_effort: dict[str, EffortBucket] = {}
+    for rec in sessions:
+        label = _session_effort_label(rec)
+        bucket = by_effort.setdefault(label, EffortBucket(effort=label))
+        bucket.session_count += 1
+        bucket.total_tokens += int(rec.get("input_tokens") or 0) + int(
+            rec.get("output_tokens") or 0
+        )
+        bucket.git_commits = (bucket.git_commits or 0) + int(
+            rec.get("git_commits") or 0
+        )
+
+    for bucket in by_effort.values():
+        _finalize_git_commits(bucket)
+
+    return sorted(by_effort.values(), key=lambda b: b.total_tokens, reverse=True)
+
+
+def _build_session_index(output_dir: Path) -> dict[str, dict[str, Any]]:
+    """Load session_usage.jsonl as a session_id → record map."""
+    index: dict[str, dict[str, Any]] = {}
+    for rec in _load_sessions(output_dir):
+        sid = rec.get("session_id")
+        if isinstance(sid, str) and sid:
+            index[sid] = rec
+    return index
+
+
+def lane_model_summary(*, output_dir: Path | None = None) -> list[LaneModelRow]:
+    """Per-(lane, model) cross-tab for the `usage lanes --by model` surface.
+
+    Joins ``session_attributions.jsonl`` (lane_id) with the full session
+    records (model) via ``session_id``. Sessions that cannot be joined
+    (no attribution record) are omitted — they are already surfaced in
+    :func:`reconcile_totals` as an ``attribution_gap``.
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    attributions = _load_attributions(resolved_output)
+    if not attributions:
+        return []
+
+    session_index = _build_session_index(resolved_output)
+
+    rows: dict[tuple[str, str], LaneModelRow] = {}
+    for attr in attributions:
+        lane_id = attr.get("lane_id") or "unattributed"
+        sid = attr.get("session_id")
+        rec = session_index.get(sid) if isinstance(sid, str) else None
+        model = _session_model_label(rec) if rec else UNKNOWN_BUCKET
+
+        key = (lane_id, model)
+        row = rows.setdefault(key, LaneModelRow(lane_id=lane_id, model=model))
+        row.session_count += 1
+        row.total_tokens += int(attr.get("input_tokens") or 0) + int(
+            attr.get("output_tokens") or 0
+        )
+        row.git_commits = (row.git_commits or 0) + int(attr.get("git_commits") or 0)
+
+    for row in rows.values():
+        if row.git_commits == 0:
+            row.git_commits = None
+
+    return sorted(rows.values(), key=lambda r: (r.lane_id, -r.total_tokens, r.model))
+
+
+def lane_effort_summary(*, output_dir: Path | None = None) -> list[LaneEffortRow]:
+    """Per-(lane, effort) cross-tab.
+
+    Uses the same attributions-join pattern as :func:`lane_model_summary`.
+    At Slice B baseline every row has ``effort="unknown"``.
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    attributions = _load_attributions(resolved_output)
+    if not attributions:
+        return []
+
+    session_index = _build_session_index(resolved_output)
+
+    rows: dict[tuple[str, str], LaneEffortRow] = {}
+    for attr in attributions:
+        lane_id = attr.get("lane_id") or "unattributed"
+        sid = attr.get("session_id")
+        rec = session_index.get(sid) if isinstance(sid, str) else None
+        effort = _session_effort_label(rec) if rec else UNKNOWN_BUCKET
+
+        key = (lane_id, effort)
+        row = rows.setdefault(key, LaneEffortRow(lane_id=lane_id, effort=effort))
+        row.session_count += 1
+        row.total_tokens += int(attr.get("input_tokens") or 0) + int(
+            attr.get("output_tokens") or 0
+        )
+        row.git_commits = (row.git_commits or 0) + int(attr.get("git_commits") or 0)
+
+    for row in rows.values():
+        if row.git_commits == 0:
+            row.git_commits = None
+
+    return sorted(rows.values(), key=lambda r: (r.lane_id, -r.total_tokens, r.effort))
+
+
+def model_outcome_summary(
+    *,
+    output_dir: Path | None = None,
+    events_dir: Path | None = None,
+) -> list[ModelOutcomeRow]:
+    """Directional (lane, day) join of observed model with task_completed events.
+
+    See §2.5 of the shaping plan: we cannot prove per-session causation
+    when a lane-day contains multiple packets. The output is labelled
+    "directional" so consumers surface the caveat in reports.
+
+    Missing or unreadable event logs yield rows with zero outcome counts
+    rather than raising — the join degrades to a pure model × token
+    rollup (still useful for trend watching).
+    """
+    resolved_output = _resolve_output_dir(output_dir)
+    sessions = _load_sessions(resolved_output)
+    if not sessions:
+        return []
+
+    attributions = _load_attributions(resolved_output)
+    attr_by_session: dict[str, dict[str, Any]] = {}
+    for attr in attributions:
+        sid = attr.get("session_id")
+        if isinstance(sid, str) and sid:
+            attr_by_session[sid] = attr
+
+    # Bucket sessions by (lane_id, day, model).
+    lane_day_sessions: dict[tuple[str, str], dict[str, dict[str, int]]] = {}
+    for rec in sessions:
+        sid = rec.get("session_id")
+        if not isinstance(sid, str):
+            continue
+        attr = attr_by_session.get(sid)
+        lane_id = (attr.get("lane_id") if attr else None) or "unattributed"
+        day = _session_day(rec)
+        if day is None:
+            continue
+        model = _session_model_label(rec)
+        slot = lane_day_sessions.setdefault((lane_id, day), {})
+        per_model = slot.setdefault(model, {"sessions": 0, "tokens": 0})
+        per_model["sessions"] += 1
+        per_model["tokens"] += int(rec.get("input_tokens") or 0) + int(
+            rec.get("output_tokens") or 0
+        )
+
+    # Read completion events.
+    effective_events_dir = (
+        events_dir if events_dir is not None else Path(".claude/runtime/events")
+    )
+    events = _read_task_completed_events(effective_events_dir)
+
+    # Bucket events by (lane_id, day) → {"count": N, "shipped": S, "churned": C}.
+    lane_day_events: dict[tuple[str, str], dict[str, int]] = {}
+    for event in events:
+        payload = event.get("payload") or {}
+        lane_id = payload.get("actual_lane") or event.get("lane_id") or "unattributed"
+        day = _event_day(event.get("timestamp"))
+        if day is None:
+            continue
+        slot = lane_day_events.setdefault(
+            (lane_id, day), {"count": 0, "shipped": 0, "churned": 0}
+        )
+        slot["count"] += 1
+        disposition = _classify_outcome(payload.get("shipped_outcome"))
+        if disposition == "shipped":
+            slot["shipped"] += 1
+        elif disposition == "churned":
+            slot["churned"] += 1
+
+    # Fold into per-model rows, attributing outcome counts to every model
+    # that appeared on that lane-day in proportion to session share. This
+    # is the directional-not-inferential approximation — the report must
+    # disclose it.
+    by_model: dict[str, ModelOutcomeRow] = {}
+    for lane_day, per_model_map in lane_day_sessions.items():
+        total_sessions = sum(v["sessions"] for v in per_model_map.values())
+        event_slot = lane_day_events.get(lane_day, {})
+        total_count = event_slot.get("count", 0)
+        total_shipped = event_slot.get("shipped", 0)
+        total_churned = event_slot.get("churned", 0)
+
+        for model, stats in per_model_map.items():
+            row = by_model.setdefault(model, ModelOutcomeRow(model=model))
+            row.lane_days += 1
+            row.session_count += stats["sessions"]
+            row.total_tokens += stats["tokens"]
+            if total_sessions > 0 and total_count > 0:
+                share = stats["sessions"] / total_sessions
+                row.task_completed_count += int(round(total_count * share))
+                row.shipped_count += int(round(total_shipped * share))
+                row.churned_count += int(round(total_churned * share))
+
+    return sorted(by_model.values(), key=lambda r: r.total_tokens, reverse=True)
+
+
 @dataclass
 class ThroughputMetrics:
     """Throughput-normalized token metrics."""
@@ -1996,6 +2534,11 @@ class TotalsReconciliation:
     attribution_gap: int = 0
     token_parity_delta: int = 0
     commit_parity_delta: int = 0
+    # Slice B (v3): parity check between sum-of-by-model and sum-of-lanes.
+    # A non-zero delta here points at a store that was populated by a
+    # pre-Slice-B scanner pass and needs ``usage import --force``.
+    by_model_tokens: int = 0
+    by_model_token_parity_delta: int = 0
     warnings: list[str] = field(default_factory=list)
     ok: bool = True
 
@@ -2039,15 +2582,21 @@ def reconcile_totals(*, output_dir: Path | None = None) -> TotalsReconciliation:
     summary = usage_summary(output_dir=resolved_output)
     lanes = lane_summary(output_dir=resolved_output)
     throughput = throughput_summary(output_dir=resolved_output)
+    by_model = model_summary(output_dir=resolved_output)
 
     lanes_sessions_total = sum(ls.session_count for ls in lanes)
     lanes_tokens_total = sum(ls.total_tokens for ls in lanes)
     lanes_commits_total = sum(ls.git_commits for ls in lanes)
+    by_model_tokens_total = sum(b.total_tokens for b in by_model)
 
     incomplete = max(summary.session_count - throughput.total_sessions, 0)
     attr_gap = summary.session_count - lanes_sessions_total
     token_delta = summary.total_tokens - lanes_tokens_total
     commit_delta = summary.total_git_commits - lanes_commits_total
+    # Model-parity delta compares against summary totals (the whole store)
+    # rather than lanes totals, because model_summary reads session_usage
+    # directly — so the right reference is usage_summary.
+    by_model_delta = summary.total_tokens - by_model_tokens_total
 
     tolerance = _parity_tolerance(summary.total_tokens)
 
@@ -2085,6 +2634,21 @@ def reconcile_totals(*, output_dir: Path | None = None) -> TotalsReconciliation:
             f"sum-of-`usage lanes` ({lanes_commits_total})."
         )
 
+    # Slice B (v3): by-model parity.  model_summary reads session_usage
+    # directly so the expected reference is ``summary.total_tokens``.
+    # Drift here usually means the store was populated by a pre-Slice-B
+    # scanner pass (no ``model`` field) and we fell back to the
+    # ``unknown`` bucket — the fix is a force re-import.
+    if abs(by_model_delta) > tolerance and by_model_tokens_total > 0:
+        warnings.append(
+            f"Model parity delta {by_model_delta:+,} tokens between "
+            f"`usage summary` ({summary.total_tokens:,}) and "
+            f"sum-of-`usage by-model` ({by_model_tokens_total:,}); "
+            f"tolerance ±{tolerance:,}. "
+            f"Hint: run `usage import --force` to rescan JSONL with the "
+            f"model-aware scanner."
+        )
+
     return TotalsReconciliation(
         summary_sessions=summary.session_count,
         summary_tokens=summary.total_tokens,
@@ -2099,6 +2663,8 @@ def reconcile_totals(*, output_dir: Path | None = None) -> TotalsReconciliation:
         attribution_gap=attr_gap,
         token_parity_delta=token_delta,
         commit_parity_delta=commit_delta,
+        by_model_tokens=by_model_tokens_total,
+        by_model_token_parity_delta=by_model_delta,
         warnings=warnings,
         ok=not warnings,
     )
@@ -2306,6 +2872,50 @@ def dashboard_token_economy(
         for f in findings
     ]
 
+    # Slice B (v3): by-model + by-effort roll-ups.  Both are always
+    # included in the JSON surface so scripting consumers get the raw
+    # data even when the text dashboard suppresses the panel (see
+    # format_dashboard_text rendering rules).
+    model_buckets = model_summary(output_dir=resolved_output)
+    model_total = sum(b.total_tokens for b in model_buckets)
+    unknown_tokens = next(
+        (b.total_tokens for b in model_buckets if b.model == UNKNOWN_BUCKET), 0
+    )
+    by_model = {
+        "buckets": [
+            {
+                "model": b.model,
+                "session_count": b.session_count,
+                "total_tokens": b.total_tokens,
+                "input_tokens": b.input_tokens,
+                "output_tokens": b.output_tokens,
+                "cache_read_tokens": b.cache_read_tokens,
+                "cache_creation_tokens": b.cache_creation_tokens,
+                "git_commits": b.git_commits,
+            }
+            for b in model_buckets
+        ],
+        "total_tokens": model_total,
+        "unknown_fraction": (
+            (unknown_tokens / model_total) if model_total > 0 else 0.0
+        ),
+    }
+
+    effort_buckets = effort_summary(output_dir=resolved_output)
+    effort_total = sum(b.total_tokens for b in effort_buckets)
+    by_effort = {
+        "buckets": [
+            {
+                "effort": b.effort,
+                "session_count": b.session_count,
+                "total_tokens": b.total_tokens,
+                "git_commits": b.git_commits,
+            }
+            for b in effort_buckets
+        ],
+        "total_tokens": effort_total,
+    }
+
     return {
         "overview": overview,
         "top_lanes": top_lanes,
@@ -2313,6 +2923,8 @@ def dashboard_token_economy(
         "throughput": throughput,
         "anti_patterns": anti_patterns,
         "store_status": status_dict,
+        "by_model": by_model,
+        "by_effort": by_effort,
     }
 
 
