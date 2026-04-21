@@ -18,7 +18,7 @@ dimension that downstream slices (D/E) will populate. The telemetry
 extension must:
 
 1. Capture the real per-session model signal that already lives in JSONL
-   (the `$.message.model` field on assistant records) with no new
+   (the `<JSONL>.message.model` field on assistant records) with no new
    upstream emission.
 2. Accept an `effort` dimension that is almost entirely `null/unknown` at
    baseline and degrade gracefully until Slices D/E start populating it.
@@ -54,11 +54,11 @@ Observed:
 
 | Field | Path | Availability | Notes |
 |-------|------|--------------|-------|
-| model | `$.message.model` (JSONL field) | **100%** of assistant messages | Values seen: `claude-opus-4-7`, `claude-sonnet-4-6`, `<synthetic>` |
-| service_tier | `$.message.usage.service_tier` (JSONL field) | 100% | Uniform `"standard"` in live data — not a useful effort proxy yet |
-| speed | `$.message.usage.speed` (JSONL field) | ~99.9% | Uniform `"standard"` — also not a useful effort proxy |
+| model | `<JSONL>.message.model` (JSONL field) | **100%** of assistant messages | Values seen: `claude-opus-4-7`, `claude-sonnet-4-6`, `<synthetic>` |
+| service_tier | `<JSONL>.message.usage.service_tier` (JSONL field) | 100% | Uniform `"standard"` in live data — not a useful effort proxy yet |
+| speed | `<JSONL>.message.usage.speed` (JSONL field) | ~99.9% | Uniform `"standard"` — also not a useful effort proxy |
 | thinking block | `message.content[].type == "thinking"` | Present but empty-redacted in JSONL | Proves extended-thinking *was* invoked without revealing contents — usable as a weak "effort:extended" binary proxy |
-| input/output tokens | `$.message.usage.*_tokens` (input, output, cache_creation_input, cache_read_input) | 100% | Already aggregated in `_scan_jsonl_file` |
+| input/output tokens | `<JSONL>.message.usage.*_tokens` (input, output, cache_creation_input, cache_read_input) | 100% | Already aggregated in `_scan_jsonl_file` |
 
 **Model mixing within a session.** In a 25-session sample, 24 were
 single-model and 1 contained two distinct models (opus + synthetic).
@@ -115,7 +115,7 @@ Slice C already shipped (PR #2694) and writes enriched
   intent set at packet creation. Present on every packet that used the
   metadata helpers, `None` on legacy packets.
 - The **observed** per-session model comes from JSONL (the
-  `$.message.model` field). This is the independent signal Slice B
+  `<JSONL>.message.model` field). This is the independent signal Slice B
   introduces.
 
 These two signals are deliberately kept separate. Divergence between
@@ -272,11 +272,12 @@ def model_outcome_summary(
 
 ### 3.4 Storage location and retention
 
-No new files. All rollups are **computed on demand** from the existing
-store files `.claude/runtime/token_economy/session_usage.jsonl` and
-`.claude/runtime/token_economy/session_attributions.jsonl` (both
-gitignored runtime artifacts; not tracked in the repo). This mirrors
-`lane_summary()` today
+No new files. All rollups are **computed on demand** from the two
+existing runtime-store files (`<runtime>/session_usage.jsonl` and
+`<runtime>/session_attributions.jsonl`, where `<runtime>` resolves to
+the gitignored directory `.claude/runtime/token_economy/`; neither
+file is tracked in the repo — they are written by `usage import` and
+`usage attribute`). This mirrors `lane_summary()` today
 and means:
 
 - No retention policy change.
@@ -694,10 +695,10 @@ The implementation PR is ready for review when:
 3. All named test cases in §7.2 exist and pass.
 4. Dashboard output on a real store shows the `By model` sub-section;
    dashboard output on a store with only session-meta suppresses it.
-5. A new Slice B report file (target filename
-   `plans/sessions/2026-04-20_token_economy_slice_b_report.md`) is
-   included in the implementation PR with §§1-6 filled, reusing the
-   Slice A report reproduction discipline.
+5. A new Slice B report file — the implementation PR adds a new file
+   at `plans/sessions/2026-04-20_token_economy_slice_b_report.md` —
+   with §§1-6 filled, reusing the Slice A report reproduction
+   discipline.
 6. PR body cites §8.4 commands and links this shaping plan.
 
 ### 8.6 Known risks and mitigations
