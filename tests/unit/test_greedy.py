@@ -386,13 +386,14 @@ class TestCashWinnersOnLead:
             f"must lead A♥ (gating suppresses Cash-A) — got {hand[choice]}"
         )
 
-    def test_version_bumped_to_0_11_0(self):
-        """Void-backed winner leads (#2627) bumps version to 0.11.0."""
+    def test_version_bumped_to_0_11_1(self):
+        """Void-backed winner leads (#2627 → 0.11.0) plus sitting-out seat
+        skip (#2654 → 0.11.1 PATCH)."""
         from bid_euchre.strategy.glutton import GLUTTON_STRATEGY_VERSION
 
-        assert GLUTTON_STRATEGY_VERSION == "0.11.0"
-        assert GluttonStrategy.VERSION == "0.11.0"
-        assert GluttonIsolatedStrategy.VERSION == "0.11.0"
+        assert GLUTTON_STRATEGY_VERSION == "0.11.1"
+        assert GluttonStrategy.VERSION == "0.11.1"
+        assert GluttonIsolatedStrategy.VERSION == "0.11.1"
 
     # ---- Contract-type gating tests (Cash-A.1 → 0.9.0 update) ----
 
@@ -810,3 +811,200 @@ class TestObservePlayLonerTricks:
             strat.observe_play(seat, card, trick_plays, "low", None)
 
         assert strat._last_won_lead_suit is None
+
+
+class TestVoidBackedSkipsSittingOutSeats:
+    """Void-backed check skips sitting-out seats (#2654).
+
+    In loner/moon hands the sitting-out partner never plays a card, so their
+    ``_void_suits_by_seat`` entry stays empty forever. If a defender's
+    ``opp_seats`` tuple includes that sitting-out seat, the plain
+    ``all(opp void)`` check in the original implementation (#2627) would
+    return False forever, blocking the void-backed winner lead even when
+    the single active opponent had clearly voided the suit.
+
+    These tests lock the #2654 fix: ``_opponents_void_in_suit`` filters
+    ``opp_seats`` down to seats that have actually played a card this hand.
+    """
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_loner_defender_sees_void_backed_with_sitting_out_opponent(
+        self, cls, kwargs
+    ):
+        """Loner called by team 0,2; defender at seat 1 is leading.
+
+        Seat 2 sits out (caller's partner). Seat 1's ``opp_seats`` = (2, 0),
+        which includes the sitting-out seat 2. If seat 0 (the caller) has
+        demonstrated a void in spades via prior play, seat 1 should
+        recognize ♠J as a void-backed winner even though seat 2 has an
+        empty void set (never plays).
+        """
+        strat = cls(**kwargs)
+        hand = [
+            Card("S", "J"),  # void-backed candidate
+            Card("C", "K"),
+            Card("C", "Q"),
+            Card("C", "T"),
+        ]
+        strat.on_hand_start(hand, "low", None, player_index=1)
+
+        # Simulate a completed 3-player trick where seat 0 (the caller)
+        # voided on a heart lead by seat 1 — this populates both
+        # ``_seats_played`` and ``_void_suits_by_seat[0]``.
+        trick_plays = [
+            (1, Card("H", "T")),  # seat 1 leads hearts
+            (3, Card("H", "J")),  # seat 3 follows
+            (0, Card("C", "Q")),  # seat 0 (caller) voids on hearts
+        ]
+        for seat, card in trick_plays:
+            strat.observe_play(seat, card, trick_plays, "low", None)
+        # Seat 0 is void in hearts from this trick. Now mark seat 0 also
+        # void in spades (the suit we want to check).
+        strat._void_suits_by_seat[0].add("S")
+
+        assert strat._opponents_void_in_suit("S", player_index=1) is True, (
+            f"{cls.__name__}: with seat 2 sitting out, void-backed should "
+            "fire based on seat 0's void alone"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_loner_defender_still_requires_active_opponent_void(self, cls, kwargs):
+        """If the sole active opponent is *not* void, void-backed must NOT
+        fire — filtering the sitting-out seat cannot lower the bar below the
+        remaining active opponent.
+        """
+        strat = cls(**kwargs)
+        hand = [Card("S", "J"), Card("C", "K")]
+        strat.on_hand_start(hand, "low", None, player_index=1)
+
+        # Only seats 0, 1, 3 play (seat 2 sits out). Seat 0 has NOT shown
+        # a void in spades.
+        trick_plays = [
+            (1, Card("S", "T")),
+            (3, Card("S", "J")),
+            (0, Card("S", "A")),  # seat 0 follows spades
+        ]
+        for seat, card in trick_plays:
+            strat.observe_play(seat, card, trick_plays, "low", None)
+
+        assert strat._opponents_void_in_suit("S", player_index=1) is False, (
+            f"{cls.__name__}: active opponent (seat 0) not void → void-backed "
+            "must stay False even with seat 2 sitting out"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_normal_4player_hand_still_requires_both_opponents_void(self, cls, kwargs):
+        """In a normal 4-player hand all seats play, so
+        ``_seats_played`` grows to {0,1,2,3} after trick 1 and filtering is
+        a no-op. Confirm the original invariant (both opponents void) is
+        preserved.
+        """
+        strat = cls(**kwargs)
+        hand = [Card("S", "J"), Card("C", "K")]
+        strat.on_hand_start(hand, "low", None, player_index=0)
+
+        # 4-player trick: all seats play. Only seat 1 voids on the hearts
+        # lead; seat 3 follows suit.
+        trick_plays = [
+            (0, Card("H", "T")),
+            (1, Card("C", "K")),  # seat 1 voids hearts
+            (2, Card("H", "J")),
+            (3, Card("H", "Q")),  # seat 3 follows
+        ]
+        for seat, card in trick_plays:
+            strat.observe_play(seat, card, trick_plays, "low", None)
+        # Only seat 1 in the opponent pair (1, 3) is void in spades.
+        strat._void_suits_by_seat[1].add("S")
+
+        assert strat._opponents_void_in_suit("S", player_index=0) is False, (
+            f"{cls.__name__}: with both opponents active, void-backed still "
+            "requires both to be void in the suit"
+        )
+
+    @pytest.mark.parametrize(
+        "cls,kwargs",
+        [
+            (GluttonStrategy, {"cash_winners_on_lead": True}),
+            (
+                GluttonIsolatedStrategy,
+                {"smart_leads": True, "cash_winners_on_lead": True},
+            ),
+        ],
+        ids=["Glutton", "GluttonIsolated"],
+    )
+    def test_no_plays_observed_yet_returns_false(self, cls, kwargs):
+        """Before any ``observe_play`` call (e.g., caller leading trick 1 in
+        a normal hand), ``_seats_played`` is empty. The filter is skipped
+        and the check falls through to the unfiltered opp_seats. With no
+        voids known yet, the result is ``False`` either way — this test
+        guards that behavior to prevent the filter from inadvertently
+        returning True on an empty-knowledge state.
+        """
+        strat = cls(**kwargs)
+        hand = [Card("S", "J"), Card("C", "K")]
+        strat.on_hand_start(hand, "low", None, player_index=0)
+
+        assert strat._opponents_void_in_suit("S", player_index=0) is False, (
+            f"{cls.__name__}: with no plays observed yet, void-backed must "
+            "be False (no evidence of any opponent being void)"
+        )
+
+    def test_seats_played_tracks_observe_play(self):
+        """Smoke test: ``_seats_played`` is populated as observe_play fires."""
+        strat = GluttonStrategy(cash_winners_on_lead=True)
+        strat.on_hand_start([Card("S", "A")] * 10, "low", None, player_index=0)
+        assert strat._seats_played == set()
+
+        trick_plays = [
+            (0, Card("S", "T")),
+            (1, Card("S", "J")),
+            (3, Card("S", "Q")),
+        ]
+        for seat, card in trick_plays:
+            strat.observe_play(seat, card, trick_plays, "low", None)
+
+        assert strat._seats_played == {0, 1, 3}, (
+            "After a 3-player loner trick, _seats_played should contain "
+            "exactly the 3 active seats"
+        )
+
+    def test_seats_played_reset_on_hand_start(self):
+        """``_seats_played`` resets between hands."""
+        strat = GluttonStrategy(cash_winners_on_lead=True)
+        strat.on_hand_start([Card("S", "A")] * 10, "low", None, player_index=0)
+        strat.observe_play(1, Card("S", "T"), [(1, Card("S", "T"))], "low", None)
+        assert strat._seats_played == {1}
+
+        # New hand — _seats_played must reset.
+        strat.on_hand_start([Card("S", "A")] * 10, "low", None, player_index=0)
+        assert strat._seats_played == set()
