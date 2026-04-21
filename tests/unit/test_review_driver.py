@@ -14,11 +14,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from review_driver import (
+    _capture_pr_head_sha,
     _create_follow_up_issues,
     _ensure_branch_checkout,
     _format_review_comment,
     _parse_plan_files,
     _should_timeout,
+    _write_verdict_if_applicable,
     check_scope_drift,
     classify_review_mode,
     parse_plan_reference,
@@ -1744,3 +1746,107 @@ class TestEnsureBranchCheckout:
         mock_run.side_effect = OSError("git not found")
         result = _ensure_branch_checkout("main")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# _capture_pr_head_sha (#2706)
+# ---------------------------------------------------------------------------
+
+
+class TestCapturePRHeadSha:
+    """Verify the driver reads PR HEAD from GitHub, not the local worktree.
+
+    Regression test for #2706: when the driver ran from a worktree whose
+    checkout was not the PR branch (e.g. the main checkout), ``git rev-parse
+    HEAD`` returned the local branch SHA — typically ``main`` — and the
+    resulting verdict.json was rejected by the pre-merge-review-guard as a
+    SHA mismatch against the PR's actual head.
+    """
+
+    def test_returns_pr_head_ref_oid(self) -> None:
+        """Happy path: returns the SHA reported by github_pr_state.get_pr_head_sha."""
+        pr_sha = "9ff9639eaa6884e194132fe11f54ad29c0c85c43"
+        with patch("github_pr_state.get_pr_head_sha", return_value=pr_sha):
+            assert _capture_pr_head_sha(2661) == pr_sha
+
+    def test_does_not_invoke_git_rev_parse(self) -> None:
+        """The SHA must come from the GitHub API, not ``git rev-parse HEAD``.
+
+        The original bug (#2706) was exactly this: the driver shelled out to
+        ``git rev-parse HEAD`` and trusted whatever SHA the current worktree
+        happened to be pointing at. Fail hard if any future refactor
+        reintroduces a local git call from this helper.
+        """
+        pr_sha = "9ff9639eaa6884e194132fe11f54ad29c0c85c43"
+        with (
+            patch("github_pr_state.get_pr_head_sha", return_value=pr_sha),
+            patch("review_driver.subprocess.run") as mock_run,
+        ):
+            _capture_pr_head_sha(2661)
+        assert (
+            mock_run.call_count == 0
+        ), "SHA capture must not shell out to git — that was exactly the bug"
+
+    def test_runtime_error_from_gh_returns_none(self) -> None:
+        """If ``gh pr view`` fails, log and return None (do not fall back to local HEAD)."""
+        with patch(
+            "github_pr_state.get_pr_head_sha",
+            side_effect=RuntimeError("gh CLI failed: 403"),
+        ):
+            assert _capture_pr_head_sha(2661) is None
+
+    def test_empty_string_returns_none(self) -> None:
+        """Guard against an empty SHA leaking into loop state."""
+        with patch("github_pr_state.get_pr_head_sha", return_value=""):
+            assert _capture_pr_head_sha(2661) is None
+
+    def test_captured_sha_flows_into_verdict(self, tmp_path: Path) -> None:
+        """End-to-end: a captured PR SHA propagates through initialize_state
+        and ``_write_verdict_if_applicable`` into the written verdict.
+
+        This is the tightest test of the #2706 fix: the verdict.json consumed
+        by the pre-merge-review-guard contains the PR's headRefOid, not some
+        unrelated local SHA.
+        """
+        from review_driver import initialize_state
+        from review_state import ReviewMode, ReviewState
+
+        from bid_euchre.ops.review_queue import read_verdict
+
+        pr_number = 2661
+        pr_sha = "9ff9639eaa6884e194132fe11f54ad29c0c85c43"
+        local_main_sha = "d72e5ce851c6cff3a7590c6e69fdbf1841fd7301"
+
+        # 1. Simulate driver capture: mock the GitHub lookup to return the
+        #    PR's headRefOid. (If the old code path ran, it would return the
+        #    local main SHA instead — that would flow into the verdict.)
+        with patch("github_pr_state.get_pr_head_sha", return_value=pr_sha):
+            captured = _capture_pr_head_sha(pr_number)
+        assert captured == pr_sha
+        assert captured != local_main_sha, (
+            "Sanity check: the test fixtures must differ so a regression "
+            "that reintroduced the local-HEAD path would be caught"
+        )
+
+        # 2. Feed the captured SHA through state initialization (as main() does).
+        state = initialize_state(
+            pr_number,
+            branch="dependabot/uv/python-multipart-0.0.26",
+            mode=ReviewMode.STANDARD,
+            head_sha=captured,
+        )
+        # Simulate the loop reaching READY_TO_MERGE.
+        state.state = ReviewState.READY_TO_MERGE.value
+
+        # 3. Write the verdict via the same helper the driver uses.
+        with patch(
+            "bid_euchre.ops.review_queue.shared_queue_root", return_value=tmp_path
+        ):
+            _write_verdict_if_applicable(state)
+
+        verdict = read_verdict(pr_number, tmp_path)
+        assert verdict is not None, "Verdict must be written"
+        assert verdict.reviewed_sha == pr_sha, (
+            f"Verdict SHA must be PR head ({pr_sha[:8]}), not local main "
+            f"({local_main_sha[:8]}). This is the #2706 regression guard."
+        )
