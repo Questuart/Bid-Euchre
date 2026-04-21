@@ -1258,9 +1258,8 @@ class TestPermissionModeAuto:
     """
 
     @staticmethod
-    def _claude_launch_lines() -> list[str]:
+    def _claude_launch_lines(content: str) -> list[str]:
         """Return every claude launch line ($CLAUDE_BIN ... --agent ...)."""
-        content = STEWARD_SCRIPT.read_text()
         return [
             line
             for line in content.split("\n")
@@ -1269,7 +1268,11 @@ class TestPermissionModeAuto:
 
     def test_all_launch_lines_have_permission_mode_auto(self) -> None:
         """Every $CLAUDE_BIN --agent launch line must include --permission-mode auto."""
-        launch_lines = self._claude_launch_lines()
+        # Use _read_steward_script() so CI (where setup-uv cache can restore
+        # .git/HEAD to the base branch) reads the PR's version of the script
+        # via git show $GITHUB_SHA:... rather than the stale working tree.
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
         assert launch_lines, "Expected at least one claude launch line in script"
         missing = [
             line.strip()
@@ -1289,8 +1292,8 @@ class TestPermissionModeAuto:
         This is a conservative structural check: if someone adds a new lane
         without the flag, launch count and flag count diverge.
         """
-        content = STEWARD_SCRIPT.read_text()
-        launch_lines = self._claude_launch_lines()
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
         flag_count = content.count("--permission-mode auto")
         assert flag_count == len(launch_lines), (
             f"Expected --permission-mode auto on every launch line. "
@@ -1304,7 +1307,8 @@ class TestPermissionModeAuto:
         permission-mode flag must appear before it so the expansion order is
         deterministic and safe whether the channel flags are empty or populated.
         """
-        launch_lines = self._claude_launch_lines()
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
         orch_lines = [line for line in launch_lines if "steward-orchestrator" in line]
         assert len(orch_lines) == 1, "Expected exactly one orchestrator launch line"
         line = orch_lines[0]
