@@ -428,7 +428,7 @@ fi
 
 # --- Window 1: central-ops (3 panes, main-vertical) ---
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
-    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $ORCH_CHANNEL_FLAGS
+    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator --permission-mode auto $ORCH_CHANNEL_FLAGS
 
 # ---------------------------------------------------------------------------
 # Auto-compact window for non-orchestrator lanes (token economy optimization).
@@ -486,53 +486,53 @@ if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
 fi
 
 tmux split-window -t "${SESSION}:central-ops" -c "$OPS" \
-    "$CLAUDE_BIN" --name ops --agent steward-ops
+    "$CLAUDE_BIN" --name ops --agent steward-ops --permission-mode auto
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
-    "$CLAUDE_BIN" --name review --agent steward-review
+    "$CLAUDE_BIN" --name review --agent steward-review --permission-mode auto
 tmux select-layout -t "${SESSION}:central-ops" main-vertical
 
 # --- Window 2: analyst (4 panes, tiled) ---
 tmux new-window -t "$SESSION" -n analyst -c "$ANALYST_A" \
-    "$CLAUDE_BIN" --name analyst-a --agent steward-analyst
+    "$CLAUDE_BIN" --name analyst-a --agent steward-analyst --permission-mode auto
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_B" \
-    "$CLAUDE_BIN" --name analyst-b --agent steward-analyst
+    "$CLAUDE_BIN" --name analyst-b --agent steward-analyst --permission-mode auto
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_C" \
-    "$CLAUDE_BIN" --name analyst-c --agent steward-analyst
+    "$CLAUDE_BIN" --name analyst-c --agent steward-analyst --permission-mode auto
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_D" \
-    "$CLAUDE_BIN" --name analyst-d --agent steward-analyst
+    "$CLAUDE_BIN" --name analyst-d --agent steward-analyst --permission-mode auto
 tmux select-layout -t "${SESSION}:analyst" tiled
 
 # --- Window 3: platform ---
 tmux new-window -t "$SESSION" -n platform -c "$AUTHOR_A" \
-    "$CLAUDE_BIN" --name author-a --agent steward-author-a
+    "$CLAUDE_BIN" --name author-a --agent steward-author-a --permission-mode auto
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_B" \
-    "$CLAUDE_BIN" --name author-b --agent steward-author-b
+    "$CLAUDE_BIN" --name author-b --agent steward-author-b --permission-mode auto
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_C" \
-    "$CLAUDE_BIN" --name author-c --agent steward-author-c
+    "$CLAUDE_BIN" --name author-c --agent steward-author-c --permission-mode auto
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_D" \
-    "$CLAUDE_BIN" --name author-d --agent steward-author-d
+    "$CLAUDE_BIN" --name author-d --agent steward-author-d --permission-mode auto
 tmux select-layout -t "${SESSION}:platform" tiled
 
 # --- Window 4: browser ---
 tmux new-window -t "$SESSION" -n browser -c "$BRWS_A" \
-    "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a
+    "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a --permission-mode auto
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_B" \
-    "$CLAUDE_BIN" --name brws-author-b --agent steward-brws-author-b
+    "$CLAUDE_BIN" --name brws-author-b --agent steward-brws-author-b --permission-mode auto
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_C" \
-    "$CLAUDE_BIN" --name brws-author-c --agent steward-brws-author-c
+    "$CLAUDE_BIN" --name brws-author-c --agent steward-brws-author-c --permission-mode auto
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_D" \
-    "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d
+    "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d --permission-mode auto
 tmux select-layout -t "${SESSION}:browser" tiled
 
 # --- Window 5: flex (4 panes, tiled) ---
 tmux new-window -t "$SESSION" -n flex -c "$FLEX_A" \
-    "$CLAUDE_BIN" --name flex-a --agent steward-flex-a
+    "$CLAUDE_BIN" --name flex-a --agent steward-flex-a --permission-mode auto
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_B" \
-    "$CLAUDE_BIN" --name flex-b --agent steward-flex-b
+    "$CLAUDE_BIN" --name flex-b --agent steward-flex-b --permission-mode auto
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_C" \
-    "$CLAUDE_BIN" --name flex-c --agent steward-flex-c
+    "$CLAUDE_BIN" --name flex-c --agent steward-flex-c --permission-mode auto
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_D" \
-    "$CLAUDE_BIN" --name flex-d --agent steward-flex-d
+    "$CLAUDE_BIN" --name flex-d --agent steward-flex-d --permission-mode auto
 tmux select-layout -t "${SESSION}:flex" tiled
 
 # Auto-launch ops monitoring loop (SP-3-08).

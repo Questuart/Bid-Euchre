@@ -908,3 +908,74 @@ class TestRunOnceWithPreflight:
         """run_once with skip_preflight=True does not call preflight."""
         run_once(queue_dir, dry_run=True, skip_preflight=True)
         mock_preflight.assert_not_called()
+
+
+class TestInvokeReviewPermissionMode:
+    """Tests for the --permission-mode auto flag on the steward-review launch (#2685).
+
+    ``invoke_review`` spawns ``claude`` as a subprocess. For headless launches,
+    auto permission mode must be activated via ``--permission-mode auto`` on the
+    CLI; ``defaultMode`` in settings.json alone is insufficient. These tests
+    mock ``subprocess.run`` and inspect the argument list.
+    """
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_subprocess_args_include_permission_mode_auto(
+        self, mock_run: MagicMock
+    ) -> None:
+        """invoke_review must pass --permission-mode auto to claude subprocess."""
+        import review_lane_runner
+
+        # Mock subprocess.run to return a successful JSON payload so the caller
+        # does not fail on downstream parsing.
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "passed", "reason": "clean", "findings": []}),
+            stderr="",
+        )
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        assert mock_run.called, "invoke_review must call subprocess.run"
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        assert isinstance(argv, list), "subprocess.run must be called with an argv list"
+        assert argv[0] == "claude", f"First arg must be 'claude', got {argv[0]!r}"
+        assert "--permission-mode" in argv, (
+            "invoke_review subprocess args must include '--permission-mode' "
+            f"(got {argv})"
+        )
+        idx = argv.index("--permission-mode")
+        assert idx + 1 < len(argv), "--permission-mode must be followed by a value"
+        assert (
+            argv[idx + 1] == "auto"
+        ), f"--permission-mode must be followed by 'auto' (got {argv[idx + 1]!r})"
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_subprocess_args_preserve_existing_flags(self, mock_run: MagicMock) -> None:
+        """Adding --permission-mode auto must not drop --agent, --print, -p flags."""
+        import review_lane_runner
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "passed", "reason": "clean", "findings": []}),
+            stderr="",
+        )
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        # The existing flags must still be present.
+        assert (
+            "--agent" in argv and "steward-review" in argv
+        ), f"Existing --agent steward-review must be preserved: {argv}"
+        assert "--print" in argv, f"Existing --print must be preserved: {argv}"
+        assert "-p" in argv, f"Existing -p prompt flag must be preserved: {argv}"
+        assert (
+            "--output-format" in argv and "json" in argv
+        ), f"Existing --output-format json must be preserved: {argv}"

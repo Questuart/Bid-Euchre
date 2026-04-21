@@ -706,17 +706,25 @@ class TestTelegramChannelConfig:
     def test_channels_flag_only_on_orchestrator(self) -> None:
         """--channels must only appear on the orchestrator pane launch, via ORCH_CHANNEL_FLAGS."""
         content = STEWARD_SCRIPT.read_text()
-        # The orchestrator launch line must reference ORCH_CHANNEL_FLAGS
-        assert (
-            "--agent steward-orchestrator $ORCH_CHANNEL_FLAGS" in content
-        ), "Orchestrator pane must append $ORCH_CHANNEL_FLAGS"
-
-        # No other launch line should reference ORCH_CHANNEL_FLAGS or --channels
-        launch_lines = [
-            line.strip()
+        # The orchestrator launch line must reference ORCH_CHANNEL_FLAGS.
+        # Additional flags (e.g. --permission-mode auto, #2685) may appear
+        # between --agent steward-orchestrator and $ORCH_CHANNEL_FLAGS; assert
+        # only that the same line carries both rather than requiring adjacency.
+        launch_lines_raw = [
+            line
             for line in content.split("\n")
             if ("--name " in line or "--agent " in line) and "$CLAUDE_BIN" in line
         ]
+        orch_lines = [
+            line for line in launch_lines_raw if "steward-orchestrator" in line
+        ]
+        assert len(orch_lines) == 1, "Expected exactly one orchestrator launch line"
+        assert (
+            "$ORCH_CHANNEL_FLAGS" in orch_lines[0]
+        ), "Orchestrator pane must append $ORCH_CHANNEL_FLAGS"
+
+        # No other launch line should reference ORCH_CHANNEL_FLAGS or --channels
+        launch_lines = [line.strip() for line in launch_lines_raw]
         for line in launch_lines:
             if "steward-orchestrator" in line:
                 continue
@@ -1237,6 +1245,81 @@ validate_worktree_path "{external}"
 # ---------------------------------------------------------------------------
 # launchd template tests
 # ---------------------------------------------------------------------------
+
+
+class TestPermissionModeAuto:
+    """Tests for the --permission-mode auto launch flag (#2685).
+
+    Auto mode is activated per-launch via the ``--permission-mode auto`` CLI flag,
+    not by ``defaultMode: "auto"`` in settings.json alone. Every claude launch in
+    steward-session.sh must include the flag so lanes inherit auto mode on
+    session start.  New lanes added in the future must also carry the flag —
+    this test catches missing flags via a grep-based structural check.
+    """
+
+    @staticmethod
+    def _claude_launch_lines(content: str) -> list[str]:
+        """Return every claude launch line ($CLAUDE_BIN ... --agent ...)."""
+        return [
+            line
+            for line in content.split("\n")
+            if "$CLAUDE_BIN" in line and "--agent" in line
+        ]
+
+    def test_all_launch_lines_have_permission_mode_auto(self) -> None:
+        """Every $CLAUDE_BIN --agent launch line must include --permission-mode auto."""
+        # Use _read_steward_script() so CI (where setup-uv cache can restore
+        # .git/HEAD to the base branch) reads the PR's version of the script
+        # via git show $GITHUB_SHA:... rather than the stale working tree.
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
+        assert launch_lines, "Expected at least one claude launch line in script"
+        missing = [
+            line.strip()
+            for line in launch_lines
+            if "--permission-mode auto" not in line
+        ]
+        assert not missing, (
+            "Every claude launch in steward-session.sh must include "
+            "`--permission-mode auto` to activate auto permission mode (#2685). "
+            f"Missing the flag on {len(missing)} line(s):\n"
+            + "\n".join(f"  {line}" for line in missing)
+        )
+
+    def test_permission_mode_flag_count_matches_lanes(self) -> None:
+        """Occurrence count of --permission-mode auto should equal launch-line count.
+
+        This is a conservative structural check: if someone adds a new lane
+        without the flag, launch count and flag count diverge.
+        """
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
+        flag_count = content.count("--permission-mode auto")
+        assert flag_count == len(launch_lines), (
+            f"Expected --permission-mode auto on every launch line. "
+            f"Launch lines: {len(launch_lines)}; flag occurrences: {flag_count}"
+        )
+
+    def test_orchestrator_flag_placed_before_channel_flags(self) -> None:
+        """The orchestrator launch must place --permission-mode auto before $ORCH_CHANNEL_FLAGS.
+
+        $ORCH_CHANNEL_FLAGS can expand to ``--channels plugin:...`` or empty; the
+        permission-mode flag must appear before it so the expansion order is
+        deterministic and safe whether the channel flags are empty or populated.
+        """
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
+        orch_lines = [line for line in launch_lines if "steward-orchestrator" in line]
+        assert len(orch_lines) == 1, "Expected exactly one orchestrator launch line"
+        line = orch_lines[0]
+        pm_pos = line.find("--permission-mode auto")
+        channel_pos = line.find("$ORCH_CHANNEL_FLAGS")
+        assert pm_pos > 0, "Orchestrator launch must include --permission-mode auto"
+        assert channel_pos > 0, "Orchestrator launch must expand $ORCH_CHANNEL_FLAGS"
+        assert pm_pos < channel_pos, (
+            "--permission-mode auto must appear BEFORE $ORCH_CHANNEL_FLAGS so "
+            "the expansion is safe whether channel flags are empty or populated"
+        )
 
 
 class TestLaunchdTemplate:

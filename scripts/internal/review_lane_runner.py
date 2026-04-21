@@ -477,6 +477,8 @@ def invoke_review(pr_number: int, branch: str, head_sha: str) -> dict[str, Any]:
                 "claude",
                 "--agent",
                 "steward-review",
+                "--permission-mode",
+                "auto",
                 "--print",
                 "--output-format",
                 "json",
