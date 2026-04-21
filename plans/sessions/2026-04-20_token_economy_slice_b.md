@@ -136,12 +136,35 @@ to join a session to the specific packet it worked on.
 - Sum `token_spend` and count `shipped_outcome` values from the day's
   `task_completed` events for that lane.
 
+**Duplication rule (normative).** When a lane-day contains sessions from
+more than one observed model, naïvely attaching the full day's
+`task_completed` count to every model seen in the bucket double-counts
+outcomes and inflates the headline productivity ratio. Slice B resolves
+this with **output-token-share weighting** at the lane-day granularity:
+
+- Let `T_m` be observed output tokens for model `m` in the lane-day and
+  `T = sum(T_m)` for all observed models. Share `w_m = T_m / T`.
+- For each `task_completed` event in the lane-day, its outcome count
+  (1 completed, 1 shipped or 1 churned per §3.5 enum mapping) is
+  allocated to each model `m` as `w_m * count`. Fractional allocations
+  accumulate in `float` and are rounded to `int` **only at CLI/JSON
+  render** (dataclass stores `float`).
+- When a lane-day has sessions from exactly one observed model, `w_m = 1`
+  and allocation is trivially integer-preserving — this is the common
+  case and produces no behavior change relative to the simpler spec.
+- Lane-days whose only observed model is `unknown` (all-legacy
+  session-meta rows) fall entirely into the `unknown` model bucket;
+  their outcomes are not redistributed.
+
 This yields the requested `model × work-outcome` rollup at lane-day
 granularity. It is explicitly labelled "directional" in §7 (matching
 §5 of the Slice A baseline) because we cannot prove per-session
 causation for lanes that complete multiple packets in a day. A future
 slice can tighten this join if session↔packet linkage is added
-upstream.
+upstream. The token-share weighting is normative for Slice B — any
+alternative (majority-model assignment, per-event lane-day-first-model
+tiebreak) must be called out explicitly in the implementation PR so
+reviewers can compare.
 
 ### 2.6 Degradation matrix
 
@@ -245,17 +268,44 @@ class ModelOutcomeRow:
                                       # contributing to this row
     session_count: int               # JSONL sessions in those buckets
     total_tokens: int                # observed tokens in those buckets
-    task_completed_count: int        # task_completed events in those
-                                      # buckets
-    shipped_count: int               # events with
-                                      # shipped_outcome="shipped"
-                                      # (or equivalent success value)
-    churned_count: int               # events with
-                                      # shipped_outcome="abandoned" |
-                                      # "reverted" | similar
+    # Counts are stored as floats to carry fractional allocations from
+    # the lane-day token-share weighting (§2.5). CLI/JSON rounds to int
+    # at render time.
+    task_completed_count: float
+    shipped_count: float             # mapped from shipped_outcome="merged"
+    churned_count: float             # mapped from shipped_outcome
+                                      # in {"abandoned", "rolled_back"}
+    blocked_count: float             # mapped from shipped_outcome="blocked"
+    other_count: float               # mapped from shipped_outcome="other"
+                                      # and from None (no shipped_outcome
+                                      # recorded at task_completed time)
     # Derived metric is computed by CLI/dashboard, not stored:
     # productive_fraction = shipped_count / max(task_completed_count, 1)
 ```
+
+**shipped_outcome enum mapping (normative).** `scripts/internal/ops.py`
+registers the `--shipped-outcome` CLI choice as
+`{"merged", "abandoned", "rolled_back", "blocked", "other"}`, and the
+`task_completed` event payload records `None` when the completer did
+not pass `--shipped-outcome`. Slice B maps these five values plus
+`None` deterministically:
+
+| `shipped_outcome` value | Slice B bucket        |
+|-------------------------|-----------------------|
+| `"merged"`              | `shipped_count`       |
+| `"abandoned"`           | `churned_count`       |
+| `"rolled_back"`         | `churned_count`       |
+| `"blocked"`             | `blocked_count`       |
+| `"other"`               | `other_count`         |
+| `None` (unset)          | `other_count`         |
+
+The mapping table is expressed as a module-level constant
+(`_OUTCOME_BUCKET: dict[str | None, str]`) in `token_economy.py` so the
+`task complete` enum and the Slice B reducer can be kept in sync by a
+single grep-friendly test (see §7.2). Adding a new outcome value to the
+CLI enum without updating this table raises in the Slice B reducer and
+fails the dedicated contract test — new values must not be silently
+lumped into `other_count`.
 
 ### 3.3 Public API additions
 
@@ -282,9 +332,16 @@ and means:
 
 - No retention policy change.
 - No new gitignore entry needed.
-- `model_outcome_summary` reads events from
-  `.claude/runtime/events/events.jsonl` (already gitignored, bounded by
-  the existing events-dir retention).
+- `model_outcome_summary` reads `task_completed` events from **both**
+  the active and archived event logs: `events.jsonl` *and*
+  `events.archive.jsonl` (both under `.claude/runtime/events/`,
+  gitignored). `src/bid_euchre/ops/events.py` drains completed records
+  from the active log into the archive — reading only the active log
+  would make the Slice B rollup depend on retention state rather than
+  task history. Records are de-duplicated by `event_id` on read so a
+  mid-drain race does not double-count. Callers may pass `events_dir`
+  to override the location; both files are optional on disk (a fresh
+  lane may have only `events.jsonl`, a long-lived lane may have both).
 
 Caching, if profiling later reveals a hot path, is out of scope for
 Slice B.
@@ -444,8 +501,17 @@ caller's reporting conventions.
 
 Additive panel only — existing `Token Economy` section stays intact.
 
-`src/bid_euchre/ops/dashboard.py::dashboard_token_economy` gains a new
-`by_model` key on its return dict:
+**Module boundary.** `dashboard_token_economy` is defined in
+`src/bid_euchre/ops/token_economy.py` (line 2177 as of this writing).
+`src/bid_euchre/ops/dashboard.py` imports it and renders the return
+value — it does not own the payload shape. The Slice B payload change
+therefore lives in `token_economy.py::dashboard_token_economy`; the
+only edit to `dashboard.py` is in its `format_dashboard_text` helper
+(referenced below), which reads the new `by_model` key and emits the
+additive sub-section.
+
+`src/bid_euchre/ops/token_economy.py::dashboard_token_economy` gains a
+new `by_model` key on its return dict:
 
 ```jsonc
 "by_model": {
@@ -582,6 +648,19 @@ No new test files needed; all three already exist from Slice A.
 - `test_model_outcome_summary_lane_day_join` — fixture with known
   JSONL sessions + `task_completed` events produces expected
   `shipped_count` / `churned_count`.
+- `test_model_outcome_summary_enum_contract` — fixture covers all five
+  `shipped_outcome` values (`merged`, `abandoned`, `rolled_back`,
+  `blocked`, `other`) plus `None`, and asserts the exact mapping from
+  §3.2's `_OUTCOME_BUCKET` table; adding a new enum value in
+  `scripts/internal/ops.py` without updating the mapping fails this
+  test with a clear "unhandled outcome" error.
+- `test_model_outcome_summary_token_share_weighting` — lane-day with
+  two models (70/30 token split) and 10 `task_completed` events
+  produces 7.0 + 3.0 allocations; single-model lane-days produce
+  integer-preserving allocations.
+- `test_model_outcome_summary_reads_archive` — events split between
+  `events.jsonl` and `events.archive.jsonl` with one event_id present
+  in both (mid-drain race) is counted exactly once.
 - `test_model_outcome_summary_missing_events_dir` — returns rows with
   zero outcome counts, never raises.
 - `test_reconcile_includes_by_model_parity` — mismatch surfaces
