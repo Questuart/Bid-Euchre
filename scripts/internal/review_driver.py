@@ -1550,6 +1550,37 @@ def _should_timeout(
     return elapsed > max_runtime_s
 
 
+def _capture_pr_head_sha(pr_number: int) -> str | None:
+    """Return the PR's GitHub-reported ``headRefOid``, or ``None`` on failure.
+
+    Historically the driver read the SHA via ``git rev-parse HEAD`` on the
+    local worktree. When invoked from a worktree whose checkout was not the
+    PR branch (for example, the orchestrator's main checkout), that resolved
+    to the wrong SHA — typically ``main`` — and the pre-merge-review-guard
+    correctly rejected the resulting verdict as a SHA mismatch. See #2706.
+
+    Asking GitHub directly decouples the captured SHA from the worktree's
+    checkout state.
+
+    Force-push semantics: the SHA is captured once, at loop start. If the PR
+    is force-pushed mid-review, the verdict records the pre-force-push SHA
+    and the merge guard will (correctly) reject it against the new PR HEAD.
+    A subsequent driver invocation reinitializes state keyed on the new SHA.
+    """
+    from github_pr_state import get_pr_head_sha
+
+    try:
+        sha = get_pr_head_sha(pr_number)
+    except RuntimeError as exc:
+        logger.warning(
+            "PR #%d: could not fetch headRefOid from GitHub (%s) — proceeding without SHA",
+            pr_number,
+            exc,
+        )
+        return None
+    return sha or None
+
+
 def main() -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Autonomous review coordinator driver")
@@ -1584,15 +1615,8 @@ def main() -> int:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
-    # Get current HEAD SHA for idempotency tracking
-    head_sha_result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-    )
-    head_sha = (
-        head_sha_result.stdout.strip() if head_sha_result.returncode == 0 else None
-    )
+    # Capture the PR's HEAD SHA (not the local worktree HEAD) — see #2706.
+    head_sha = _capture_pr_head_sha(args.pr)
 
     # Load or initialize state (with SHA-based staleness check)
     loop_state = load_state(args.pr, head_sha=head_sha)
