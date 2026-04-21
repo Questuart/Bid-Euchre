@@ -218,7 +218,14 @@ review lanes to prevent orphaned cron jobs. These lanes run persistent
 monitoring and polling crons that continue firing after the orchestrator
 stops reading them.
 
-Orchestrator exit sequence:
+**Prefer `/session-end`** — the executable form of this checklist. It
+enumerates active lanes via the dashboard + heartbeat data, parks them
+in the right order (idle pool → busy pool → review → ops), verifies
+zero urgent inbox messages, drafts the MEMORY.md handoff, and parks the
+orchestrator's own crons last. See `.claude/skills/session-end/SKILL.md`.
+
+The underlying sequence (preserved here for reference):
+
 1. Park **ops** lane: send `/park` to its tmux pane, wait for confirmation
 2. Park **review** lane: send `/park` to its tmux pane, wait for confirmation
 3. Park any **idle author lanes** that still have active sessions
@@ -246,6 +253,10 @@ orphaned crons mean the session is still consuming resources.
   approve, dispatch to author lane
 - `/park` — clean lane shutdown: deletes all active cron jobs before context
   clear. Always use before `/clear` to prevent orphaned cron jobs.
+- `/session-end` — end-of-session orchestrated shutdown: enumerates and
+  parks non-orchestrator lanes, verifies zero unacked urgent inbox
+  messages, writes the MEMORY.md handoff, then parks the orchestrator's
+  own crons last. Use when ending a session.
 
 ## Constraints
 
