@@ -100,10 +100,34 @@ Examples:
 
 ### Phase 2 — Lane Health
 
-6. **Check dashboard state:**
+6. **Classify per-lane state with the heartbeat-aware CLI** (preferred for
+   per-lane liveness; see #2415 and PR #2695), then read the aggregate
+   dashboard for fleet-wide signals:
    ```bash
+   # Per-lane phase classification (Signal 0 heartbeat + process-tree reconciler)
+   uv run python scripts/internal/ops.py lane status --all
+
+   # Aggregate fleet view — token economy, attention items, task-queue totals,
+   # warnings. Ignore dashboard's per-lane `stale!` / `active` flag for
+   # classification decisions (it uses the older 30-minute registry heuristic
+   # that mis-labels working lanes as stale during long validation runs,
+   # #2415 F1). PR 3/3 of #2415 will swap dashboard onto the same classifier.
    uv run python scripts/internal/ops.py --json dashboard --no-probe
    ```
+
+   `lane status` distinguishes `likely_active`, `stale`, `idle`, and
+   `unknown` even when a lane is mid-way through a long `make check-quiet`
+   run — use its output (not `dashboard`'s `[stale!]` flag) for dispatch
+   and recovery decisions.
+
+   > **Known limitation — pre-#2686 sessions.** The heartbeat writer hook
+   > shipped in PR #2686 (2026-04-21). Sessions launched **before** that
+   > restart do not write heartbeats; `lane status` will fall back to
+   > stale registry evidence and may show `stale!` for those lanes even
+   > though the pane is alive. This primarily affects the control-plane
+   > lanes (orchestrator, ops, review) until each one restarts.
+   > Cross-check with `capture-pane` when a long-running lane unexpectedly
+   > reports stale.
 
 7. **Inspect attention items and warnings.** Look for:
    - Lanes with no recent activity (potential stalls)

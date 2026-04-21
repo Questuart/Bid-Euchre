@@ -64,8 +64,9 @@ Check for completed tasks and dispatch new work:
 # Check task queue for completed items
 uv run python scripts/internal/ops.py task list
 
-# Check fleet status for idle lanes
-uv run python scripts/internal/ops.py fleet
+# Check per-lane state to find idle lanes (heartbeat-aware, post-#2415)
+uv run python scripts/internal/ops.py --json lane status --all | \
+  jq -r '.[] | select(.phase == "idle" or .phase == "stale") | .lane_id'
 ```
 
 For each completed task:
@@ -73,16 +74,28 @@ For each completed task:
 2. Update any governing plan checkpoints
 3. Identify the next dispatchable task
 
-For each idle lane:
+For each idle lane (from `lane status` output above, not `dashboard`):
 1. Check if there are approved task packets in the queue
 2. Dispatch if scope is clear and lane is healthy
+
+> **Do not use `dashboard`'s `[stale!]` flag to infer idle-ness.** The
+> dashboard classifier relies on a 30-minute `last_active` registry
+> heuristic, which mis-classifies working lanes as stale during long
+> validation runs (#2415 F1). `lane status --all` uses the Signal 0
+> heartbeat + process-tree reconciler and gets it right.
 
 ### Step 4 -- Full Check-In
 
 Run the standard check-in cycle for situational awareness:
 
 ```bash
-# Lane health via dashboard
+# Per-lane health via the heartbeat-aware classifier (preferred for
+# per-lane liveness classification — see #2415, PR #2695)
+uv run python scripts/internal/ops.py lane status --all
+
+# Aggregate dashboard — still the right tool for token economy,
+# attention items, task-queue totals, and warnings. Do NOT read per-lane
+# liveness from here; it uses the older 30-minute `last_active` heuristic.
 uv run python scripts/internal/ops.py dashboard
 
 # Open PRs status
@@ -91,6 +104,15 @@ gh pr list --state open --json number,title,headRefName --limit 20
 # Any stuck lanes
 # (Use /capture-pane --stuck if needed)
 ```
+
+> **Known limitation — pre-#2686 sessions.** The heartbeat writer
+> (`.claude/runtime/lane_status/<lane>.json`) shipped in PR #2686 on
+> 2026-04-21. Sessions that launched **before** that restart do not write
+> heartbeats. For those lanes, `lane status` falls back to stale registry
+> evidence and may show `stale!` even though the pane is alive. This
+> primarily affects the control-plane lanes (orchestrator, ops, review)
+> until each one restarts. Cross-check with `capture-pane` when a
+> long-running lane unexpectedly reports stale.
 
 ### Step 5 -- Remote Status Update (Optional)
 
@@ -136,3 +158,6 @@ This replaces the previous three-cron pattern:
 - `.claude/skills/monitor/SKILL.md` -- ops lane monitoring (complementary)
 - `.claude/skills/delegate-task/SKILL.md` -- task dispatch workflow
 - `.claude/skills/lane-status/SKILL.md` -- lane health assessment
+- Issue #2415 + PR #2686 (heartbeat writer) + PR #2695 (`lane status`
+  consumer CLI) -- the Signal 0 heartbeat infrastructure that replaces
+  the old registry-based stale classification

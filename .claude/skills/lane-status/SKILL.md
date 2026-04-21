@@ -15,7 +15,40 @@ prompt, token count, and model info — even when the session is actively
 working. Reading only the last few lines of a pane capture will
 systematically misclassify active lanes as idle. This skill prevents that.
 
-## Assessment Procedure
+## Quickest path — heartbeat-aware CLI
+
+For the common case of "is lane X working or idle right now?", prefer the
+shipped CLI consumer from PR #2695:
+
+```bash
+# Single lane
+uv run python scripts/internal/ops.py lane status <lane-id>
+
+# All registered lanes, fixed-width table
+uv run python scripts/internal/ops.py lane status --all
+
+# All lanes, JSON (for scripting / filtering)
+uv run python scripts/internal/ops.py --json lane status --all
+
+# Hook / cron context — skip the subprocess-spawning process-tree reconciler
+uv run python scripts/internal/ops.py lane status --all --no-process-tree
+```
+
+The CLI renders a fixed-width table with columns `LANE`, `PHASE`, `FRESH`,
+`LAST_TOOL`, `SUMMARY`, where `PHASE` ∈ `{active, likely_active, stale,
+blocked, idle, unknown}`. It is powered by Signal 0 (the heartbeat file at
+`<worktree>/.claude/runtime/lane_status/<lane>.json` written by the PR
+#2686 PostToolUse hook) plus a process-tree reconciler that upgrades
+`stale`/`idle` to `likely_active` when a live tmux pane or `claude` child
+process is detected.
+
+The manual 3-signal procedure below is still correct for edge cases:
+classifying approval-blocked lanes, deciding whether a dirty worktree
+represents active work or a stall, or cross-checking when a lane reports
+`stale` but you suspect the pre-#2686 heartbeat blind spot (sessions that
+launched before 2026-04-21).
+
+## Assessment Procedure (manual, 3-signal)
 
 For each lane, gather THREE signals and cross-reference them:
 
