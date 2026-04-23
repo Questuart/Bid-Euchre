@@ -30,6 +30,36 @@
 - [ ] Integration (if engine/rules changed): `PYTHONPATH=src python -m pytest tests/integration/`
 - [ ] Other:
 
+## Verification Performed
+<!--
+  Pattern 10 (§10.9 of the steward-platform governing plan) requires every
+  slice to name the verification surface it satisfied and paste evidence
+  that the surface was actually exercised. Include this section whenever
+  the PR touches a trigger path under §3.3 of
+  `plans/steward_platform/verification_contract/shaping.md`
+  (src/**, scripts/internal/**, .claude/hooks/**, .claude/skills/**,
+  .claude/rules/prompt_policy/**, plans/_templates/**, .claude/settings.json,
+  or creates/modifies ADRs/plan deliverables).
+
+  This section is also the fallback verification-surface home that V2 / V5
+  prechecks in `scripts/internal/deterministic_prechecks.py` recognize.
+
+  Per-surface evidence protocol:
+  - named test       → paste pass output
+  - named command    → paste stdout (elide stable noise)
+  - review prompt    → paste prompt + observed result
+  - event-schema query → paste query + matching event record shape
+  - canary reference → name run ID + link dashboard snapshot
+  - rollback test    → paste forward-then-reverse outputs
+-->
+
+**Surface:** <!-- e.g., `tests/unit/test_foo.py::test_bar`, or `make check-gated`, or "operator review: <specific observable>" -->
+
+**Evidence:**
+```
+(paste test/command output, review result, event record, canary run ID, or rollback outputs here)
+```
+
 ## Expected impact
 - Metrics impact (if any):
 - Runtime impact (if any):

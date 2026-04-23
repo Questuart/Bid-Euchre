@@ -943,8 +943,30 @@ def _step_pr_open(
                 loop_state.pr_number,
             )
 
-    # 1. Run deterministic prechecks (PR-scoped when available)
-    findings = check_diff(mode=loop_state.mode, changed_files=pr_changed_files)
+    # 1. Run deterministic prechecks (PR-scoped when available).
+    # Pass PR commit messages + body so the V1–V6 verification-contract
+    # prechecks can enforce Pattern 10 (§10.9 governing plan).  See
+    # §13.2 risks #1 and #3 of verification_contract/shaping.md.
+    pr_commit_messages: list[str] | None = None
+    pr_body_text: str | None = None
+    try:
+        from github_pr_state import get_pr_body, get_pr_commit_messages
+
+        pr_commit_messages = get_pr_commit_messages(loop_state.pr_number)
+        pr_body_text = get_pr_body(loop_state.pr_number)
+    except Exception:
+        logger.warning(
+            "PR #%d: could not fetch PR commits/body for V1–V6 prechecks — "
+            "falling back to non-enforcing mode",
+            loop_state.pr_number,
+        )
+
+    findings = check_diff(
+        mode=loop_state.mode,
+        changed_files=pr_changed_files,
+        commit_messages=pr_commit_messages,
+        pr_body=pr_body_text,
+    )
     blocking = get_blocking_findings(findings)
 
     # Merge plan validation findings (already dicts) with precheck Finding objects

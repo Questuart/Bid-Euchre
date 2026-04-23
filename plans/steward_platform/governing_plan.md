@@ -605,12 +605,20 @@ with a disposition (keep / modify / consolidate / trim / delete).
 
 **Phase 1 Validation:** n/a for core debt closeout; however, the native-substrate migrations introduced here (worktrees, heartbeat → TeammateIdle, Setup hook, system-prompt-file) are measured during the proving run as part of other primitives' Phase 1 Validation (Primitive A event-driven monitoring; Primitive E active triage; observable behavior improvement in lane outputs).
 
-### Primitive H — Reliability Lab, Replay Harness, and Canary Suite (Phase 1)
+### Primitive H — Reliability Lab, Replay Harness, and Canary Suite (split across Phase 0 + Phase 1)
 
-**Phase membership:** Phase 1 (concurrent with proving run). Primitive H is
-*not* a Phase 0 readiness gate. It builds out during Phase 1 and must
-complete its Phase 1 Validation by end of Phase 1 for the Phase 2 gate
-to be able to make a portability decision (§10.7).
+**Phase membership (draft 8 follow-on, Packet 2b):** Primitive H is split
+across phases. **H.0 — Phase 0 mini-canary** runs one bounded scenario
+starting Phase 0 week 1 and gates Phase 0 closeout via SC #22. **H.1 —
+Phase 1 full reliability suite** (replay harness, failure-injection,
+postmortem generator, expanded canary suite) builds out during Phase 1
+and must complete its Phase 1 Validation by end of Phase 1 for the Phase
+2 gate to be able to make a portability decision (§10.7). The rationale
+for splitting: the full replay / failure-injection / postmortem stack
+needs live proving-run events to reconstruct against (Phase 1); one
+bounded canary scenario running weekly on existing substrate does not,
+and is exactly the discipline Pattern 10 (§10.9) needs to demonstrate at
+Phase 0.
 
 **Native-substrate integration (draft 7 Tier S).**
 - **Monitor tool** — drives replay-assertion polling natively (watch events until target state reached); also used for canary task suite trigger conditions on prompt-policy / routing / messaging changes.
@@ -620,27 +628,61 @@ to be able to make a portability decision (§10.7).
 
 **Goals served:** #15 (reliability / replay / failure-injection), supports #1, #2, #11, #13 (rollback for Phase 1 changes).
 
-**Work:**
+#### 5-H.0 — Phase 0 mini-canary (dogfood-v1)
+
+**Scope:** one bounded canary scenario (`dogfood-v1`) exercising every
+substrate surface a real task would exercise (plan → dispatch → author
+→ review → merge → archivist → KB → rollback). Full spec in
+`plans/steward_platform/canary_scenarios/dogfood.md` and
+`plans/steward_platform/verification_contract/shaping.md` §5. Gates Phase
+0 closeout via SC #22.
+
+**Work (H.0):**
+- `dogfood-v1` canary implementation at `tests/reliability/canaries/dogfood_v1.py` + sub-plan at `plans/steward_platform/canary_scenarios/dogfood.md`.
+- `/run-canary` skill at `.claude/skills/run-canary/SKILL.md`; `/canary-review` quarterly audit skill at `.claude/skills/canary-review/SKILL.md`.
+- Weekly cron installed in ops lane (`/loop 7d /run-canary`).
+- Conditional hook wired for material-platform-change triggers (shaping §5.5 trigger-path list).
+- Dashboard integration: `canary_last_pass`, `canary_pass_streak`, `canary_last_status`, `canary_last_elapsed` + sub-metric sparklines in `ops.py dashboard`.
+- Event schema v1.N additive: `canary_run_start`, `canary_run_complete`, `canary_run_fail`, `canary_rollback_complete` (coordinate with Primitive A).
+- **Idempotency checklist for side effects:** required PR-review item at `.claude/rules/idempotency_checklist.md` covering every replay/interrupt-sensitive operation (message send, task status update, event emission, file write). PR template includes the checklist; review lane verifies. Lands at Phase 0 because it is a static PR-review checklist without runtime dependency on Phase 1 events.
+
+**Phase 0 Readiness (H.0):**
+- `dogfood-v1` canary implemented per `plans/steward_platform/canary_scenarios/dogfood.md`.
+- `/run-canary` skill registered and invokable from any lane.
+- Weekly cron installed in ops lane (`/loop 7d /run-canary`).
+- Conditional hook wired for material-platform-change triggers (shaping §5.5 trigger-path list).
+- All 9 pass metrics grep-verifiable on a test-driven seeded run.
+- Dashboard integration live; sparklines render.
+- Event schema v1.N additive registered in the unified schema.
+- Failure-mode routing live: `canary-slow` / `canary-fail` / `canary-silent` / `canary-schema-drift` issues auto-file with correct labels.
+- Rollback path validated: canary itself can be disabled (feature flag `ENABLE_CANARY_CRON` off; weekly cron removable) without leaving dangling scheduled state.
+- Idempotency checklist committed at `.claude/rules/idempotency_checklist.md`.
+- PR template includes idempotency checklist section.
+- ≥4 consecutive weekly passes recorded (gates Phase 0 closeout per SC #22).
+
+#### 5-H.1 — Phase 1 reliability lab
+
+**Work (H.1):**
 - `tests/reliability/replay.py` — harness that reconstructs a task lifecycle from the event corpus (Primitive A) and asserts expected intermediate + final states.
 - Failure-injection scenarios: lane stall, dead-letter message, stuck worktree, orphan cron, review-coordinator crash, Telegram outage.
 - Automated postmortem generator: given a replay artifact, produce a draft incident file.
 - Rollback-validation coverage for Phase 1 changes (Primitive G covers Phase 0 changes).
-- **Canary task suite (new in draft 5):** 3-5 canonical steward tasks defined as YAML/markdown specs at `tests/reliability/canaries/`. Each spec: task description, expected lane routing, approximate token budget, expected prompt-policy citations in traces, pass/fail verdict protocol. Suite reruns are triggered automatically (via CI or cron) on any material change to prompt-policy registry, dispatch policy, messaging bus, or replay harness itself. Canary failures surface as issues via Primitive E's active triage.
-- **Idempotency checklist for side effects (new in draft 5):** required PR-review item at `.claude/rules/idempotency_checklist.md` covering every replay/interrupt-sensitive operation (message send, task status update, event emission, file write). PR template includes the checklist; review lane verifies. Makes implicit idempotency needs mechanizable.
-- **Intended to be** usable as a Phase 2 portability dry-run tool: once a shape audit produces adapter stubs, the harness can point at them and flag hidden coupling. This reuse is design intent, not verified readiness. See §10.7 and §11-H for the coupling between H and the Phase 2 portability decision.
+- **Expanded canary task suite:** grow from the single dogfood-v1 (already running from H.0) to 3-5 canonical steward tasks defined as YAML/markdown specs at `tests/reliability/canaries/`. Each new spec: task description, expected lane routing, approximate token budget, expected prompt-policy citations in traces, pass/fail verdict protocol. Suite reruns are triggered automatically (via CI or cron) on any material change to prompt-policy registry, dispatch policy, messaging bus, or replay harness itself. Canary failures surface as issues via Primitive E's active triage.
+- **Intended to be** usable as a Phase 2 portability dry-run tool: once a shape audit produces adapter stubs, the harness can point at them and flag hidden coupling. This reuse is design intent, not verified readiness. See §10.7 and §11-H.1 for the coupling between H.1 and the Phase 2 portability decision.
 
-**Phase 1 Readiness (mid-Phase-1, before the proving run produces its main evidence):**
+**Phase 1 Readiness (H.1, mid-Phase-1, before the proving run produces its main evidence):**
 - Replay harness exists and can reconstruct at least 1 lifecycle (may use a non-proving-run seed task).
 - At least 2 failure-injection scenarios implemented; both pass.
 - Automated postmortem generator template committed and smoke-tested.
-- Canary task suite defined (3-5 tasks) and one trigger path wired (e.g., on prompt-policy registry commits).
-- Idempotency checklist committed and added to the PR template.
+- Canary task suite expanded to 3-5 tasks (dogfood-v1 already running from H.0; add 2-4 more per operator selection).
+- Idempotency checklist actively cited in PR reviews during Phase 1.
 
 **Phase 1 Validation (by end of Phase 1):**
 - Replay harness reconstructs ≥1 proving-run task lifecycle end-to-end with no drift from live events.
 - ≥3 failure-injection scenarios exercised during the proving run (or during dedicated reliability sessions within it); all either pass or produce a documented incident. **At least one scenario is selected post-hoc by an analyst lane during Phase 1, after primitives A, B, and E ship** (Q3 clarification — timing is during Phase 1 as the proving run accumulates, not at end of phase) — to avoid Goodharting the self-chosen minimum.
 - Automated postmortem generator produces ≥1 end-to-end incident draft from a real proving-run event stream.
 - Canary task suite reruns on ≥2 material platform changes during the proving run; at least one canary run catches a regression (or, if none caught, the operator records in Primitive B's prompt-policy history an ADR stating "no regressions caught" as either evidence of stability or as a kill-candidate signal for canary scope).
+- dogfood-v1 canary continues passing weekly through Phase 1; no regression in `canary_pass_streak` over 2-week window; any canary fail during Phase 1 produces a postmortem artifact per the automated generator.
 - Zero PRs merged without the idempotency checklist filled during the proving run (for PRs touching replay/interrupt-sensitive code).
 
 ---
@@ -700,7 +742,12 @@ secondarily; platform exercise matters primarily.
 
 ### 6.4 Preflight pass/fail checklist
 
-Every item must pass for Phase 1a to green-light Phase 1:
+Every item must pass for Phase 1a to green-light Phase 1. **Pattern 10
+(§10.9) cross-reference (draft 8 follow-on):** every preflight
+pass-criterion column entry below traces to a verification surface
+enumerated in `plans/steward_platform/verification_contract/map.md`; an
+item cannot pass if the underlying surface is un-enumerated (strict
+existence, lenient form).
 
 | # | Surface | Pass criterion |
 |---|---|---|
@@ -897,14 +944,19 @@ detail:
 Phase 2 decision-gate analysts consult both alongside the digest (§15)
 when shaping the successor plan.
 
-**Design coupling note.** Primitive H (Reliability Lab), now a Phase 1
-primitive, is intended to serve as the portability dry-run tool when
-Phase 2 decides to port. Phase 2 cannot commit to portability unless H
-has completed its Phase 1 Validation criteria (§5-H). If H is demoted
-under its kill criterion (§11-H) or fails to complete validation by end
-of Phase 1, the **default is Option 1 below; Option 2 requires all named
-conditions to be met** (F5 — pre-commit a default so Phase 2 doesn't
-decide under cost pressure):
+**Design coupling note.** Primitive H (Reliability Lab) is split across
+phases (draft 8 follow-on, Packet 2b): H.0 is Phase 0 (mini-canary,
+gating Phase 0 closeout via SC #22); H.1 is Phase 1 (replay harness,
+failure-injection, postmortem, expanded canary suite, portability
+dry-run intent). The §10.7 portability-decision readiness criterion
+references H.1 Phase 1 Validation specifically; H.0 passing does not by
+itself qualify portability readiness. H.1 is intended to serve as the
+portability dry-run tool when Phase 2 decides to port. Phase 2 cannot
+commit to portability unless H.1 has completed its Phase 1 Validation
+criteria (§5-H.1). If H.1 is demoted under its kill criterion (§11-H.1)
+or fails to complete validation by end of Phase 1, the **default is
+Option 1 below; Option 2 requires all named conditions to be met** (F5
+— pre-commit a default so Phase 2 doesn't decide under cost pressure):
 
 **Option 1 (default): defer the portability decision until H is rebuilt
 and validated.** Pushes portability to Phase 3+. The Phase 2 gate still
@@ -1027,7 +1079,32 @@ and verifies each has an owning primitive's Work bullet + Readiness
 criterion. A cross-reference without owning-primitive enumeration is a
 lint violation.
 
-**Enforcement surface.** Patterns 1-9 are enforced through a combination
+**Pattern 10 — Verification surface per deliverable (strict-existence / lenient-form, draft 8 follow-on).**
+Every plan deliverable — every §N.M Work bullet, every Phase 0/1 Readiness criterion, every preflight item, every sub-plan deliverable row — names a *verification surface*. Existence of the named surface is strict: no deliverable ships or is declared ready without one. Form of the surface is lenient: the named surface is matched to the deliverable class, not forced into pytest uniformity. The discipline prevents the silent-running-feature failure mode (a skill/hook/script/policy ships, runs in the background, accrues drift, and is only noticed after it is already load-bearing). Pattern 10 is the forward-verification complement to Pattern 7 (rollback-verification) and Pattern 8 (emission-verification).
+
+**Acceptable verification-surface forms, by deliverable class:**
+
+| Deliverable class | Default surface | Acceptable alternatives |
+|---|---|---|
+| New Python module under `src/**` or `scripts/internal/**` | unit test under `tests/unit/test_<name>.py` referenced by path | integration test; named runnable command with documented expected output |
+| New `.claude/hooks/**` file | rollback test (disable-hook path exercised) referenced by path | conditional-hook smoke; canary-scenario coverage |
+| New `.claude/skills/**` entry | named runnable acceptance command in `SKILL.md` | canary-scenario coverage; operator-review prompt with explicit pass criterion |
+| New `.claude/rules/**` file | operator-readable review prompt embedded in the rule | — |
+| New plan/sub-plan §N.M row or table cell | `verification_contract/map.md` row (self-referencing Pattern 10) | — |
+| New KB entry (`knowledge/**`) | `INDEX.md` inclusion + lint pass | — |
+| New adapter under `src/bid_euchre/ops/adapters/**` | unit test + integration test against default cell | smoke via canary scenario |
+| Config change (`.claude/settings.json`, `permissions.allow`) | rollback test (revert-commit smoke) | — |
+| Prompt-policy edit (B.3) | trace-ID or incident-fingerprint cited in commit; rollback via version pin | — |
+| Event schema addition (Primitive A v1.N) | replay-harness compatibility assertion | — |
+| ADR | (see note below) | — |
+
+**ADR note (preserves strict-existence).** ADRs document *decisions*, not *runnable code*; pytest is inapplicable. Their named verification surface is the Pattern 7 rollback path (ADR supersession route), combined with the commit citation or trace evidence in the ADR's `Source evidence` section. This keeps strict-existence intact ("every deliverable has a named surface") without forcing a runtime assertion where none makes sense.
+
+**Enforcement surfaces.** Seven independent surfaces enforce Pattern 10; see `plans/steward_platform/verification_contract/shaping.md` §3 for the catalog. No single surface is load-bearing; each catches a distinct failure mode. Enforcement is defense-in-depth, modeled on §10.9 closing paragraph: "No pattern is aspirational-only; each has at least one mechanization path."
+
+**Plan-authoring obligation (single-pattern framing).** The plan-authoring discipline (every new deliverable row names its verification surface *at plan-time*, not post-hoc) is Pattern 10 itself, not a separate Pattern 11. Pattern 10 is one *property* (deliverables have verification surfaces) with multiple *enforcement surfaces* (plan template, skill refusal, lint, prompt-policy, commit lint, review-driver precheck, canary suite). This mirrors Pattern 9's structure (property: load-bearing ownership; enforcement: lint).
+
+**Enforcement surface.** Patterns 1-10 are enforced through a combination
 of agent-readability lint (Primitive C), ADR discipline (Primitive C),
 sub-plan template enforcement (Primitive C), changelog review skill
 (Primitive D), event-schema validator (Primitive A), and per-primitive
@@ -1077,7 +1154,8 @@ new 5th prompt in §15.2 (`**Re-evaluation needed in Phase 3:**`).
 | E — Messaging/triage (Phase 0) | Active triage produces <20% of issues created, measured over ≥20 observed issues → revert to operator-discovery model |
 | F — Token economy (Phase 0) | Slice F cannot produce a defensible promote/retain/kill decision → freeze adaptive dispatch in advisory indefinitely |
 | G — Debt closeout (Phase 0) | Not kill-able; blocks all other primitives |
-| H — Reliability lab + canary (Phase 1) | <2 replay scenarios pass or <3 failure-injection scenarios exercised, **including at least one scenario selected post-hoc by an analyst lane after primitives A/B/E ship**; OR the canary task suite never runs on a material platform change during the proving run → demote to a simpler event-diff assertion set; postmortem generator + canary suite deferred. Demotion blocks §10.7 portability-decision readiness; Phase 2 must re-evaluate portability cost if demoted |
+| H.0 — Dogfood canary (Phase 0) | Canary fails to achieve ≥2 weekly passes in any 4-week window during Phase 0 → canary scope is ill-chosen or substrate is unstable; demote to simpler event-diff assertion OR re-scope canary to a narrower task. Note: the H.0 kill threshold is weaker than the SC #22 "≥4 consecutive weekly passes" gate — the gate blocks *declaration* of Phase 0 complete; the kill triggers *reconsideration* of whether the canary is the right scenario shape. Both have distinct purposes. |
+| H.1 — Reliability lab + expanded canary (Phase 1) | <2 replay scenarios pass or <3 failure-injection scenarios exercised, **including at least one scenario selected post-hoc by an analyst lane after primitives A/B/E ship**; OR the expanded canary suite never runs on a material platform change during the proving run → demote to a simpler event-diff assertion set; postmortem generator + canary expansion deferred. Demotion blocks §10.7 portability-decision readiness; Phase 2 must re-evaluate portability cost if demoted. |
 
 ---
 
@@ -1101,6 +1179,7 @@ new 5th prompt in §15.2 (`**Re-evaluation needed in Phase 3:**`).
 | Decision-inputs subsections skipped under load | Template enforcement via `/create-plan` skill refuses to accept sub-plan closeouts without the subsection; digest script flags missing subsections nightly |
 | Improvement-loop overfitting (external-analyst change set, draft 8) | Platform may optimize packet shapes / routing / prompts / skills to recent local patterns and regress on broader task diversity. Mitigation: B.12 improvement-mechanism evaluation tracks metric deltas across a rolling window (not single-change comparisons); archivist (Primitive D) extracts "which packet structures reduced retries" + "which routing choices caused waste" patterns symmetrically so negative signal is as visible as positive; canary task suite (Primitive H) exercises a consumer-differentiated task set that the improvement loop hasn't been trained on, catching regressions on non-recent patterns. §11-B row 1 kill criterion includes "≥3 improvement-mechanism changes that degraded downstream metrics *and* were not rolled back within the next packet cycle" as an overfitting signal. |
 | Plugin-ecosystem adoption risks (draft 8) | Adopting external plugins (ADRs 005/007/010) introduces maintainer-dependency risk, license-compatibility risk, schema-lock-in risk. Mitigation: ADRs file at Phase 0 kickoff with explicit adoption decision (adopt wholesale / cherry-pick / reference only / reject); each decision cites source-evaluation evidence (per `plans/steward_platform/plugin_source_evaluation.md`, delivered by analyst packet `a0cb1ca3a256`); each adoption carries a Pattern 7 rollback path; each carries a Pattern 8 observable-by-default contract so steward can detect upstream plugin behavior changes. |
+| Canary becomes silent green check (draft 8 follow-on, Pattern 10 enforcement) | Medium likelihood, high impact. The dogfood canary passes weekly without actually exercising the verification surfaces it purports to test — becomes a silent green checkbox while real verification discipline decays. **Mitigations:** (1) canary assertions include an **expected-event-type-set hash**; mismatches fail loudly even when the 9 pass-metric assertions themselves succeed (see `§5.3` of `plans/steward_platform/verification_contract/shaping.md`); (2) dashboard panel renders sub-metric **sparklines** (elapsed_seconds, event_count, archivist_lag, INDEX regen time) per canary run — operator sees drift before threshold breach (see `§5.6` of the shaping doc); (3) **quarterly `/canary-review` skill** forces operator to audit: did recent canary passes catch known failure modes? If not, add assertions or retire the canary. Documented in `plans/steward_platform/canary_scenarios/dogfood.md` §Audit. |
 
 ---
 
@@ -1126,6 +1205,8 @@ new 5th prompt in §15.2 (`**Re-evaluation needed in Phase 3:**`).
 18. Every primitive closeout, sub-plan outcome, preflight report, proving-run report, and shape audit includes a Phase 2 Decision Inputs subsection per §15; digest script regenerates nightly without flagging missing subsections.
 19. Changelog review skill (§5-D) runs on schedule (≥2×/week); produces ≥1 `native-substrate-signal` ledger entry during the proving run (validates the scan against `https://code.claude.com/docs/en/changelog` + `https://code.claude.com/docs/en/whats-new` is actually producing signal).
 20. At least one Claude Code native-substrate adoption (per §10.9 extensibility pattern #2) lands in the repo during Phase 0 or Phase 1, retiring corresponding bespoke synthesis (e.g., `ops/worktrees.py` migrating to native WorktreeCreate/Remove hooks; or polling loops in `ops/monitor.py` replaced by Monitor tool subscriptions; or heartbeat classifier in `ops/dashboard.py` replaced by TeammateIdle).
+21. **Verification-contract map coverage (draft 8 follow-on, Pattern 10 enforcement).** `plans/steward_platform/verification_contract/map.md` is committed and covers ≥90% of plan deliverables: every `§5` primitive sub-deliverable row, every `§5-X` Phase 0 Readiness bullet, every `§5-X` Phase 1 Validation bullet, every `§6.4` preflight item, every `§14` Open Item once resolved into a concrete deliverable. Map columns: `Deliverable | Class | Verification surface | Owner | Acceptance condition`. Acceptance: the `agent_readability_lint.py check verification-contract` sub-command exits clean against the live plan tree at Phase 0 close AND the orchestrator records map review at Phase 0 kickoff with a commit linking to the review note.
+22. **Phase 0 dogfood canary passing streak (draft 8 follow-on).** The `dogfood-v1` canary scenario (`plans/steward_platform/canary_scenarios/dogfood.md`) runs weekly starting Phase 0 week 1 AND achieves **≥4 consecutive weekly passes** before Phase 0 closeout can be declared. Failures file follow-up issues automatically (`canary-fail` / `canary-slow` / `canary-silent` / `canary-schema-drift` labels per `§5.4` of `plans/steward_platform/verification_contract/shaping.md`). Phase 0 closeout is blocked if streak is <4 or if the last run's status is not `success`. Dashboard `canary_last_pass` + `canary_pass_streak` serve as the operator-readable gate display.
 
 ---
 

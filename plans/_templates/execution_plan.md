@@ -43,6 +43,32 @@ Example (illustrative, drawn from a worked case):
 - Can items run in parallel across lanes, or must they serialize? Declare
   disjoint write scopes if parallelizing.
 
+## Verification Plan
+
+_Required per Pattern 10 (§10.9 of
+`plans/steward_platform/governing_plan.md`). Every work item or slice
+below ties to a named verification surface. Strict existence, lenient
+form — execution plans may omit per-slice rows if all slices roll up to
+a single surface, but must state this explicitly._
+
+| Item (ID) | Class | Verification surface | Owner | Acceptance condition |
+|---|---|---|---|---|
+| (row per work item) | (per §10.9 Pattern 10 table) | (path or command) | (lane) | (observable pass) |
+
+**Worked example (executed against a hypothetical PR-only work unit):**
+
+| Item | Class | Verification surface | Owner | Acceptance condition |
+|---|---|---|---|---|
+| I1 — edit `governing_plan.md` §10.9 to add Pattern 10 text | plan text edit | `grep -c 'Pattern 10' plans/steward_platform/governing_plan.md ≥ 3` | author-b | grep passes |
+| I2 — create 3 skill stubs | new `.claude/skills/**` entries | `ls .claude/skills/<name>/SKILL.md` per skill | author-b | all paths exist |
+| I3 — run `make check-gated` | integration gate | full Tier 2 validation | author-b | exit 0 |
+
+Rolled-up surface (acceptable if every sub-item maps to the same gate):
+`make check-gated` + targeted `pytest` + `gh pr create` — each item
+must still be named in the Ordered work items section; the Verification
+Plan table may list the rollup once with a note that items I1–I3 all
+roll up to the same gate.
+
 ## Outcome
 
 (Filled after implementation.) Link to resulting PR(s) or note abandonment.
