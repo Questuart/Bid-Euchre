@@ -142,12 +142,15 @@ Per §5-D of governing plan draft 7.
 - **Skill:** `/review-claude-changelog`
 - **Schedule:** `/loop 3d /review-claude-changelog` (2-3×/week)
 - **Implementation:** `scripts/internal/changelog_review.py` (~75 lines)
-- **Sources scraped:**
+- **Sources scraped (G8 updated, draft 8):**
   - `https://code.claude.com/docs/en/changelog`
   - `https://code.claude.com/docs/en/whats-new`
   - Per-week pages `https://code.claude.com/docs/en/whats-new/2026-wNN` (auto-discover)
-  - Earlier weekly pages via wayback / archive (best-effort)
-  - Operator-curated `knowledge/external_signal_sources.md` URLs (Anthropic team posts, davidad commentary, etc.)
+  - **`https://github.com/anthropics/claude-code/releases`** (structured release notes; draft 8 addition)
+  - **`docs.anthropic.com` blog index** (architecture / model-behavior posts; draft 8 addition)
+  - **Plugin registry sources (draft 8):** `github.com/anthropics/claude-plugins-official`, `claudepluginhub.com`, `claudemarketplaces.com`, `github.com/ComposioHQ/awesome-claude-plugins`, `github.com/Kamalnrf/claude-plugins`, `www.aitmpl.com`, `claude-plugins.dev` — new plugin listings treated as `plugin-adoption-candidate` sub-tagged `native-substrate-signal` entries
+  - Operator-curated `knowledge/external_signal_sources.md` URLs (Anthropic team posts; operator X/Twitter list URLs rather than individual threads, per G8 scalability note; davidad commentary)
+  - Wayback / archive crawls for earlier weekly pages: **best-effort; not a readiness blocker** (G8 trim — wayback added fragility without proportionate signal)
   - `/insights` tool output (when relevant)
 - **Output:** `knowledge/_candidates/<date>_changelog.md` with adoption candidates per the schema:
   ```
@@ -185,4 +188,31 @@ Format per entry: URL + category tag (release / workflow / model-behavior / tool
 | Date | Trigger | Changes |
 |---|---|---|
 | 2026-04-23 | Initial seed (operator-fed Jan-Apr 2026 review) | Tier inventory established; per-system rework specs; skill spec |
+| 2026-04-23 | Draft 8 tightening (G8 fix + plugin-sweep expansion) | GitHub release notes + docs.anthropic.com blog added to sources; wayback trimmed to best-effort; plugin registry URLs added; Agent Teams + code-review plugin + mcp-memory-service + melodic-software/claude-code-observability added as Tier S ADR targets (B.8 / ADR 005 / ADR 010 / ADR 007); April 2026 Claude Code updates noted (worktree switching; PreCompact hook blocking; background plugin monitors); plugin source evaluation dispatched to analyst-a (packet `a0cb1ca3a256`) for follow-up fold-in to ADR seeds |
 | (future) | Scheduled scan | (filled by `/review-claude-changelog` runs) |
+
+---
+
+## 8. Plugin discovery (new in draft 8)
+
+The changelog review skill is **not limited to the official changelog**.
+Plugin-registry new-listings are first-class `plugin-adoption-candidate`
+signals. Registries scraped (listed above in §5) yield plugin candidates
+which follow the three-tier preference of §10.9 Pattern 2:
+
+1. **Native Claude Code feature** (Monitor, lifecycle hooks, Agent Teams, `--system-prompt-file`, etc.)
+2. **Official plugin** (`anthropics/claude-plugins-official`; e.g., code-review plugin for ADR 005)
+3. **High-trust third-party plugin** (well-maintained, clear license, good adoption — e.g., `melodic-software/claude-code-observability` for ADR 007, `doobidoo/mcp-memory-service` for ADR 010)
+4. **Bespoke synthesis** (last resort)
+
+Each adoption decision files an ADR per §10.9 Pattern 2 discipline.
+Plugin source evaluation (analyst-a packet `a0cb1ca3a256`, output at
+`plans/steward_platform/plugin_source_evaluation.md`) provides the
+evidence base for ADRs 005/007/010 + B.8 adoption decisions. Findings
+fold into ADR seeds as follow-up commit post-draft-8-promotion.
+
+### April 2026 Claude Code updates to absorb
+
+- **Worktree switching** — extends WorktreeCreate/Remove substrate; may simplify multi-worktree operator workflows
+- **PreCompact hook blocking** — relevant to Primitive D archivist + compaction discipline (archivist may pre-compact-block during session postmortem generation)
+- **Background plugin monitors** — relevant to changelog review skill; may make scheduling cleaner than `/loop 3d`
