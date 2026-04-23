@@ -416,9 +416,35 @@ def check_diff(
     # T1: Untested behavior change (diff-level)
     all_findings.extend(_check_untested_behavior_change(changed_files))
 
-    # Plan-audit mode: check referenced file paths exist
+    # Plan-audit mode: check referenced file paths exist.
+    #
+    # Exclusion: when the PR diff touches ONLY markdown files under plans/**,
+    # skip the path-existence precheck.  Governance plan prose frequently
+    # mentions filenames conversationally (e.g. `task_queue.py`, `ops/dashboard.py`
+    # in discussion) that the precheck misinterprets as asserted repo-root
+    # paths.  On pure governance-plan PRs this pattern produced 20–130
+    # false-positive findings with zero actual blockers (see issue #2761).
+    # Mixed PRs (plans + code) still run the check — the heuristic is narrow
+    # so code-changing diffs never bypass path validation.
     if mode == "plan-audit":
-        all_findings.extend(_check_plan_paths(changed_files, repo_root))
+        if _should_run_path_existence_check(changed_files):
+            all_findings.extend(_check_plan_paths(changed_files, repo_root))
+        else:
+            all_findings.append(
+                Finding(
+                    severity="P2",
+                    file="<plan-audit>",
+                    line=0,
+                    category="process",
+                    check_id="PX",
+                    message=(
+                        "path-existence check skipped: PR touches only "
+                        "plans/**/*.md files (per #2761 exclusion — prose "
+                        "path references in governance plans are not "
+                        "asserted repo-root paths)"
+                    ),
+                )
+            )
 
     # V1–V6: verification-contract prechecks (Pattern 10, §10.9 governing plan).
     all_findings.extend(
@@ -505,6 +531,35 @@ def _check_untested_behavior_change(
             ),
         )
     ]
+
+
+def _should_run_path_existence_check(diff_paths: list[str]) -> bool:
+    """Return True when the path-existence precheck should run for *diff_paths*.
+
+    The check is skipped when the PR touches ONLY markdown files under
+    ``plans/**``.  Governance plan prose frequently mentions filenames
+    conversationally (e.g. ``task_queue.py`` inside a sentence) that the
+    precheck misinterprets as asserted repo-root paths.  See issue #2761
+    for concrete examples (PR #2749: 21 findings / 0 blockers; PR #2751:
+    132 findings / 0 blockers).
+
+    Rationale for the narrow heuristic:
+      * Pure governance-plan PRs are entirely under ``plans/**/*.md`` —
+        matching this shape means any "referenced path" is prose, not a
+        real path claim to audit.
+      * Mixed PRs (plans + code) still run the check: a single non-plan
+        file or non-markdown file flips the gate back on, so code-changing
+        diffs cannot bypass path validation.
+
+    An empty ``diff_paths`` list returns True (the check runs) so we never
+    accidentally suppress findings when no diff is available.
+    """
+    if not diff_paths:
+        return True
+    all_are_plan_markdown = all(
+        p.startswith("plans/") and p.endswith(".md") for p in diff_paths
+    )
+    return not all_are_plan_markdown
 
 
 def _check_plan_paths(changed_files: list[str], repo_root: Path) -> list[Finding]:

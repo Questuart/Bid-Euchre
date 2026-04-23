@@ -15,8 +15,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from deterministic_prechecks import (  # noqa: E402
+    _should_run_path_existence_check,
     _vc_is_trigger_path,
     _vc_surface_exists,
+    check_diff,
     check_verification_contract,
 )
 
@@ -317,3 +319,155 @@ def test_no_triggers_emits_no_findings(tmp_path: Path) -> None:
         pr_body="",
     )
     assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Path-existence check exclusion (issue #2761)
+#
+# Governance plan markdown PRs triggered 20–130 false-positive findings
+# from the plan-audit path-existence check treating prose path mentions
+# (e.g. ``task_queue.py`` inside a sentence) as asserted repo-root paths.
+# The exclusion skips the check when the diff touches only plans/**/*.md
+# while mixed/code diffs still run it.
+# ---------------------------------------------------------------------------
+
+
+def test_gate_plans_markdown_only_returns_false() -> None:
+    """All-plan-markdown diffs skip the path-existence check."""
+    assert not _should_run_path_existence_check(
+        [
+            "plans/steward_platform/governing_plan.md",
+            "plans/steward_platform/draft7_review_analyst-d.md",
+            "plans/sessions/2026-04-23_foo.md",
+        ]
+    )
+
+
+def test_gate_mixed_pr_returns_true() -> None:
+    """Plan markdown + any non-plan file → run the check."""
+    assert _should_run_path_existence_check(
+        ["plans/steward_platform/governing_plan.md", "src/bid_euchre/foo.py"]
+    )
+
+
+def test_gate_code_only_returns_true() -> None:
+    """Pure code diffs still run the check."""
+    assert _should_run_path_existence_check(
+        ["src/bid_euchre/core/rules.py", "tests/unit/test_rules.py"]
+    )
+
+
+def test_gate_plans_non_markdown_returns_true() -> None:
+    """plans/**/*.yaml or plans/**/*.json still run the check."""
+    assert _should_run_path_existence_check(["plans/browser_game/config.yaml"])
+
+
+def test_gate_non_plans_markdown_returns_true() -> None:
+    """docs/ or README markdown still run the check."""
+    assert _should_run_path_existence_check(["README.md", "docs/01_core/RULES.md"])
+
+
+def test_gate_empty_diff_returns_true() -> None:
+    """Empty diff → run the check (safe default)."""
+    assert _should_run_path_existence_check([])
+
+
+def test_plan_markdown_only_pr_skips_path_check(tmp_path: Path) -> None:
+    """Plans-only PR produces the PX skip marker and zero path-existence findings."""
+    plan = tmp_path / "plans" / "foo.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text(
+        "# Plan\n\n"
+        "See `scripts/internal/missing_script.py` for implementation.\n"
+        "Edit `src/bid_euchre/nonexistent_module.py` and update `ops/dashboard.py`.\n"
+    )
+    findings = check_diff(
+        changed_files=["plans/foo.md"],
+        mode="plan-audit",
+        repo_root=tmp_path,
+        commit_messages=["docs: plan\n\nVerification: plans/foo.md\n"],
+        pr_body="## Summary\n",
+    )
+    px_markers = [f for f in findings if f.check_id == "PX"]
+    assert len(px_markers) == 1, f"expected 1 PX marker, got {len(px_markers)}"
+    assert px_markers[0].severity == "P2"
+    assert "plans/**/*.md" in px_markers[0].message
+    path_findings = [
+        f for f in findings if f.message.startswith("Referenced path does not exist")
+    ]
+    assert (
+        path_findings == []
+    ), f"expected 0 path-existence findings on plans-only PR, got {len(path_findings)}"
+
+
+def test_mixed_pr_runs_path_check(tmp_path: Path) -> None:
+    """Mixed plans + code PR runs the path-existence check and emits findings."""
+    plan = tmp_path / "plans" / "foo.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# Plan\n\nReferences `tests/unit/nope.py` which is missing.\n")
+    code = tmp_path / "src" / "bid_euchre" / "bar.py"
+    code.parent.mkdir(parents=True)
+    code.write_text("# stub\n")
+    findings = check_diff(
+        changed_files=["plans/foo.md", "src/bid_euchre/bar.py"],
+        mode="plan-audit",
+        repo_root=tmp_path,
+        commit_messages=["feat: bar\n\nVerification: tests/unit/test_bar.py\n"],
+        pr_body="## Summary\n",
+    )
+    # No PX skip marker when the gate says run.
+    assert not any(f.check_id == "PX" for f in findings)
+    # Path-existence check did run — flags the missing tests/unit/nope.py.
+    path_findings = [
+        f for f in findings if f.message.startswith("Referenced path does not exist")
+    ]
+    assert path_findings, "expected path-existence findings on mixed PR"
+
+
+def test_code_only_pr_runs_path_check(tmp_path: Path) -> None:
+    """Code-only PR in plan-audit mode — gate is True (check would run)."""
+    # No plans/*.md in the diff, so `_check_plan_paths` loops find nothing
+    # to audit regardless; the important guarantee is that the gate doesn't
+    # short-circuit and emit a skip marker.
+    code = tmp_path / "src" / "bid_euchre" / "bar.py"
+    code.parent.mkdir(parents=True)
+    code.write_text("# stub\n")
+    findings = check_diff(
+        changed_files=["src/bid_euchre/bar.py"],
+        mode="plan-audit",
+        repo_root=tmp_path,
+        commit_messages=["feat: bar\n\nVerification: tests/unit/test_bar.py\n"],
+        pr_body="## Summary\n",
+    )
+    assert not any(f.check_id == "PX" for f in findings)
+
+
+def test_plan_markdown_prose_references_not_flagged_after_exclusion() -> None:
+    """Golden fixture: plans/steward_platform/draft7_review_analyst-d.md
+
+    Before #2761 fix: the file triggered 132 path-existence findings from
+    prose references.  After the exclusion: zero path-existence findings
+    (plus one PX skip marker).  Regression-locks the fix against future
+    code paths that might re-enable the check on plans-only diffs.
+    """
+    fixture = Path("plans/steward_platform/draft7_review_analyst-d.md")
+    if not fixture.exists():  # pragma: no cover — guards local/CI symmetry
+        import pytest
+
+        pytest.skip(f"golden fixture not present: {fixture}")
+    findings = check_diff(
+        changed_files=[str(fixture)],
+        mode="plan-audit",
+        repo_root=Path("."),
+        commit_messages=[f"docs: review\n\nVerification: {fixture}\n"],
+        pr_body="## Summary\n",
+    )
+    path_findings = [
+        f for f in findings if f.message.startswith("Referenced path does not exist")
+    ]
+    assert path_findings == [], (
+        f"golden fixture regression: expected 0 path-existence findings "
+        f"after #2761 exclusion, got {len(path_findings)}"
+    )
+    px_markers = [f for f in findings if f.check_id == "PX"]
+    assert len(px_markers) == 1, f"expected exactly 1 PX marker, got {len(px_markers)}"
