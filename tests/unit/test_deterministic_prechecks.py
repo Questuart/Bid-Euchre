@@ -540,7 +540,13 @@ class TestCheckDiffChangedFiles:
         assert findings[0].severity == "P0"
 
     def test_plan_audit_restricted_to_provided_files(self, tmp_path: Path) -> None:
-        """Plan-audit only scans plans in the provided changed_files list."""
+        """Plan-audit only scans plans in the provided changed_files list.
+
+        Note: per issue #2761, the path-existence check is skipped on
+        all-plan-markdown diffs.  This test keeps the check active by
+        including a non-plan file so it can still assert the scoping
+        behavior (plan_a is audited, plan_b is not).
+        """
         plans_dir = tmp_path / "plans" / "sessions"
         plans_dir.mkdir(parents=True)
 
@@ -552,11 +558,16 @@ class TestCheckDiffChangedFiles:
         plan_b = plans_dir / "plan_b.md"
         plan_b.write_text("# Plan B\n\nReferences `also/missing.py` here.\n")
 
-        # Only plan_a is in the PR's changed files
+        # Include a non-plan file so the #2761 exclusion does not skip the
+        # path-existence check.  plan_a is the only plan in the diff.
+        code = tmp_path / "src" / "bid_euchre" / "foo.py"
+        code.parent.mkdir(parents=True)
+        code.write_text("# stub\n")
+
         findings = check_diff(
             mode="plan-audit",
             repo_root=tmp_path,
-            changed_files=["plans/sessions/plan_a.md"],
+            changed_files=["plans/sessions/plan_a.md", "src/bid_euchre/foo.py"],
         )
 
         # Should find broken refs in plan_a but NOT plan_b
