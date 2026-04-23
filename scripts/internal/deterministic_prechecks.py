@@ -350,6 +350,8 @@ def check_diff(
     mode: str = "standard",
     repo_root: Path | None = None,
     changed_files: list[str] | None = None,
+    commit_messages: list[str] | None = None,
+    pr_body: str | None = None,
 ) -> list[Finding]:
     """Run deterministic prechecks on all files changed vs base.
 
@@ -417,6 +419,16 @@ def check_diff(
     # Plan-audit mode: check referenced file paths exist
     if mode == "plan-audit":
         all_findings.extend(_check_plan_paths(changed_files, repo_root))
+
+    # V1–V6: verification-contract prechecks (Pattern 10, §10.9 governing plan).
+    all_findings.extend(
+        check_verification_contract(
+            changed_files,
+            repo_root,
+            commit_messages=commit_messages,
+            pr_body=pr_body,
+        )
+    )
 
     return all_findings
 
@@ -546,3 +558,350 @@ def get_blocking_findings(findings: list[Finding]) -> list[Finding]:
     from review_common import is_blocking_severity
 
     return [f for f in findings if is_blocking_severity(f.severity)]
+
+
+# ---------------------------------------------------------------------------
+# V1–V6: Verification-contract prechecks (Pattern 10 — §10.9 governing plan,
+# §3.4 of plans/steward_platform/verification_contract/shaping.md).
+#
+# Severity maps to the check-ID taxonomy in .claude/rules/deferred/60_review_gate.md:
+#   V1 (BLOCK), V2 (BLOCK), V3 (BLOCK), V4 (WARN), V5 (INFO), V6 (WARN).
+#
+# Per §13.2 risk #1 of shaping.md: V3 must gate on the current PR HEAD +
+# PR diff, not on the local working tree, or it becomes vacuous when
+# author-lane checkouts drift.  Callers pass ``pr_changed_files`` explicitly
+# so we do not shell out to ``git`` from inside this module.
+#
+# Per §13.2 risk #3: the commit-footer lint (V2) accepts a
+# ``Verification:`` footer on ANY commit in the PR range, not only the
+# introducing commit — authors may backfill the footer as a follow-up
+# commit within the same PR.
+# ---------------------------------------------------------------------------
+
+# §3.3 commit-footer trigger paths (see shaping.md §3.3).
+_VC_TRIGGER_PREFIXES = (
+    "src/",
+    "scripts/internal/",
+    ".claude/hooks/",
+    ".claude/skills/",
+    "src/bid_euchre/ops/",
+    "plans/_templates/",
+    ".claude/rules/prompt_policy/",
+)
+_VC_TRIGGER_EXACT_PATHS = (".claude/settings.json",)
+_VC_ADR_PREFIXES = (
+    "knowledge/adr/",
+    "plans/steward_platform/adrs/",
+)
+
+_VC_FOOTER_RE = re.compile(r"^Verification:\s*(?P<surface>\S.+?)\s*$", re.MULTILINE)
+
+# PR-body "Verification Performed" section. Accept any Markdown heading
+# level; the section is satisfied if the body contains the heading and at
+# least one non-blank content line following it.
+_VC_PR_BODY_HEADING_RE = re.compile(r"(?im)^\s{0,3}#{1,6}\s+Verification\s+Performed\b")
+
+# §N.M section sigil (e.g. `§5.3`, `§10.9`).
+_VC_SECTION_SIGIL_RE = re.compile(r"§\s*\d+(?:\.\d+)+")
+
+
+def _vc_is_trigger_path(path: str) -> bool:
+    """Return True if *path* is a §3.3 trigger for verification-contract."""
+    if path in _VC_TRIGGER_EXACT_PATHS:
+        return True
+    for prefix in _VC_TRIGGER_PREFIXES:
+        if path.startswith(prefix):
+            return True
+    for prefix in _VC_ADR_PREFIXES:
+        if path.startswith(prefix):
+            return True
+    # §7: §5 sub-deliverable row in governing_plan*.md
+    if path.startswith("plans/steward_platform/") and "governing_plan" in path:
+        return True
+    # §8: §N.M section add in plans/**/*.md, .claude/skills/**/*.md, knowledge/**/*.md
+    if (
+        (path.startswith("plans/") and path.endswith(".md"))
+        or (path.startswith(".claude/skills/") and path.endswith(".md"))
+        or (path.startswith("knowledge/") and path.endswith(".md"))
+    ):
+        return True
+    return False
+
+
+def _vc_pr_body_has_verification_performed(pr_body: str | None) -> bool:
+    if not pr_body:
+        return False
+    return bool(_VC_PR_BODY_HEADING_RE.search(pr_body))
+
+
+def _vc_any_commit_has_footer(commit_messages: list[str] | None) -> list[str]:
+    """Return the list of surfaces named in ``Verification:`` footers.
+
+    Per §13.2 risk #3, a footer on ANY commit in the PR range satisfies
+    the lint.  Returns ``[]`` when none found or no commit messages were
+    supplied.
+    """
+    if not commit_messages:
+        return []
+    surfaces: list[str] = []
+    for msg in commit_messages:
+        for m in _VC_FOOTER_RE.finditer(msg):
+            surfaces.append(m.group("surface"))
+    return surfaces
+
+
+def _vc_surface_exists(surface: str, repo_root: Path) -> bool:
+    """Return True when the named surface resolves to a real path or is a
+    well-known non-path surface form.
+
+    Per the §10.9 Pattern 10 table, acceptable surfaces include:
+      * relative paths (``tests/unit/test_foo.py``)
+      * path::node forms (``tests/unit/test_foo.py::test_bar``)
+      * commands (``make check``, ``uv run …``)
+      * review-artifact references (``review-log``, ``canary-dashboard``)
+
+    We accept anything that points to an existing file; for non-path
+    forms we accept any surface whose first token contains a known
+    non-path keyword.  This is deliberately lenient-form per Pattern 10.
+    """
+    s = surface.strip()
+    if not s:
+        return False
+    # Strip ::node suffix for path-check
+    path_part = s.split("::", 1)[0].strip()
+    candidate = (repo_root / path_part).resolve()
+    if candidate.exists():
+        return True
+    # Non-path surface classes (lenient-form).
+    first_token = s.split()[0].lower() if s.split() else ""
+    non_path_keywords = {
+        "make",
+        "uv",
+        "python",
+        "pytest",
+        "bash",
+        "sh",
+        "canary-dashboard",
+        "review-log",
+        "manual-review",
+        "operator-review",
+        "dashboard",
+        "canary",
+    }
+    return first_token in non_path_keywords
+
+
+def _vc_map_contains_deliverable(map_path: Path, needle_tokens: list[str]) -> bool:
+    """Return True if the verification_contract/map.md contains a row
+    whose `Deliverable` column contains any of *needle_tokens*."""
+    if not map_path.exists():
+        return False
+    try:
+        text = map_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        # Extract first column
+        parts = line.split("|")
+        if len(parts) < 3:
+            continue
+        deliverable = parts[1].strip()
+        for needle in needle_tokens:
+            if needle and needle in deliverable:
+                return True
+    return False
+
+
+def check_verification_contract(
+    changed_files: list[str],
+    repo_root: Path,
+    *,
+    commit_messages: list[str] | None = None,
+    pr_body: str | None = None,
+) -> list[Finding]:
+    """V1–V6 verification-contract prechecks (Pattern 10).
+
+    Args:
+        changed_files: PR-scoped list of changed file paths.
+        repo_root: Repository root for surface-existence resolution.
+        commit_messages: Commit messages across the PR range.  When
+            ``None``, V2's BLOCK is suppressed (we cannot distinguish
+            "no footer" from "commit messages unavailable").
+        pr_body: The PR description body.  When ``None``, the PR-body
+            fallback for V2/V5 is disabled.
+
+    Returns:
+        List of Finding objects.  Severities align with §3.4:
+            V1/V2/V3 → P0 (BLOCK), V4/V6 → P2 (WARN), V5 → P2 (INFO-like).
+    """
+    findings: list[Finding] = []
+
+    # Identify trigger paths in the changed set.
+    triggered = [f for f in changed_files if _vc_is_trigger_path(f)]
+    if not triggered:
+        return findings
+
+    footer_surfaces = _vc_any_commit_has_footer(commit_messages)
+    pr_body_has_section = _vc_pr_body_has_verification_performed(pr_body)
+
+    # V2 — new deliverable path triggered and NO commit-footer AND NO PR body
+    # section.  We only BLOCK when we actually have commit_messages to look
+    # at; otherwise we emit a WARN so the review driver can see the fallback.
+    if not footer_surfaces and not pr_body_has_section:
+        if commit_messages is not None:
+            for t in triggered:
+                findings.append(
+                    Finding(
+                        severity="P0",
+                        file=t,
+                        line=0,
+                        category="process",
+                        check_id="V2",
+                        message=(
+                            "Verification footer missing. This diff "
+                            "introduces or modifies a plan deliverable "
+                            "(§3.3 of verification_contract/shaping.md). "
+                            "Add a 'Verification: <surface>' commit-message "
+                            "footer OR a 'Verification Performed' section "
+                            "in the PR body naming the surface per Pattern "
+                            "10 (§10.9 governing plan)."
+                        ),
+                    )
+                )
+        else:
+            # Fallback WARN: callers that cannot supply commit_messages
+            # (e.g. local dev runs) still see the reminder.
+            findings.append(
+                Finding(
+                    severity="P2",
+                    file=triggered[0],
+                    line=0,
+                    category="process",
+                    check_id="V2",
+                    message=(
+                        "Verification footer or PR-body section not "
+                        "supplied to precheck; cannot enforce V2 BLOCK. "
+                        "Pass commit_messages/pr_body or run via review_driver."
+                    ),
+                )
+            )
+
+    # V3 — named surface must resolve to a real path (strict-existence).
+    # We check both commit-footer surfaces and PR-body-named surfaces.
+    candidate_surfaces = list(footer_surfaces)
+    if pr_body:
+        # Pull "Verification: X" style lines from the PR body too.
+        for m in _VC_FOOTER_RE.finditer(pr_body):
+            candidate_surfaces.append(m.group("surface"))
+    for surface in candidate_surfaces:
+        if not _vc_surface_exists(surface, repo_root):
+            findings.append(
+                Finding(
+                    severity="P0",
+                    file="<verification-contract>",
+                    line=0,
+                    category="process",
+                    check_id="V3",
+                    message=(
+                        f"Named verification surface does not exist: "
+                        f"{surface!r}. Pattern 10 is strict-existence on "
+                        f"surfaces; adjust the surface or land the target "
+                        f"first."
+                    ),
+                )
+            )
+
+    # V1 / V6 — plan-change rows + Work-bullet coverage.
+    # Detect plan changes (governing_plan.md sub-deliverable row changes and
+    # §N.M section adds).  We do a best-effort textual check without git
+    # diff: if a plans/*.md file is in changed_files and has no row in the
+    # verification_contract/map.md mentioning one of its §N.M section
+    # numbers, emit V6 WARN.
+    map_path = (
+        repo_root / "plans" / "steward_platform" / "verification_contract" / "map.md"
+    )
+    for path in changed_files:
+        if not (path.startswith("plans/") and path.endswith(".md")):
+            continue
+        if path.endswith("/verification_contract/map.md"):
+            continue
+        full = repo_root / path
+        if not full.exists():
+            continue
+        try:
+            text = full.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Collect §N.M sigils present in the file.
+        sigils = set(_VC_SECTION_SIGIL_RE.findall(text))
+        if not sigils:
+            continue
+        if _vc_map_contains_deliverable(map_path, list(sigils)):
+            continue
+        findings.append(
+            Finding(
+                severity="P2",
+                file=path,
+                line=0,
+                category="process",
+                check_id="V6",
+                message=(
+                    "Plan file changed but verification_contract/map.md "
+                    "has no row referencing any of its §N.M sections. "
+                    "Pattern 10: backfill a map row naming the verification "
+                    "surface for each changed deliverable."
+                ),
+            )
+        )
+
+    # V5 — informational: commit adds new file under trigger paths and has
+    # no footer, but PR body has matching section.  (Recorded in report
+    # only — we emit a P2 finding with a distinct check_id so downstream
+    # can treat it as INFO.)
+    if not footer_surfaces and pr_body_has_section and triggered:
+        findings.append(
+            Finding(
+                severity="P2",
+                file=triggered[0],
+                line=0,
+                category="process",
+                check_id="V5",
+                message=(
+                    "Verification surface is in PR body 'Verification "
+                    "Performed' section but no commit carries a "
+                    "'Verification:' footer. This passes Pattern 10 "
+                    "(PR-body fallback) but commit-footer form is preferred."
+                ),
+            )
+        )
+
+    # V4 — deliverable-class vs surface-class mismatch.  The full mapping
+    # is the §10.9 Pattern 10 table; Packet 2b lands the most common
+    # mismatches as hard rules and defers the long-tail to Pattern-9's
+    # load-bearing ownership lint (shared plan-walker, §13.2 risk #2).
+    for path in triggered:
+        # Rule: new .claude/hooks/** file should cite a rollback test, not
+        # just "operator review".  Detect via surface text.
+        if path.startswith(".claude/hooks/"):
+            for surface in candidate_surfaces:
+                s_lower = surface.lower()
+                if "operator review" in s_lower and "rollback" not in s_lower:
+                    findings.append(
+                        Finding(
+                            severity="P2",
+                            file=path,
+                            line=0,
+                            category="process",
+                            check_id="V4",
+                            message=(
+                                "Hook file change names 'operator review' "
+                                "as verification surface, but hook deliverables "
+                                "should include a rollback test per §10.9 "
+                                "Pattern 10 deliverable-class table."
+                            ),
+                        )
+                    )
+
+    return findings

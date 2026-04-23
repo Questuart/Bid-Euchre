@@ -45,6 +45,33 @@ Other sub-plans or steps that must complete first.
 - `path/to/file.py` -- what changes
 - `path/to/new_file.py` -- NEW: purpose
 
+## Verification Plan
+
+_Required per Pattern 10 (§10.9 of
+`plans/steward_platform/governing_plan.md`). Every deliverable below
+ties to a named verification surface. **Strict existence, lenient form**
+— every Work bullet or Readiness criterion names a surface; the surface
+need not be pytest-uniform as long as it matches the deliverable class
+per the §10.9 Pattern 10 table._
+
+| Deliverable (§N.M) | Class | Verification surface | Owner | Acceptance condition |
+|---|---|---|---|---|
+| (row per Work bullet or Readiness criterion) | (per §10.9 Pattern 10 table) | (path or command) | (lane) | (observable pass) |
+
+**Worked example:**
+
+| Deliverable | Class | Verification surface | Owner | Acceptance condition |
+|---|---|---|---|---|
+| §2 `scripts/internal/verify_map_coverage.py` | new Python script | `tests/unit/test_verify_map_coverage.py::test_coverage_threshold` | author | pytest passes; coverage computed is ≥90% on seeded fixture |
+| §3 `verification_contract/map.md` authoring | new KB-class artifact | `INDEX.md` inclusion + `agent_readability_lint.py check verification-contract` clean | analyst | lint exits 0 |
+| §4 feature flag `ENABLE_MAP_LINT` | config change | rollback test: flip flag off, re-run lint, expect degraded-but-non-fatal mode | ops | documented in §Rollback |
+
+**Surface-class defaults** — see Pattern 10 table at §10.9 of
+`plans/steward_platform/governing_plan.md` for the full deliverable-class
+→ default-surface mapping. Placeholder tokens (TBD/TODO/FIXME/XXX) in
+Verification surface column cause `/create-plan` refusal and `check
+verification-contract` lint failures.
+
 ## Validation
 
 How to verify correctness before marking COMPLETE. Every sub-plan must

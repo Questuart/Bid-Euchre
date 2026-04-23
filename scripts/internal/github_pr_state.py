@@ -122,6 +122,71 @@ def get_pr_changed_files(pr_number: int) -> list[str]:
     return [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
 
 
+def get_pr_commit_messages(pr_number: int) -> list[str]:
+    """Return the full commit messages (subject + body) for all commits in a PR.
+
+    Used by the verification-contract precheck (V2) to accept a
+    ``Verification: <surface>`` footer on ANY commit in the PR range
+    per §13.2 risk #3 of
+    ``plans/steward_platform/verification_contract/shaping.md``.
+
+    Raises:
+        RuntimeError: If the gh CLI call fails.
+    """
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(pr_number),
+            "--json",
+            "commits",
+            "--jq",
+            '.commits[].messageHeadline + "\\n\\n" + .commits[].messageBody',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to get PR #{pr_number} commit messages: {result.stderr}"
+        )
+    # jq emits one concatenated string per commit; split on the inter-commit
+    # marker.  A simpler approach: one gh call per commit list, then one per
+    # headline+body using jq -r.  We use a slightly different query.
+    # Fallback: a clean per-commit form.
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(pr_number),
+            "--json",
+            "commits",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to get PR #{pr_number} commit messages: {result.stderr}"
+        )
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Failed to parse PR #{pr_number} commits: {exc}") from exc
+    messages: list[str] = []
+    for c in data.get("commits", []) or []:
+        headline = c.get("messageHeadline", "") or ""
+        body = c.get("messageBody", "") or ""
+        # Rejoin into a standard Git commit message.
+        full = headline
+        if body:
+            full = f"{headline}\n\n{body}"
+        messages.append(full)
+    return messages
+
+
 def get_pr_head_sha(pr_number: int) -> str:
     """Get the HEAD SHA of a PR."""
     result = subprocess.run(

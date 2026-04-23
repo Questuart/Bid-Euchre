@@ -39,6 +39,29 @@ Same pattern for the success criteria that reference this primitive in
 |---|---|---|---|
 | SC-N | "<sc text>" | `path/or/command` → `<observed>` | pass |
 
+## Verification Plan
+
+_Required per Pattern 10 (§10.9 of
+`plans/steward_platform/governing_plan.md`). Every **Readiness**
+criterion the primitive declared (plural, per primitive) is a row here;
+each row's "Acceptance condition" column cites the **actual observed
+result** (not the plan-time target). This gives Phase 2 decision-gate
+analysts a closeout-artifact view of "what verification surface was
+actually demonstrated" per primitive._
+
+| Deliverable (Readiness bullet) | Class | Verification surface | Owner | Acceptance condition (observed) |
+|---|---|---|---|---|
+| (row per Readiness bullet the primitive declared) | (per §10.9 Pattern 10 table) | (path or command) | (lane) | (observed pass, e.g., "coverage 94% on 2026-04-23 run") |
+
+**Worked example (Primitive C closeout row):**
+
+| Deliverable | Class | Verification surface | Owner | Acceptance condition (observed) |
+|---|---|---|---|---|
+| §5-C `agent_readability_lint.py` Pattern 9 lint | new Python script | `tests/unit/test_agent_readability_lint.py` + self-run against `plans/**` | author | 12/12 tests pass; lint exits 0 at Phase 0 close on 2026-04-23 |
+
+**Surface-class defaults** — see Pattern 10 table at §10.9 of
+`plans/steward_platform/governing_plan.md`.
+
 ## Deviations from plan
 
 What shipped that wasn't in the primitive's Work bullets? What didn't
