@@ -68,6 +68,39 @@ disposition (e.g., "implement worktrees.py native migration per row 1").
 | `token_economy.py` (22 hard-blocks) | **Modify substrate; bespoke debt remains** | `/usage`, `/cost`, read-tool reductions, per-tool MCP override | High | ADR 003 |
 | `control_plane.py` | **Modify; expand event sources** | ConfigChange hook | Low | — |
 | `core/provider.py` + `core/interfaces.py` + `adapters/` | **Keep + extend** (Platform-10 foundation) | (extensibility pattern #1) | Low | — |
+| `alert_push.py` | **Keep** (steward-specific alerting; no native analog) | — | Low | — |
+| `away_mode.py` | **Evaluate** for absorption into native remote sessions (per G6/Track 2.4 keep through Phase 0) | Remote sessions (Tier S) | Low | — |
+| `ci.py` | **Keep** (CI integration is steward-specific) | — | Low | — |
+| `compaction.py` | **Modify; evaluate** native PreCompact blocking (April 2026 Claude Code update) | PreCompact hook | Low | — |
+| `context_safety.py` | **Keep** (steward-specific context guardrails) | — | Low | — |
+| `fs_boundary.py` | **Keep** (filesystem protection; steward-specific) | — | Low | — |
+| `idle_detector.py` | **Trim/retire** in favor of TeammateIdle | TeammateIdle | Low | — |
+| `lane_heartbeat.py` | **Retire** in favor of TeammateIdle (overlaps with `dashboard.py` heartbeat classifier) | TeammateIdle | Low | — |
+| `learning.py` | **Modify; integrate** with B.12 improvement-mechanism evaluation | — | Medium | — |
+| `queue_priority.py` | **Keep; evaluate** native task-system priority via B.8 ADR | Agent Teams task dependencies | Low | ADR B.8 |
+| `recovery.py` | **Keep** (steward-specific recovery protocols) | — | Low | — |
+| `remote_ack.py` | **Modify; evaluate** absorption via remote sessions (Track 2.4: keep through Phase 0; evaluate cutover in Phase 1) | Remote sessions | Low | — |
+| `repairs.py` | **Keep** (bespoke repair catalog; steward-specific) | — | Low | — |
+| `retries.py` | **Keep** (steward-specific retry semantics) | — | Low | — |
+| `review_queue.py` | **Keep; evaluate** integration with official code-review plugin | Code-review plugin | Medium | ADR 005 |
+| `reviews.py` | **Modify; evaluate** overlap with `/autofix-pr` + code-review plugin | `/autofix-pr`, code-review plugin | Medium | ADR 005 |
+| `scope.py` | **Keep** (scope-lock enforcement; steward-specific semantics) | — | Low | — |
+| `status.py` | **Modify substrate** (session metadata + session title hooks) | Session metadata hooks | Low | — |
+| `supervisor.py` | **Keep; evaluate** Agent Teams team-lead overlap | Agent Teams | Medium | ADR B.8 |
+| `telegram_push.py` | **Modify; evaluate** absorption via remote sessions (Track 2.4: keep through Phase 0) | Remote sessions | Low | — |
+| `watchdogs.py` | **Keep** (steward-specific watchdog timers) | — | Low | — |
+
+**G6 coverage note (draft 8):** All 42 ops modules now enumerated. Default disposition for "Keep" modules with no native analog and no consolidation partner: "Keep; review at Phase 1 close for native analog evolution." Re-evaluate dispositions after plugin source evaluation artifact (packet `a0cb1ca3a256`) lands and ADRs 005/007/010 + B.8 are filed at Phase 0 kickoff.
+
+**G10/G13 `.claude/agents/` catalog (draft 8, new row under §3):**
+
+| Directory | Disposition | Trigger feature | Effort |
+|---|---|---|---|
+| `.claude/agents/` (23 files: 19 lane files + 4 specialist reviewers + README) | **Consolidate to 8 archetypes per B.9** (orchestrator / ops / review / analyst / author / brws-author / flex / scratch). First-deliverable sub-sub-plan under Primitive G publishes the 19→8 mapping. Relationship to `.claude/system_prompts/<archetype>.md` resolved via ADR at Phase 0 kickoff (replacement / supplement / orthogonal per §5-B B.9). Specialist reviewer agents (architecture, correctness, coverage, plan-reviewer) stay as subagent archetypes, not lane archetypes. | `--system-prompt-file` (B.9) | Medium |
+
+**G7 hook-file enumeration (draft 8 deferral note):** 34 concrete hook files under `.claude/hooks/` include: `alert-inject.{py,sh}`, `attention-broker-autostart.sh`, `compact-context.sh`, `fleet-check-autostart.sh`, `inbound-channel-audit.{py,sh}`, `inbox-completion-inject.{py,sh}`, `post-bash-dispatch.sh`, `post-merge-notify.sh`, `post-monitor-push-relay.sh`, `post-plan-review.sh`, `post-push-ci-check.sh`, `post-task-event.sh`, `post-telegram-audit.sh`, `post-tool-daemon-notify.sh`, `post-write-check.sh`, `pre-worktree-cleanup.sh`, `rule-loader.sh`, `scope-drift-guard.sh`, `session-sync-worktree.sh`, `urgent-state-guard.py`, `worktree-guard.sh`, `worktree-reminder.sh` (22 uncategorized-by-name), plus the category rows already in §5. ADR 004 (hook migration boundary) files at Phase 0 close with per-file disposition (native-lifecycle / conditional / HTTP / bespoke).
+
+**G12 session-plan sweep script (draft 8):** `scripts/internal/sweep_session_plans.py` (~30 lines) enumerates 264 session plans, classifies by Outcome section (COMPLETED / ABANDONED / SUPERSEDED / open), archives non-open to `plans/sessions/_archive/` in one pass. Added to Primitive G sub-sub-plan list.
 
 ---
 
