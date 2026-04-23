@@ -17,7 +17,7 @@
 | 003 | Token-economy native vs. bespoke boundary | Pending (Phase 0 close) | F |
 | 004 | Hook migration boundary | Pending (Phase 0 close) | E |
 | **005** | **Review plugin evaluation** | **Seeded (draft 8)** | **C/E** |
-| 006 | Auto mode codification | Pending (Phase 0 kickoff) | G |
+| **006** | **Auto mode codification** | **Seeded (Phase 0 kickoff)** | **meta / G** |
 | **007** | **Observability plugin evaluation** | **Seeded (draft 8)** | **A** |
 | **010** | **mcp-memory-service evaluation** | **Seeded (draft 8)** | **C/D** |
 | **B8** | **Native task/dependency system evaluation** | **Seeded (draft 8)** | **B** |
