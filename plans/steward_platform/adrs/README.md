@@ -21,6 +21,6 @@
 | **007** | **Observability plugin evaluation** | **Seeded (draft 8)** | **A** |
 | **010** | **mcp-memory-service evaluation** | **Seeded (draft 8)** | **C/D** |
 | **B8** | **Native task/dependency system evaluation** | **Seeded (draft 8)** | **B** |
-| G10 | `.claude/system_prompts/` vs. `.claude/agents/` relationship | Pending (Phase 0 kickoff; options: replacement/supplement/orthogonal) | G |
+| **G10** | **`.claude/system_prompts/` vs. `.claude/agents/` relationship** | **Seeded (draft 8; decision: (c) orthogonal)** | **B / G** |
 
 **Seeded** = draft 8 contains ADR seed text; the ADR file below is promotion-ready pending Phase 0 kickoff finalization (operator signoff + filing date).
