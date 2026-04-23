@@ -57,13 +57,15 @@ However, the plugin's dispatcher design is well-considered: never-block async, p
 
 ## Open questions
 
-1. Under ADR 007, is `extra_fields` tolerated in steward's schema for Phase 1, or must all unknown-field routing be resolved before Phase 1 ships? Analyst-a's recommendation: operator-call. Stricter stance ("every known emitter must route to top-level") aligns with Pattern 8 observable-by-default.
+1. **[Non-blocking implementation note, not a pre-promotion decision.]** Under ADR 007, is `extra_fields` tolerated in steward's schema for Phase 1, or must all unknown-field routing be resolved before Phase 1 ships? Disposition: the stricter stance ("every known emitter routes to top-level; `extra_fields` appearing for a known emitter is a lint violation enforced by `agent_readability_lint.py` Pattern 9 extension") is adopted per this ADR's Consequences. The question survives only as an implementation-time check during Primitive A: verify the lint catches the case and confirm no known emitter routes to `extra_fields` before Phase 1 ships. Operator review not required for promotion.
 
 ## Source evidence
 
-- Plugin repo: per claudepluginhub.com listing (public GitHub of `melodic-software/claude-code-observability-plugins` or equivalent; exact path captured in evaluation artifact)
-- Source read: single-Python-dispatcher module + 14-event registry + JSONL writer + correlation-field structure
-- Evaluation artifact: `plans/steward_platform/plugin_source_evaluation.md` §4 (analyst-a, 2026-04-23)
+- **Plugin repo (concrete path):** `https://github.com/melodic-software/claude-code-plugins`, monorepo path `plugins/claude-code-observability/`. The handoff reference `melodic-software/claude-code-observability-plugins` 404s; the correct path is the monorepo above. (Source: `plans/steward_platform/plugin_source_evaluation.md` §4.1, lines 227-228.)
+- **License:** MIT (repo LICENSE + plugin's declared license in `.claude-plugin/plugin.json`). Last pushed 2026-04-07, actively maintained.
+- **Schema version:** `SCHEMA_VERSION = "1.9.0"` at `hook_dispatcher.py:58` — author maintains version discipline.
+- **Source read scope:** single-Python-dispatcher module (`hook_dispatcher.py`) + 14-event `EVENT_FIELD_REGISTRY` + JSONL writer + correlation-field structure (`seq`, `pid`, `timestamp_ns`, `turn_id`).
+- **Evaluation artifact:** `plans/steward_platform/plugin_source_evaluation.md` §4 (analyst-a, 2026-04-23), lines 223-232 for repo identification and monorepo structure.
 
 ## Phase 2 Decision Inputs
 
