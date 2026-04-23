@@ -79,6 +79,37 @@ Operator-facing guidance (how to extend the trust envelope, how to read denials,
 - `PermissionDenied` denial rate is an ops-alert candidate. Rule 80 recommends opening a follow-up to extend `autoMode.allow` if denial rate exceeds ~5% of tool calls sustained. That follow-up is tracked outside this ADR.
 - Any future PR touching `permissions.allow`, `defaultMode`, or `.claude/autoMode.defaults.reference.json` is a security-relevant diff and reviewed accordingly.
 
+## Model tier interaction
+
+Auto mode's runtime gate is a **Sonnet 4.6 classifier invocation per tool call**. The classifier only engages when the lane's active session is itself Opus-tier (Claude Opus 4.6 or 4.7+). For a Sonnet-tier or Haiku-tier session, `--permission-mode auto` is inert: the CLI either ignores the flag or silently falls back to `bypassPermissions`. Either way, the runtime classifier gate does not engage and `PermissionDenied` events are never emitted.
+
+This produces a **load-bearing model-tier constraint** on launch flags:
+
+- **Opus-tier sessions** must launch with `--permission-mode auto`. The classifier gate engages; the full safety envelope documented in Consequences applies.
+- **Sonnet-tier and Haiku-tier sessions** must launch with `--dangerously-skip-permissions`. There is no runtime classifier gate; the session runs under the `bypassPermissions` safety envelope, with post-hoc safety nets (git audit trail + Codex CLI pre-merge review + post-merge Explore review) as the only remaining layers.
+
+Passing `--permission-mode auto` to a non-Opus session is the worst outcome — parallel to the §Alternatives-considered #5 failure mode, but along the model-tier axis: the launch flag and shared settings both encode "auto mode," but the runtime gate is silently inactive. The explicit `--dangerously-skip-permissions` launch is the correct codification — it makes the reduced envelope legible at every observation point (log output, `gh pr checks`, operator-readable launch command).
+
+**Safety envelope per model tier:**
+
+| Axis | Opus + auto mode | Sonnet/Haiku + bypassPermissions |
+|------|------------------|----------------------------------|
+| Force-push, prod deploys, `curl \| bash` | Soft-denied unless explicit User Intent | Allowed |
+| Exfiltration (external-repo push, unexpected outbound HTTP) | Soft-denied | Allowed |
+| Self-modification of `.claude/settings.json` | Classifier-gated via conversation intent | Allowed |
+| Irreversible local destruction (`rm -rf` untracked, `git reset --hard` uncommitted) | Soft-denied | Allowed |
+| Routine reads/writes, `pytest`, `ruff`, `git push` to working branch | Auto-approved | Auto-approved |
+
+**Practical consequences for B.1 adaptive dispatch and B.6 tool risk registry:**
+
+- Any dispatch decision that lowers a lane's model tier below Opus (e.g., B.1 routing a task to a Sonnet-tier lane for token-economy reasons) **simultaneously lowers the safety envelope**. The two decisions are not separable — model-tier choice and permission-mode choice are the same decision at the runtime-gate axis.
+- A tool classified as "auto-mode-safe" is not automatically `bypassPermissions`-safe. The B.6 tool risk registry must evaluate every tool against **both** envelopes, and tag any tool that is auto-mode-safe-but-bypass-unsafe as `Opus-tier-only` so downstream routing cannot silently strand it on a non-Opus lane. Destructive tool classes (force-push, external-repo push, self-modification of settings) should refuse non-Opus routing absent operator override.
+- Each non-Opus dispatch is explicitly a `bypassPermissions` environment. Shaping documents and task packets dispatching to non-Opus lanes must carry an explicit safety-envelope-downgrade note so the operator sees the tradeoff at the dispatch axis, not after a destructive action runs.
+
+**Current fleet state.** 100% Opus 4.7 across all 19 lanes; every lane launch emits `--permission-mode auto`; structural tests (`TestPermissionModeAuto`, `TestInvokeReviewPermissionMode`) enforce the flag uniformly. Any deviation from the single-model assumption requires a simultaneous launch-flag change at the activation surfaces (`.claude/tmux/steward-session.sh`, `scripts/internal/review_lane_runner.py::invoke_review`, any future headless launch surface) plus a rewrite of the structural tests to assert the correct flag per lane's declared model. Landing one without the other either breaks CI (test rewrite alone) or silently regresses enforcement (launch-script change alone) — the two must ship together. That work is tracked as Primitive G Phase 0 closeout per the 7-surfaces inventory (issue #2767).
+
+**Cross-reference:** `.claude/rules/80_permission_model.md` §"Model-tier activation constraint" holds the operator-facing activation table (model tier → required launch flag → effective mode).
+
 ## Alternatives considered
 
 1. **Keep `bypassPermissions`.** Rejected. No runtime gate on destructive or exfiltrating actions; self-modification routed through the legacy sensitive-file dialog (#2249) caused repeated lane stalls. The combined post-hoc safety nets (git history, post-merge review) are strictly weaker than auto mode + those same post-hoc nets.

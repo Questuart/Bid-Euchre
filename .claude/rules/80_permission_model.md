@@ -65,6 +65,53 @@ during review-lane restart in session 2026-04-20, when the lane respawned as
 `bypassPermissions` despite `defaultMode: "auto"` being set in the committed
 settings.
 
+### Model-tier activation constraint
+
+`--permission-mode auto` only engages the Sonnet 4.6 classifier when the
+lane's active session is Opus-tier (Claude Opus 4.6 or 4.7+). A Sonnet-tier
+or Haiku-tier session launched with `--permission-mode auto` either ignores
+the flag or silently falls back to `bypassPermissions`; in either case, the
+classifier does not gate tool calls and `PermissionDenied` events are never
+emitted.
+
+The launch-flag choice is therefore a **function of the lane's model tier**,
+not a fleet-wide constant:
+
+| Model tier | Required launch flag | Effective permission mode |
+|------------|---------------------|---------------------------|
+| Opus 4.6+ | `--permission-mode auto` | `auto` (classifier-gated) |
+| Sonnet 4.6+ | `--dangerously-skip-permissions` | `bypassPermissions` |
+| Haiku 4.5+ | `--dangerously-skip-permissions` | `bypassPermissions` |
+
+**Launch-script implication.** `.claude/tmux/steward-session.sh` and
+`scripts/internal/review_lane_runner.py::invoke_review` currently hardcode
+`--permission-mode auto` for every lane (the structural tests above lock
+this in). That is correct for the current fleet — 100% Opus 4.7 — but is a
+pending fix when any lane moves to Sonnet or Haiku for token-economy or
+dispatch reasons. The fix must read per-lane model-tier config and emit the
+correct flag. This change is tracked as Primitive G Phase 0 closeout under
+the 7-surfaces inventory (issue #2767).
+
+**Structural-test implication.** `TestPermissionModeAuto` and
+`TestInvokeReviewPermissionMode` both assert `--permission-mode auto`
+unconditionally. When the launch scripts gain model-tier conditioning, the
+tests must be rewritten as `TestPermissionModeByModelTier` asserting the
+correct flag per lane's declared model. Landing launch-script conditioning
+without the test rewrite will break CI; landing the test rewrite without
+the launch-script conditioning silently regresses enforcement on the
+current Opus fleet. **The two changes must ship together.**
+
+**Never substitute launch flags for model-tier intent.** Passing
+`--permission-mode auto` to a non-Opus lane is the worst outcome: the flag
+and settings encode auto-mode discipline, but the runtime gate is silently
+inactive. The explicit `--dangerously-skip-permissions` launch makes the
+reduced safety envelope legible at every observation point (log output,
+`gh pr checks`, operator-readable launch command). Operators MUST NOT
+cross-wire these flags to mask model-tier selection.
+
+**Cross-reference:** ADR 006 §"Model tier interaction" captures the
+decision record and the safety envelope per-tier comparison table.
+
 ## Why auto mode over `bypassPermissions`
 
 The fleet previously ran `bypassPermissions`, which auto-approves everything
