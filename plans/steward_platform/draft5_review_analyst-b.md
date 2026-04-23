@@ -3,9 +3,9 @@
 **Date:** 2026-04-23
 **Reviewer:** steward-analyst (lane analyst-b — fresh eyes; analyst-a reviewed draft 2 and is recused)
 **Target:** `plans/steward_platform/governing_plan.draft5.md`
-**Prior drafts (for diffing):** `governing_plan.md` (draft 1), `governing_plan.draft2.md`, `governing_plan.draft3.md`, `governing_plan.draft4.md`
-**Prior review:** `draft2_review_analyst-a.md` (806 lines, graded draft 2 at **B**)
-**Handoff:** `draft5_review_handoff.md`
+**Prior drafts (for diffing):** `plans/steward_platform/governing_plan.md` (draft 1), `plans/steward_platform/governing_plan.draft2.md`, `plans/steward_platform/governing_plan.draft3.md`, `plans/steward_platform/governing_plan.draft4.md`
+**Prior review:** `plans/steward_platform/draft2_review_analyst-a.md` (806 lines, graded draft 2 at **B**)
+**Handoff:** `plans/steward_platform/draft5_review_handoff.md`
 **Review stance:** skeptical; prefer simpler solutions; flag over-engineering; propose better alternatives; judge against the *best plausible plan* standard, not the *workable plan* standard.
 
 ---
@@ -16,7 +16,7 @@ Draft 5 is a materially better plan than draft 4 on the two axes the
 operator cared most about: (a) it gets Primitive H's weight out of the
 Phase 0 gate without discarding the capability, and (b) it closes a cluster
 of small but real blind spots by adopting the seven scope extensions from
-`phase2_harness_engineering_research.md`. Most of analyst-a's draft-2
+the (not-yet-committed) phase-2 harness-engineering research memo. Most of analyst-a's draft-2
 findings are fully resolved in draft 5; no prior finding is missed; two
 ("primitive-count consistency" and "decision-inputs graveyard risk") are
 resolved with concrete enforcement mechanisms rather than hand-waves.
@@ -47,7 +47,7 @@ block promotion as-is:
    from "a thing" to "a thematic cluster"; a reviewer at Phase 1a preflight
    cannot tell whether the primitive is done or not without going row by
    row.
-5. **`scripts/internal/compile_decision_inputs.py` is load-bearing
+5. ***scripts/internal/compile_decision_inputs.py* is load-bearing
    infrastructure referenced four times in the plan but is not a named
    Work bullet under any primitive.** The digest pattern's entire
    read-surface hinges on this script; it currently floats.
@@ -212,7 +212,7 @@ Draft text in §3.
 - §5-D Phase 1 Validation: *"≥1 GC-report proposal accepted during the
   proving run (outflow working)."*
 - But the KB does not exist yet at Phase 0 start. §5-C Phase 0 Readiness
-  stands up the KB skeleton and populates `harness_assumptions.md` with
+  stands up the KB skeleton and populates *harness_assumptions.md* with
   ≥5 initial entries, but NOTES / PLAYBOOKS / anti_patterns / incidents
   / adr all begin empty. The prompt-policy registry and skill registry
   also begin empty or near-empty at Phase 0 start.
@@ -373,13 +373,13 @@ portability safety (e.g., its own reliability testing), and (b) the
 compensatory analyst-lane work is budgeted in advance, not promised
 indefinitely. Draft text in §3.
 
-### F6 — `compile_decision_inputs.py` is load-bearing but floating
+### F6 — *compile_decision_inputs.py* is load-bearing but floating
 
 **Severity:** medium.
 
 **Evidence:**
 
-The digest script `scripts/internal/compile_decision_inputs.py` is
+The digest script *scripts/internal/compile_decision_inputs.py* is
 referenced in:
 
 - §3 Key Definitions (implicitly via "decision-inputs digest")
@@ -390,7 +390,7 @@ referenced in:
 - §15.8 Durability: *"a ~50-line script"*
 
 But there is no Work bullet under any primitive that says "implement
-`compile_decision_inputs.py`." It is most naturally Primitive C's
+*compile_decision_inputs.py*." It is most naturally Primitive C's
 responsibility (KB / templates / planning scaffolding) but §5-C Work
 bullets don't mention it. §5-C Readiness mentions
 `/create-plan` and `/create-adr` skills but not
@@ -406,12 +406,12 @@ of load-bearing infrastructure back to a primitive's readiness/validation
 gates.
 
 **Recommendation:** Add to Primitive C Work: "Implement
-`scripts/internal/compile_decision_inputs.py` and `/compile-decision-inputs`
+*scripts/internal/compile_decision_inputs.py* and `/compile-decision-inputs`
 skill as specified in §15.4." Add to Primitive C Phase 0 Readiness:
 "Digest script runs; smoke-tested; first digest generated from Phase 0
 closeouts." Draft text in §3.
 
-### F7 — `harness_assumptions.md` "brittleness signal" / "refresh trigger" entries need schema discipline
+### F7 — *harness_assumptions.md* "brittleness signal" / "refresh trigger" entries need schema discipline
 
 **Severity:** low-medium.
 
@@ -647,7 +647,7 @@ And in §8.2 Decisions, add a new item:
 **Revise §5-D Work:**
 
 ```
-- `scripts/internal/archivist.py` — scheduled (nightly + end-of-session)
+- *scripts/internal/archivist.py* — scheduled (nightly + end-of-session)
   script. Reads events, inbox, PR outcomes, task completions. Produces
   **one Phase 0 output** and **one Phase 1 output**:
   - **(Phase 0, inflow)** `knowledge/_candidates/<date>_lessons.md` —
@@ -739,7 +739,7 @@ And add new §5-B2:
 **Work:**
 - Prompt-policy registry (versioned contract per lane type and task type).
 - Prompt-policy change discipline (trigger / expected effect / rollback condition commit fields; pre-commit lint).
-- Tool risk registry at `.claude/rules/tool_risk_registry.md`; approval-class reference per task type.
+- Tool risk registry at *.claude/rules/tool_risk_registry.md*; approval-class reference per task type.
 - Policy candidate → confirmed lifecycle.
 
 **Phase 0 Readiness:**
@@ -815,12 +815,12 @@ compensatory scoping.** Conditions, all required:
 If any of the three conditions is unmet, the plan defaults to Option 1.
 ```
 
-### 3.6 F6 / F9 — Pull `compile_decision_inputs.py` under Primitive C
+### 3.6 F6 / F9 — Pull *compile_decision_inputs.py* under Primitive C
 
 **Add to §5-C Work:**
 
 ```
-- Implement `scripts/internal/compile_decision_inputs.py` and the
+- Implement *scripts/internal/compile_decision_inputs.py* and the
   `/compile-decision-inputs` skill as specified in §15.4. Script is ~50
   lines; scope: glob subsections, group by prompt content, generate
   digest, snapshot nightly, flag missing subsections.
@@ -840,7 +840,7 @@ If any of the three conditions is unmet, the plan defaults to Option 1.
 
 ### 3.7 F7 — Worked example for harness_assumptions schema
 
-**Add to §5-C Work under the `harness_assumptions.md` bullet:**
+**Add to §5-C Work under the *harness_assumptions.md* bullet:**
 
 ```
 Worked example:
@@ -950,7 +950,7 @@ real load-bearing gaps. In particular:
   primitives" but it makes B heavy enough to warrant a split.
 - F5 (§10.7 default) is the decision-hygiene gap the plan is trying to
   close.
-- F6 (`compile_decision_inputs.py` floating) is small but embarrassing
+- F6 (*compile_decision_inputs.py* floating) is small but embarrassing
   for a plan that just spent §15.8 framing the digest pattern as
   durable infrastructure.
 
@@ -966,18 +966,18 @@ Draft 5 is close enough to promotion-ready that a full revision cycle
    fixes) with the draft text in §3 above.
 2. Operator decides on F7-F13 piece by piece; accept, reject, or defer
    each as an Open Item.
-3. Commit as `governing_plan.draft6.md`.
+3. Commit as a new *governing_plan.draft6.md*.
 4. Dispatch a **short** review (1-2 hours) to either analyst-b again or
    a fresh analyst lane focused narrowly on "did the F1-F6 fixes land
    correctly and introduce no new structural gaps."
-5. If that review returns clean, rename draft 6 to `governing_plan.md`,
+5. If that review returns clean, rename draft 6 to `plans/steward_platform/governing_plan.md`,
    archive drafts 1-5, and open the Phase 0 execution work.
 
 Timeline: I would not be surprised if the whole cycle (operator edits +
 commit + review + promote) runs in a single focused session, as the
 draft-2 cycle did.
 
-Promoting draft 5 directly as `governing_plan.md` without addressing
+Promoting draft 5 directly as `plans/steward_platform/governing_plan.md` without addressing
 F1/F2/F3/F4/F5/F6 would leave known load-bearing gaps in the canonical
 artifact, which is exactly what the analyst-a and analyst-b review
 cycles were supposed to catch. The investment-to-return ratio of one more
@@ -1035,7 +1035,7 @@ revision pass is strongly positive.
 
 ## 6. Note on the BLOCKER artifact
 
-`plans/steward_platform/draft5_review_BLOCKER.md` was written by this
+The deleted file *plans/steward_platform/draft5_review_BLOCKER.md* was written by this
 lane when draft 5 and its handoff did not yet exist in the repo. The
 orchestrator's recovery message instructed: *"please delete or supersede
 it with the review artifact when produced."* This review artifact
