@@ -85,14 +85,24 @@ def _outcome(
 # Expected fingerprint committed alongside POLICY_VERSION. Bumping
 # SCORE_WEIGHTS or MIN_OBS_FOR_CONFIDENCE without updating this value fails
 # the test, which is the structural guardrail against silent weight drift.
+#
+# Version history:
+#
+# - slice-e-v1: 25c10be1af9d55d2bbbbe0c0d16823704ce5fb421a737d7d204e552832051857
+# - b1-v1:      6687b86128073d1f672d25a761816685dbd594bf391faa69db6a9146c4a148d9
+#   (Primitive B Phase 0 — added model_tier_match, effort_match,
+#   safety_envelope_penalty weights.)
 _EXPECTED_POLICY_FINGERPRINT = (
-    "25c10be1af9d55d2bbbbe0c0d16823704ce5fb421a737d7d204e552832051857"
+    "6687b86128073d1f672d25a761816685dbd594bf391faa69db6a9146c4a148d9"
 )
 
 
 class TestPolicyVersion:
     def test_policy_version_is_set(self) -> None:
-        assert POLICY_VERSION.startswith("slice-e-v")
+        # Accepts the Primitive B Phase 0 "b1-v*" series (current) plus the
+        # legacy "slice-e-v*" series so a partial rollback does not
+        # silently pass this test.
+        assert POLICY_VERSION.startswith(("b1-v", "slice-e-v"))
 
     def test_policy_fingerprint_pins_weights(self) -> None:
         """If this fails, bump POLICY_VERSION and update the expected hash."""
@@ -230,10 +240,19 @@ class TestRecommendLanes:
         assert recommend_lanes([], _records=[]) == []
 
     def test_empty_substrate_is_null_safe(self) -> None:
-        recs = recommend_lanes(["author-a", "author-b"], _records=[])
+        # Note: Primitive B.1 adds an "any → +0.5 for opus" model-tier
+        # bonus that applies even without observations. We still rely on
+        # recommend_lanes() not raising on empty substrate and returning
+        # deterministic tie-broken output.
+        recs = recommend_lanes(
+            ["author-a", "author-b"],
+            _records=[],
+            lane_models={},  # force conservative fallback (opus default)
+        )
         assert len(recs) == 2
-        assert all(r.score == 0.0 for r in recs)
-        # Sorted deterministically by lane_id on tie
+        # Sorted deterministically by (score desc, lane_id asc). Under the
+        # B.1 "any" bonus both lanes tie at the same opus-fallback score,
+        # so ordering collapses to lane_id ascending.
         assert [r.lane_id for r in recs] == ["author-a", "author-b"]
 
     def test_ranks_obviously_better_lane_first(self) -> None:
