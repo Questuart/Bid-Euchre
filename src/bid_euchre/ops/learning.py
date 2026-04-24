@@ -90,18 +90,17 @@ SCORE_WEIGHTS: dict[str, float] = {
     "cycle_time": 0.3,
     "rework_penalty": 0.5,
     # B.1 Primitive B Phase 0 additions (shaping §3.1 item 3):
-    #
-    # - ``model_tier_match``: +1.0 when lane tier matches the caller's
-    #   ``required_model_tier`` strictly; +0.5 when the caller passed "any"
-    #   and the lane is opus; 0 otherwise.
-    # - ``effort_match``: +1.0 when the lane's per-archetype effort tier
-    #   (from B.10 effort_policy) matches the packet's resolved effort hint.
-    # - ``safety_envelope_penalty``: −2.0 when the caller requests a
-    #   bypass-tier lane for a task whose tool-risk class is
-    #   "reject-under-bypass". Hard-filter equivalent but surfaced as a
-    #   penalty for audit clarity.
+    # ``model_tier_match``: +1.0 when lane tier matches the caller's
+    # ``required_model_tier`` strictly; +0.5 when the caller passed "any"
+    # and the lane is opus; 0 otherwise.
     "model_tier_match": 1.0,
+    # ``effort_match``: +1.0 when the lane's per-archetype effort tier
+    # (from B.10 effort_policy) matches the packet's resolved effort hint.
     "effort_match": 1.0,
+    # ``safety_envelope_penalty``: −2.0 when the caller requests a
+    # bypass-tier lane for a task whose tool-risk class is
+    # "reject-under-bypass". Hard-filter equivalent but surfaced as a
+    # penalty for audit clarity.
     "safety_envelope_penalty": 2.0,
 }
 
