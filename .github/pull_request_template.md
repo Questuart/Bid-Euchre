@@ -60,6 +60,25 @@
 (paste test/command output, review result, event record, canary run ID, or rollback outputs here)
 ```
 
+## Idempotency
+<!--
+  Required by .claude/rules/idempotency_checklist.md (Primitive H.0 §5.3).
+  For each row below, check [x] if you addressed it, or cross out with [~]
+  if no file in this diff matches the row's surface column.
+  Phase 0: rows are WARN severity. Phase 1 (proving run): rows 1-4 BLOCK.
+-->
+- [ ] I reviewed `.claude/rules/idempotency_checklist.md` and confirmed my changes are idempotent, retry-safe, and observable.
+- [ ] / [~] Row 1 (message send `src/bid_euchre/ops/message_bus.py`):
+- [ ] / [~] Row 2 (task status update `src/bid_euchre/ops/task_queue.py`):
+- [ ] / [~] Row 3 (event emission `src/bid_euchre/ops/events.py`):
+- [ ] / [~] Row 4 (file write — state files under `.claude/runtime/**`, `MEMORY.md`, `knowledge/INDEX.md`):
+- [ ] / [~] Row 5 (hook invocation `.claude/hooks/**`):
+- [ ] / [~] Row 6 (cron/loop registration `.claude/runtime/loops/**`):
+- [ ] / [~] Row 7 (KB promotion `knowledge/_promoted/**`):
+- [ ] / [~] Row 8 (branch/worktree creation):
+- [ ] / [~] Row 9 (GitHub API writes `gh pr/issue/label create`):
+- [ ] / [~] Row 10 (Claude Code slash-command from hook):
+
 ## Expected impact
 - Metrics impact (if any):
 - Runtime impact (if any):
