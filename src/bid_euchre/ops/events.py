@@ -326,7 +326,7 @@ def drain_events(
 # ===========================================================================
 # Primitive A v1.0 — emit() dispatcher
 # ===========================================================================
-#
+
 # Per shaping §3.1-§3.4 + ADR 007:
 # - One public entry point: emit(event_type, **fields) -> None
 # - One internal dispatch function: _dispatch(event_record) -> None
@@ -335,7 +335,7 @@ def drain_events(
 # - Baseline fields (§9.7 IDs + §2.4 correlation) populated by dispatcher
 # - Pattern 8: unknown fields routed to extra_fields (bug marker)
 # - Verbosity tiers: minimal / summary / full
-#
+
 # ===========================================================================
 
 _PROJECT_ID = "bid-euchre"

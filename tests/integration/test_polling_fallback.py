@@ -110,7 +110,7 @@ class TestEmissionUnaffectedByFlag:
 # ---------------------------------------------------------------------------
 # Primitive E coordination point — expand when the live consumer lands.
 # ---------------------------------------------------------------------------
-#
+
 # When Primitive E migrates active-triage from polling to event-driven
 # routing (see plans/steward_platform/verification_contract/map.md row
 # A.5), add a TestPollingFallbackLiveConsumer class that:
@@ -121,6 +121,6 @@ class TestEmissionUnaffectedByFlag:
 #   4. Flips STEWARD_EVENTS_POLLING_FALLBACK=1.
 #   5. Asserts the polling fallback restarts within the 60s SLO.
 #   6. Flips it off and asserts the event-driven path resumes.
-#
+
 # The <1min wall-clock rollback SLO is the Pattern 7 obligation this
 # test will discharge — tracked in feature_flags.md.
