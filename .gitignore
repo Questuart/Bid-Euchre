@@ -231,6 +231,15 @@ CLAUDE.local.md
 !.claude/runtime/lane_status/.gitignore
 
 # =============================================================================
+# Knowledge base (Primitive C — ADR 010 commit policy)
+# =============================================================================
+# Only promoted KB artifacts are committed. Inflow (archivist candidate
+# output) is session-local; promotion is the commit-triggering gate.
+# See plans/steward_platform/3_primitive_C/shaping.md §4.7 and ADR 010.
+knowledge/_candidates/
+knowledge/_scratch/
+
+# =============================================================================
 # Backup and temporary files
 # =============================================================================
 *.bak

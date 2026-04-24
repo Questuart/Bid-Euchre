@@ -1,12 +1,5 @@
 # ADR 001 — Platform Pattern Reset: Platform-11/13 Dismissal + Agent-Readability Scorecard Floor
 
-> **Migration note (2026-04-24, Packet C-Exec):** This file is a stable
-> redirect. The canonical home for ADR 001 is now
-> `knowledge/adr/001-platform-pattern-reset.md` under the Primitive C KB.
-> Both paths resolve to byte-identical content during the migration
-> window; edit either path and `scripts/internal/kb_index.py` will
-> surface the drift at next INDEX regeneration.
-
 **Status:** SEEDED at Phase 0 kickoff (filing at Phase 0 kickoff per §4.5 + §5-C preconditions)
 **Primitive:** Meta (cross-cutting; binds to B, C, G)
 **Supersedes:** `agent_ops` Phase 5 `Platform-11` (Skill Learning Loop) and `Platform-13` (Second-Project Validation), both POSTPONED INDEFINITELY 2026-04-01

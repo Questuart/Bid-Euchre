@@ -44,15 +44,33 @@ Pattern 10 table.
 
 ### Primitive C — Durable Memory and Knowledge Base (Phase 0)
 
+The C.1.1–C.1.7 rows below replace the previous coarse C.1 row with
+per-skeleton-file granularity per shaping §3 deliverable table and §5.1
+Packet C-Exec scope (`plans/steward_platform/3_primitive_C/shaping.md`).
+C.2–C.7, C.8–C.12, C.Phase0Readiness retain their original scope.
+
 | Deliverable | Class | Verification surface | Owner | Acceptance condition |
 |---|---|---|---|---|
-| C.1 KB template + ADR template + harness assumption template | new KB-class artifacts | `INDEX.md` inclusion + `agent_readability_lint.py` | analyst | lint exits 0 |
-| C.2 `harness_assumptions.md` register | new KB-class artifact | SC #14 refresh/retire evidence | analyst | ≥1 entry refreshed |
-| C.3 `agent_readability_lint.py` (Pattern 9 + Pattern 10) | new module under `scripts/internal/**` | `tests/unit/test_agent_readability_lint.py` + self-run | author | pytest passes; self-run clean |
-| C.4 `agent_readability_scorecard.md` | new KB-class artifact + config | `INDEX.md` inclusion + ADR 001 floor | ops | scorecard ≥7/10 per ADR 001 |
-| C.5 `/create-plan` skill | new `.claude/skills/**` entry | `SKILL.md` refusal logic + acceptance command | analyst | skill refuses on missing Verification Plan |
-| C.6 KB INDEX regeneration | integration workflow | INDEX diff against `find knowledge/ -type f` | ops | diff is empty post-merge |
-| C.7 ADR catalog (knowledge/adr/) | new KB-class directory | ADR linting + supersession tracking | analyst | Pattern 7 rollback paths cited |
+| C.1.1 `knowledge/NOTES.md` skeleton | new KB-class artifact | `INDEX.md` inclusion + `agent_readability_lint.py check verification-contract` clean on schema | analyst | 1 worked example at file head; lint exits 0 |
+| C.1.2 `knowledge/PLAYBOOKS.md` skeleton | new KB-class artifact | `INDEX.md` inclusion + `agent_readability_lint.py check verification-contract` clean | analyst | 1 worked example; lint exits 0 |
+| C.1.3 `knowledge/anti_patterns.md` skeleton | new KB-class artifact | `INDEX.md` inclusion + schema field check (`trigger → harm → preferred alternative`) | analyst | ≥1 entry; lint verifies schema form |
+| C.1.4 `knowledge/incidents/` directory + worked example | new KB-class directory | per-file fingerprint matches `incident_fingerprint` in event schema v1.0 | analyst | ≥1 worked example; grep matches `ops/event_taxonomy.py` emission |
+| C.1.5 `knowledge/harness_assumptions.md` ≥5 initial entries | new KB-class artifact | each entry's brittleness signal is machine-observable (grep pattern / CI check / hook precondition); `check load-bearing-ownership` HA1 rule | analyst | lint verifies `assumption → observation → brittleness signal → refresh trigger` fields; brittleness-signal-is-machine-observable sub-check passes |
+| C.1.6 `knowledge/adr/` directory (incl. ADR 001 migration) | new KB-class directory | per-ADR supersession field + Pattern 7 rollback citation; `diff plans/steward_platform/adrs/001-platform-reset.md knowledge/adr/001-platform-pattern-reset.md` post-migration | analyst | ADR 001 migrated (content identical; seed carries migration note); ≥2 additional Phase 0 ADRs per §5-C Readiness |
+| C.1.7 `knowledge/INDEX.md` regeneration script | new Python script under `scripts/internal/**` | `tests/unit/test_kb_index.py::test_index_regenerates_deterministically` + diff against `find knowledge/ -type f` | author | pytest passes; diff empty post-regeneration |
+| C.2 `harness_assumptions.md` register (SC #14 refresh/retire evidence) | new KB-class artifact + outcome metric | run-log evidence of ≥1 entry refreshed during Phase 0 proving run | analyst | ≥1 entry refreshed |
+| C.3 `agent_readability_lint.py` (Pattern 9 + Pattern 10 + Pattern 11) | new/extended module under `scripts/internal/**` | `tests/unit/test_agent_readability_lint.py` (TestPattern9 + TestPattern10 + TestPattern11 + TestPlanWalker) + self-run on `plans/` | author | pytest passes; self-run exits 0 (WARN allowed, never BLOCK) |
+| C.4 `agent_readability_scorecard.md` | new KB-class artifact + config | `INDEX.md` inclusion + ADR 001 §D3 floor lockdown + `agent_readability_score.py --floor 7` exits 0 | ops | scorecard present; score ≥7/10 per ADR 001; runner rejects `--floor 6` |
+| C.5 `agent_readability_score.py` runner | new Python script under `scripts/internal/**` | `tests/unit/test_agent_readability_score.py::test_ten_items_present` + `::test_floor_below_seven_rejected` | author | both tests pass; runner exits 0 at floor 7 |
+| C.6 Pattern 9 `check load-bearing-ownership` (LBO1–LBO3 + HA1) | extension of existing script | `tests/unit/test_agent_readability_lint.py::TestPattern9` + positive + 3 negative fixtures | author | all fixtures pass |
+| C.7 Pattern 11 `check pattern-11` (P11_1–P11_3) | extension of existing script | `tests/unit/test_agent_readability_lint.py::TestPattern11` + positive + 3 negative fixtures | author | all fixtures pass |
+| C.8 `/create-plan` skill refusal logic | `.claude/skills/**` upgrade | `tests/unit/test_create_plan_refusal.py` (4 tests, one per R1–R4 refusal condition) | author | all 4 tests pass |
+| C.9 Commit policy (tracked/gitignored split, ADR 010 binding) | config + rules extension | `git check-ignore knowledge/_candidates/` exits 0 AND `git check-ignore knowledge/_promoted/` exits 1 (non-ignored); rollback test in `data/fixtures/kb/test_candidate.md` emits `kb_artifact_promoted` + `kb_artifact_unpromoted` | ops | both gitignore assertions hold; rollback test forward-reverse byte-identical |
+| C.10 `memory_compact.py` compaction script | new Python script under `scripts/internal/**` | `tests/unit/test_memory_compact.py` + seeded fixture smoke | author | pytest passes; compaction preserves high-priority entries per schema |
+| C.11 Archivist C↔D interface contract | docs + integration | `grep -c 'Archivist C↔D Interface Contract' scripts/internal/archivist.py knowledge/INDEX.md` ≥ 2 | analyst | both files contain the block (count ≥2) |
+| C.12 Scorecard sub-plan (F10 tightening path) | new sub-plan artifact | `agent_readability_lint.py check verification-contract plans/steward_platform/3_primitive_C/scorecard_sub_plan.md` | analyst | lint exits 0 (sub-plan has own Verification Plan) |
+| C.V7 review-driver `V7` precheck (commit-policy enforcement) | extension of existing script | `tests/unit/test_review_driver.py::TestV7CommitPolicy` (10 tests) + `ENABLE_V7_COMMIT_POLICY` feature flag default off until Primitive A ships | author | all V7 tests pass; flag defaults off |
+| C.P0R Phase 0 Readiness closeout | outcome artifact | `plans/steward_platform/3_primitive_C/phase0_readiness.md` with ≥9 grep-verifiable checks (shape §8 floor) | orchestrator + analyst | `grep -c '^- \[.\]' phase0_readiness.md` ≥ 9 |
 | C.Phase0Readiness — ≥3 promoted lessons grep-cited | outcome metric | proving-run PR body / task-packet description greps (§11-C kill criterion) | analyst | ≥3 citations logged |
 
 ### Primitive D — Archivist, Session Postmortem, and Changelog Review (Phase 0 inflow; Phase 1 outflow; Phase 0 changelog)
@@ -147,9 +165,12 @@ Pattern 10 table.
 
 ## Coverage summary
 
-- Rows: 57 deliverables listed above (+ section headers not counted as rows).
-- Coverage target: ≥90% of enumerated deliverable set (≥54 rows if the
-  enumerated set is ~60; computed precisely by `verify_map_coverage.py`).
+- Rows: ~70 deliverables listed above (Primitive C rows expanded by Packet
+  C-Exec from 8 to 19 with C.1.1–C.1.7 granular split + C.8–C.12 + C.V7 +
+  C.P0R + retained C.Phase0Readiness; B.10–B.12 + Preflight-11 added by
+  surrounding primitives). Section headers not counted.
+- Coverage target: ≥90% of enumerated deliverable set (≥63 rows if the
+  enumerated set is ~70; computed precisely by `verify_map_coverage.py`).
 - Rows with placeholder/stub surfaces (TBD/TODO/FIXME/XXX): **zero**
   (placeholders fail the `check verification-contract` lint; must be
   resolved before Phase 0 close).

@@ -510,24 +510,556 @@ def _truncate(s: str, n: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Pattern 9 scaffold: check load-bearing-ownership
+# Pattern 9: check load-bearing-ownership (LBO1 / LBO2 / LBO3)
 # ---------------------------------------------------------------------------
 
 
-def check_load_bearing_ownership(roots: list[Path], repo_root: Path) -> list[Finding]:
-    """Scaffold for Pattern 9 enforcement.
+# High-leverage sections (governing-plan architectural). A reference that
+# lives in one of these sections without a matching Work/Readiness bullet
+# is a BLOCK-severity finding per §4.5.1 of Primitive C shaping.
+_LBO_BLOCK_SECTIONS = ("5", "6.4", "13")
 
-    The Pattern 9 rule set is enumerated in draft 8 §10.9 and folded into
-    this harness per the shared-module decision in §13.2 risk #2 of
-    verification_contract/shaping.md.  The concrete rule set lands in a
-    follow-up PR; Packet 2b ships the scaffold and ensures the sub-command
-    is available so downstream callers have a stable interface.
+
+# Patterns that extract script / skill / module references from plan
+# prose.  These are deliberately narrow to keep false-positives low.
+_PLAN_REFERENCE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"`(scripts/internal/[A-Za-z0-9_./\-]+\.py)`"),
+    re.compile(r"`(src/bid_euchre/[A-Za-z0-9_./\-]+\.py)`"),
+    re.compile(r"`(\.claude/skills/[A-Za-z0-9_./\-]+)`"),
+    re.compile(r"`(\.claude/hooks/[A-Za-z0-9_./\-]+\.sh)`"),
+    re.compile(r"(?<![/\w])/([a-z][a-z0-9\-]+)\b"),  # /<skill-name>
+)
+
+
+def _collect_plan_references(
+    walk: PlanWalk,
+    repo_root: Path,
+) -> list[tuple[Path, int, str, str, str]]:
+    """Walk every tracked plan file and return references to load-bearing
+    targets.
+
+    Returns ``[(plan_path, line, section_num, raw_reference, resolved_or_skill_name), ...]``.
+    A reference is kept only when it resolves to an actual file under
+    ``repo_root`` (to avoid emitting findings against speculative prose)
+    OR is a ``/<skill-name>`` token whose skill dir exists.
     """
-    # Intentionally no findings in the scaffold version.  Tests assert the
-    # sub-command exits 0 over a known-clean tree.
-    _ = roots
-    _ = repo_root
-    return []
+    refs: list[tuple[Path, int, str, str, str]] = []
+    skills_root = repo_root / ".claude" / "skills"
+    for path in walk.plans_walked:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        section_num = ""
+        for i, line in enumerate(lines):
+            m = SECTION_HEADING_RE.match(line)
+            if m:
+                section_num = m.group("num")
+            for pat in _PLAN_REFERENCE_PATTERNS:
+                for m2 in pat.finditer(line):
+                    raw = m2.group(1)
+                    if raw.startswith(("scripts/", "src/", ".claude/")):
+                        resolved = repo_root / raw
+                        if resolved.exists():
+                            refs.append((path, i + 1, section_num, raw, raw))
+                    else:
+                        # /<skill-name> token — resolve as .claude/skills/<name>/SKILL.md
+                        skill_dir = skills_root / raw
+                        if skill_dir.is_dir():
+                            resolved_path = f".claude/skills/{raw}/SKILL.md"
+                            refs.append(
+                                (path, i + 1, section_num, f"/{raw}", resolved_path)
+                            )
+    return refs
+
+
+def _section_in_block_scope(section_num: str) -> bool:
+    if not section_num:
+        return False
+    return any(
+        section_num == top or section_num.startswith(top + ".")
+        for top in _LBO_BLOCK_SECTIONS
+    )
+
+
+def _is_archive_reference(path: Path) -> bool:
+    name = path.name.lower()
+    parts = [p.lower() for p in path.parts]
+    if any(p in {"_archive", "archive"} for p in parts):
+        return True
+    return bool(re.search(r"draft\d+", name))
+
+
+def check_load_bearing_ownership(roots: list[Path], repo_root: Path) -> list[Finding]:
+    """Pattern 9 — verify load-bearing items have named owners.
+
+    Emits:
+    * ``LBO1`` (BLOCK) — reference in §5-X / §6.4 / §13 with no matching
+      Work/Readiness bullet.
+    * ``LBO2`` (WARN)  — reference in any other section with no matching
+      Work/Readiness bullet.
+    * ``LBO3`` (WARN)  — target is referenced in an archival/draft file
+      only (no live-plan enumeration).
+    * ``HA1``  (WARN)  — harness-assumption brittleness-signal is not
+      machine-observable (fires whenever the walk covers
+      ``knowledge/harness_assumptions.md`` OR a plan file embeds a worked
+      example with the brittleness-signal field).
+    """
+    # Include an extra root for the harness_assumptions.md check if it
+    # exists — it may live outside the default plans/ walk.
+    walk = walk_plans(roots)
+
+    findings: list[Finding] = []
+    refs = _collect_plan_references(walk, repo_root)
+
+    # Collect *all* bulleted tokens across the walked plans (not just
+    # tokens under a dedicated `### Work` heading). This keeps Pattern 9
+    # precision-first: shape docs that enumerate deliverables under
+    # `**Files created:**` or `### Scope` style headings satisfy the
+    # ownership requirement as long as the target appears in a list item
+    # somewhere in a live (non-archive) plan.
+    per_file_bullets: dict[Path, list[str]] = _collect_all_bullets(walk.plans_walked)
+
+    # Build the set of resolved targets that are referenced *somewhere* in
+    # the live (non-archive) plan set, keyed by resolved path.
+    live_refs: set[str] = set()
+    archive_refs: set[str] = set()
+    for plan_path, _line, _sec, _raw, resolved in refs:
+        if _is_archive_reference(plan_path):
+            archive_refs.add(resolved)
+        else:
+            live_refs.add(resolved)
+
+    for plan_path, line, section_num, raw, resolved in refs:
+        if _is_archive_reference(plan_path):
+            continue  # archival references handled in LBO3 sweep
+        if _bullet_exists_for_target(resolved, walk.deliverables):
+            continue
+        if _any_bullet_mentions_target(resolved, per_file_bullets):
+            continue
+        if _section_in_block_scope(section_num):
+            findings.append(
+                Finding(
+                    severity=Severity.BLOCK,
+                    rule_id="LBO1",
+                    path=plan_path,
+                    line=line,
+                    message=(
+                        f"§{section_num or '?'} references {raw!r} with no "
+                        f"matching Work/Readiness bullet. Pattern 9: "
+                        f"load-bearing items in §5-X / §6.4 / §13 must "
+                        f"carry a named owner."
+                    ),
+                )
+            )
+        else:
+            findings.append(
+                Finding(
+                    severity=Severity.WARN,
+                    rule_id="LBO2",
+                    path=plan_path,
+                    line=line,
+                    message=(
+                        f"§{section_num or '?'} references {raw!r} with no "
+                        f"matching Work/Readiness bullet. Pattern 9: "
+                        f"add a Work bullet or move the reference into "
+                        f"prose that cites the owning primitive."
+                    ),
+                )
+            )
+
+    # LBO3 — reference is *only* in archive/draft files. The main walker
+    # skips archive dirs, so the archive refs collected above are the few
+    # accidentally-included ones. Do a dedicated archive sweep.
+    archive_only_refs = _collect_archive_references(roots, repo_root, live_refs)
+    for plan_path, line, raw, _resolved in archive_only_refs:
+        findings.append(
+            Finding(
+                severity=Severity.WARN,
+                rule_id="LBO3",
+                path=plan_path,
+                line=line,
+                message=(
+                    f"{raw!r} is referenced only in archival/draft "
+                    f"files. Pattern 9: enumerate it in a live plan "
+                    f"or remove the load-bearing weight."
+                ),
+            )
+        )
+    _ = archive_refs  # legacy compatibility with main walk
+
+    # HA1 — scan harness_assumptions.md (in knowledge/ tree or anywhere
+    # the walk covered) for entries whose brittleness signal lacks a
+    # machine-observable token.
+    findings.extend(_check_harness_assumptions(repo_root, roots))
+
+    return findings
+
+
+def _collect_all_bullets(paths: list[Path]) -> dict[Path, list[str]]:
+    """Walk each plan file and collect every list-item, stitching
+    continuation lines onto the bullet they extend.
+
+    Used by Pattern 9 to accept scope-enumeration bullets (under
+    `**Files created:**` / `### Scope` headings) as valid ownership
+    signals. Continuation lines are indented text following a bullet
+    line; they are collapsed so multi-line bullets count as one unit
+    of mention.
+    """
+    out: dict[Path, list[str]] = {}
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        bullets: list[str] = []
+        current: list[str] | None = None
+        for line in text.splitlines():
+            m = re.match(r"^\s*[-*]\s+(.*\S)", line)
+            if m:
+                if current is not None:
+                    bullets.append(" ".join(current))
+                current = [m.group(1)]
+                continue
+            if current is not None:
+                # Continuation: indented, non-empty, not another list
+                if line.startswith((" ", "\t")) and line.strip():
+                    current.append(line.strip())
+                    continue
+                # End of bullet.
+                bullets.append(" ".join(current))
+                current = None
+        if current is not None:
+            bullets.append(" ".join(current))
+        out[path] = bullets
+    return out
+
+
+def _any_bullet_mentions_target(
+    resolved: str, per_file_bullets: dict[Path, list[str]]
+) -> bool:
+    basename = resolved.rsplit("/", 1)[-1]
+    for bullets in per_file_bullets.values():
+        for text in bullets:
+            if resolved in text:
+                return True
+            if basename and basename in text:
+                return True
+    return False
+
+
+def _collect_archive_references(
+    roots: list[Path],
+    repo_root: Path,
+    live_refs: set[str],
+) -> list[tuple[Path, int, str, str]]:
+    """Scan archive/draft plan files for load-bearing references that do
+    not also appear in live (non-archive) plan files.
+
+    The main ``walk_plans()`` filter intentionally skips archive dirs to
+    keep Pattern 10 enforcement hermetic. LBO3 requires the opposite — we
+    must visit archive/draft files specifically to detect references that
+    have drifted out of the live plan set.
+
+    Returns ``[(path, line, raw, resolved), ...]``.
+    """
+    out: list[tuple[Path, int, str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    skills_root = repo_root / ".claude" / "skills"
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.md")):
+            if not _is_archive_reference(path):
+                continue
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for i, line in enumerate(lines):
+                for pat in _PLAN_REFERENCE_PATTERNS:
+                    for m in pat.finditer(line):
+                        raw = m.group(1)
+                        resolved: str | None = None
+                        if raw.startswith(("scripts/", "src/", ".claude/")):
+                            if (repo_root / raw).exists():
+                                resolved = raw
+                        else:
+                            skill_dir = skills_root / raw
+                            if skill_dir.is_dir():
+                                resolved = f".claude/skills/{raw}/SKILL.md"
+                        if resolved is None or resolved in live_refs:
+                            continue
+                        key = (str(path), resolved)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        display = (
+                            f"/{raw}"
+                            if not raw.startswith(("scripts/", "src/", ".claude/"))
+                            else raw
+                        )
+                        out.append((path, i + 1, display, resolved))
+    return out
+
+
+def _bullet_target_keywords(text: str) -> list[str]:
+    """Extract backtick-quoted or path-like tokens that could be bullet
+    ownership references."""
+    out: list[str] = []
+    for m in re.finditer(r"`([^`]+)`", text):
+        out.append(m.group(1).strip())
+    for m in re.finditer(
+        r"([A-Za-z_./][A-Za-z0-9_./\-]*\.(?:py|md|sh|json|ya?ml))", text
+    ):
+        out.append(m.group(1))
+    return out
+
+
+def _bullet_exists_for_target(resolved: str, bullets: list[DeliverableBullet]) -> bool:
+    """Does any Work/Readiness bullet mention this resolved target?"""
+    basename = resolved.rsplit("/", 1)[-1]
+    for b in bullets:
+        if resolved in b.bullet_text:
+            return True
+        if basename and basename in b.bullet_text:
+            return True
+        # Match skill-name tokens (`/archivist-run` maps to bullet containing `archivist`).
+        if resolved.startswith(".claude/skills/") and basename in b.bullet_text:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# HA1 — harness-assumption brittleness-signal machine-observable check
+# ---------------------------------------------------------------------------
+
+
+_HA_SIGNAL_MACHINE_TOKENS = (
+    re.compile(r"`[^`]+`"),  # backtick-quoted token (grep pattern / command)
+    re.compile(r"\bmake\s+[a-z\-]+\b"),  # make <target>
+    re.compile(r"\.github/workflows/[A-Za-z0-9_.\-]+\.ya?ml\b"),
+    re.compile(r"\.claude/hooks/[A-Za-z0-9_.\-]+\b"),
+)
+
+
+def _check_harness_assumptions(repo_root: Path, roots: list[Path]) -> list[Finding]:
+    findings: list[Finding] = []
+    candidates: list[Path] = []
+    # Always consider knowledge/harness_assumptions.md if it exists.
+    ha_path = repo_root / "knowledge" / "harness_assumptions.md"
+    if ha_path.exists():
+        candidates.append(ha_path)
+    # Also consider any file inside walk roots with that basename.
+    for root in roots:
+        if root.is_dir():
+            for p in root.rglob("harness_assumptions.md"):
+                if p not in candidates:
+                    candidates.append(p)
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        findings.extend(_lint_harness_assumptions_file(path, text))
+    return findings
+
+
+def _lint_harness_assumptions_file(path: Path, text: str) -> list[Finding]:
+    findings: list[Finding] = []
+    lines = text.splitlines()
+    i = 0
+    current_entry_line = 0
+    current_entry_name = ""
+    while i < len(lines):
+        line = lines[i]
+        m = re.match(r"^###\s+(.+?)\s*$", line)
+        if m:
+            current_entry_name = m.group(1).strip()
+            current_entry_line = i + 1
+            # Find the brittleness-signal field within the next ~10 lines.
+            signal_text = _find_brittleness_signal(lines, i + 1)
+            if signal_text is None:
+                # No signal field at all — emit HA1.
+                findings.append(
+                    Finding(
+                        severity=Severity.WARN,
+                        rule_id="HA1",
+                        path=path,
+                        line=current_entry_line,
+                        message=(
+                            f"Harness-assumption {current_entry_name!r} has no "
+                            f"Brittleness signal field. Pattern 9 / §4.1.2: "
+                            f"each entry must carry a machine-observable signal."
+                        ),
+                    )
+                )
+            elif not _signal_is_machine_observable(signal_text):
+                findings.append(
+                    Finding(
+                        severity=Severity.WARN,
+                        rule_id="HA1",
+                        path=path,
+                        line=current_entry_line,
+                        message=(
+                            f"Harness-assumption {current_entry_name!r} "
+                            f"brittleness signal is not machine-observable "
+                            f"(no backtick pattern, `make <target>`, GitHub "
+                            f"workflow, or `.claude/hooks/` reference). "
+                            f"Pattern 9 / §4.1.2 requires a checkable token."
+                        ),
+                    )
+                )
+        i += 1
+    return findings
+
+
+def _find_brittleness_signal(lines: list[str], start: int) -> str | None:
+    """Find the `**Brittleness signal:**` field after a `###` heading.
+
+    Searches the entry body (until the next H3 heading or file end); does
+    not cap at a fixed line count because longer entries (e.g., those
+    with multi-paragraph observations or inline probe logs) legitimately
+    place the brittleness signal past the first ~15 lines.
+    """
+    for i in range(start, len(lines)):
+        # Stop at the next H3 or file end.
+        if re.match(r"^###\s+", lines[i]):
+            return None
+        m = re.match(
+            r"^\s*\*\*Brittleness signal:?\*\*\s*(.+?)\s*$",
+            lines[i],
+            re.IGNORECASE,
+        )
+        if m:
+            # Consume continuation text on the next non-empty, non-heading line
+            # when the signal wraps, but keep it simple: just return this line's payload.
+            return m.group(1)
+    return None
+
+
+def _signal_is_machine_observable(signal: str) -> bool:
+    return any(pat.search(signal) for pat in _HA_SIGNAL_MACHINE_TOKENS)
+
+
+# ---------------------------------------------------------------------------
+# Pattern 11: check pattern-11 (P11_1 / P11_2 / P11_3)
+# ---------------------------------------------------------------------------
+
+
+_PACKET_REFERENCE_RE = re.compile(r"Packet\s+(?P<id>[A-Za-z0-9\-_]+)")
+
+
+def check_pattern_11(roots: list[Path], repo_root: Path) -> list[Finding]:
+    """Pattern 11 — shape-then-execute dispatch discipline.
+
+    Emits:
+    * ``P11_1`` (BLOCK) — primitive directory under
+      ``plans/steward_platform/<N>_primitive_<X>/`` exists but has no
+      ``shaping.md`` sibling.
+    * ``P11_2`` (WARN)  — stub only (git-log walk deferred until the
+      review-driver V-precheck surface; this lint is run-against-existing
+      and would false-positive on historical commits).  Kept as a hook for
+      future PR-diff-based invocations.
+    * ``P11_3`` (WARN)  — a ``shaping.md`` file references a Packet ID
+      that does not appear in git log as an implementing PR or commit,
+      best-effort via ``git grep``.
+    """
+    findings: list[Finding] = []
+    findings.extend(_check_p11_1(repo_root))
+    findings.extend(_check_p11_3(roots, repo_root))
+    return findings
+
+
+def _check_p11_1(repo_root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    platform_root = repo_root / "plans" / "steward_platform"
+    if not platform_root.exists():
+        return findings
+    for entry in sorted(platform_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        name = entry.name
+        # Match dirs like `3_primitive_C`, `1_primitive_A`, etc.
+        if not re.match(r"^\d+_primitive_[A-Z0-9]+$", name):
+            continue
+        shaping = entry / "shaping.md"
+        if not shaping.exists():
+            findings.append(
+                Finding(
+                    severity=Severity.BLOCK,
+                    rule_id="P11_1",
+                    path=entry,
+                    line=1,
+                    message=(
+                        f"primitive directory {name} has no shaping.md. "
+                        f"Pattern 11: shape-then-execute dispatch requires "
+                        f"a shaping document before any execution packet."
+                    ),
+                )
+            )
+    return findings
+
+
+def _check_p11_3(roots: list[Path], repo_root: Path) -> list[Finding]:
+    """Flag shaping docs whose Packet IDs don't appear referenced.
+
+    Best-effort: we grep the repo for the Packet ID (case-sensitive short
+    form, 4+ chars) and emit WARN if zero matches.  False-positives are
+    suppressed for Packet IDs whose ID is ambiguous prose (``X``, ``1``).
+    """
+    import subprocess  # local import to keep the module import-light
+
+    findings: list[Finding] = []
+    shaping_files: list[Path] = []
+    for root in roots:
+        if root.is_dir():
+            shaping_files.extend(root.rglob("shaping.md"))
+    for path in shaping_files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        packet_ids = {m.group("id") for m in _PACKET_REFERENCE_RE.finditer(text)}
+        # Skip tiny tokens that are noise.
+        packet_ids = {pid for pid in packet_ids if len(pid) >= 4}
+        for pid in sorted(packet_ids):
+            try:
+                # Look for this packet ID anywhere in the repo outside
+                # shaping docs themselves.
+                result = subprocess.run(
+                    ["git", "grep", "-l", pid],
+                    cwd=str(repo_root),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if result.returncode == 0:
+                hits = [
+                    line.strip()
+                    for line in result.stdout.splitlines()
+                    if line.strip() and not line.endswith("shaping.md")
+                ]
+                if hits:
+                    continue
+            findings.append(
+                Finding(
+                    severity=Severity.WARN,
+                    rule_id="P11_3",
+                    path=path,
+                    line=1,
+                    message=(
+                        f"Packet {pid!r} is referenced in shaping doc but "
+                        f"has no implementing PR / commit reference in the "
+                        f"repo. Pattern 11: shaping docs that never lead to "
+                        f"execution drift."
+                    ),
+                )
+            )
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -1161,6 +1693,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     rc.add_argument("paths", nargs="*", type=Path, help="Archive paths to walk")
 
+    p11 = check_sub.add_parser(
+        "pattern-11",
+        help="Pattern 11 — shape-then-execute dispatch discipline",
+    )
+    p11.add_argument("paths", nargs="*", type=Path, help="Plan paths to walk")
+
     args = parser.parse_args(argv)
     repo_root: Path = args.repo_root.resolve()
     paths: list[Path] = list(args.paths) or _default_roots(repo_root, args.rule_set)
@@ -1189,6 +1727,8 @@ def main(argv: list[str] | None = None) -> int:
         findings = check_tool_risk(paths, repo_root)
     elif args.rule_set == "recipes":
         findings = check_recipes(paths, repo_root)
+    elif args.rule_set == "pattern-11":
+        findings = check_pattern_11(paths, repo_root)
     else:  # pragma: no cover - argparse enforces
         print(f"ERROR: unknown rule set: {args.rule_set}", file=sys.stderr)
         return 1
