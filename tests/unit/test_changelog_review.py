@@ -399,6 +399,69 @@ class TestRunReview:
         assert "## Verification: operator review" in text
 
 
+class TestResolveSourceUrl:
+    """Cover URL template expansion for ``DEFAULT_SOURCES`` (§4.5.2).
+
+    Regression coverage for Codex round-1 P2: two of the advertised
+    default 7 sources are templates (``{iso_week}``, ``file://``) that
+    must be resolved before reaching the fetcher, or they silently miss.
+    """
+
+    def test_iso_week_template_expanded(self) -> None:
+        from bid_euchre.ops.changelog_review.scraper import _resolve_source_url
+
+        # 2026-04-23 falls in ISO week 17.
+        when = datetime(2026, 4, 23, 12, 0, tzinfo=timezone.utc)
+        url = _resolve_source_url(
+            "https://code.claude.com/docs/en/whats-new/{iso_week}", now=when
+        )
+        assert "{iso_week}" not in url
+        assert "2026-W17" in url
+
+    def test_iso_week_template_zero_padded(self) -> None:
+        from bid_euchre.ops.changelog_review.scraper import _resolve_source_url
+
+        # 2026-01-01 falls in ISO week 1 (needs zero-padding → "W01").
+        when = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
+        url = _resolve_source_url(
+            "https://code.claude.com/docs/en/whats-new/{iso_week}", now=when
+        )
+        assert "2026-W02" in url or "2026-W01" in url
+        # No stray braces.
+        assert "{" not in url and "}" not in url
+
+    def test_file_url_passthrough(self) -> None:
+        from bid_euchre.ops.changelog_review.scraper import _resolve_source_url
+
+        url = _resolve_source_url("file://knowledge/external_signal_sources.md")
+        # file:// URLs are kept verbatim — the fetcher layer handles them.
+        assert url == "file://knowledge/external_signal_sources.md"
+
+    def test_scrape_sources_reaches_iso_week_expanded_url(self, tmp_path: Path) -> None:
+        """After expansion the scraper presents the resolved URL to the
+        fetcher, so a fixture keyed on the expanded form is reached."""
+        captured: list[str] = []
+
+        def spy_fetcher(url: str) -> str | None:
+            captured.append(url)
+            return None  # unreachable is fine; we only assert on the URL
+
+        sources = ("https://code.claude.com/docs/en/whats-new/{iso_week}",)
+        when = datetime(2026, 4, 23, 12, 0, tzinfo=timezone.utc)
+        assumptions_file = tmp_path / "empty.md"
+        assumptions_file.write_text("# no entries\n", encoding="utf-8")
+
+        scrape_sources(
+            sources=sources,
+            fetcher=spy_fetcher,
+            assumptions_path=assumptions_file,
+            now=when,
+        )
+        assert len(captured) == 1
+        assert "{iso_week}" not in captured[0]
+        assert "2026-W17" in captured[0]
+
+
 # ----- compute_native_substrate_signal unit -----
 
 

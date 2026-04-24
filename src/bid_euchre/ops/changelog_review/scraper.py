@@ -370,11 +370,34 @@ def scrape_source(
     return candidates, "OK"
 
 
+def _resolve_source_url(url: str, *, now: datetime | None = None) -> str:
+    """Expand templated defaults in ``url`` to a concrete form.
+
+    Two template forms appear in :data:`DEFAULT_SOURCES` and must be
+    resolved before being passed to the fetcher (per shape §4.5.2):
+
+    - ``{iso_week}`` — replaced with the current ISO year-week token
+      (e.g. ``2026-W17``). ``now`` is injectable for deterministic tests.
+    - ``file://`` URLs — kept verbatim; the fetcher reads the local
+      file. The operator-curated seed at
+      ``file://knowledge/external_signal_sources.md`` is treated as a
+      regular source so the 7-source default count is honoured.
+    """
+    if "{iso_week}" in url:
+        if now is None:
+            now = datetime.now(timezone.utc)
+        iso_year, iso_week, _ = now.isocalendar()
+        token = f"{iso_year}-W{iso_week:02d}"
+        url = url.replace("{iso_week}", token)
+    return url
+
+
 def scrape_sources(
     sources: Iterable[str] = DEFAULT_SOURCES,
     *,
     fetcher: FetcherFn | None = None,
     assumptions_path: Path | None = None,
+    now: datetime | None = None,
 ) -> ScrapeResult:
     """Scrape every source in ``sources`` and return a :class:`ScrapeResult`.
 
@@ -382,22 +405,26 @@ def scrape_sources(
     — production callers inject a WebFetch-backed fetcher and tests
     inject :func:`make_fixture_fetcher`. The shape §4.5.3 `--fixture-dir`
     CLI flag drives the fixture path in tests.
+
+    ``now`` is injectable for deterministic tests of
+    :func:`_resolve_source_url`'s ``{iso_week}`` expansion (shape §4.5.2).
     """
     if fetcher is None:
         fetcher = make_null_fetcher()
     assumptions = load_harness_assumptions(assumptions_path)
 
     result = ScrapeResult()
-    for url in sources:
+    for raw_url in sources:
+        resolved_url = _resolve_source_url(raw_url, now=now)
         try:
             candidates, status = scrape_source(
-                url, fetcher=fetcher, assumptions=assumptions
+                resolved_url, fetcher=fetcher, assumptions=assumptions
             )
         except Exception as exc:  # pragma: no cover — defensive
-            logger.exception("scrape of %s raised: %s", url, exc)
-            result.source_results[url] = "timeout"
+            logger.exception("scrape of %s raised: %s", resolved_url, exc)
+            result.source_results[resolved_url] = "timeout"
             continue
-        result.source_results[url] = status
+        result.source_results[resolved_url] = status
         result.candidates.extend(candidates)
 
     # Detect all-unreachable (shape §4.5.3 exit 2 path).

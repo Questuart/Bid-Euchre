@@ -25,6 +25,7 @@ from bid_euchre.ops.archivist import (
 from bid_euchre.ops.archivist.lessons import (
     EXIT_EMPTY,
     EXIT_OK,
+    EXIT_SOURCE_UNREACHABLE,
     WATERMARK_FILE,
 )
 
@@ -132,6 +133,29 @@ class TestLessonsMode:
         assert result.output_path is None
         # Candidates dir should remain empty (no lessons file written)
         assert not any(candidates_dir.glob("*_lessons.md"))
+
+    def test_missing_fixture_returns_source_unreachable(
+        self, candidates_dir: Path, emission_off: None, tmp_path: Path
+    ) -> None:
+        """Unreadable events source → exit EXIT_SOURCE_UNREACHABLE (2).
+
+        Regression for Codex round-1 P2: when ``--fixture`` points at a
+        missing path, ``_load_events`` reports ``event_src_ok=False`` but
+        the previous code returned the ambiguous ``EXIT_EMPTY`` (1). Fix:
+        bubble the unreachable signal up to exit 2 so operators see broken
+        input paths distinctly from empty-but-reachable scans.
+        """
+        missing_fixture = tmp_path / "does_not_exist.jsonl"
+        assert not missing_fixture.exists()
+        result = run_lessons(
+            candidates_dir=candidates_dir,
+            since=datetime(2029, 1, 1, tzinfo=timezone.utc),
+            fixture_path=missing_fixture,
+        )
+        assert result.exit_code == EXIT_SOURCE_UNREACHABLE
+        assert result.output_path is None
+        assert "events" in result.sources_failed
+        assert "events" not in result.sources_reached
 
     def test_since_watermark_advancement(
         self, candidates_dir: Path, emission_off: None

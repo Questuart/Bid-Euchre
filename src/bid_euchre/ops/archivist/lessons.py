@@ -121,11 +121,18 @@ def run_lessons(
     candidates = _derive_candidates(events)
 
     if not candidates:
+        # Surface source-unreachable distinctly from empty-but-reachable:
+        # operators need exit code 2 when the events source failed to
+        # open (typo'd --fixture path, missing events dir) instead of
+        # the ambiguous "no candidates" exit 1. Per shaping §4.1.4 CLI
+        # exit-code taxonomy.
+        empty_exit = EXIT_SOURCE_UNREACHABLE if not event_src_ok else EXIT_EMPTY
         logger.info(
-            "No lesson candidates found in window %s → %s (%d events)",
+            "No lesson candidates found in window %s → %s (%d events, event_src_ok=%s)",
             window_start.isoformat(),
             window_end.isoformat(),
             len(events),
+            event_src_ok,
         )
         return LessonsRunResult(
             output_path=None,
@@ -133,7 +140,7 @@ def run_lessons(
             window_end=window_end,
             event_count=len(events),
             candidate_count=0,
-            exit_code=EXIT_EMPTY,
+            exit_code=empty_exit,
             sources_reached=sources_reached,
             sources_failed=sources_failed,
         )

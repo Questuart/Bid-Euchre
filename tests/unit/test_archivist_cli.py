@@ -230,3 +230,199 @@ class TestArchivistCLI:
             ]
         )
         assert rc in (0, 1, 2)
+
+
+class TestPostmortemCLI:
+    """Cover the postmortem-mode CLI surface per shape §4.3.
+
+    Regression coverage for Codex round-1 P1: without ``--signals-json``
+    the CLI writes an empty handoff block. The fix emits a stderr
+    WARNING and accepts a JSON file to populate signals deterministically.
+    """
+
+    def test_postmortem_missing_session_id_exits_2(
+        self, archivist_cli, tmp_path: Path
+    ) -> None:
+        """``--mode postmortem`` without ``--session-id`` → exit 2."""
+        rc = archivist_cli.main(
+            [
+                "--mode",
+                "postmortem",
+                "--candidates-dir",
+                str(tmp_path / "_candidates"),
+                "--memory-md",
+                str(tmp_path / "MEMORY.md"),
+            ]
+        )
+        assert rc == 2
+
+    def test_postmortem_without_signals_emits_warning(
+        self, archivist_cli, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """No ``--signals-json`` → stderr WARNING surfaces the limitation."""
+        candidates_dir = tmp_path / "_candidates"
+        memory = tmp_path / "MEMORY.md"
+        memory.write_text("# MEMORY.md\n", encoding="utf-8")
+
+        rc = archivist_cli.main(
+            [
+                "--mode",
+                "postmortem",
+                "--session-id",
+                "2026-04-24_smoke",
+                "--candidates-dir",
+                str(candidates_dir),
+                "--memory-md",
+                str(memory),
+                "--dry-run",
+            ]
+        )
+        # Dry-run exit code is 0 regardless of signals source.
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err
+        assert "--signals-json" in captured.err
+
+    def test_postmortem_with_signals_json_populates_signals(
+        self, archivist_cli, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """``--signals-json`` path is loaded + fed into collect_session_signals."""
+        import json as _json
+
+        candidates_dir = tmp_path / "_candidates"
+        memory = tmp_path / "MEMORY.md"
+        memory.write_text("# MEMORY.md\n", encoding="utf-8")
+
+        signals_path = tmp_path / "signals.json"
+        signals_path.write_text(
+            _json.dumps(
+                {
+                    "prs_merged": ["#2800"],
+                    "tasks_completed": ["T1", "T2"],
+                    "lanes_parked": ["author-c"],
+                    "outstanding": ["cleanup worktree"],
+                    "next_steps": ["Phase 1 wiring"],
+                    "hazards": [],
+                    "goal": "Primitive D Phase 0 ship",
+                    "session_end": "2026-04-24T17:00:00+00:00",
+                    "session_start": "2026-04-24T16:00:00+00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        rc = archivist_cli.main(
+            [
+                "--mode",
+                "postmortem",
+                "--session-id",
+                "2026-04-24_signals",
+                "--candidates-dir",
+                str(candidates_dir),
+                "--memory-md",
+                str(memory),
+                "--signals-json",
+                str(signals_path),
+            ]
+        )
+        assert rc == 0
+
+        # MEMORY.md contains the populated signals (not empty-signal fallback).
+        memory_text = memory.read_text(encoding="utf-8")
+        assert "#2800" in memory_text
+        assert "Primitive D Phase 0 ship" in memory_text
+
+        # The CLI did NOT emit the no-signals WARNING.
+        captured = capsys.readouterr()
+        assert "--signals-json" not in captured.err
+
+    def test_postmortem_signals_json_unreadable_exits_2(
+        self, archivist_cli, tmp_path: Path
+    ) -> None:
+        """Missing signals file → exit 2 (source-unreachable class)."""
+        rc = archivist_cli.main(
+            [
+                "--mode",
+                "postmortem",
+                "--session-id",
+                "x",
+                "--candidates-dir",
+                str(tmp_path / "_candidates"),
+                "--memory-md",
+                str(tmp_path / "MEMORY.md"),
+                "--signals-json",
+                str(tmp_path / "missing.json"),
+            ]
+        )
+        assert rc == 2
+
+    def test_postmortem_signals_json_invalid_exits_2(
+        self, archivist_cli, tmp_path: Path
+    ) -> None:
+        """Malformed JSON → exit 2."""
+        bad = tmp_path / "bad.json"
+        bad.write_text("{not json", encoding="utf-8")
+        rc = archivist_cli.main(
+            [
+                "--mode",
+                "postmortem",
+                "--session-id",
+                "x",
+                "--candidates-dir",
+                str(tmp_path / "_candidates"),
+                "--memory-md",
+                str(tmp_path / "MEMORY.md"),
+                "--signals-json",
+                str(bad),
+            ]
+        )
+        assert rc == 2
+
+    def test_postmortem_signals_json_not_object_exits_2(
+        self, archivist_cli, tmp_path: Path
+    ) -> None:
+        """Non-object JSON (list at top level) → exit 2."""
+        bad = tmp_path / "list.json"
+        bad.write_text("[1, 2, 3]", encoding="utf-8")
+        rc = archivist_cli.main(
+            [
+                "--mode",
+                "postmortem",
+                "--session-id",
+                "x",
+                "--candidates-dir",
+                str(tmp_path / "_candidates"),
+                "--memory-md",
+                str(tmp_path / "MEMORY.md"),
+                "--signals-json",
+                str(bad),
+            ]
+        )
+        assert rc == 2
+
+    def test_postmortem_signals_json_bad_iso_date_exits_2(
+        self, archivist_cli, tmp_path: Path
+    ) -> None:
+        """Non-ISO8601 session_end → exit 2."""
+        import json as _json
+
+        bad = tmp_path / "bad_ts.json"
+        bad.write_text(
+            _json.dumps({"session_end": "2026/04/24 10:00"}),
+            encoding="utf-8",
+        )
+        rc = archivist_cli.main(
+            [
+                "--mode",
+                "postmortem",
+                "--session-id",
+                "x",
+                "--candidates-dir",
+                str(tmp_path / "_candidates"),
+                "--memory-md",
+                str(tmp_path / "MEMORY.md"),
+                "--signals-json",
+                str(bad),
+            ]
+        )
+        assert rc == 2

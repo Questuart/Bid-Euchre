@@ -36,6 +36,7 @@ Exit codes
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from datetime import datetime
@@ -101,6 +102,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("MEMORY.md"),
         help="Path to MEMORY.md (postmortem mode only).",
+    )
+    parser.add_argument(
+        "--signals-json",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a JSON file containing session signals (postmortem "
+            "mode only). Keys mirror collect_session_signals kwargs: "
+            "prs_merged, tasks_completed, lanes_parked, outstanding, "
+            "next_steps, hazards, goal, session_start, session_end, events. "
+            "When omitted, postmortem is written with empty signals and a "
+            "stderr WARNING is emitted — Phase 0 does not yet wire live "
+            "readers; the session-end skill Phase 4.5 insertion populates "
+            "signals programmatically via the library API, not this CLI."
+        ),
     )
     return parser
 
@@ -194,12 +210,66 @@ def _run_postmortem(args: argparse.Namespace) -> int:
 
     # Lazy import — postmortem lives in a sibling module that itself imports
     # the archivist (circular-avoidance via lazy resolution).
-    from bid_euchre.ops.session_postmortem import run_postmortem
+    from bid_euchre.ops.session_postmortem import (
+        collect_session_signals,
+        run_postmortem,
+    )
+
+    signals = None
+    if args.signals_json is not None:
+        try:
+            raw = args.signals_json.read_text(encoding="utf-8")
+        except OSError as exc:
+            print(
+                f"error: --signals-json unreadable ({args.signals_json}): {exc}",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            print(
+                f"error: --signals-json not valid JSON ({args.signals_json}): {exc}",
+                file=sys.stderr,
+            )
+            return 2
+        if not isinstance(payload, dict):
+            print(
+                f"error: --signals-json must be a JSON object ({args.signals_json})",
+                file=sys.stderr,
+            )
+            return 2
+        # Parse ISO-8601 datetimes if provided.
+        for ts_key in ("session_start", "session_end"):
+            if payload.get(ts_key) is not None and isinstance(payload[ts_key], str):
+                try:
+                    payload[ts_key] = datetime.fromisoformat(payload[ts_key])
+                except ValueError as exc:
+                    print(
+                        f"error: --signals-json {ts_key} not ISO-8601: {exc}",
+                        file=sys.stderr,
+                    )
+                    return 2
+        signals = collect_session_signals(
+            session_id=args.session_id,
+            **payload,
+        )
+    else:
+        print(
+            "WARNING: postmortem invoked without --signals-json; MEMORY.md "
+            "and candidate will be written with empty signals (no PRs, "
+            "tasks, lanes, or lessons). Phase 0 does not wire live "
+            "readers. Populate via --signals-json <path> or invoke "
+            "session_postmortem.run_postmortem() programmatically from "
+            "the session-end skill Phase 4.5 hook.",
+            file=sys.stderr,
+        )
 
     result = run_postmortem(
         session_id=args.session_id,
         memory_md_path=args.memory_md,
         candidates_dir=args.candidates_dir,
+        signals=signals,
         dry_run=args.dry_run,
     )
 
