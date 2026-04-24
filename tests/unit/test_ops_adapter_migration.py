@@ -586,6 +586,11 @@ class TestAdapterPackageExports:
             "WorkerPoolService",
             "create_provider",
             "get_lane_config",
+            # Primitive G.2 — token-economy adapter re-exports (plan §3.3)
+            "NATIVE_USAGE_FLAG",
+            "infer_lane_from_path",
+            "native_usage_enabled",
+            "read_session_records",
         }
         assert expected == set(adapters.__all__)
 

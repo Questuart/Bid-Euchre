@@ -3549,9 +3549,56 @@ def cmd_workers(args: argparse.Namespace) -> int:
         return 0
 
 
+def _dual_write_probe(args: argparse.Namespace) -> None:
+    """Emit the proving-run cohort sample for the current CLI invocation.
+
+    Primitive G.2 dual-write wiring per
+    ``plans/steward_platform/7_primitive_G/migrations/01_token_economy_to_native_usage.md``
+    §3.2–§3.3: ``cmd_usage`` routes every invocation through the
+    cohort-aware :func:`read_session_records` adapter entry point so the
+    ``proving_run_cohort_sample`` event is emitted on every usage-CLI
+    call. The existing bespoke subcommand dispatch below remains
+    authoritative for the return value; this probe is observability-only
+    (never raises, result discarded).
+
+    The ``STEWARD_TOKEN_ECONOMY_NATIVE_USAGE`` flag controls dual-write
+    behavior:
+    - Flag unset/0: a single Cohort A sample emits.
+    - Flag set: both Cohort A and Cohort B samples emit (§3.2).
+    """
+    try:
+        from bid_euchre.ops.adapters.token_economy_adapter import (
+            infer_lane_from_path,
+            read_session_records,
+        )
+        from bid_euchre.ops.token_economy import _resolve_output_dir
+
+        out_dir = _resolve_output_dir(getattr(args, "output_dir", None))
+        lane_id, _ = infer_lane_from_path(str(Path.cwd()))
+        read_session_records(
+            out_dir,
+            source="auto",
+            lane_id=lane_id,
+            task_id=None,
+            window_id=None,
+        )
+    except Exception:
+        # Observability-only: never let the probe block the CLI path.
+        # Any probe failure is logged as a debug-level event via the
+        # emit() never-raises contract; the bespoke subcommand below
+        # continues to execute normally.
+        pass
+
+
 def cmd_usage(args: argparse.Namespace) -> int:
     """Token economy: import and query usage data."""
     action = getattr(args, "usage_action", None)
+
+    # Primitive G.2 dual-write probe (plan §3.2–§3.3). Runs before the
+    # subcommand dispatch so every CLI invocation carries a cohort
+    # sample in the event stream. Bespoke dispatch below is unchanged
+    # and remains authoritative for the return value per §3.3 routing.
+    _dual_write_probe(args)
 
     if action == "import":
         from bid_euchre.ops.token_economy import (

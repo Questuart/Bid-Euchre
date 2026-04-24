@@ -1424,3 +1424,129 @@ class TestSliceBModelCapture:
         # Both rows are represented in the totals.
         total = sum(b.total_tokens for b in buckets)
         assert total == (100 + 50) + (200 + 75)
+
+
+# ---------------------------------------------------------------------------
+# Primitive G.2 — Slice B rollup shape golden-file test
+# ---------------------------------------------------------------------------
+
+
+class TestSliceBRollupShapeGoldenFile:
+    """Golden-file test for the Slice B lane × model × effort rollup shape.
+
+    Per plan
+    ``plans/steward_platform/7_primitive_G/migrations/01_token_economy_to_native_usage.md``
+    §4.1 and §6.4 — the G.2 migration must preserve this rollup shape
+    byte-for-byte. Any drift triggers stop-loss trip wire #4 (§6.4) and
+    the Cohort B path must be disabled until the drift is explained.
+
+    The fixture at ``tests/fixtures/token_economy/session_usage.jsonl``
+    is checked into the repo specifically for this test; it is NOT a
+    snapshot of live ``~/.claude/projects/`` data (plan §7.7 risk #3).
+    """
+
+    def test_slice_b_rollup_shape(self, tmp_path: Path) -> None:
+        """Assert lane × model × effort rollup shape matches the golden values.
+
+        This is the load-bearing test for plan §4.1 (preserved exactly,
+        no drift tolerated). F-forward Packet 11's emitter consumes these
+        rollups; drift here is an upstream-gate violation.
+        """
+        from bid_euchre.ops.token_economy import (
+            UNKNOWN_BUCKET,
+            effort_summary,
+            lane_summary,
+            model_summary,
+        )
+
+        # Copy the checked-in fixture into a tmp-store so the test is
+        # hermetic (no dependence on repo runtime state).
+        fixture = (
+            Path(__file__).resolve().parents[1]
+            / "fixtures"
+            / "token_economy"
+            / "session_usage.jsonl"
+        )
+        assert fixture.exists(), f"fixture missing: {fixture}"
+        (tmp_path / "session_usage.jsonl").write_text(
+            fixture.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
+        # Also need an attribution file so lane_summary can attribute
+        # the sessions. The fixture bakes lane_id into each record; we
+        # mirror the minimal attribution format.
+        import json as _json
+
+        # `_load_attributions` passes attribution records straight to
+        # `lane_summary`, which sums `input_tokens` / `output_tokens` /
+        # `git_commits` from the attribution rows (not the session
+        # rows). Carry the fixture's per-session counters onto the
+        # attribution records so the rollup matches.
+        attrs = tmp_path / "session_attributions.jsonl"
+        attrs.write_text(
+            "\n".join(
+                _json.dumps(
+                    {
+                        "session_id": sid,
+                        "lane_id": lane,
+                        "worktree_class": pool,
+                        "input_tokens": in_tok,
+                        "output_tokens": out_tok,
+                        "git_commits": commits,
+                    }
+                )
+                for sid, lane, pool, in_tok, out_tok, commits in (
+                    ("sess-001", "author-a", "platform", 1000, 500, 2),
+                    ("sess-002", "author-b", "platform", 2000, 1000, 3),
+                    ("sess-003", "flex-a", "flex", 800, 400, 1),
+                    ("sess-004", "ops", "control", 500, 200, 0),
+                    ("sess-005", "analyst-a", "analyst", 300, 150, 0),
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        # --- model_summary: 3 distinct models + session_count/tokens ---
+        by_model = model_summary(output_dir=tmp_path)
+        model_labels = {b.model for b in by_model}
+        assert "claude-opus-4-7" in model_labels
+        assert "claude-sonnet-4-6" in model_labels
+        assert "claude-haiku-4-5" in model_labels
+        # The session-meta v2 row without a model lands in the "unknown" bucket.
+        assert UNKNOWN_BUCKET in model_labels
+
+        # Exact token totals per model — byte-for-byte preservation.
+        totals = {b.model: b.total_tokens for b in by_model}
+        assert totals["claude-opus-4-7"] == (1000 + 500) + (
+            2000 + 1000
+        )  # sess-001 + sess-002
+        assert totals["claude-sonnet-4-6"] == 800 + 400  # sess-003
+        assert totals["claude-haiku-4-5"] == 500 + 200  # sess-004
+        assert totals[UNKNOWN_BUCKET] == 300 + 150  # sess-005 (v2 legacy)
+
+        # Sort invariant — descending by total_tokens.
+        sorted_totals = sorted(totals.values(), reverse=True)
+        assert [b.total_tokens for b in by_model] == sorted_totals
+
+        # --- effort_summary: baseline "unknown" bucket covers all sessions ---
+        by_effort = effort_summary(output_dir=tmp_path)
+        # At Slice B baseline, no JSONL source emits an effort signal,
+        # so all sessions land in the "unknown" bucket.
+        assert len(by_effort) >= 1
+        effort_labels = {b.effort for b in by_effort}
+        assert UNKNOWN_BUCKET in effort_labels
+        # All 5 sessions represented in the totals.
+        assert sum(b.session_count for b in by_effort) == 5
+
+        # --- lane_summary: 5 lanes with attribution ---
+        by_lane = lane_summary(output_dir=tmp_path)
+        lane_ids = {ls.lane_id for ls in by_lane}
+        assert {"author-a", "author-b", "flex-a", "ops", "analyst-a"}.issubset(lane_ids)
+        # Per-lane tokens match the fixture.
+        by_lane_map = {ls.lane_id: ls for ls in by_lane}
+        assert by_lane_map["author-a"].total_tokens == 1000 + 500
+        assert by_lane_map["author-b"].total_tokens == 2000 + 1000
+        assert by_lane_map["flex-a"].total_tokens == 800 + 400
+        assert by_lane_map["ops"].total_tokens == 500 + 200
+        assert by_lane_map["analyst-a"].total_tokens == 300 + 150
