@@ -54,11 +54,10 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Ensure ``src/`` is on the import path so ``bid_euchre.ops.event_schema``
-# is resolvable when the script is invoked via ``python scripts/...``.
-sys.path.insert(0, str(REPO_ROOT / "src"))
-
-from bid_euchre.ops.event_schema import (  # noqa: E402
+# Invoke via ``uv run python scripts/internal/audit_event_emission.py`` so
+# ``bid_euchre`` resolves from the project venv (``uv sync`` installs it).
+# ``sys.path`` mutation is forbidden by repo-lint ``no-sys-path-mutation``.
+from bid_euchre.ops.event_schema import (
     EVENT_FIELD_REGISTRY,
     NATIVE_LIFECYCLE_EVENT_TYPES,
     STEWARD_OPERATIONAL_CLASSES,
