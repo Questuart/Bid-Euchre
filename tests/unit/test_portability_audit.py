@@ -66,10 +66,11 @@ NON_COSMETIC_THRESHOLD = 264  # hard-block + soft-coupling
 # unrelated to token-economy work). Slice D added 2 more hits because the
 # `lane-name-in-code` regex matches the string literals `"ops"` and `"review"`
 # in LANE_DEFAULT_POLICY — those are task_type taxonomy keys (#2169 Slice D),
-# not lane identifiers, so this is a known audit false positive. Primitive
-# B-exec.α (B.10 effort policy, shaping §7) adds 4 more hits for the same
-# reason — `"ops"` and `"review"` appear in both `_VALID_ARCHETYPES` and
-# `POLICY_TABLE` of `src/bid_euchre/ops/effort_policy.py` as archetype
+# not lane identifiers, so this is a known audit false positive.
+
+# Primitive B-exec.α (B.10 effort policy, shaping §7) adds 4 more hits for
+# the same reason — `"ops"` and `"review"` appear in both `_VALID_ARCHETYPES`
+# and `POLICY_TABLE` of `src/bid_euchre/ops/effort_policy.py` as archetype
 # taxonomy keys. Primitive B-exec.β (B.1 adaptive dispatch, shaping §6)
 # adds 1 more hit — `_archetype_for_lane` in `src/bid_euchre/ops/learning.py`
 # enumerates `("orchestrator", "ops", "review")` as archetype names per the

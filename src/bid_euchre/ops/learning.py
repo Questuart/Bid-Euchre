@@ -81,7 +81,7 @@ logger = logging.getLogger("ops.learning")
 #: - ``cycle_time`` — normalized inverse of ``avg_elapsed_seconds`` across
 #:   the current candidate set. Higher = faster.
 #: - ``rework_penalty`` — subtracts ``max(0, avg_review_rounds - 1.0)``.
-#:
+
 #: Weights intentionally do not sum to 1.0 so operators can read the
 #: relative contribution directly without renormalizing.
 SCORE_WEIGHTS: dict[str, float] = {
@@ -162,7 +162,7 @@ def policy_fingerprint() -> str:
 #
 # - Opus lanes → ``safety_envelope = "auto-mode"`` (classifier-gated).
 # - Sonnet / Haiku lanes → ``safety_envelope = "bypass"`` (no gate).
-#
+
 # The ``.claude/lane_models.json`` file (authored by #2767) declares each
 # lane's model tier. This module derives safety_envelope and archetype from
 # the tier; it does NOT re-read lane_models.json's schema richness (the
