@@ -228,7 +228,7 @@ This escalation does NOT:
 
 All such actions await orchestrator reshape decision.
 
-## Verification Plan
+## §10. Verification Plan
 
 Per Pattern 10 + analyst prompt policy: every shaping doc deliverable
 names a verification surface. This session plan IS the deliverable of
