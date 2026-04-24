@@ -268,6 +268,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/evaluate_gate_x3.py` | R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle) |
 | `scripts/internal/export_hosted_decisions.py` | CLI wrapper for exporting hosted-play decisions to JSONL (SP-4-01 schema) |
 | `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
+| `scripts/internal/file_canary_issue.py` | Primitive H.0 canary failure-mode issue filer (dedup via `canary_id:` search; §5.4 priority + alert-push routing) |
 | `scripts/internal/generate_action_value_dataset.py` | Counterfactual action-value dataset generator (R1.5) |
 | `scripts/internal/generate_advance_check.py` | Arc D v2 advance check generator (hypothesis + sufficiency + canary evaluation) |
 | `scripts/internal/generate_arc_dashboard.py` | Cross-rung Arc D progression dashboard |
