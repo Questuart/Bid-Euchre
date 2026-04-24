@@ -287,6 +287,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_interpretability_charts.py` | Interpretability chart generation from CSV data |
 | `scripts/internal/manage_artifacts.py` | Artifact lifecycle CLI (status, supersession, quarantine, prune) |
 | `scripts/internal/manage_invite_codes.py` | Invite code admin CLI (generate, list, revoke) for browser game pilot access |
+| `scripts/internal/measure_improvements.py` | Primitive B.12 improvement-metrics probe (5 metrics + N=3 repeat-task detector + mechanism-change delta tracking; emits archivist-inflow artifact to `knowledge/_candidates/`) |
 | `scripts/internal/memory_compact.py` | Primitive C MEMORY.md compaction helper (size-budgeted truncation + archive emission; preserves most-recent sections) |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/plan_review_driver.py` | Plan review loop orchestrator (Codex -> fix -> re-review cycles with fallback alerting) |
