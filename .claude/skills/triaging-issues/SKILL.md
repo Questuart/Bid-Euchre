@@ -53,6 +53,84 @@ Group related findings into batch PRs:
 - Typical batch: 3-8 related findings per PR
 - Don't create one PR per finding — that's pure churn
 
+## Programmatic Invocation (scaffold)
+
+> Primitive E Phase 0 Packet E1 — **scaffold only**, no runtime. The active-triage
+> runtime that consumes this surface is blocked on Primitive A Packet 3
+> (event schema + dispatcher). Scaffold landed so downstream work can wire
+> to a stable contract without re-shaping.
+
+In addition to the operator-invocable `/triaging-issues` surface, the skill
+exposes a programmatic entry point for event-driven callers (Primitive E
+`active_triage`, per `plans/steward_platform/5_primitive_E/shaping.md` §5).
+Both paths share the same underlying logic in
+`scripts/internal/triage_cli.py`.
+
+### Input contract — `TriageInput`
+
+```python
+@dataclass(frozen=True)
+class TriageInput:
+    signal_class: Literal[
+        "ci_red",
+        "review_blocked",
+        "stalled_lane",
+        "orphan_worktree",
+        "token_burn",
+    ]
+    title_hint: str                  # pre-formatted issue title template
+    body_sections: dict[str, str]    # section name → content
+    labels: list[str]                # required labels; `follow-up` auto-added
+    priority: Literal["low", "normal", "high", "urgent"]
+    incident_fingerprint: str        # dedupe key (see Dedupe section)
+    source_event_id: str             # event-bus record ID for traceability
+```
+
+### Call shape (scaffold)
+
+```python
+from scripts.internal.triage_cli import TriageInput, file_or_recur
+
+result = file_or_recur(TriageInput(
+    signal_class="ci_red",
+    title_hint="fix: CI red on main after PR #NNNN",
+    body_sections={
+        "Context": "...",
+        "Evidence": "...",
+        "Reproduction": "uv run python scripts/... --seed 42",
+    },
+    labels=["fix:test"],
+    priority="high",
+    incident_fingerprint="<deterministic SHA256 of (signal_class, pr_number, test_id)>",
+    source_event_id="<event record ID from Primitive A dispatcher>",
+))
+```
+
+### Dedupe contract
+
+`file_or_recur` is idempotent on `incident_fingerprint`:
+
+- **No matching open follow-up:** file a new issue; embed fingerprint as a
+  hidden HTML comment `<!-- fingerprint: <fp> -->` in the issue body.
+- **Matching open follow-up within 24h coalescing window:** append an
+  evidence comment to the existing issue (format in shaping doc §5.3). Do
+  not open a duplicate.
+- **Matching closed or >24h-old follow-up:** treat as "no match"; open a
+  new issue (prevents a stale fingerprint absorbing unrelated recurrences).
+
+### Scaffold runtime status
+
+`scripts/internal/triage_cli.py` ships in Packet E1 with:
+
+- The `TriageInput` dataclass and `SIGNAL_CLASSES` / `PRIORITIES` vocabularies.
+- `file_or_recur(...)` signature that raises `NotImplementedError` with a
+  pointer to Primitive A Packet 3 as the unblocker.
+- Unit tests that pin the dataclass shape and the scaffold signature.
+
+The live GitHub-interacting path (dedupe queries, issue-creation, evidence
+comments) lands in a follow-up packet after Primitive A merges and the event
+bus surface is observable.
+
 ## Gotchas
 
 - Always check for existing issues before creating duplicates — `gh issue list --label follow-up`

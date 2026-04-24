@@ -15,7 +15,7 @@
 | **001** | **Platform-11/13 dismissal evidence + agent-readability scorecard floor (7/10)** | **Seeded (Phase 0 kickoff)** | **Meta (B / C / G)** |
 | 002 | Review-cycle-as-evidence (drafts 1–8 lineage) | Pending (Phase 0 close per analyst-d Q5) | C |
 | 003 | Token-economy native vs. bespoke boundary | Pending (Phase 0 close) | F |
-| 004 | Hook migration boundary | Pending (Phase 0 close) | E |
+| **004** | **Hook migration boundary** | **FILED (Primitive E Phase 0 Packet E1)** | **E** |
 | **005** | **Review plugin evaluation** | **Seeded (draft 8)** | **C/E** |
 | **006** | **Auto mode codification** | **Seeded (Phase 0 kickoff)** | **meta / G** |
 | **007** | **Observability plugin evaluation** | **Seeded (draft 8)** | **A** |
