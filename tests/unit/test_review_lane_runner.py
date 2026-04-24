@@ -916,19 +916,41 @@ class TestRunOnceWithPreflight:
     """Verify run_once integrates pre-flight checks."""
 
     @patch("review_lane_runner.preflight_health_check")
-    def test_run_once_calls_preflight(
+    def test_run_once_calls_preflight_when_explicitly_opted_in(
         self,
         mock_preflight: MagicMock,
         queue_dir: Path,
     ) -> None:
-        """run_once calls preflight_health_check by default."""
+        """run_once runs preflight when caller passes skip_preflight=False.
+
+        Opting in is reserved for the production review loop on cycle 1;
+        all other callers (including tests and ``--once`` CLI) should rely
+        on the default skip_preflight=True. See Issue #2811.
+        """
         mock_preflight.return_value = [
             ("worktree_health", True, "OK"),
             ("lock_cleanup", True, "0 locks"),
             ("codex_auth", True, "OK"),
         ]
-        run_once(queue_dir, dry_run=True)
+        run_once(queue_dir, dry_run=True, skip_preflight=False)
         mock_preflight.assert_called_once()
+
+    @patch("review_lane_runner.preflight_health_check")
+    def test_run_once_skips_preflight_by_default(
+        self,
+        mock_preflight: MagicMock,
+        queue_dir: Path,
+    ) -> None:
+        """run_once skips preflight by default (Issue #2811).
+
+        The default was flipped from False to True so that tests reaching
+        ``run_once`` through mocking holes never trigger the detached-HEAD
+        recovery path (``git checkout main`` + ``git reset --hard``)
+        which silently mutates the worktree mid-pytest and causes
+        cross-shard contamination.
+        """
+        run_once(queue_dir, dry_run=True)
+        mock_preflight.assert_not_called()
 
     @patch("review_lane_runner.preflight_health_check")
     def test_run_once_skips_preflight(
