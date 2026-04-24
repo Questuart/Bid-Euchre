@@ -9,12 +9,12 @@
 
 | File | Status | Headings | Last modified (git) |
 |---|---|---|---|
-| [`NOTES.md`](NOTES.md) | tracked | 4 | 1970-01-01 |
-| [`PLAYBOOKS.md`](PLAYBOOKS.md) | tracked | 4 | 1970-01-01 |
-| [`anti_patterns.md`](anti_patterns.md) | tracked | 5 | 1970-01-01 |
-| [`harness_assumptions.md`](harness_assumptions.md) | tracked | 9 | 1970-01-01 |
-| `agent_readability_scorecard.md` | MISSING | — | — |
-| [`external_signal_sources.md`](external_signal_sources.md) | tracked | 6 | 1970-01-01 |
+| [`NOTES.md`](NOTES.md) | tracked | 4 | 2026-04-23 |
+| [`PLAYBOOKS.md`](PLAYBOOKS.md) | tracked | 4 | 2026-04-23 |
+| [`anti_patterns.md`](anti_patterns.md) | tracked | 5 | 2026-04-23 |
+| [`harness_assumptions.md`](harness_assumptions.md) | tracked | 9 | 2026-04-23 |
+| [`agent_readability_scorecard.md`](agent_readability_scorecard.md) | tracked | 3 | 2026-04-23 |
+| [`external_signal_sources.md`](external_signal_sources.md) | tracked | 6 | 2026-04-23 |
 
 ## `adr/` — Architecture Decision Records
 
