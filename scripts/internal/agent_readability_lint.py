@@ -421,23 +421,20 @@ def check_verification_contract(roots: list[Path], repo_root: Path) -> list[Find
                 )
             )
 
-    # Rule VC3 — every Work/Readiness bullet in a plan should be covered
-    # by a row either in the same plan's Verification Plan section OR in
-    # the global `verification_contract/map.md`.
-    #
-    # We keep this check WARN (not BLOCK) because the walker is
-    # intentionally lenient-form and can false-positive on narrative
-    # bullets that are not themselves deliverables.  Review-driver V1/V6
-    # promote the plan-change cases to BLOCK at PR time (see shaping
-    # §3.4); this periodic lint is the run-against-existing surface.
-    #
-    # Files that contain their own `## Verification Plan` section opt
-    # into covering-via-own-section; files without one opt into
-    # covering-via-global-map (or are expected to have no Work/Readiness
-    # bullets).
+    # Rule VC3 — Work/Readiness bullets must be covered by a Verification
+    # Plan row in the same plan, or by a row in the global map.
     per_file_rows: dict[Path, list[VerificationRow]] = {}
     for row in walk.verification_rows:
         per_file_rows.setdefault(row.path, []).append(row)
+
+    # WARN (not BLOCK) rationale: the walker is intentionally lenient-form
+    # and can false-positive on narrative bullets that are not themselves
+    # deliverables. Review-driver V1/V6 promote the plan-change cases to
+    # BLOCK at PR time (see shaping §3.4); this periodic lint is the
+    # run-against-existing surface. Files with a local Verification Plan
+    # section opt into covering-via-own-section; files without one rely
+    # on the global `verification_contract/map.md` (or have no Work
+    # bullets).
 
     for bullet in walk.deliverables:
         if _bullet_covered(bullet, per_file_rows.get(bullet.path, []), global_map):
