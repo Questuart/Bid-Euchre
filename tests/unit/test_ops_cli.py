@@ -3939,6 +3939,181 @@ class TestTaskComplete:
             )
 
 
+class TestTaskDualWriteV1Dispatcher:
+    """Phase 0 dual-write: ops.py emits through both legacy and v1.0 pipelines.
+
+    Primitive A §8.2 step 7 mandates that ``task accept`` / ``task complete``
+    call the new ``events.emit`` dispatcher alongside the legacy
+    ``append_event`` so the v1.0 event stream bootstraps under
+    ``data/events/`` without breaking the ~25 legacy consumers that read
+    from ``.claude/runtime/events/``.
+    """
+
+    @staticmethod
+    def _read_v1_events(
+        v1_dir: Path, event_type: str | None = None
+    ) -> list[dict[str, object]]:
+        """Read all JSONL lines from the v1 data/events/ directory."""
+        records: list[dict[str, object]] = []
+        if not v1_dir.exists():
+            return records
+        for path in sorted(v1_dir.glob("events-*.jsonl")):
+            for line in path.read_text().splitlines():
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                if event_type is None or rec.get("event_type") == event_type:
+                    records.append(rec)
+        return records
+
+    def test_task_accept_writes_to_both_legacy_and_v1(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """``task accept`` emits task_started through both pipelines."""
+        import ops
+
+        v1_events_dir = tmp_path / "v1_events"
+        monkeypatch.setenv("STEWARD_EVENTS_LOG_DIR", str(v1_events_dir))
+        # Reset the cached session id so a fresh session_id lands in the
+        # v1 baseline.
+        from bid_euchre.ops.events import reset_cached_session
+
+        reset_cached_session()
+
+        # Create a packet owned by author-b.
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Dual-write accept test",
+                "--owner",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+        packet_id = created["packet_id"]
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "accept",
+                packet_id,
+                "--lane",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        capsys.readouterr()
+
+        # Legacy pipeline untouched.
+        from bid_euchre.ops.events import read_events
+
+        legacy = read_events(runtime_dir / "events", event_type="task_started")
+        assert legacy, "legacy task_started event missing"
+        assert legacy[-1]["payload"]["packet_id"] == packet_id
+
+        # v1.0 pipeline now has the same event with §9.7 IDs + required fields.
+        v1 = self._read_v1_events(v1_events_dir, event_type="task_started")
+        assert len(v1) == 1, f"Expected 1 v1 task_started event, got {len(v1)}"
+        rec = v1[0]
+        # First-class fields present per EVENT_FIELD_REGISTRY.
+        assert rec["packet_id"] == packet_id
+        assert rec["priority"] == "normal"
+        assert rec["dispatched_by"]
+        # §9.7 baseline IDs populated at top level (not routed via extra_fields).
+        assert rec["lane_id"] == "author-b"
+        assert "session_id" in rec
+        assert "project_id" in rec
+        assert "seq" in rec
+        assert rec["schema_version"] == "1.0"
+
+    def test_task_complete_writes_to_both_legacy_and_v1(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """``task complete`` emits task_completed through both pipelines."""
+        import ops
+
+        v1_events_dir = tmp_path / "v1_events"
+        monkeypatch.setenv("STEWARD_EVENTS_LOG_DIR", str(v1_events_dir))
+        # Full verbosity so optional fields (pr_number, shipped_outcome, etc.)
+        # survive the tier filter — summary tier intentionally drops them.
+        monkeypatch.setenv("STEWARD_EVENTS_VERBOSITY", "full")
+        from bid_euchre.ops.events import reset_cached_session
+
+        reset_cached_session()
+
+        packet_id = TestTaskComplete._create_dispatched_packet(
+            runtime_dir, plans_dir, capsys
+        )
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "complete",
+                packet_id,
+                "--summary",
+                "Dual-write complete test",
+                "--pr",
+                "4242",
+                "--by",
+                "author-a",
+                "--shipped-outcome",
+                "merged",
+            ]
+        )
+        assert rc == 0
+        capsys.readouterr()
+
+        # Legacy pipeline still active.
+        from bid_euchre.ops.events import read_events
+
+        legacy = read_events(runtime_dir / "events", event_type="task_completed")
+        assert legacy, "legacy task_completed event missing"
+
+        # v1.0 event carries required + optional schema fields and §9.7 IDs.
+        v1 = self._read_v1_events(v1_events_dir, event_type="task_completed")
+        assert len(v1) == 1, f"Expected 1 v1 task_completed event, got {len(v1)}"
+        rec = v1[0]
+        assert rec["packet_id"] == packet_id
+        # outcome is required — must not be routed through extra_fields.
+        assert rec["outcome"] == "merged"
+        assert "outcome" not in rec.get("extra_fields", {})
+        assert rec["pr_number"] == 4242
+        assert rec["completed_by"] == "author-a"
+        assert rec["shipped_outcome"] == "merged"
+        # §9.7 baseline IDs at top level.
+        assert rec["lane_id"] == "author-a"
+        assert "session_id" in rec
+        assert "seq" in rec
+        assert rec["schema_version"] == "1.0"
+
+
 class TestTaskUpdateMetadata:
     """Verify ``task update-metadata`` CLI subcommand (#2701)."""
 

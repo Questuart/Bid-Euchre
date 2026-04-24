@@ -61,7 +61,7 @@ def _load_audit_module():
 # They should only decrease as decoupling work proceeds.  If a PR increases
 # coupling, either fix the regression or update the threshold with justification.
 
-NON_COSMETIC_THRESHOLD = 264  # hard-block + soft-coupling
+NON_COSMETIC_THRESHOLD = 265  # hard-block + soft-coupling
 # Baseline was 253; main drifted to 257 before Slice D landed (pre-existing,
 # unrelated to token-economy work). Slice D added 2 more hits because the
 # `lane-name-in-code` regex matches the string literals `"ops"` and `"review"`
@@ -74,8 +74,15 @@ NON_COSMETIC_THRESHOLD = 264  # hard-block + soft-coupling
 # taxonomy keys. Primitive B-exec.β (B.1 adaptive dispatch, shaping §6)
 # adds 1 more hit — `_archetype_for_lane` in `src/bid_euchre/ops/learning.py`
 # enumerates `("orchestrator", "ops", "review")` as archetype names per the
-# §G13 8-archetype taxonomy. Downstream portability cleanup will narrow the
-# regex or formalize archetype/task_type as Enums.
+# §G13 8-archetype taxonomy.
+
+# Primitive A Phase 0 (event schema v1.0, shaping §8) adds 1 more hit for
+# the same category of false positive — the `tmux-session-default` regex
+# matches the literal `"steward"` embedded in an inline comment on
+# `src/bid_euchre/ops/event_schema.py:196` (the `"source"` optional field's
+# comment reads `"steward" | "native"`, documenting §2.2 of the schema spec).
+# Downstream portability cleanup will narrow the regex or formalize
+# archetype/task_type as Enums.
 HARD_BLOCK_THRESHOLD = 130  # hard-block only (pinned to baseline)
 
 

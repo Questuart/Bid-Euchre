@@ -69,6 +69,10 @@ data/hand_logs/
 data/training/
 data/data/models/
 data/local_smoke/
+# Event Schema v1.0 raw JSONL (Primitive A — runtime-only; retention enforced
+# via STEWARD_EVENTS_RETENTION_DAYS). Promoted artifacts derived from events
+# live under knowledge/ and are committed separately.
+data/events/
 
 # Experiment outputs (keep experiment scripts tracked)
 experiments/output/

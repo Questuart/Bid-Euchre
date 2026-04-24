@@ -1538,3 +1538,243 @@ class TestCanarySummary:
         assert "Canary" in text
         assert "streak: 2" in text
         assert "status: success" in text
+
+
+# ---------------------------------------------------------------------------
+# Primitive A — Latencies panel (shaping §8.2 step 10)
+# ---------------------------------------------------------------------------
+
+
+def _write_events_jsonl(
+    events_dir: Path,
+    filename: str,
+    records: list[dict],
+) -> Path:
+    """Helper: write one events-YYYY-MM-DD-NNN.jsonl file with given records."""
+    events_dir.mkdir(parents=True, exist_ok=True)
+    path = events_dir / filename
+    with open(path, "w") as f:
+        for rec in records:
+            f.write(json.dumps(rec) + "\n")
+    return path
+
+
+class TestLatenciesPanel:
+    """Tests for the Primitive A Latencies panel on the dashboard."""
+
+    def test_load_latency_summary_empty_when_dir_missing(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.dashboard import _load_latency_summary
+
+        assert _load_latency_summary(tmp_path / "nonexistent") == {}
+
+    def test_load_latency_summary_empty_when_no_jsonl(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.dashboard import _load_latency_summary
+
+        events_dir = tmp_path / "events"
+        events_dir.mkdir()
+        assert _load_latency_summary(events_dir) == {}
+
+    def test_load_latency_summary_ignores_non_latency_events(
+        self, tmp_path: Path
+    ) -> None:
+        from bid_euchre.ops.dashboard import _load_latency_summary
+
+        events_dir = tmp_path / "events"
+        _write_events_jsonl(
+            events_dir,
+            "events-2026-04-23-001.jsonl",
+            [
+                {"event_type": "task_started", "packet_id": "abc"},
+                {"event_type": "task_completed", "packet_id": "abc"},
+            ],
+        )
+        assert _load_latency_summary(events_dir) == {}
+
+    def test_load_latency_summary_computes_p50_p95(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.dashboard import _load_latency_summary
+
+        events_dir = tmp_path / "events"
+        # 11 event_to_signal_latency samples: 1..11 ms.
+        records = [
+            {
+                "event_type": "event_to_signal_latency",
+                "source_event_id": f"e{i}",
+                "signal_type": "inbox",
+                "latency_ms": float(i),
+            }
+            for i in range(1, 12)
+        ]
+        # 5 bus_delivery_latency samples: 10, 20, 30, 40, 50.
+        records += [
+            {
+                "event_type": "bus_delivery_latency",
+                "message_id": f"m{i}",
+                "delivery_ms": float(v),
+            }
+            for i, v in enumerate([10.0, 20.0, 30.0, 40.0, 50.0])
+        ]
+        _write_events_jsonl(events_dir, "events-2026-04-23-001.jsonl", records)
+
+        summary = _load_latency_summary(events_dir)
+        assert set(summary.keys()) == {"event_to_signal", "bus_delivery"}
+
+        ets = summary["event_to_signal"]
+        assert ets["count"] == 11
+        # p50 of 1..11 = 6; p95 of 1..11 = 10.5 (linear interp)
+        assert ets["p50_ms"] == 6.0
+        assert ets["p95_ms"] == 10.5
+
+        bd = summary["bus_delivery"]
+        assert bd["count"] == 5
+        assert bd["p50_ms"] == 30.0
+        # p95 of [10,20,30,40,50] = linear interp between index 3.8: 40 + 0.8*(50-40)=48
+        assert bd["p95_ms"] == 48.0
+
+    def test_load_latency_summary_skips_malformed_lines(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.dashboard import _load_latency_summary
+
+        events_dir = tmp_path / "events"
+        events_dir.mkdir()
+        path = events_dir / "events-2026-04-23-001.jsonl"
+        with open(path, "w") as f:
+            f.write("not json\n")
+            f.write(
+                json.dumps(
+                    {
+                        "event_type": "event_to_signal_latency",
+                        "source_event_id": "a",
+                        "signal_type": "x",
+                        "latency_ms": 100.0,
+                    }
+                )
+                + "\n"
+            )
+            f.write("\n")  # empty line
+            f.write('{"event_type": "event_to_signal_latency"}\n')  # missing field
+        summary = _load_latency_summary(events_dir)
+        assert summary["event_to_signal"]["count"] == 1
+        assert summary["event_to_signal"]["p50_ms"] == 100.0
+
+    def test_load_latency_summary_caps_file_count(self, tmp_path: Path) -> None:
+        """Only the most recent ``max_files`` JSONLs are scanned."""
+        from bid_euchre.ops.dashboard import _load_latency_summary
+
+        events_dir = tmp_path / "events"
+        # 3 older files each with one sample=1.0 (these should be skipped when
+        # max_files=2 and a newer file carries sample=99.0).
+        for i in range(1, 4):
+            _write_events_jsonl(
+                events_dir,
+                f"events-2026-04-2{i}-001.jsonl",
+                [
+                    {
+                        "event_type": "event_to_signal_latency",
+                        "source_event_id": "a",
+                        "signal_type": "x",
+                        "latency_ms": 1.0,
+                    }
+                ],
+            )
+        # Newest file has a distinctive value.
+        _write_events_jsonl(
+            events_dir,
+            "events-2026-04-24-001.jsonl",
+            [
+                {
+                    "event_type": "event_to_signal_latency",
+                    "source_event_id": "b",
+                    "signal_type": "x",
+                    "latency_ms": 99.0,
+                }
+            ],
+        )
+        summary = _load_latency_summary(events_dir, max_files=2)
+        # With max_files=2 we pick the 2 most recent (2026-04-23 and 24):
+        # count=2 (sample 1.0 + sample 99.0).
+        assert summary["event_to_signal"]["count"] == 2
+
+    def test_format_dashboard_text_hides_panel_when_empty(self) -> None:
+        now = datetime(2026, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
+        view = DashboardView(
+            generated_at=now.isoformat(),
+            foreground=DashboardSection(title="Foreground Lanes", lanes=[]),
+            background=DashboardSection(title="Background Lanes", lanes=[]),
+            latencies={},
+        )
+        text = format_dashboard_text(view, now=now)
+        assert "Latencies" not in text
+
+    def test_format_dashboard_text_renders_populated_panel(self) -> None:
+        now = datetime(2026, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
+        view = DashboardView(
+            generated_at=now.isoformat(),
+            foreground=DashboardSection(title="Foreground Lanes", lanes=[]),
+            background=DashboardSection(title="Background Lanes", lanes=[]),
+            latencies={
+                "event_to_signal": {"count": 42, "p50_ms": 12.5, "p95_ms": 88.0},
+                "bus_delivery": {"count": 7, "p50_ms": 3.2, "p95_ms": 9.9},
+            },
+        )
+        text = format_dashboard_text(view, now=now)
+        assert "Latencies" in text
+        # Panel shows both metrics with their stats.
+        assert "event_to_signal" in text
+        assert "bus_delivery" in text
+        assert "p50=12.5ms" in text
+        assert "p95=88.0ms" in text
+        assert "n=42" in text
+        assert "n=7" in text
+
+    def test_format_dashboard_json_includes_latencies(self) -> None:
+        now = datetime(2026, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
+        payload = {"event_to_signal": {"count": 3, "p50_ms": 1.0, "p95_ms": 2.0}}
+        view = DashboardView(
+            generated_at=now.isoformat(),
+            foreground=DashboardSection(title="Foreground Lanes", lanes=[]),
+            background=DashboardSection(title="Background Lanes", lanes=[]),
+            latencies=payload,
+        )
+        result = format_dashboard_json(view)
+        assert result["latencies"] == payload
+
+    def test_format_dashboard_json_latencies_null_when_empty(self) -> None:
+        now = datetime(2026, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
+        view = DashboardView(
+            generated_at=now.isoformat(),
+            foreground=DashboardSection(title="Foreground Lanes", lanes=[]),
+            background=DashboardSection(title="Background Lanes", lanes=[]),
+            latencies={},
+        )
+        result = format_dashboard_json(view)
+        assert result["latencies"] is None
+
+    def test_build_dashboard_view_wires_latencies_field(
+        self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Integration: build_dashboard_view picks up STEWARD_EVENTS_LOG_DIR."""
+        events_dir = tmp_path / "events_pool"
+        _write_events_jsonl(
+            events_dir,
+            "events-2026-04-23-001.jsonl",
+            [
+                {
+                    "event_type": "event_to_signal_latency",
+                    "source_event_id": "a",
+                    "signal_type": "x",
+                    "latency_ms": 50.0,
+                },
+                {
+                    "event_type": "event_to_signal_latency",
+                    "source_event_id": "b",
+                    "signal_type": "x",
+                    "latency_ms": 150.0,
+                },
+            ],
+        )
+        monkeypatch.setenv("STEWARD_EVENTS_LOG_DIR", str(events_dir))
+
+        now = datetime(2026, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
+        view = build_dashboard_view(runtime_dir, now=now)
+
+        assert view.latencies.get("event_to_signal", {}).get("count") == 2
+        assert view.latencies["event_to_signal"]["p50_ms"] == 100.0

@@ -6,4 +6,8 @@ Primitive H owns this subtree. See
 - H.0 (Phase 0 mini-canary) lives under ``tests/reliability/canaries/``.
 - H.1 (Phase 1 reliability lab) adds ``tests/reliability/replay.py`` and
   ``tests/reliability/failure_injection/`` in a follow-on packet.
+
+Primitive A Phase 0 (Packet 3) additionally lands the Event Schema v1.0
+replay-compat smoke suite under ``tests/reliability/`` as a precursor
+to the full H.1 replay harness.
 """

@@ -716,3 +716,181 @@ def test_live_steward_platform_tree_is_clean() -> None:
     findings = arl.check_verification_contract([target], repo_root=repo_root)
     blocks = [f for f in findings if f.severity == arl.Severity.BLOCK]
     assert not blocks, "BLOCK findings:\n" + "\n".join(f.format_line() for f in blocks)
+
+
+# ---------------------------------------------------------------------------
+# check verification-contract — rules VC4 (unknown event_type) and VC5
+# (§9.7 IDs routed through extra_fields) — Primitive A §8.2 step 9
+# ---------------------------------------------------------------------------
+
+
+def _setup_fake_repo_with_emitter(
+    tmp_path: Path,
+    emit_body: str,
+    *,
+    registered_types: tuple[str, ...] = ("task_started", "task_completed"),
+) -> Path:
+    """Build a minimal fake repo tree under ``tmp_path`` that the lint can
+    scan.  Writes a stub ``event_schema.py`` with the given registry so the
+    VC4 "unknown-type" check resolves.
+    """
+    # Stub event_schema.py so VC4 can resolve EVENT_FIELD_REGISTRY.
+    schema_dir = tmp_path / "src" / "bid_euchre" / "ops"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    (schema_dir / "__init__.py").write_text("")
+    (tmp_path / "src" / "bid_euchre" / "__init__.py").write_text("")
+    registry_repr = "{" + ", ".join(f"{t!r}: object()" for t in registered_types) + "}"
+    (schema_dir / "event_schema.py").write_text(
+        f"EVENT_FIELD_REGISTRY = {registry_repr}\n"
+    )
+    # Plant the emitter file under scripts/ so the scan picks it up.
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    emitter = scripts_dir / "emitter.py"
+    emitter.write_text(emit_body)
+    return emitter
+
+
+def test_vc4_blocks_unknown_event_type(tmp_path: Path) -> None:
+    emitter = _setup_fake_repo_with_emitter(
+        tmp_path,
+        emit_body='events.emit("not_a_real_event", packet_id="x")\n',
+    )
+    findings = arl.check_verification_contract([tmp_path / "plans"], repo_root=tmp_path)
+    vc4 = [f for f in findings if f.rule_id == "VC4"]
+    assert vc4, "expected VC4 finding for unknown event_type"
+    assert all(f.severity == arl.Severity.BLOCK for f in vc4)
+    assert any(emitter.samefile(f.path) for f in vc4)
+
+
+def test_vc4_silent_for_registered_type(tmp_path: Path) -> None:
+    _setup_fake_repo_with_emitter(
+        tmp_path,
+        emit_body='events.emit("task_started", packet_id="x")\n',
+    )
+    findings = arl.check_verification_contract([tmp_path / "plans"], repo_root=tmp_path)
+    assert not any(f.rule_id == "VC4" for f in findings)
+
+
+def test_vc4_recognises_all_spellings(tmp_path: Path) -> None:
+    """VC4 fires on each of events.emit / emit / v1_emit call spellings."""
+    _setup_fake_repo_with_emitter(
+        tmp_path,
+        emit_body=(
+            'events.emit("bad_one", x=1)\n'
+            'emit("bad_two", x=1)\n'
+            'v1_emit("bad_three", x=1)\n'
+        ),
+    )
+    findings = arl.check_verification_contract([tmp_path / "plans"], repo_root=tmp_path)
+    vc4_types = [
+        f.message.split("(")[1].split(",")[0].strip().strip("'\"")
+        for f in findings
+        if f.rule_id == "VC4"
+    ]
+    # We captured something; assertion on content:
+    assert len([f for f in findings if f.rule_id == "VC4"]) == 3
+    assert any("bad_" in t or "not" in t for t in vc4_types)
+
+
+def test_vc5_warns_when_session_id_in_extra_fields(tmp_path: Path) -> None:
+    _setup_fake_repo_with_emitter(
+        tmp_path,
+        emit_body=(
+            'events.emit("task_started", packet_id="x",\n'
+            '            extra_fields={"session_id": "s1", "note": "ok"})\n'
+        ),
+    )
+    findings = arl.check_verification_contract([tmp_path / "plans"], repo_root=tmp_path)
+    vc5 = [f for f in findings if f.rule_id == "VC5"]
+    assert vc5, "expected VC5 for §9.7 id leaked through extra_fields"
+    assert all(f.severity == arl.Severity.WARN for f in vc5)
+    assert "session_id" in vc5[0].message
+
+
+def test_vc5_warns_on_any_first_class_id(tmp_path: Path) -> None:
+    """VC5 fires for each of the 9 §9.7 first-class IDs."""
+    ids_to_test = [
+        "project_id",
+        "cell_id",
+        "session_id",
+        "task_id",
+        "lane_id",
+        "trace_id",
+        "incident_fingerprint",
+        "prompt_policy_version",
+        "schema_version",
+    ]
+    for idk in ids_to_test:
+        sub = tmp_path / idk
+        sub.mkdir()
+        _setup_fake_repo_with_emitter(
+            sub,
+            emit_body=(
+                f'events.emit("task_started", packet_id="x",\n'
+                f'            extra_fields={{"{idk}": "v"}})\n'
+            ),
+        )
+        findings = arl.check_verification_contract([sub / "plans"], repo_root=sub)
+        vc5 = [f for f in findings if f.rule_id == "VC5"]
+        assert vc5, f"expected VC5 finding for {idk}"
+        assert idk in vc5[0].message
+
+
+def test_vc5_silent_when_extra_fields_holds_non_first_class(
+    tmp_path: Path,
+) -> None:
+    """Non-§9.7 keys routed through extra_fields do NOT trigger VC5."""
+    _setup_fake_repo_with_emitter(
+        tmp_path,
+        emit_body=(
+            'events.emit("task_started", packet_id="x",\n'
+            '            extra_fields={"custom_note": "ok"})\n'
+        ),
+    )
+    findings = arl.check_verification_contract([tmp_path / "plans"], repo_root=tmp_path)
+    assert not any(f.rule_id == "VC5" for f in findings)
+
+
+def test_vc4_vc5_skip_when_schema_unavailable(tmp_path: Path) -> None:
+    """If event_schema.py is absent, VC4/VC5 silently no-op (best-effort)."""
+    # Only scripts/ exists; no src/bid_euchre/ops/event_schema.py.
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "x.py").write_text('events.emit("totally_bogus", x=1)\n')
+    findings = arl.check_verification_contract([tmp_path / "plans"], repo_root=tmp_path)
+    # No finding because schema could not be loaded.
+    assert not any(f.rule_id in {"VC4", "VC5"} for f in findings)
+
+
+def test_vc4_vc5_exclude_library_modules(tmp_path: Path) -> None:
+    """emit() calls inside events.py/event_schema.py itself are not flagged."""
+    schema_dir = tmp_path / "src" / "bid_euchre" / "ops"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    (schema_dir / "__init__.py").write_text("")
+    (tmp_path / "src" / "bid_euchre" / "__init__.py").write_text("")
+    (schema_dir / "event_schema.py").write_text(
+        'EVENT_FIELD_REGISTRY = {"task_started": object()}\n'
+    )
+    # Plant a fake events.py that mentions emit() but is excluded.
+    (schema_dir / "events.py").write_text(
+        'events.emit("some_totally_unknown_thing", x=1)\n'
+    )
+    findings = arl.check_verification_contract([tmp_path / "plans"], repo_root=tmp_path)
+    assert not any(f.rule_id in {"VC4", "VC5"} for f in findings)
+
+
+def test_live_repo_has_no_vc4_vc5_findings() -> None:
+    """Regression guard: the live repo's emit() call-sites lint clean.
+
+    This catches accidental introductions of unregistered event_type
+    literals (VC4) or §9.7 IDs mis-routed through extra_fields (VC5).
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    target = repo_root / "plans" / "steward_platform"
+    if not target.exists():
+        pytest.skip(f"steward_platform tree not found at {target}")
+    findings = arl.check_verification_contract([target], repo_root=repo_root)
+    offenders = [f for f in findings if f.rule_id in {"VC4", "VC5"}]
+    assert not offenders, "VC4/VC5 findings on live repo:\n" + "\n".join(
+        f.format_line() for f in offenders
+    )
