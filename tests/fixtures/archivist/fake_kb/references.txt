@@ -1,0 +1,2 @@
+knowledge/lessons/keep_this.md	plans/some_plan.md
+knowledge/lessons/keep_this.md	docs/somewhere.md

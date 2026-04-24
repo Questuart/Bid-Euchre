@@ -221,6 +221,33 @@ handoff signals "session ended" — but orphaned crons mean the session
 is still consuming resources. Phase 2 must complete before Phase 4
 begins.
 
+### Phase 4.5 — Feed Archivist Candidate Queue
+
+Immediately after the MEMORY.md handoff commit is authored (but before
+pushing), invoke the archivist postmortem mode:
+
+```
+uv run python scripts/internal/archivist_candidates.py --mode postmortem --session-id <id>
+```
+
+This appends a postmortem-derived section to
+`knowledge/_candidates/<date>_lessons.md` covering this session's
+incidents, token outliers, and explicit `lesson-learned` annotations.
+The appended candidate file ships in the same MEMORY.md commit so the
+handoff and the candidate-queue entry arrive together.
+
+The archivist is best-effort: if the invocation fails, **do not** block
+shutdown — log the failure to the pane transcript and proceed to Phase
+5. Failed postmortems are caught by the next nightly archivist run.
+
+**Operator review prompt:** "Handoff written and candidates queued"
+should resolve to YES once Phase 4.5 completes — i.e., the MEMORY.md
+handoff block exists AND `knowledge/_candidates/<date>_lessons.md`
+contains a `## Postmortem — session <id>` section for this session.
+
+See `plans/steward_platform/4_primitive_D/shaping.md` §4.4 for the
+Primitive D.2 postmortem design.
+
 ### Phase 5 — Park the Orchestrator's Own Crons
 
 With the fleet parked and the handoff written, shut down the orchestrator
@@ -258,6 +285,11 @@ Before invoking this skill for real, mentally walk the sequence:
 - [ ] Phase 4 writes a MEMORY.md handoff with goal, PRs, parked lanes,
       open PRs, outstanding packets, next steps, and hazards — and ships
       it via a PR rather than a direct-to-main commit
+- [ ] Phase 4.5 invokes
+      `scripts/internal/archivist_candidates.py --mode postmortem --session-id <id>`
+      and the `_candidates/<date>_lessons.md` file gains a
+      `## Postmortem — session <id>` section — or the failure is logged
+      and shutdown proceeds
 - [ ] Phase 5 parks the orchestrator's own crons last, only after
       Phase 4 is committed
 

@@ -1,0 +1,22 @@
+{"timestamp": "2030-01-01T00:00:00+00:00", "event_type": "task_started", "source": "ops.orch", "lane_id": "author-a", "payload": {"packet_id": "p1"}}
+{"timestamp": "2030-01-01T00:05:00+00:00", "event_type": "task_started", "source": "ops.orch", "lane_id": "author-a", "payload": {"packet_id": "p2"}}
+{"timestamp": "2030-01-01T00:10:00+00:00", "event_type": "task_started", "source": "ops.orch", "lane_id": "author-a", "payload": {"packet_id": "p3"}}
+{"timestamp": "2030-01-01T00:15:00+00:00", "event_type": "task_started", "source": "ops.orch", "lane_id": "author-b", "payload": {"packet_id": "p4"}}
+{"timestamp": "2030-01-01T00:20:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-a", "payload": {"packet_id": "p1", "token_delta": 5000}}
+{"timestamp": "2030-01-01T00:25:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-a", "payload": {"packet_id": "p2", "token_delta": 6000}}
+{"timestamp": "2030-01-01T00:30:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-a", "payload": {"packet_id": "p3", "token_delta": 4000}}
+{"timestamp": "2030-01-01T00:35:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-a", "payload": {"packet_id": "p4", "token_delta": 5500}}
+{"timestamp": "2030-01-01T00:40:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-a", "payload": {"packet_id": "p5", "token_delta": 85000, "lane": "author-a"}}
+{"timestamp": "2030-01-01T00:45:00+00:00", "event_type": "ci_failure", "source": "hook.ci", "lane_id": "author-b", "payload": {"incident_id": "inc-001", "pr": 42}}
+{"timestamp": "2030-01-01T00:50:00+00:00", "event_type": "task_failed", "source": "ops.hook", "lane_id": "author-c", "payload": {"incident_id": "inc-002", "packet_id": "p9"}}
+{"timestamp": "2030-01-01T00:55:00+00:00", "event_type": "escalation", "source": "ops.monitor", "lane_id": "ops", "payload": {"severity": "P1"}}
+{"timestamp": "2030-01-01T01:00:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-d", "payload": {"packet_id": "p6", "lesson_learned": "Run tier-2 in foreground to avoid duplicate processes"}}
+{"timestamp": "2030-01-01T01:05:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-b", "payload": {"packet_id": "p7", "token_delta": 4500}}
+{"timestamp": "2030-01-01T01:10:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-b", "payload": {"packet_id": "p8", "token_delta": 5200}}
+{"timestamp": "2030-01-01T01:15:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-b", "payload": {"packet_id": "p9", "token_delta": 6100}}
+{"timestamp": "2030-01-01T01:20:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-b", "payload": {"packet_id": "p10", "token_delta": 5800}}
+{"timestamp": "2030-01-01T01:25:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-b", "payload": {"packet_id": "p11", "token_delta": 95000, "lane": "author-b"}}
+{"timestamp": "2030-01-01T01:30:00+00:00", "event_type": "task_completed", "source": "ops.hook", "lane_id": "author-b", "payload": {"packet_id": "p12", "token_delta": 4300}}
+{"timestamp": "2030-01-01T01:35:00+00:00", "event_type": "ci_failure", "source": "hook.ci", "lane_id": "author-a", "payload": {"incident_id": "inc-003", "pr": 55}}
+{"timestamp": "2030-01-01T01:40:00+00:00", "event_type": "watchdog_finding", "source": "ops.watchdog", "lane_id": "ops", "payload": {"kind": "stale_lane"}}
+{"timestamp": "2030-01-01T01:45:00+00:00", "event_type": "fs_boundary_violation", "source": "hook.fs", "lane_id": "author-c", "payload": {"path": "data/runs/foo"}}

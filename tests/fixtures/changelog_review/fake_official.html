@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Claude Code — Changelog (fixture)</title>
+</head>
+<body>
+
+<h1>Claude Code Changelog</h1>
+
+<p>Synthetic fixture for Primitive D Phase 0 test surface (shape §4.5.6).
+Each &lt;h2&gt; heading below is a feature announcement; the paragraph that
+follows carries optional Tier: and Affected primitives: hints the
+deterministic extractor recognises.</p>
+
+<h2>--system-prompt-file flag for interactive + print sessions</h2>
+
+<p>A new <code>--system-prompt-file</code> flag lands in 2.1.114, extending
+beyond print-only. Tier: S. Affected primitives: B, G.
+This replaces the default system prompt in every launched session, closing
+the gap the steward has been synthesizing via .claude/agents/ files.</p>
+
+<h2>Native Agent Teams primitive preview</h2>
+
+<p>Opt-in via <code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</code>. Tier: A.
+Affected primitives: B. Supports session-ephemeral teammate dispatch;
+does not persist across restarts. See --agent-teams-config for setup.</p>
+
+<h2>Plugin registry index expands</h2>
+
+<p>Tier: B. Affected primitives: D. The official plugin registry now
+publishes a daily index of community plugins; this is an additional source
+for the changelog-review scraper to walk.</p>
+
+<h2>PostToolUse hook: tool_call_succeeded event</h2>
+
+<p>Tier: B. Affected primitives: A.
+A new hook event fires after every successful tool call, carrying the
+tool name and redacted args. This is an alternative to the existing
+ad-hoc per-hook event emission used by the steward fleet.</p>
+
+</body>
+</html>
