@@ -382,7 +382,13 @@ def _load_global_map(repo_root: Path) -> set[str]:
 
 
 def check_verification_contract(roots: list[Path], repo_root: Path) -> list[Finding]:
-    """Return all Pattern 10 findings across the given plan roots."""
+    """Return all Pattern 10 findings across the given plan roots.
+
+    Also runs the events-emission sub-checks (VC4/VC5) introduced in
+    Primitive A §8.2 step 9: unknown event_type passed to ``emit()``
+    is BLOCK, §9.7 first-class IDs routed through ``extra_fields=`` is
+    WARN (Pattern 8 "extra_fields-as-bug-marker" signal).
+    """
     walk = walk_plans(roots)
     global_map = _load_global_map(repo_root)
     findings: list[Finding] = []
@@ -454,7 +460,202 @@ def check_verification_contract(roots: list[Path], repo_root: Path) -> list[Find
             )
         )
 
+    # Rules VC4/VC5 — events.emit() call-site audit. Scans the repo's Python
+    # surfaces for emit() calls and validates them against the Event Schema
+    # v1.0 registry.
+    findings.extend(_check_emit_call_sites(repo_root))
+
     return findings
+
+
+# ---------------------------------------------------------------------------
+# Event emission sub-checks (Primitive A §8.2 step 9)
+# ---------------------------------------------------------------------------
+
+
+#: Python source roots scanned for ``emit("<event_type>", ...)`` call-sites.
+#: Tests are intentionally excluded — they legitimately construct arbitrary
+#: event-type literals for fixtures.
+_EMIT_SCAN_ROOTS: tuple[str, ...] = ("src/bid_euchre", "scripts", "experiments")
+
+#: Python source files excluded from emit-call-site scanning because they
+#: are the definitions / helpers, not emission call-sites.
+_EMIT_SCAN_EXCLUDE: tuple[str, ...] = (
+    "src/bid_euchre/ops/events.py",
+    "src/bid_euchre/ops/event_schema.py",
+    "src/bid_euchre/ops/event_writer.py",
+    "src/bid_euchre/ops/event_taxonomy.py",
+    "scripts/internal/audit_event_emission.py",
+    "scripts/internal/agent_readability_lint.py",
+)
+
+
+#: Matches ``emit("<type>", ...)`` / ``events.emit("<type>", ...)`` /
+#: ``v1_emit("<type>", ...)``. Capture group 0 is the event type literal,
+#: capture group 1 is the tail of the call (up to a balanced-enough paren).
+_EMIT_CALL_RE = re.compile(
+    r"""
+    (?:\bevents\.emit|\bv1_emit|\bemit)    # callable spellings
+    \s*\(\s*
+    ["'](?P<event_type>[a-z_][a-z0-9_]*)["']
+    (?P<tail>[^)]*)           # remaining kwargs up to closing paren
+    \)
+    """,
+    re.VERBOSE | re.DOTALL,
+)
+
+
+#: Canonical §9.7 first-class IDs. Routing any of these through
+#: ``extra_fields=`` is a Pattern 8 bug marker — they must land at the
+#: top level of the record per ADR 007.
+_FIRST_CLASS_IDS: frozenset[str] = frozenset(
+    {
+        "project_id",
+        "cell_id",
+        "session_id",
+        "task_id",
+        "lane_id",
+        "trace_id",
+        "incident_fingerprint",
+        "prompt_policy_version",
+        "schema_version",
+    }
+)
+
+
+def _check_emit_call_sites(repo_root: Path) -> list[Finding]:
+    """Scan Python sources for emit() call-sites and produce VC4/VC5 findings.
+
+    VC4 (BLOCK): unknown event_type literal passed to emit(). Only literal
+    strings are checked — dynamic ``emit(type_var, ...)`` usages are
+    out of scope (audit_event_emission.py will catch those through the
+    no-emitter-for-class path instead).
+
+    VC5 (WARN): §9.7 first-class IDs routed through ``extra_fields=``.
+    These must land at the top level per ADR 007 "extra_fields is a bug
+    marker" (Pattern 8).
+    """
+    findings: list[Finding] = []
+    known_types = _load_known_event_types(repo_root)
+    if known_types is None:
+        # Schema module not importable — skip (not a lint failure).
+        return findings
+    for source_path in _iter_emit_scan_files(repo_root):
+        try:
+            text = source_path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for m in _EMIT_CALL_RE.finditer(text):
+            event_type = m.group("event_type")
+            tail = m.group("tail") or ""
+            # Compute line number (1-indexed) for the matched literal.
+            line_no = text[: m.start()].count("\n") + 1
+            # VC4: unknown event_type.
+            if event_type not in known_types:
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="VC4",
+                        path=source_path,
+                        line=line_no,
+                        message=(
+                            f"emit({event_type!r}) — event_type not registered in "
+                            f"EVENT_FIELD_REGISTRY. Either add a spec to "
+                            f"event_schema.py or fix the typo."
+                        ),
+                    )
+                )
+            # VC5: §9.7 ID routed through extra_fields.
+            leaked_ids = _extra_fields_leaked_ids(tail)
+            if leaked_ids:
+                findings.append(
+                    Finding(
+                        severity=Severity.WARN,
+                        rule_id="VC5",
+                        path=source_path,
+                        line=line_no,
+                        message=(
+                            f"emit({event_type!r}) routes §9.7 first-class ID(s) "
+                            f"{sorted(leaked_ids)!r} through extra_fields=; these "
+                            f"must be top-level kwargs (Pattern 8: "
+                            f"extra_fields-is-a-bug-marker)."
+                        ),
+                    )
+                )
+    return findings
+
+
+def _iter_emit_scan_files(repo_root: Path) -> list[Path]:
+    """Enumerate Python files to scan for emit() call-sites."""
+    paths: list[Path] = []
+    excludes = {(repo_root / rel).resolve() for rel in _EMIT_SCAN_EXCLUDE}
+    for rel in _EMIT_SCAN_ROOTS:
+        root = repo_root / rel
+        if not root.exists():
+            continue
+        for py in root.rglob("*.py"):
+            try:
+                resolved = py.resolve()
+            except OSError:
+                continue
+            if resolved in excludes:
+                continue
+            paths.append(py)
+    return paths
+
+
+def _load_known_event_types(repo_root: Path) -> set[str] | None:
+    """Load the set of registered event types from event_schema.py.
+
+    Loads the module directly from its file path at
+    ``<repo_root>/src/bid_euchre/ops/event_schema.py`` (bypassing
+    ``sys.modules`` caching) so lint behaviour is per-repo-root and does
+    not leak state between tmp_path-based tests and the live repo.
+
+    Returns None if the schema file is absent (not a lint failure — a
+    freshly cloned repo may legitimately lack it until Primitive A lands).
+    """
+    import importlib.util
+
+    schema_path = repo_root / "src" / "bid_euchre" / "ops" / "event_schema.py"
+    if not schema_path.exists():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location(
+            f"_arl_schema_{abs(hash(str(schema_path)))}", schema_path
+        )
+        if spec is None or spec.loader is None:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception:
+        return None
+    registry = getattr(mod, "EVENT_FIELD_REGISTRY", None)
+    if not isinstance(registry, dict):
+        return None
+    return set(registry.keys())
+
+
+# ``extra_fields={"lane_id": x, ...}`` — pattern for finding §9.7 IDs.
+_EXTRA_FIELDS_BLOCK_RE = re.compile(
+    r"""extra_fields\s*=\s*(?P<block>\{[^{}]*\})""",
+    re.DOTALL,
+)
+
+_ID_KEY_RE = re.compile(r"""["'](?P<key>[a-z_][a-z0-9_]*)["']\s*:""")
+
+
+def _extra_fields_leaked_ids(call_tail: str) -> set[str]:
+    """Return the set of §9.7 IDs routed through ``extra_fields=`` literal
+    dict, if any. Best-effort string-scan (AST not required for lint)."""
+    leaked: set[str] = set()
+    for block_m in _EXTRA_FIELDS_BLOCK_RE.finditer(call_tail):
+        block = block_m.group("block")
+        for key_m in _ID_KEY_RE.finditer(block):
+            key = key_m.group("key")
+            if key in _FIRST_CLASS_IDS:
+                leaked.add(key)
+    return leaked
 
 
 def _bullet_covered(

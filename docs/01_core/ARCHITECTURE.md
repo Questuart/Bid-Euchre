@@ -256,6 +256,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/archivist.py` | Primitive C archivist stub (interface contract + CLI skeleton for KB promotion flow; Phase 0 scaffold) |
 | `scripts/internal/archivist_candidates.py` | Primitive D archivist candidate-generator CLI (lessons / GC / postmortem modes; writes `knowledge/_candidates/<date>_{lessons,gc}.md`) |
 | `scripts/internal/audit_analysis.py` | Review pipeline audit (follow-up rates, corrective PRs) |
+| `scripts/internal/audit_event_emission.py` | Primitive A event-emission audit — scans ops/ for emit() call sites across the 7 STEWARD_OPERATIONAL_CLASSES and reports green/yellow/red coverage |
 | `scripts/internal/audit_portability.py` | Ops package portability audit (coupling pattern scanner, severity counts, threshold enforcement) |
 | `scripts/internal/blind_strategy_comparison.py` | Blind strategy comparison for Arc D evaluation (anonymize, rubric, unblind) |
 | `scripts/internal/capture_steward_baseline.py` | Phase 0 steward platform baseline snapshot (§4.3) — composes fleet / token / PR / issue / event / plan sections into a diffable markdown artifact |

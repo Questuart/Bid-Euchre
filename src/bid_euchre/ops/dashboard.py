@@ -282,6 +282,11 @@ class DashboardView:
     warning_count: int = 0
     token_economy: dict[str, Any] = field(default_factory=dict)
     canary: CanarySummary = field(default_factory=lambda: CanarySummary())
+    #: Latency-panel summary (Primitive A, per shaping §8.2 step 10).
+    #: Shape: ``{<metric_key>: {"count": N, "p50_ms": X, "p95_ms": Y}}``
+    #: where metric_key is ``event_to_signal`` or ``bus_delivery``. Empty
+    #: when ``data/events/`` has no latency events or does not exist.
+    latencies: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +468,123 @@ def _derive_inbox_highlights(
     return highlights
 
 
+# ---------------------------------------------------------------------------
+# Latencies panel (Primitive A, per shaping §8.2 step 10)
+# ---------------------------------------------------------------------------
+
+
+#: Event types that carry latency measurements (registered in Primitive A).
+#: Maps the dashboard metric key to ``(event_type, field_name)``.
+_LATENCY_EVENT_FIELDS: dict[str, tuple[str, str]] = {
+    "event_to_signal": ("event_to_signal_latency", "latency_ms"),
+    "bus_delivery": ("bus_delivery_latency", "delivery_ms"),
+}
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    """Return the ``pct``-th percentile of ``values`` (linear interpolation).
+
+    ``pct`` is in [0, 100]. The input list must be non-empty; callers are
+    responsible for guarding on that. Values are sorted internally.
+    """
+    if not values:
+        raise ValueError("_percentile called on empty list")
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return float(ordered[0])
+    rank = (pct / 100.0) * (len(ordered) - 1)
+    low = int(rank)
+    high = min(low + 1, len(ordered) - 1)
+    frac = rank - low
+    return float(ordered[low] + (ordered[high] - ordered[low]) * frac)
+
+
+def _load_latency_summary(
+    events_dir: Path | None = None,
+    *,
+    max_files: int = 5,
+) -> dict[str, Any]:
+    """Scan recent event JSONL files and return per-metric latency stats.
+
+    Reads up to the most recent ``max_files`` JSONL files in ``events_dir``
+    (sorted by filename, which sorts date-then-counter ascending), skimming
+    each line for records whose ``event_type`` matches a registered latency
+    event. Computes count / p50 / p95 per metric.
+
+    Args:
+        events_dir: Log directory. Defaults to ``STEWARD_EVENTS_LOG_DIR``
+            env var or ``data/events/``.
+        max_files: Upper bound on JSONL files scanned (most recent first).
+            Guards against unbounded work on large historical archives.
+
+    Returns:
+        Dict shaped ``{metric_key: {"count": N, "p50_ms": X, "p95_ms": Y}}``.
+        Empty dict if the directory is missing, has no JSONL files, or
+        contains no latency events. Never raises — any parse failure on a
+        single line is skipped silently (best-effort read path).
+    """
+    if events_dir is None:
+        override = os.environ.get("STEWARD_EVENTS_LOG_DIR")
+        events_dir = Path(override) if override else Path("data/events")
+
+    if not events_dir.exists() or not events_dir.is_dir():
+        return {}
+
+    # Sorted ascending by filename (events-YYYY-MM-DD-NNN.jsonl); take the
+    # last ``max_files`` which are the most recent by date+counter.
+    try:
+        jsonl_files = sorted(events_dir.glob("events-*.jsonl"))
+    except OSError:
+        return {}
+    if not jsonl_files:
+        return {}
+    recent = jsonl_files[-max_files:]
+
+    # Collect raw values per metric key.
+    buckets: dict[str, list[float]] = {key: [] for key in _LATENCY_EVENT_FIELDS}
+    type_to_key = {
+        event_type: (key, field_name)
+        for key, (event_type, field_name) in _LATENCY_EVENT_FIELDS.items()
+    }
+
+    for path in recent:
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    event_type = record.get("event_type")
+                    if event_type not in type_to_key:
+                        continue
+                    key, field_name = type_to_key[event_type]
+                    value = record.get(field_name)
+                    if value is None:
+                        continue
+                    try:
+                        buckets[key].append(float(value))
+                    except (TypeError, ValueError):
+                        continue
+        except OSError:
+            continue
+
+    # Summarize (skip metrics with zero samples to keep the panel terse).
+    summary: dict[str, Any] = {}
+    for key, values in buckets.items():
+        if not values:
+            continue
+        summary[key] = {
+            "count": len(values),
+            "p50_ms": round(_percentile(values, 50.0), 2),
+            "p95_ms": round(_percentile(values, 95.0), 2),
+        }
+    return summary
+
+
 def build_dashboard_view(
     runtime_dir: Path | None = None,
     *,
@@ -529,6 +651,15 @@ def build_dashboard_view(
         canary_runtime_root / "canary_state" / "dogfood_v1.json"
     )
 
+    # Latencies panel (Primitive A, per shaping §8.2 step 10).
+    # Best-effort: a missing or unreadable events dir yields an empty
+    # panel — never fail dashboard render on telemetry-store state.
+    latencies: dict[str, Any] = {}
+    try:
+        latencies = _load_latency_summary()
+    except Exception:  # pragma: no cover — defensive
+        logger.debug("latency summary load failed", exc_info=True)
+
     return DashboardView(
         generated_at=now.isoformat(),
         foreground=DashboardSection(
@@ -547,6 +678,7 @@ def build_dashboard_view(
         warning_count=len(report.warnings),
         token_economy=token_economy,
         canary=canary,
+        latencies=latencies,
     )
 
 
@@ -943,6 +1075,23 @@ def format_dashboard_text(
                 sev = ap.get("severity", "?")
                 lines.append(f"    [{sev}] {ap.get('name', '?')}")
 
+    # Latencies panel (Primitive A). Hidden when no samples are present —
+    # an empty telemetry store is the steady state before emission is
+    # widespread, so rendering an empty panel would just add noise.
+    lat = view.latencies
+    if lat:
+        lines.append("")
+        lines.append("Latencies")
+        for key, stats in sorted(lat.items()):
+            count = stats.get("count", 0)
+            p50 = stats.get("p50_ms")
+            p95 = stats.get("p95_ms")
+            p50_str = f"{p50:.1f}ms" if isinstance(p50, (int, float)) else "—"
+            p95_str = f"{p95:.1f}ms" if isinstance(p95, (int, float)) else "—"
+            lines.append(
+                f"  {key:<18s} p50={p50_str:<8s}  p95={p95_str:<8s}  n={count}"
+            )
+
     return "\n".join(lines)
 
 
@@ -979,4 +1128,5 @@ def format_dashboard_json(view: DashboardView) -> dict[str, Any]:
         "task_queue": view.task_queue_summary,
         "token_economy": view.token_economy or None,
         "canary": asdict(view.canary),
+        "latencies": view.latencies or None,
     }

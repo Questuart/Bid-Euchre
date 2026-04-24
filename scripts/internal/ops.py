@@ -1884,8 +1884,13 @@ def cmd_task(args: argparse.Namespace) -> int:
         # detail provided on the CLI so downstream consumers (outcome-join
         # reporting, adaptive dispatch scorer) can compare recommendation vs
         # actual routing without re-reading archived packets.
+        #
+        # Phase 0 dual-write (Primitive A §8.2 step 7): call the new
+        # `events.emit()` v1.0 dispatcher AND the legacy `append_event`.
+        # Both are best-effort; failures never block completion.
         try:
             from bid_euchre.ops.events import append_event
+            from bid_euchre.ops.events import emit as v1_emit
             from bid_euchre.ops.task_queue import (
                 get_complexity,
                 get_effort_hint,
@@ -1916,6 +1921,35 @@ def cmd_task(args: argparse.Namespace) -> int:
                 "shipped_outcome": shipped_outcome,
             }
 
+            # v1.0 dispatcher (new path, writes to data/events/).
+            try:
+                v1_emit(
+                    "task_completed",
+                    packet_id=packet_id,
+                    outcome=(shipped_outcome or "completed"),
+                    pr_number=pr_number,
+                    source="steward",
+                    title=pkt.title,
+                    summary=summary,
+                    completed_by=payload["completed_by"],
+                    task_type=payload["task_type"],
+                    complexity_estimate=payload["complexity_estimate"],
+                    model_hint=payload["model_hint"],
+                    effort_hint=payload["effort_hint"],
+                    actual_lane=actual_lane,
+                    recommended_lane=recommended_lane,
+                    token_spend=token_spend,
+                    elapsed_seconds=elapsed_seconds,
+                    review_rounds=review_rounds,
+                    shipped_outcome=shipped_outcome,
+                    lane_id=actual_lane,
+                )
+            except Exception:
+                # emit() is never-raises per contract; defensive guard.
+                pass
+
+            # Legacy pipeline (existing path, writes to
+            # .claude/runtime/events/). Kept until legacy consumers migrate.
             append_event(
                 event_type="task_completed",
                 source="ops.task_complete",
@@ -2075,7 +2109,33 @@ def _cmd_task_accept(args: argparse.Namespace) -> int:
         # Duplicate message_id — already sent
         steps_done.append("ack already sent to orchestrator")
 
-    # 4. Emit task_started event (always — events are append-only)
+    # 4. Emit task_started event (always — events are append-only).
+    #
+    # Phase 0 dual-write (Primitive A §8.2 step 7): call the new
+    # `events.emit()` v1.0 dispatcher AND the legacy `append_event`
+    # so legacy consumers (~25 files under scripts/internal/ and
+    # src/bid_euchre/ops/) continue to read from the legacy pipeline
+    # while the v1.0 event stream bootstraps under data/events/.
+    # Both calls are best-effort; failures do not block task accept.
+    try:
+        from bid_euchre.ops.events import emit as v1_emit
+
+        v1_emit(
+            "task_started",
+            packet_id=packet_id,
+            dispatched_by=pkt.created_by,
+            priority=pkt.priority,
+            domain=pkt.domain,
+            task_type=(pkt.metadata or {}).get("task_type"),
+            complexity_estimate=(pkt.metadata or {}).get("complexity_estimate"),
+            model_hint=(pkt.metadata or {}).get("model_hint"),
+            effort_hint=(pkt.metadata or {}).get("effort_hint"),
+            lane_id=lane_id,
+        )
+    except Exception:
+        # emit() is never-raises per contract; defensive guard.
+        pass
+
     try:
         append_event(
             event_type="task_started",
