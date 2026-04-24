@@ -32,6 +32,11 @@ from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
+# Local helpers — kept as a local import so the module remains importable
+# when the scripts/internal directory is not on sys.path (e.g., from tests
+# that only import lane_models directly).
+from lane_models import permission_mode_args_for_lane
+
 from bid_euchre.ops.review_queue import (
     STATUS_BLOCKED,
     STATUS_FAILED,
@@ -471,20 +476,26 @@ def invoke_review(pr_number: int, branch: str, head_sha: str) -> dict[str, Any]:
         f"reason (string), findings (list of dicts with severity, file, message)."
     )
 
+    # Model-tier-aware permission-mode selection (#2767).
+    # Opus → ["--permission-mode", "auto"] (classifier-gated).
+    # Sonnet / Haiku → ["--dangerously-skip-permissions"] (explicit reduced
+    # safety envelope; --permission-mode auto silently falls back for
+    # non-Opus models and hides enforcement legibility).
+    argv = [
+        "claude",
+        "--agent",
+        "steward-review",
+        *permission_mode_args_for_lane(LANE_ID),
+        "--print",
+        "--output-format",
+        "json",
+        "-p",
+        prompt,
+    ]
+
     try:
         result = subprocess.run(
-            [
-                "claude",
-                "--agent",
-                "steward-review",
-                "--permission-mode",
-                "auto",
-                "--print",
-                "--output-format",
-                "json",
-                "-p",
-                prompt,
-            ],
+            argv,
             capture_output=True,
             text=True,
             timeout=600,  # 10 minute timeout for review

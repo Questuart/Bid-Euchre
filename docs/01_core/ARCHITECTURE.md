@@ -271,6 +271,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_auction_context_dataset.py` | Auction-context dataset generator (R1 partner features) |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
 | `scripts/internal/github_pr_state.py` | GitHub CLI wrappers for PR metadata and CI status |
+| `scripts/internal/lane_models.py` | Per-lane model-tier loader (reads `.claude/lane_models.json`, emits tier-correct `--permission-mode` argv fragment; shared with the tmux launcher) |
 | `scripts/internal/generate_r1_5_diagnostics.py` | R1.5-v2 calibration diagnostics (cross-rung analysis + bimodality tests) |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
 | `scripts/internal/generate_cross_rung_tables.py` | Cross-rung progression table from per-rung comparator CIs |

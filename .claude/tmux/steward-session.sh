@@ -133,6 +133,55 @@ merge_settings_local() {
     fi
 }
 
+# Emit the correct claude CLI permission-mode flag(s) for a lane, based on
+# the lane's declared model tier in .claude/lane_models.json (#2767).
+#
+# Opus  → '--permission-mode auto' (classifier-gated per rule 80)
+# Sonnet/Haiku → '--dangerously-skip-permissions' (explicit reduced
+#                safety envelope; `--permission-mode auto` silently falls
+#                back for non-Opus sessions and hides enforcement
+#                legibility).
+#
+# Unknown or missing lanes default to Opus (matches current 100%-Opus fleet;
+# explicit config entries are expected for any non-Opus lane).
+#
+# Output is intended to be spliced unquoted into a tmux command line so
+# word splitting produces one token (`--dangerously-skip-permissions`) or
+# two tokens (`--permission-mode auto`) as appropriate.
+#
+# This function must stay behaviorally consistent with
+# scripts/internal/lane_models.py::permission_mode_args_for_lane.
+# Args: lane_id
+permission_mode_flag_for_lane() {
+    local lane="$1"
+    local models_file="${MAIN_DIR}/.claude/lane_models.json"
+    local model="opus"
+    if [ -f "$models_file" ]; then
+        model="$(python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+    lanes = data.get("lanes") if isinstance(data, dict) else None
+    entry = lanes.get(sys.argv[2]) if isinstance(lanes, dict) else None
+    model = entry.get("model") if isinstance(entry, dict) else None
+    if model not in ("opus", "sonnet", "haiku"):
+        model = "opus"
+    print(model)
+except Exception:
+    print("opus")
+' "$models_file" "$lane" 2>/dev/null || echo opus)"
+    fi
+    case "$model" in
+        sonnet|haiku)
+            printf '%s\n' "--dangerously-skip-permissions"
+            ;;
+        opus|*)
+            printf '%s\n' "--permission-mode auto"
+            ;;
+    esac
+}
+
 validate_worktree_path() {
     local path="$1"
     local resolved
@@ -428,7 +477,7 @@ fi
 
 # --- Window 1: central-ops (3 panes, main-vertical) ---
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
-    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator --permission-mode auto $ORCH_CHANNEL_FLAGS
+    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $(permission_mode_flag_for_lane orchestrator) $ORCH_CHANNEL_FLAGS
 
 # ---------------------------------------------------------------------------
 # Auto-compact window for non-orchestrator lanes (token economy optimization).
@@ -486,53 +535,53 @@ if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
 fi
 
 tmux split-window -t "${SESSION}:central-ops" -c "$OPS" \
-    "$CLAUDE_BIN" --name ops --agent steward-ops --permission-mode auto
+    "$CLAUDE_BIN" --name ops --agent steward-ops $(permission_mode_flag_for_lane ops)
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
-    "$CLAUDE_BIN" --name review --agent steward-review --permission-mode auto
+    "$CLAUDE_BIN" --name review --agent steward-review $(permission_mode_flag_for_lane review)
 tmux select-layout -t "${SESSION}:central-ops" main-vertical
 
 # --- Window 2: analyst (4 panes, tiled) ---
 tmux new-window -t "$SESSION" -n analyst -c "$ANALYST_A" \
-    "$CLAUDE_BIN" --name analyst-a --agent steward-analyst --permission-mode auto
+    "$CLAUDE_BIN" --name analyst-a --agent steward-analyst $(permission_mode_flag_for_lane analyst-a)
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_B" \
-    "$CLAUDE_BIN" --name analyst-b --agent steward-analyst --permission-mode auto
+    "$CLAUDE_BIN" --name analyst-b --agent steward-analyst $(permission_mode_flag_for_lane analyst-b)
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_C" \
-    "$CLAUDE_BIN" --name analyst-c --agent steward-analyst --permission-mode auto
+    "$CLAUDE_BIN" --name analyst-c --agent steward-analyst $(permission_mode_flag_for_lane analyst-c)
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_D" \
-    "$CLAUDE_BIN" --name analyst-d --agent steward-analyst --permission-mode auto
+    "$CLAUDE_BIN" --name analyst-d --agent steward-analyst $(permission_mode_flag_for_lane analyst-d)
 tmux select-layout -t "${SESSION}:analyst" tiled
 
 # --- Window 3: platform ---
 tmux new-window -t "$SESSION" -n platform -c "$AUTHOR_A" \
-    "$CLAUDE_BIN" --name author-a --agent steward-author-a --permission-mode auto
+    "$CLAUDE_BIN" --name author-a --agent steward-author-a $(permission_mode_flag_for_lane author-a)
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_B" \
-    "$CLAUDE_BIN" --name author-b --agent steward-author-b --permission-mode auto
+    "$CLAUDE_BIN" --name author-b --agent steward-author-b $(permission_mode_flag_for_lane author-b)
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_C" \
-    "$CLAUDE_BIN" --name author-c --agent steward-author-c --permission-mode auto
+    "$CLAUDE_BIN" --name author-c --agent steward-author-c $(permission_mode_flag_for_lane author-c)
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_D" \
-    "$CLAUDE_BIN" --name author-d --agent steward-author-d --permission-mode auto
+    "$CLAUDE_BIN" --name author-d --agent steward-author-d $(permission_mode_flag_for_lane author-d)
 tmux select-layout -t "${SESSION}:platform" tiled
 
 # --- Window 4: browser ---
 tmux new-window -t "$SESSION" -n browser -c "$BRWS_A" \
-    "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a --permission-mode auto
+    "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a $(permission_mode_flag_for_lane brws-author-a)
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_B" \
-    "$CLAUDE_BIN" --name brws-author-b --agent steward-brws-author-b --permission-mode auto
+    "$CLAUDE_BIN" --name brws-author-b --agent steward-brws-author-b $(permission_mode_flag_for_lane brws-author-b)
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_C" \
-    "$CLAUDE_BIN" --name brws-author-c --agent steward-brws-author-c --permission-mode auto
+    "$CLAUDE_BIN" --name brws-author-c --agent steward-brws-author-c $(permission_mode_flag_for_lane brws-author-c)
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_D" \
-    "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d --permission-mode auto
+    "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d $(permission_mode_flag_for_lane brws-author-d)
 tmux select-layout -t "${SESSION}:browser" tiled
 
 # --- Window 5: flex (4 panes, tiled) ---
 tmux new-window -t "$SESSION" -n flex -c "$FLEX_A" \
-    "$CLAUDE_BIN" --name flex-a --agent steward-flex-a --permission-mode auto
+    "$CLAUDE_BIN" --name flex-a --agent steward-flex-a $(permission_mode_flag_for_lane flex-a)
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_B" \
-    "$CLAUDE_BIN" --name flex-b --agent steward-flex-b --permission-mode auto
+    "$CLAUDE_BIN" --name flex-b --agent steward-flex-b $(permission_mode_flag_for_lane flex-b)
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_C" \
-    "$CLAUDE_BIN" --name flex-c --agent steward-flex-c --permission-mode auto
+    "$CLAUDE_BIN" --name flex-c --agent steward-flex-c $(permission_mode_flag_for_lane flex-c)
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_D" \
-    "$CLAUDE_BIN" --name flex-d --agent steward-flex-d --permission-mode auto
+    "$CLAUDE_BIN" --name flex-d --agent steward-flex-d $(permission_mode_flag_for_lane flex-d)
 tmux select-layout -t "${SESSION}:flex" tiled
 
 # Auto-launch ops monitoring loop (SP-3-08).
