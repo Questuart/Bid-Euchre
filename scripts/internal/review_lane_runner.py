@@ -880,18 +880,31 @@ def run_once(
     *,
     dry_run: bool = False,
     events_dir: Path | None = None,
-    skip_preflight: bool = False,
+    skip_preflight: bool = True,
 ) -> list[ReviewVerdict]:
     """Scan the queue and process all pending requests.
 
-    Runs pre-flight health checks before processing to detect and recover
-    from common stall causes (detached HEAD, stale locks, expired auth).
+    Pre-flight health checks are **opt-in**: callers who want detached-HEAD
+    recovery, stale-lock cleanup, and auth checks must pass
+    ``skip_preflight=False`` explicitly. The production review loop
+    (``run_loop``) opts in on cycle 1 only; all other callers — including
+    ``--once`` CLI invocations and every test — skip preflight to avoid
+    mutating the worktree.
+
+    Rationale: preflight calls ``_check_worktree_health`` which on a
+    detached HEAD (e.g. CI's ``refs/pull/N/merge`` checkout, or any
+    transient state) runs ``git checkout main`` + ``git reset --hard
+    origin/main``. When tests reach ``run_once()`` through mocking holes,
+    that reset silently reverts working-tree changes mid-pytest, causing
+    cross-test contamination on the next shard (see Issue #2811).
 
     Args:
         queue_dir: Override for queue root directory.
         dry_run: Skip actual review invocation.
         events_dir: Override for events directory.
-        skip_preflight: Skip pre-flight health checks (for testing).
+        skip_preflight: Skip pre-flight health checks (default True — safe
+            for tests and one-shot invocations). Pass False only from the
+            production review loop on its first cycle.
 
     Returns:
         List of verdicts written during this cycle.
@@ -945,7 +958,9 @@ def run_loop(
 
     for cycle in range(1, max_cycles + 1):
         logger.debug("Poll cycle %d/%d", cycle, max_cycles)
-        # Pre-flight on first cycle only (worktree refresh, lock cleanup, auth)
+        # Pre-flight on first cycle only (worktree refresh, lock cleanup, auth).
+        # run_once() defaults to skip_preflight=True; the production loop is
+        # the sole caller that opts in, and only on cycle 1.
         verdicts = run_once(
             queue_dir,
             dry_run=dry_run,
