@@ -48,6 +48,42 @@ def _read_steward_script() -> str:
     return STEWARD_SCRIPT.read_text()
 
 
+def _read_lane_models_json() -> str:
+    """Read .claude/lane_models.json, preferring the git-committed version in CI.
+
+    Same CI pitfall as ``_read_steward_script``: ``setup-uv`` cache restoration
+    can overwrite the working tree during the tests-shard job, dropping files
+    that are on the PR branch but not on the base. When ``GITHUB_SHA`` is set,
+    we read from the merge-commit blob to get the correct PR content. Locally
+    we just read the file.
+    """
+    github_sha = os.environ.get("GITHUB_SHA")
+    if github_sha:
+        try:
+            return subprocess.check_output(
+                [
+                    "git",
+                    "show",
+                    f"{github_sha}:.claude/lane_models.json",
+                ],
+                cwd=str(REPO_ROOT),
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            pass  # fall through to filesystem read
+    return (REPO_ROOT / ".claude" / "lane_models.json").read_text()
+
+
+def _lane_models_json_available() -> bool:
+    """True if .claude/lane_models.json is readable via filesystem or GITHUB_SHA."""
+    try:
+        _read_lane_models_json()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -1569,30 +1605,33 @@ class TestLaneModelsJson:
     VALID_MODELS = frozenset({"opus", "sonnet", "haiku"})
 
     def test_config_file_exists(self) -> None:
+        # Use the GITHUB_SHA-aware helper: in CI, setup-uv cache restoration
+        # can overwrite the working tree and drop PR-only files, so we must
+        # accept the git-blob form of the file as "existing" for this test.
         assert (
-            self._LANE_MODELS_PATH.exists()
+            _lane_models_json_available()
         ), ".claude/lane_models.json is required by #2767 fix"
 
     def test_config_is_valid_json(self) -> None:
-        data = json.loads(self._LANE_MODELS_PATH.read_text())
+        data = json.loads(_read_lane_models_json())
         assert isinstance(data, dict), "Top level must be a JSON object"
 
     def test_config_has_lanes_key(self) -> None:
-        data = json.loads(self._LANE_MODELS_PATH.read_text())
+        data = json.loads(_read_lane_models_json())
         assert "lanes" in data and isinstance(
             data["lanes"], dict
         ), "Config must contain a 'lanes' object"
 
     def test_all_19_lanes_listed(self) -> None:
         """Every lane launched by steward-session.sh must have a config entry."""
-        data = json.loads(self._LANE_MODELS_PATH.read_text())
+        data = json.loads(_read_lane_models_json())
         lanes = set(data["lanes"].keys())
         missing = self.EXPECTED_LANES - lanes
         assert not missing, f"Missing lane entries: {sorted(missing)}"
 
     def test_all_models_valid(self) -> None:
         """Every entry's model must be opus / sonnet / haiku."""
-        data = json.loads(self._LANE_MODELS_PATH.read_text())
+        data = json.loads(_read_lane_models_json())
         for lane_id, entry in data["lanes"].items():
             assert isinstance(entry, dict), f"Lane {lane_id!r} entry must be an object"
             model = entry.get("model")
@@ -1608,7 +1647,7 @@ class TestLaneModelsJson:
         this test must be updated in the same PR as the config change so
         reviewers see the tier change explicitly.
         """
-        data = json.loads(self._LANE_MODELS_PATH.read_text())
+        data = json.loads(_read_lane_models_json())
         non_opus = [
             lane_id
             for lane_id, entry in data["lanes"].items()
