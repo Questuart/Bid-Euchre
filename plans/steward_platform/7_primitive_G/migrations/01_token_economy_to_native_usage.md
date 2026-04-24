@@ -250,32 +250,69 @@ Rollback SLO, Validation surface, Owner):
 **Validation surface for the flag itself:**
 `tests/integration/test_token_economy_native_usage_fallback.py` (new in the
 execution packet). The test flips the flag, invokes
-`dashboard_token_economy()` twice (one run per cohort), and asserts both
-runs return Slice B rollup shapes that differ ONLY on the `by_model` /
-`by_effort` dimensions the §2.3 Acceptable-gap disposition marks
-"optionally retire". All other dimensions (§2.3 Blocker + Degraded) match
-exactly.
+`dashboard_token_economy()` twice (one run per cohort), and asserts:
+
+- **All §2.3 Blocker dimensions match byte-exactly** across cohorts
+  (`attribute_sessions`, `lane_summary`, `throughput_summary`, `store_status`,
+  `reconcile_totals`, `by_effort`, `by_model_outcome`). These stay bespoke
+  on both cohorts; any divergence is a bug.
+- **All §2.3 Degraded dimensions match byte-exactly** across cohorts
+  (`usage summary` lane × model × effort rollup, `by_model` model-version
+  buckets). These are the **load-bearing Slice B contract that PR #2725 +
+  the F Packet 11 consumer depend on**; the flag must not be usable as an
+  escape hatch to regress Slice B parity.
+- **§2.3 Acceptable dimensions may differ** only in the ways §2.3 names:
+  `usage import` / store-metadata retirement; `usage anti-patterns`
+  programmatic-vs-advisory boundary.
+
+Correctness over convenience: the acceptance is **exact Slice B parity on
+Blocker + Degraded**, not "differs only on by_model/by_effort". The flag
+exists to prove equivalence on the migration-scope substitutions, not to
+permit regressions on the downstream contract.
 
 ### §3.2 Dual-write pattern
 
-During the proving-run window, `dashboard_token_economy()` and
-`usage_summary()` **both paths run**; outputs are compared. The flag
-selects which path's output is authoritative for the dashboard render,
-but both are executed and logged.
+During the proving-run window, the **raw-read substrate layer** is
+dual-written for the narrow subset of surfaces where native `/usage` has
+coverage (§2.3 Degraded + Acceptable). Everything §2.3 flags as Blocker
+stays bespoke-unconditional on both cohorts — **native is not invoked
+for Blocker surfaces at all**, because it cannot produce the required
+fields (lane attribution, `_WORKTREE_TO_LANE`-derived rollups, `effort`
+buckets, `model-outcome` joins).
+
+This matters: if the flag could route a Blocker-surface call through
+native, the native cohort would either (a) return `None` / partial data
+and fail equivalence, or (b) silently fall back to bespoke — either of
+which defeats the migration. The flag scope is narrower than
+"dual-write all of `dashboard_token_economy`".
 
 Concretely (execution detail — author lane implements):
 
 1. Introduce `token_economy_adapter.py::read_session_records()` that
    accepts a `source` parameter: `"bespoke"` (current JSONL scanner) or
    `"native"` (native `/usage` invocation, parsed into the same
-   `SessionRecord` shape).
-2. `dashboard_token_economy()` calls both sources when the flag is
-   ambiguous (proving-run window); the flag picks which one wins for the
-   return value.
-3. Both paths emit a `proving_run_cohort_sample` event
-   (`bespoke_surface_audit.md` §3.7 Pattern-8 observability hook) with
-   fields `(surface="token_economy", cohort, lane_id, task_id,
-   token_cost, behavioral_divergence_bool, window_id)`.
+   `SessionRecord` shape). The adapter **only exposes
+   `source="native"` for surfaces listed as Degraded or Acceptable in
+   §2.3**; calls originating from Blocker surfaces (§2.3 list) pin
+   `source="bespoke"` regardless of flag state — the adapter refuses
+   `source="native"` at the entry point for those surfaces.
+2. `dashboard_token_economy()` runs the bespoke path unconditionally to
+   compute the full Slice B rollup (this is the return value used by
+   downstream callers and matches PR #2725's consumer contract). When
+   the flag is on, the adapter ALSO reads the native substrate for the
+   §2.3 Degraded + Acceptable surfaces and emits per-surface divergence
+   samples (§3.2 bullet 3) — but the dashboard's return value stays
+   Slice-B-parity-locked on bespoke. The flag picks authoritativeness
+   only for §2.3 Acceptable surfaces (raw import layer, optional store
+   retirement candidates).
+3. Both paths (where native is invoked per bullet 1) emit a
+   `proving_run_cohort_sample` event (`bespoke_surface_audit.md` §3.7
+   Pattern-8 observability hook) with fields
+   `(surface="token_economy", subsurface=<§2.3 row>, cohort, lane_id,
+   task_id, token_cost, behavioral_divergence_bool, window_id)`.
+   `subsurface` identifies which §2.3 row the sample covers so operator
+   review can separate Degraded-surface evidence from Acceptable-surface
+   evidence.
 
 ### §3.3 Which calls go through which cohort
 
@@ -700,7 +737,7 @@ criteria.
 | §3.3 which calls go through which cohort | routing spec | code review of §1.2–§1.3 consumer call-sites shows: learning.py + emitter still Cohort A only; dashboard + cmd_usage dual-write | author (G-C1 execution) | reviewer confirms |
 | §3.4 parallel-run duration | observation window | operator runs fleet with flag flipped for 1 week on Cohort-B subset; records in MEMORY.md | operator | window runs ≥ 1 week OR ≥ 3 fleet-active days |
 | §4 behavioral-equivalence contract | test-locked observable | `tests/unit/test_token_economy.py::test_slice_b_rollup_shape` golden-file test passes on both cohorts; integration test `test_token_economy_native_usage_fallback.py` passes | author (G-C1 execution) | both tests exit 0 |
-| §5 token-cost measurement method | measurement spec | `data/events/events-*.jsonl | grep proving_run_cohort_sample` produces ≥ 1 sample/day × 7 days × 2 cohorts during the window; bootstrap on the samples produces a 95% CI per §5.3 | operator (consumes proving-run data) | ≥ 14 samples collected; bootstrap output recorded in the G-C1 PR body |
+| §5 token-cost measurement method | measurement spec | `grep -h '"event_type":"proving_run_cohort_sample"' data/events/events-*.jsonl \| wc -l` returns ≥ 1 sample/day × 7 days × 2 cohorts during the window; bootstrap on the samples produces a 95% CI per §5.3 | operator (consumes proving-run data) | ≥ 14 samples collected; bootstrap output recorded in the G-C1 PR body |
 | §6 stop-loss trip wires | mechanism spec | each trip references a §4 or §5 metric; grep-verify | analyst-a (shape) | 4/4 trip-conditions cite a §4 or §5 metric |
 | §7.1 file scope | author-lane contract | execution PR diff lists only the 9 listed files (+ adapter `__init__.py`); `git diff --stat` confirms | author (G-C1 execution) | diff shows only listed files |
 | §7.2 + §7.3 validation commands | gate | `make check-gated` passes on execution PR; `audit_portability.py --json` hard-block count = 0 post-merge | author (G-C1 execution) | both commands exit 0; output pasted in PR body |
@@ -737,11 +774,26 @@ approved for dispatch.**
 
 ## §9. Reviewer / parallelism assessment
 
-- **Reviewer agent required before execution begins?** No — this shaping
-  plan is subject to operator review per the packet's Validation field
-  (the 8 pass criteria). The execution packet is shaped end-to-end by
-  this plan; the author lane does not respawn a reviewer for the plan
-  itself.
+- **Reviewer agent required before execution begins?** **Yes — per
+  `docs/02_agent/AGENTS.md` §12.4 and `.claude/CLAUDE.md` §Implementation
+  Handoff Protocol.** After the author lane pulls the execution packet,
+  the sequence is: (1) refresh this plan's context; (2) draft or refresh
+  a concrete execution plan (may simply be "implement this plan as
+  written" if no refresh needed); (3) spawn ≥1 reviewer agent to review
+  that execution plan before major edits begin; (4) proceed with the
+  task list, implementation, validation, and PR per Protocol.
+  - The shaping document itself (this plan) is operator-reviewed against
+    the packet's 8 pass criteria (Pattern 10 surface) — that is the
+    shape-side review gate.
+  - The execution-side reviewer gate is orthogonal and additive: it
+    reviews the author's interpretation of the plan and catches
+    execution-time seams (test coverage, file scope interpretation,
+    feature-flag registry row wording) that the shape cannot pre-judge.
+  - **Author lane must explicitly record the reviewer-spawn step in
+    the PR body's `Validation Performed` section** (reviewer prompt,
+    reviewer findings, disposition). Skipping the reviewer gate is a
+    Pattern-10 surface-gap and BLOCKs the execution PR per
+    `.claude/rules/prompt_policy/author.md` §Verification-surface-at-slice-close.
 - **Parallelism with other G packets?** Safe. G-C1 touches
   `ops/token_economy.py` + one new adapter module + 12 lazy-import sites
   in `ops.py`. Other active G packets (G-A2 `--system-prompt-file`
