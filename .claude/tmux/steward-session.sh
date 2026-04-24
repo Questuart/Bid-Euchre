@@ -182,25 +182,15 @@ except Exception:
     esac
 }
 
-# Emit the `--system-prompt-file .claude/system_prompts/<archetype>.md` flag
-# for a lane, based on the hardcoded 19-lane → 8-archetype mapping from
+# Emit `--system-prompt-file .claude/system_prompts/<archetype>.md` flag
+# for a lane, using the hardcoded 19-lane → 8-archetype map from
 # plans/steward_platform/0_hardening/sub/g13_archetype_mapping.md §2.1
 # (Primitive B-exec.γ / B.9b — shaping.md §6).
-#
-# Fallback: if the resolved archetype prompt file does NOT yet exist under
-# .claude/system_prompts/ (pre-B.9a fan-out: only analyst.md is authored
-# today), emit nothing. The Claude Code default system prompt applies for
-# that lane. This prevents a "--system-prompt-file <missing-file>" launch
-# failure while B.9a fan-out is in flight. Once all 8 archetype files land,
-# every launch line gets the flag automatically with no further edits.
-#
-# Output is intended to be spliced unquoted into a tmux command line so
-# word splitting either emits two tokens
-# (`--system-prompt-file .claude/system_prompts/<archetype>.md`) or nothing.
-#
-# This function must stay behaviorally consistent with
-# scripts/internal/review_lane_runner.py's inline resolution in
-# invoke_review() (matching 19-lane hardcoded mapping).
+
+# Fallback: if the archetype prompt file does NOT exist (pre-B.9a fan-out),
+# emit nothing so Claude Code's default system prompt applies.
+# Output is spliced unquoted into tmux command lines (word-splitting). Must
+# stay behaviorally consistent with review_lane_runner.py invoke_review().
 # Args: lane_id
 system_prompt_flag_for_lane() {
     local lane="$1"
