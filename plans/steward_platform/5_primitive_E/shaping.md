@@ -281,9 +281,15 @@ creation. Per §5-E Work bullet 3: event-driven signals auto-create GitHub
 issues with correct labels, sourced from native lifecycle hooks rather
 than custom polling synthesis.
 
-Five event classes ship in Phase 0, meeting §5-E Phase 0 Readiness item
-3 ("Active-triage wiring live for at least 4 event classes"). Fifth
-class (orphan-worktree) brings coverage to 5 for headroom.
+Five event classes are defined in this shape. Phase 0 Readiness item 3
+requires "at least 4 event classes" (not all 5). The four
+upstream-ready classes (CI red, review-blocked, stalled-lane,
+orphan-worktree) ship unconditionally in Packet E1 and satisfy §5-E
+Phase 0 Readiness. The fifth class (token-burn anomaly) is
+conditional on Primitive F's Packet 11 emitter (§10.4) — if F has
+shipped at E execution time, class 5 ships too; otherwise it is
+explicitly marked "deferred to F" in the audit and tracked in
+`deferred_class_5.md` without blocking Phase 0 closeout.
 
 ### §4.2 The five active-triage event classes
 
@@ -525,12 +531,37 @@ current behavior.
 
 ### §6.4 Migration approach — bounded, reversible
 
-Conditional-hook migration is applied **per-hook**, not in one big PR:
+Conditional-hook migration is applied **per-hook**, not in one big PR.
+Current `.claude/settings.json` inventory (as of shaping date): 37 hook
+files in `.claude/hooks/`; most `.claude/settings.json` entries already
+carry scoped matchers (e.g., `"Edit|Write"`, `"Bash"`, `"compact"`).
+The concrete migration candidates that are truly unconditional today:
 
-- Packet E1 ships with ≥8 hook migrations + the README.md documentation.
-- Remaining ~15–20 hooks ship as v1.N follow-ons; each migration is a
-  single-file diff (`.claude/settings.json` matcher change) + its
-  disposition-row update.
+- **PostToolUse `matcher: "*"`** — `lane-heartbeat-post-tool.sh`
+  (fires on every tool call; narrow to `Bash|Edit|Write|Read` or convert
+  to `TeammateIdle` consumer per §4.1).
+- **PermissionDenied `matcher: "*"`** — `permission_denied_alert.sh`
+  (narrow to tool-family prefix patterns).
+- **UserPromptSubmit without matcher** — `alert-inject.sh`,
+  `inbound-channel-audit.sh`, `inbox-completion-inject.sh`
+  (three hooks; evaluate whether each needs every prompt or can gate on
+  a sentinel substring / command pattern).
+- **SessionStart without matcher** — `session-sync-worktree.sh`,
+  `fleet-check-autostart.sh`, `attention-broker-autostart.sh`
+  (evaluate if startup-time is already the right scope; keep unconditional
+  if narrowing would lose behavior).
+
+Packet E1 ships with **≥3 concrete matcher migrations** (from the first
+two bullet groups — high-confidence narrowings) plus the README.md
+authoring that documents dispositions for all 37 hook files. The
+remaining candidates (UserPromptSubmit narrowings and SessionStart
+evaluations) ship as v1.N follow-ons as disposition rows resolve to
+"narrow" vs "keep universal." This targets the real inventory shape
+(most hooks are already scoped) rather than inflating a count that
+would force invention of nonexistent migration work.
+
+- Each migration is a single-file diff (`.claude/settings.json` matcher
+  change) + its disposition-row update.
 - Each migration is independently reversible: revert the settings.json
   diff, hook returns to universal matcher.
 
@@ -624,8 +655,8 @@ provides the explicit map.
 | §5-E Phase 0 Readiness criterion | Verification surface | Acceptance condition |
 |---|---|---|
 | 1. All three follow-up PRs merged; bus closeout debt resolved | `gh issue list --state closed --search "2689 2690 2691"` → expect 3 matches | 3 closed issues with `Fixes` link to merged PRs |
-| 2. Bus p50/p95 metrics published | `tests/unit/test_bus_latency.py::test_aggregator_computes_p95` + dashboard scrape `grep -E "Bus\\s+delivered" <(uv run python scripts/internal/ops.py dashboard --json)` | test passes; JSON has `bus_stats.delivery_p95_ms` populated |
-| 3. Active-triage wiring live for at least 4 event classes | `tests/unit/test_active_triage.py::test_five_signal_classes_route` + manual smoke `uv run python scripts/internal/ops.py triage run --dry-run` with seeded events covering 5 classes | test passes for all 5 classes; dry-run prints 5 intended `gh issue create` actions |
+| 2. Bus p50/p95 metrics published | `tests/unit/test_bus_latency.py::test_aggregator_computes_p95` + dashboard JSON parse `uv run python -c "import json, subprocess; d = json.loads(subprocess.check_output(['uv','run','python','scripts/internal/ops.py','dashboard','--json'])); assert 'delivery_p95_ms' in d.get('bus_stats', {}), d"` | test passes; `bus_stats.delivery_p95_ms` key present and numeric in JSON output |
+| 3. Active-triage wiring live for at least 4 event classes | `tests/unit/test_active_triage.py::test_at_least_four_signal_classes_route` + manual smoke `uv run python scripts/internal/ops.py triage run --dry-run` with seeded events covering the 4 upstream-ready classes (PermissionDenied, CI-red, TeammateIdle, WorktreeRemove) | test passes for ≥4 classes; dry-run prints 4 intended `gh issue create` actions. (Fifth class `/usage` token-burn is dependency-gated per §10.4: if F's Packet 11 emitter has shipped by E execution, test extends to 5; otherwise Phase 0 readiness closes at 4 and F-dependence is recorded in `deferred_class_5.md`.) |
 | 4. Rollback path validated: active-triage can be disabled via a feature flag without losing inbox state | `tests/integration/test_active_triage_rollback.py::test_flag_off_preserves_inbox` | pytest passes: flip flag off → triage no-ops → inbox state unchanged → flip on → backlog processed |
 
 ### §8.1 Additional Pattern-10-driven readiness items
@@ -637,7 +668,7 @@ Packet E1 and carry verification surfaces per Pattern 10 (see §13):
 |---|---|---|
 | `.claude/hooks/README.md` documentation (§6.3) | KB-class artifact (per Pattern 10 deliverable-class table) | `tests/unit/test_hooks_inventory.py::test_all_hooks_documented` — asserts 1-to-1 correspondence between `.claude/hooks/*.sh,*.py` and README disposition-table rows |
 | ADR 004 HTTP-hooks migration boundary (§7) | ADR | Commit citation in ADR + Pattern 7 rollback via ADR-supersession route |
-| Conditional-hook migrations (≥8 in Packet E1) | config change (.claude/settings.json) | rollback test: revert each matcher diff; hook behavior returns to universal scope without regression (per-migration) |
+| Conditional-hook migrations (≥3 in Packet E1; see §6.4 for candidate enumeration) | config change (.claude/settings.json) | rollback test: revert each matcher diff; hook behavior returns to universal scope without regression (per-migration) |
 | `triage_cli.py` (§5.2) | new script under `scripts/internal/` | `tests/unit/test_triage_cli.py` — covers 5 signal classes + dedupe |
 | `active_triage.py` (§4.3) | new Python module under `src/bid_euchre/ops/` | `tests/unit/test_active_triage.py` — cycle + never-raise + flag-off |
 | `bus_latency.py` (§3.3) | new Python module under `src/bid_euchre/ops/` | `tests/unit/test_bus_latency.py` — aggregator + edge cases |
@@ -674,12 +705,24 @@ criteria are grep-verifiable or test-verifiable:
 
 Beyond §5-E's direct criteria:
 
-- Event stream contains ≥1 instance of each of the 5 signal classes during
-  the proving run. Verification:
+- Event stream contains ≥1 instance of each upstream-ready signal class
+  during the proving run. The 4 classes with upstream emitters live at
+  E execution (ci_red, review_blocked, stalled_lane, orphan_worktree)
+  must each appear; `token_burn` is asserted only if F's Packet 11
+  emitter has shipped (see §10.4). Verification:
   ```bash
-  for cls in ci_red review_blocked stalled_lane orphan_worktree token_burn; do
-      grep -c "\"signal_class\":\"$cls\"" data/events/events-*.jsonl || echo "$cls MISSING"
+  # Required classes (fail hard if any missing):
+  for cls in ci_red review_blocked stalled_lane orphan_worktree; do
+      grep -c "\"signal_class\":\"$cls\"" data/events/events-*.jsonl \
+          || { echo "$cls MISSING"; exit 1; }
   done
+  # Conditional class (soft-skip if F not yet live):
+  if [ -f deferred_class_5.md ]; then
+      echo "token_burn deferred to F (per §10.4); skipping assertion"
+  else
+      grep -c "\"signal_class\":\"token_burn\"" data/events/events-*.jsonl \
+          || { echo "token_burn MISSING"; exit 1; }
+  fi
   ```
 - `triaging-issues` dedupe rate matches expected (recurrence rate ≥1 per
   signal class over proving run → at least 1 issue has a "Recurrence
@@ -717,8 +760,9 @@ Concrete enough that an author lane can execute without additional shaping.
 
 **Files modified:**
 
-- `.claude/settings.json` — register conditional matchers for ≥8 hooks
-  (§6.4)
+- `.claude/settings.json` — register conditional matchers for ≥3 hooks
+  from the §6.4 candidate list (high-confidence narrowings; see §6.4 for
+  the concrete candidate enumeration against current repo state)
 - `.claude/hooks/README.md` — add ordering + scope + disposition table
   sections (§6.3)
 - `src/bid_euchre/ops/dashboard.py` — add `Bus` panel reading
@@ -767,10 +811,14 @@ Concrete enough that an author lane can execute without additional shaping.
    integration test cover 5 signal classes + flag-off rollback.
 9. **`ops.py triage` subcommand seventh.** CLI wrapper for
    `run_triage_cycle`. Covers `--dry-run` mode explicitly.
-10. **Conditional-hook migration eighth.** Pick ≥8 of the 37 hooks per
-    §6.2 survey; edit `.claude/settings.json` matchers; update
-    `.claude/hooks/README.md` disposition table. Per-hook rollback test
-    recorded inline in commit messages.
+10. **Conditional-hook migration eighth.** Pick ≥3 high-confidence
+    migration candidates from the §6.4 enumeration (current
+    `.claude/settings.json` has two `matcher: "*"` registrations and
+    three no-matcher `UserPromptSubmit` registrations as realistic
+    targets); edit `.claude/settings.json` matchers; update
+    `.claude/hooks/README.md` disposition table with a row per hook
+    (37 total). Per-hook rollback test recorded inline in commit
+    messages.
 11. **README.md documentation ninth.** Write `.claude/hooks/README.md`
     ordering + scope + disposition-table sections. Unit test
     (`test_hooks_inventory.py`) asserts 1-to-1 correspondence.
@@ -783,7 +831,10 @@ Concrete enough that an author lane can execute without additional shaping.
     twelfth.** Add "Programmatic Invocation" section documenting
     `TriageInput` schema + `triage_cli.py` entry point.
 15. **Self-run audit thirteenth.** `uv run python scripts/internal/ops.py triage audit`
-    → green on all 5 signal classes (or explicitly-marked "deferred");
+    → green on ≥4 signal classes (class 5 token-burn passes green
+    only when Primitive F Packet 11 emitter is live; otherwise marked
+    explicitly "deferred to F" in the audit report and recorded in
+    `deferred_class_5.md` — §10.4);
     `uv run python -m pytest tests/unit/test_hooks_inventory.py`
     → green; `make check-gated` (foreground) → green.
 16. **Open PR.** Title: `feat(ops): land Primitive E Phase 0 closeout —
@@ -835,15 +886,24 @@ make check-gated
 - **Primitive F coordination.** Signal class 5 (token-burn anomaly)
   depends on F emitting `token_usage_outlier` events. If F's Packet 11
   has not shipped that emitter by Packet E1 completion, signal class 5
-  is marked "deferred to F" in the audit; remaining 4 classes satisfy
-  §5-E Phase 0 Readiness item 3.
+  is marked "deferred to F" in the audit and documented in a new
+  `plans/steward_platform/5_primitive_E/deferred_class_5.md` file which
+  records: (a) absence-of-emitter evidence (grep on `data/events/`),
+  (b) F's Packet 11 issue/PR reference, (c) re-evaluation trigger when
+  F ships. The remaining 4 classes (ci_red, review_blocked,
+  stalled_lane, orphan_worktree) satisfy §5-E Phase 0 Readiness item 3
+  ("at least 4 event classes"); the readiness gate explicitly reads
+  "≥4", not "all 5", so this path is Phase-0-compliant by construction
+  (see §8 Phase 0 Readiness row 3).
 - **Primitive G coordination.** Signal class 4 (orphan-worktree) depends
   on G's worktree-migration packet emitting `worktree_create`/`_remove`
   via native hooks. If G has not shipped, Packet E1 uses the existing
   `ops.py worktrees` output as the event source (degraded mode);
   re-migrates to native hook events when G ships.
-- **Conditional-hook migration scope pressure.** 8 migrations is the
-  floor; Packet E1 may ship more if LOC budget allows. If author
+- **Conditional-hook migration scope pressure.** 3 high-confidence
+  migrations (from the §6.4 candidate enumeration) is the floor;
+  Packet E1 may ship more if the §6.4 UserPromptSubmit / SessionStart
+  evaluations resolve to "narrow" during execution. If author
   estimates Packet E1 exceeds 2500 net LOC, orchestrator may decompose
   into Packet E1a (active triage + bus latency) and Packet E1b
   (conditional-hook migration + ADR 004 + README.md) to keep PR review
@@ -860,13 +920,16 @@ make check-gated
 >
 > (a) all files in §10.1 are created or modified per spec,
 > (b) §10.3 validation commands pass (foreground; Tier 2 green),
-> (c) `ops.py triage audit` reports green: each of the 5 signal classes
->     has at least one emitter live, or is marked "deferred to
->     <primitive>",
+> (c) `ops.py triage audit` reports green: the 4 upstream-ready signal
+>     classes (ci_red, review_blocked, stalled_lane, orphan_worktree)
+>     each have at least one emitter live; the 5th class (token_burn)
+>     is either live (if F's Packet 11 has shipped) or explicitly
+>     marked "deferred to F" with `deferred_class_5.md` present,
 > (d) `.claude/hooks/README.md` has a disposition row for every file in
 >     `.claude/hooks/` (test_hooks_inventory enforces),
-> (e) at least 8 conditional-hook migrations landed in
->     `.claude/settings.json` with accompanying rollback-test notes,
+> (e) at least 3 high-confidence conditional-hook migrations landed in
+>     `.claude/settings.json` (from the §6.4 candidate list) with
+>     accompanying rollback-test notes,
 > (f) ADR 004 authored and committed with per-hook scoring table,
 > (g) PR merged with `Verification Performed` evidence in the body
 >     (audit output + lint output + pytest output + rollback-test output
@@ -1061,7 +1124,7 @@ mapping, this is a **shaping artifact** with operator-review surface form.
 | §3.2 Event reader A-dependency | blocking surface | **Verification: TBD — blocking on Primitive A §3.2** — event layout + first-class IDs specified by A's Packet 3; Packet E1 waits | author (E1); orchestrator | A's Packet 3 merged before E1 dispatch |
 | §4 Active-triage event-driven wiring | shaping spec for `active_triage.py` + 5 signal classes | Packet E1 author can author `active_triage.py` from §4 alone | author (E1) | Packet E1 PR's 5 signal classes match §4.2 table exactly |
 | §5 `triaging-issues` skill integration | shaping spec for skill refactor | Operator-invokable + programmatic path both preserve behavior | author (E1); operator review | skill integration test passes (see §10.3); operator smokes `/triaging-issues` pre- and post-E1 and confirms behavior identical |
-| §6 Conditional-hook migration | shaping spec for `.claude/settings.json` + `.claude/hooks/README.md` | Packet E1 author ships ≥8 migrations + README disposition table | author (E1) | ≥8 matcher diffs; `test_hooks_inventory.py` passes |
+| §6 Conditional-hook migration | shaping spec for `.claude/settings.json` + `.claude/hooks/README.md` | Packet E1 author ships ≥3 high-confidence matcher narrowings (§6.4 candidate enumeration) + README disposition table (37 rows) | author (E1) | ≥3 matcher diffs; `test_hooks_inventory.py` passes; README table row count equals hook file count |
 | §7 HTTP-hooks ADR 004 | ADR specification | Per Pattern 10 ADR-class surface: Pattern 7 rollback (ADR supersession route) + commit citation + per-hook scoring table | author (E1) | ADR committed at `plans/steward_platform/adrs/004-*.md`; per-hook scoring fills all 37 rows |
 | §8 Phase 0 Readiness map | reconciliation against `governing_plan.md` §5-E | §5-E lines 511–515 each have a matching §8 row with a named surface | analyst (this packet); orchestrator (review) | grep cross-check §8 ↔ governing plan lines 511–515 |
 | §8.1 Additional Pattern-10-driven readiness | extras beyond §5-E minimum | Each listed deliverable has a named surface in col 3 | analyst (this packet) | table in §8.1 complete; every row has non-TBD surface |
@@ -1076,7 +1139,7 @@ mapping, this is a **shaping artifact** with operator-review surface form.
 | Deliverable | Class | Verification surface | Owner | Acceptance condition |
 |---|---|---|---|---|
 | §4.2 five signal classes | schema-design constraint | grep `^\| [0-9] \|` in §4.2 table → expect exactly 5 rows | author (E1) | grep returns 5 |
-| §6.4 ≥8 conditional-hook migrations | incremental deliverable constraint | `git diff origin/main -- .claude/settings.json \| grep -c '"matcher"'` for E1's diff → expect ≥8 matcher additions | author (E1) | grep ≥ 8 |
+| §6.4 ≥3 conditional-hook migrations | incremental deliverable constraint | `git diff origin/main -- .claude/settings.json \| grep -c '"matcher"'` for E1's diff → expect ≥3 matcher additions | author (E1) | grep ≥ 3 |
 | §7 ADR 004 existence | ADR-class surface (Pattern 10 table) | `test -f plans/steward_platform/adrs/004-http-hooks-migration-boundary.md && grep -c '|' <file>` → counts scoring-table rows | author (E1); review_driver precheck | file exists; scoring table has ≥37 data rows |
 
 ### §13.1 Blocking-surface summary (per shaping.md §4.3 TBD convention)
