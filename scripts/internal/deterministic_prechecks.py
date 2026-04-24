@@ -1114,24 +1114,8 @@ def check_v7_commit_policy(
     return findings
 
 
-# ---------------------------------------------------------------------------
-# I10: Idempotency-checklist precheck (Primitive H.0, shaping §5.5).
-#
-# Severity: WARN (P2) in Phase 0; rows 1–4 tighten to BLOCK in Phase 1 per
-# shaping §5.5.  This initial landing is pure WARN — the Phase 1 kickoff PR
-# will promote the four highest-impact rows.
-#
-# Triggers: any file change matching a surface in `.claude/rules/
-# idempotency_checklist.md` §Rows (message_bus, task_queue, events,
-# .claude/runtime/**/*.json, MEMORY.md, knowledge/INDEX.md, .claude/hooks/**,
-# .claude/runtime/loops/**, knowledge/_promoted/**).
-#
-# Pass: the PR body contains an `## Idempotency` section (markdown heading
-# at levels 1-6).  Absence produces a WARN.
-# ---------------------------------------------------------------------------
-
-# PR-body "## Idempotency" section.  Accept any Markdown heading level;
-# the section is satisfied if the body contains the heading.
+# I10: Idempotency-checklist precheck (Primitive H.0, shaping §5.5).  See
+# ``check_idempotency_checklist`` docstring below for full semantics.
 _I10_PR_BODY_HEADING_RE = re.compile(r"(?im)^\s{0,3}#{1,6}\s+Idempotency\b")
 
 # Surfaces from `.claude/rules/idempotency_checklist.md` §Rows table.
