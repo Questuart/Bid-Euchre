@@ -49,6 +49,7 @@ Usage:
     uv run python scripts/internal/ops.py message send --from LANE --to LANE --type TYPE --summary TEXT [--task-id ID] [--thread ID] [--json]
     uv run python scripts/internal/ops.py supervisor [--json] [--save] [--diff SNAPSHOT_PATH]
     uv run python scripts/internal/ops.py monitor [--skip-pr-check] [--no-notify] [--json]
+    uv run python scripts/internal/ops.py orchestrator brief [--recent N] [--mark-read] [--json]
     uv run python scripts/internal/ops.py review-check [--limit N] [--no-notify] [--json]
     uv run python scripts/internal/ops.py workers [--json]
     uv run python scripts/internal/ops.py workers wake LANE_ID [--json]
@@ -2593,6 +2594,45 @@ def cmd_supervisor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_orchestrator(args: argparse.Namespace) -> int:
+    """Orchestrator cron support commands (Fixes #2806)."""
+    action = getattr(args, "orchestrator_action", None)
+    if action == "brief":
+        return _cmd_orchestrator_brief(args)
+    print(
+        "error: orchestrator subcommand required (brief)",
+        file=sys.stderr,
+    )
+    return 2
+
+
+def _cmd_orchestrator_brief(args: argparse.Namespace) -> int:
+    """Emit the deterministic orchestrator brief JSON (Fixes #2806)."""
+    from bid_euchre.ops.orchestrator_brief import (
+        build_brief,
+        format_brief_text,
+        mark_read,
+    )
+
+    recent = getattr(args, "recent", 5)
+    do_mark = getattr(args, "mark_read", False)
+
+    brief = build_brief(
+        runtime_dir=args.runtime_dir,
+        recent_alerts_limit=recent,
+    )
+
+    if args.json:
+        print(json.dumps(brief, indent=2))
+    else:
+        print(format_brief_text(brief))
+
+    if do_mark:
+        mark_read(args.runtime_dir)
+
+    return 0
+
+
 def cmd_monitor(args: argparse.Namespace) -> int:
     """Run a single ops monitoring cycle (SP-3-08).
 
@@ -5088,6 +5128,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable Telegram alert push after reconcile (for CI/testing)",
     )
 
+    # orchestrator (Fixes #2806: deterministic ops-signal bridge)
+    orch_parser = subparsers.add_parser(
+        "orchestrator",
+        help="Orchestrator cron support: brief, etc. (Fixes #2806)",
+    )
+    orch_sub = orch_parser.add_subparsers(dest="orchestrator_action")
+    orch_brief = orch_sub.add_parser(
+        "brief",
+        help="Emit deterministic orchestrator brief JSON (single cron input)",
+    )
+    orch_brief.add_argument(
+        "--recent",
+        type=int,
+        default=5,
+        help="Number of recent unacked supervisor_alert messages to expand (default: 5)",
+    )
+    orch_brief.add_argument(
+        "--mark-read",
+        action="store_true",
+        default=False,
+        help="Persist current timestamp as last_read_at after printing",
+    )
+
     # fleet (SP-4-07: controller projection read-only view)
     fleet_parser = subparsers.add_parser(
         "fleet", help="Fleet status — controller projection (read-only view)"
@@ -5543,6 +5606,7 @@ def main(argv: list[str] | None = None) -> int:
         "message": cmd_message,
         "supervisor": cmd_supervisor,
         "monitor": cmd_monitor,
+        "orchestrator": cmd_orchestrator,
         "fleet": cmd_fleet,
         "review-check": cmd_review_check,
         "review-hwm": cmd_review_hwm,

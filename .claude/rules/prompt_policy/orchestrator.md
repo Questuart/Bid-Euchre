@@ -7,31 +7,56 @@
 
 ## Version
 
-`orchestrator-v1.0`
+`orchestrator-v1.1`
 
 ## Trigger
 
-Initial registry version. Scaffold landed in PR #2762 (commit `ed6373b0`)
-as part of Pattern 10 verification-contract rollout. Version header +
-Trigger / Expected effect / Rollback sections added in Primitive
-B-exec.α (B.3 — prompt-policy registry) per
+v1.0 — initial registry version. Scaffold landed in PR #2762
+(commit `ed6373b0`) as part of Pattern 10 verification-contract rollout.
+Version header + Trigger / Expected effect / Rollback sections added in
+Primitive B-exec.α (B.3 — prompt-policy registry) per
 `plans/steward_platform/2_primitive_B/shaping.md` §4.2.
+
+v1.1 — Deterministic ops-signal-bridge clause added (Fixes #2806). The
+ops lane now produces a single authoritative brief covering every
+observation the orchestrator cron needs (expanded `supervisor_alert`
+findings, open PRs, merged PRs since last read, pending inbox,
+dispatched packets, TUI task status). The orchestrator consumes this
+via `/read-ops-brief` rather than reinventing subsets via ad-hoc shell
+(`gh pr list`, `ops.py task list`, `ops.py inbox`). Replaces the
+coarse `ack-all` pattern that was dropping the monitor's findings
+wholesale.
 
 ## Expected effect
 
-Every task packet the orchestrator dispatches names a concrete
-verification surface (not "tests pass"). Scaling signal: the fraction
-of dispatched packets whose Validation field contains a surface form
-from the §10.9 Pattern 10 table rises from baseline to ≥90% in the
-proving run.
+v1.0 effect — every task packet the orchestrator dispatches names a
+concrete verification surface (not "tests pass"). Scaling signal: the
+fraction of dispatched packets whose Validation field contains a
+surface form from the §10.9 Pattern 10 table rises from baseline to
+≥90% in the proving run.
+
+v1.1 effect — every orchestrator cron fire begins with a single
+`/read-ops-brief` invocation; zero cron fires invoke `gh pr list`,
+`ops.py task list`, or `ops.py inbox` directly. Scaling signal:
+`recent_ops_alerts[*].findings[]` from the brief JSON are routed
+through the skill's category table and acked **after** routing (not
+coarsely batch-acked), so monitor findings are no longer dropped.
 
 ## Rollback
 
-`git revert <commit SHA of this version bump>` — single-commit rollback
-restores the prior `orchestrator-v0.x` baseline (no Version header).
-Trace signature that confirms rollback: `prompt_policy_version` field
-in `dispatch_recommendation` events (emitted once Primitive B.1 lands)
-reverts to null or the prior version string.
+v1.0 rollback — `git revert <commit SHA of v1.0 bump>` restores the
+prior `orchestrator-v0.x` baseline (no Version header). Trace
+signature: `prompt_policy_version` field in `dispatch_recommendation`
+events (emitted once Primitive B.1 lands) reverts to null or the prior
+version string.
+
+v1.1 rollback — `git revert <commit SHA of this v1.1 bump>` restores
+`orchestrator-v1.0`. Trace signature: orchestrator cron fires stop
+beginning with `/read-ops-brief` and resume issuing `gh pr list` /
+`ops.py task list` / `ops.py inbox` directly; the `Cron-fire-through-brief`
+clause below no longer applies. The CLI subcommand, builder module, and
+skill remain committed (they are not load-bearing without the policy
+mandate); a deeper rollback would additionally revert the #2806 PR.
 
 ## Policy clauses
 
