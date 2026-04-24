@@ -187,11 +187,57 @@ When the classifier soft-denies a tool call, Claude Code emits a
 `.claude/hooks/permission-denied-log.sh` (registered in
 `.claude/settings.json`).
 
+As of Primitive B-exec.α (B.6), each logged record is enriched with
+three registry-lookup fields:
+
+| Field | Source | Purpose |
+|---|---|---|
+| `approval_class_auto_mode` | `.claude/rules/tool_risk_registry.md` lookup | What the registry says the auto-mode gate is |
+| `approval_class_bypass` | `.claude/rules/tool_risk_registry.md` lookup | What the registry says the bypass gate is |
+| `registry_row_id` | `<file>:<line>` of the matched row | Back-pointer into the registry |
+
+If no row matches the denied tool, all three fields are `null`. This
+is the signal the B.6 lint (`agent_readability_lint.py check tool-risk`
+rule TR4) uses to flag missing coverage.
+
 > **TODO (follow-up PR):** wire `PermissionDenied` events through to the
 > ops alert channel so operators see denial spikes in near-real-time. That
 > PR is tracked separately from this mode flip — no change to
 > `.claude/settings.json` hook registration is made in this PR beyond what
 > was already in place.
+
+## Tool-risk registry
+
+The dual-envelope classification of every allow-listed tool lives in
+`.claude/rules/tool_risk_registry.md`. That file is the *cross-envelope
+classification table* — this file (`80_permission_model.md`) is the
+*operational guide to auto mode*. They coexist and serve different
+audiences:
+
+- Read `80_permission_model.md` when you need to understand *why* auto
+  mode is the chosen default, *how* the classifier gates tool calls,
+  what `PermissionDenied` means, or operator guidelines for extending
+  the `autoMode.environment`.
+- Read `tool_risk_registry.md` when you need to know *what
+  classification* a specific tool has under auto-mode and under bypass,
+  or to identify destructive/exfil patterns that are never sanctioned.
+
+**B.1 adaptive dispatch** (Primitive B.1) consumes
+`tool_risk_registry.md` at dispatch-time to filter out lanes whose
+envelope fails a task's required-tool set — that is the *only*
+load-bearing runtime consumer of the registry; everything else is
+documentation. Runtime tool-invocation gating remains with the
+classifier.
+
+**Lint enforcement:** `agent_readability_lint.py check tool-risk`
+runs in CI and BLOCKs when:
+
+- the registry file is missing (rule TR0),
+- the registry has zero rows (rule TR1),
+- a row has an empty or non-taxonomy envelope column (rule TR2),
+- (WARN) a `reject`-under-bypass row lacks a Notes explanation (rule
+  TR3),
+- a `permissions.allow` entry has no covering registry row (rule TR4).
 
 ## Safety net: git audit trail + post-merge review
 

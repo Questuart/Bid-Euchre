@@ -6,7 +6,39 @@
 > (Primitive B.3) assembles per-lane prompts from the files in this
 > directory.
 
-## Verification-surface-at-slice-close (Pattern 10, §10.9)
+## Version
+
+`author-v1.0`
+
+## Trigger
+
+Initial registry version. Scaffold landed in PR #2762 (commit `ed6373b0`);
+Pattern 11 shape-is-authoritative clause added in PR #2773 (commit
+`3f4ecf7e`). Version header + Trigger / Expected effect / Rollback
+sections added in Primitive B-exec.α (B.3 — prompt-policy registry)
+per `plans/steward_platform/2_primitive_B/shaping.md` §4.2.
+
+## Expected effect
+
+Every author-lane slice-close includes a `Verification Performed`
+section in the PR body citing the surface that ran and the pass
+signal. Every commit introducing a new `src/**`, `scripts/internal/**`,
+`.claude/hooks/**`, or `.claude/skills/**` file carries a
+`Verification: <surface>` footer. Scaling signal: the fraction of
+author-lane PRs whose bodies contain a `Verification Performed`
+section rises from baseline to ≥95% in the proving run.
+
+## Rollback
+
+`git revert <commit SHA of this version bump>` — single-commit rollback
+restores the prior `author-v0.x` baseline (no Version header). Trace
+signature that confirms rollback: `prompt_policy_version` field in
+`dispatch_recommendation` events (emitted once Primitive B.1 lands)
+reverts to null or the prior version string.
+
+## Policy clauses
+
+### Verification-surface-at-slice-close (Pattern 10, §10.9)
 
 Before marking any slice complete, confirm the verification surface
 named in the task packet's Validation field actually ran and emitted
@@ -31,7 +63,7 @@ If you cannot verify the surface (missing dependency, surface not yet
 implemented upstream), escalate via blocker message to orchestrator
 rather than proceeding.
 
-## Shape-is-authoritative (Pattern 11, §10.9 governing plan)
+### Shape-is-authoritative (Pattern 11, §10.9 governing plan)
 
 When your execution packet cites a shaping document (per Pattern 11
 shape-then-execute dispatch), the shape is authoritative. Escalate on

@@ -5,7 +5,37 @@
 > clauses; the prompt-policy registry (Primitive B.3) assembles per-lane
 > prompts from the files in this directory.
 
-## Verification-surface-at-packet-shape (Pattern 10, §10.9)
+## Version
+
+`orchestrator-v1.0`
+
+## Trigger
+
+Initial registry version. Scaffold landed in PR #2762 (commit `ed6373b0`)
+as part of Pattern 10 verification-contract rollout. Version header +
+Trigger / Expected effect / Rollback sections added in Primitive
+B-exec.α (B.3 — prompt-policy registry) per
+`plans/steward_platform/2_primitive_B/shaping.md` §4.2.
+
+## Expected effect
+
+Every task packet the orchestrator dispatches names a concrete
+verification surface (not "tests pass"). Scaling signal: the fraction
+of dispatched packets whose Validation field contains a surface form
+from the §10.9 Pattern 10 table rises from baseline to ≥90% in the
+proving run.
+
+## Rollback
+
+`git revert <commit SHA of this version bump>` — single-commit rollback
+restores the prior `orchestrator-v0.x` baseline (no Version header).
+Trace signature that confirms rollback: `prompt_policy_version` field
+in `dispatch_recommendation` events (emitted once Primitive B.1 lands)
+reverts to null or the prior version string.
+
+## Policy clauses
+
+### Verification-surface-at-packet-shape (Pattern 10, §10.9)
 
 When shaping a task packet whose scope creates or modifies a plan
 deliverable, a codebase file under `src/**`, `scripts/internal/**`,
