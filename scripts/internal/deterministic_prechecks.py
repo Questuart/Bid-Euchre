@@ -10,8 +10,10 @@ enabling uniform treatment downstream.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -456,6 +458,18 @@ def check_diff(
         )
     )
 
+    # V7: commit-policy precheck (Primitive C / ADR 010 binding).  Gated
+    # behind the ``ENABLE_V7_COMMIT_POLICY`` env flag (default off until
+    # Primitive A archivist event emission is live — see
+    # plans/steward_platform/3_primitive_C/shaping.md §4.6 + §6.3).
+    all_findings.extend(
+        check_v7_commit_policy(
+            changed_files,
+            repo_root,
+            pr_body=pr_body,
+        )
+    )
+
     return all_findings
 
 
@@ -615,23 +629,23 @@ def get_blocking_findings(findings: list[Finding]) -> list[Finding]:
     return [f for f in findings if is_blocking_severity(f.severity)]
 
 
-# ---------------------------------------------------------------------------
-# V1–V6: Verification-contract prechecks (Pattern 10 — §10.9 governing plan,
-# §3.4 of plans/steward_platform/verification_contract/shaping.md).
-#
-# Severity maps to the check-ID taxonomy in .claude/rules/deferred/60_review_gate.md:
-#   V1 (BLOCK), V2 (BLOCK), V3 (BLOCK), V4 (WARN), V5 (INFO), V6 (WARN).
-#
-# Per §13.2 risk #1 of shaping.md: V3 must gate on the current PR HEAD +
-# PR diff, not on the local working tree, or it becomes vacuous when
-# author-lane checkouts drift.  Callers pass ``pr_changed_files`` explicitly
-# so we do not shell out to ``git`` from inside this module.
-#
-# Per §13.2 risk #3: the commit-footer lint (V2) accepts a
-# ``Verification:`` footer on ANY commit in the PR range, not only the
-# introducing commit — authors may backfill the footer as a follow-up
-# commit within the same PR.
-# ---------------------------------------------------------------------------
+_VC_SECTION_DOC = """
+V1-V6: Verification-contract prechecks (Pattern 10, §10.9 governing plan,
+§3.4 of plans/steward_platform/verification_contract/shaping.md).
+
+Severity maps to the check-ID taxonomy in .claude/rules/deferred/60_review_gate.md:
+  V1 (BLOCK), V2 (BLOCK), V3 (BLOCK), V4 (WARN), V5 (INFO), V6 (WARN).
+
+Per §13.2 risk #1 of shaping.md: V3 must gate on the current PR HEAD +
+PR diff, not on the local working tree, or it becomes vacuous when
+author-lane checkouts drift.  Callers pass ``pr_changed_files`` explicitly
+so we do not shell out to ``git`` from inside this module.
+
+Per §13.2 risk #3: the commit-footer lint (V2) accepts a
+``Verification:`` footer on ANY commit in the PR range, not only the
+introducing commit — authors may backfill the footer as a follow-up
+commit within the same PR.
+"""
 
 # §3.3 commit-footer trigger paths (see shaping.md §3.3).
 _VC_TRIGGER_PREFIXES = (
@@ -959,4 +973,133 @@ def check_verification_contract(
                         )
                     )
 
+    return findings
+
+
+_V7_SECTION_DOC = """
+V7: Commit-policy precheck (Primitive C / ADR 010 binding).
+
+See ``plans/steward_platform/3_primitive_C/shaping.md`` §4.6:
+  PR adds a file under ``knowledge/_promoted/**`` AND no
+  ``archivist_candidate_generated`` event exists upstream (via
+  event-stream query over last 30 days) matching the promoted
+  artifact's class + approximate timestamp -> BLOCK.
+
+Feature-flagged via ``ENABLE_V7_COMMIT_POLICY`` (default off until
+Primitive A's archivist event emission is live per §6.3).  When the
+flag is unset the check returns ``[]`` unconditionally.
+
+Event-schema integration is injected via the ``event_lookup``
+callable so tests can stub it without a live event store.  The
+default stub returns ``False`` (no events known) — which is why the
+flag MUST default off pre-Primitive-A: every ``_promoted/`` file
+would otherwise BLOCK on a missing-event false positive.
+"""
+
+
+V7_ENV_FLAG = "ENABLE_V7_COMMIT_POLICY"
+_V7_PROMOTED_PREFIX = "knowledge/_promoted/"
+
+# Manual-promotion sanction sentinel (case-insensitive substring match
+# on the PR body).  Tokens below mark a PR as an explicit manual
+# override per §4.6 option (b).
+_V7_MANUAL_SANCTION_TOKENS = (
+    "manual-promotion exception",
+    "manual promotion exception",
+    "operator-sanctioned promotion",
+)
+
+
+def _v7_flag_enabled() -> bool:
+    """Return True when the V7 feature flag is set to "1"."""
+    return os.environ.get(V7_ENV_FLAG) == "1"
+
+
+def _v7_default_event_lookup(path: str) -> bool:
+    """Default event lookup stub.
+
+    Returns ``False`` unconditionally.  A real lookup will be wired
+    once Primitive A's event schema v1.0 ships an
+    ``archivist_candidate_generated`` event stream (§4.6 Rationale,
+    §6.3 coordination).  Because this default always returns False,
+    the feature flag MUST remain default off until the real lookup is
+    wired — otherwise every ``knowledge/_promoted/**`` add would block.
+    """
+    del path  # reserved: path-indexed event query when Primitive A lands
+    return False
+
+
+def _v7_pr_has_manual_sanction(pr_body: str | None) -> bool:
+    if not pr_body:
+        return False
+    lower = pr_body.lower()
+    return any(token in lower for token in _V7_MANUAL_SANCTION_TOKENS)
+
+
+def check_v7_commit_policy(
+    changed_files: list[str],
+    repo_root: Path,
+    *,
+    event_lookup: Callable[[str], bool] | None = None,
+    pr_body: str | None = None,
+) -> list[Finding]:
+    """V7 commit-policy precheck (ADR 010 binding).
+
+    Args:
+        changed_files: PR-scoped list of changed file paths.
+        repo_root: Repository root (reserved for future use; included
+            for signature parity with ``check_verification_contract``).
+        event_lookup: Optional callable ``(path) -> bool`` returning
+            True when a matching ``archivist_candidate_generated``
+            event exists upstream for *path* within the 30-day window.
+            Defaults to :func:`_v7_default_event_lookup`.
+        pr_body: PR description body.  A body containing an explicit
+            manual-promotion sanction marker (see
+            ``_V7_MANUAL_SANCTION_TOKENS``) opts out of the V7 BLOCK
+            per §4.6 option (b).
+
+    Returns:
+        List of Finding objects.  Empty when the feature flag is off,
+        when no ``_promoted/`` files are in the diff, or when every
+        ``_promoted/`` file resolves to a matching upstream event.
+
+    Severity: V7 emits P0 (BLOCK) per §3.4 taxonomy extension.
+    """
+    del repo_root  # reserved — keeps signature symmetric with V1–V6
+    if not _v7_flag_enabled():
+        return []
+
+    promoted = [p for p in changed_files if p.startswith(_V7_PROMOTED_PREFIX)]
+    if not promoted:
+        return []
+
+    # Manual-promotion sanction (§4.6 option (b)) opts out entirely.
+    if _v7_pr_has_manual_sanction(pr_body):
+        return []
+
+    lookup = event_lookup or _v7_default_event_lookup
+    findings: list[Finding] = []
+    for path in promoted:
+        if lookup(path):
+            continue
+        findings.append(
+            Finding(
+                severity="P0",
+                file=path,
+                line=0,
+                category="process",
+                check_id="V7",
+                message=(
+                    f"Promoted KB artifact {path!r} has no archivist "
+                    "candidate upstream (no matching "
+                    "`archivist_candidate_generated` event within 30 "
+                    "days). Either (a) produce the candidate via "
+                    "`/run-archivist`, then promote, OR (b) mark the PR "
+                    "as a manual-promotion exception with explicit "
+                    "operator sanction in the PR body. See "
+                    "plans/steward_platform/3_primitive_C/shaping.md "
+                    "§4.6."
+                ),
+            )
+        )
     return findings

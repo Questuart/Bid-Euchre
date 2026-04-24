@@ -1850,3 +1850,175 @@ class TestCapturePRHeadSha:
             f"Verdict SHA must be PR head ({pr_sha[:8]}), not local main "
             f"({local_main_sha[:8]}). This is the #2706 regression guard."
         )
+
+
+# ---------------------------------------------------------------------------
+# V7: commit-policy precheck (Primitive C §4.6 / ADR 010 binding)
+#
+# See ``plans/steward_platform/3_primitive_C/shaping.md`` §4.6.  V7 is
+# wired through ``check_diff`` but its logic lives in
+# ``check_v7_commit_policy``.  Tests exercise the precheck directly
+# (bypassing ``check_diff``'s multi-check orchestration) for isolation.
+# ---------------------------------------------------------------------------
+
+from deterministic_prechecks import (  # noqa: E402
+    V7_ENV_FLAG,
+    check_v7_commit_policy,
+)
+
+
+class TestV7CommitPolicy:
+    """Shape §4.6 / §6.3: V7 is feature-flagged and stays off by default
+    until Primitive A's event schema v1.0 ships the real event lookup."""
+
+    def test_flag_off_default_noop(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With ENABLE_V7_COMMIT_POLICY unset, V7 is a no-op even when
+        a ``_promoted/`` file is in the diff."""
+        monkeypatch.delenv(V7_ENV_FLAG, raising=False)
+        findings = check_v7_commit_policy(
+            ["knowledge/_promoted/anti_patterns/archivist_noisy_intake.md"],
+            tmp_path,
+        )
+        assert findings == []
+
+    def test_flag_off_zero_is_also_off(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Flag semantics: only the literal string ``"1"`` enables V7."""
+        monkeypatch.setenv(V7_ENV_FLAG, "0")
+        findings = check_v7_commit_policy(
+            ["knowledge/_promoted/notes/arc_d_v2.md"],
+            tmp_path,
+        )
+        assert findings == []
+
+    def test_flag_on_no_promoted_files_noop(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Flag on but diff has no ``_promoted/`` file → V7 no-op."""
+        monkeypatch.setenv(V7_ENV_FLAG, "1")
+        findings = check_v7_commit_policy(
+            [
+                "knowledge/_candidates/arc_d_v2.md",
+                "knowledge/adr/001-platform-reset.md",
+                "src/bid_euchre/ops/events.py",
+            ],
+            tmp_path,
+        )
+        assert findings == []
+
+    def test_flag_on_promoted_without_event_blocks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Flag on + ``_promoted/`` file + no matching event → P0 BLOCK
+        with V7 check_id and reference to shape §4.6."""
+        monkeypatch.setenv(V7_ENV_FLAG, "1")
+        promoted_path = "knowledge/_promoted/anti_patterns/retry_without_fingerprint.md"
+        findings = check_v7_commit_policy(
+            [promoted_path],
+            tmp_path,
+            event_lookup=lambda _p: False,
+        )
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding.check_id == "V7"
+        assert finding.severity == "P0"
+        assert finding.file == promoted_path
+        assert "archivist_candidate_generated" in finding.message
+        assert "§4.6" in finding.message
+
+    def test_flag_on_promoted_with_matching_event_passes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Flag on + matching event upstream → V7 passes (no findings)."""
+        monkeypatch.setenv(V7_ENV_FLAG, "1")
+        findings = check_v7_commit_policy(
+            ["knowledge/_promoted/notes/session_handoff_conventions.md"],
+            tmp_path,
+            event_lookup=lambda _p: True,
+        )
+        assert findings == []
+
+    def test_flag_on_multiple_promoted_mixed_events(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Per-file event resolution: only the unmatched path fires V7."""
+        monkeypatch.setenv(V7_ENV_FLAG, "1")
+        matched = "knowledge/_promoted/notes/a.md"
+        unmatched = "knowledge/_promoted/notes/b.md"
+
+        def lookup(p: str) -> bool:
+            return p == matched
+
+        findings = check_v7_commit_policy(
+            [matched, unmatched],
+            tmp_path,
+            event_lookup=lookup,
+        )
+        assert len(findings) == 1
+        assert findings[0].file == unmatched
+        assert findings[0].check_id == "V7"
+
+    def test_manual_sanction_pr_body_opts_out(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§4.6 option (b): PR body declaring a manual-promotion
+        exception opts out of V7 BLOCK even without an event."""
+        monkeypatch.setenv(V7_ENV_FLAG, "1")
+        pr_body = (
+            "## Summary\n\n"
+            "Promoting directly per operator sanction.\n\n"
+            "## Verification Performed\n\n"
+            "Manual-promotion exception: operator reviewed candidate "
+            "inline during session 2026-04-23.\n"
+        )
+        findings = check_v7_commit_policy(
+            ["knowledge/_promoted/notes/operator_direct.md"],
+            tmp_path,
+            event_lookup=lambda _p: False,
+            pr_body=pr_body,
+        )
+        assert findings == []
+
+    def test_manual_sanction_case_insensitive(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sanction token matches case-insensitively."""
+        monkeypatch.setenv(V7_ENV_FLAG, "1")
+        findings = check_v7_commit_policy(
+            ["knowledge/_promoted/notes/x.md"],
+            tmp_path,
+            event_lookup=lambda _p: False,
+            pr_body="Operator-Sanctioned Promotion: approved inline.",
+        )
+        assert findings == []
+
+    def test_default_event_lookup_returns_false(self) -> None:
+        """The default event-lookup stub always returns False.  This is
+        why the flag MUST default off until Primitive A lands (§6.3)."""
+        from deterministic_prechecks import _v7_default_event_lookup
+
+        assert _v7_default_event_lookup("knowledge/_promoted/anything.md") is False
+
+
+def test_v7_integration_via_check_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """V7 is wired through ``check_diff``: a flag-on call with a
+    ``_promoted/`` path surfaces in the ``check_diff`` return value."""
+    from deterministic_prechecks import check_diff
+
+    monkeypatch.setenv(V7_ENV_FLAG, "1")
+    findings = check_diff(
+        changed_files=["knowledge/_promoted/notes/plumbing_proof.md"],
+        commit_messages=[
+            "feat(kb): promote plumbing proof\n\nVerification: knowledge/NOTES.md"
+        ],
+        pr_body="## Verification Performed\n\nSee commit footer.\n",
+        repo_root=tmp_path,
+    )
+    v7_findings = [f for f in findings if f.check_id == "V7"]
+    assert len(v7_findings) == 1
+    assert v7_findings[0].severity == "P0"

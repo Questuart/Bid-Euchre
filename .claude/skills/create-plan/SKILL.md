@@ -57,36 +57,66 @@ section, OR be covered by a row in the canonical map at
 **Deliverable-class → surface-class defaults:** see the Pattern 10 table
 at §10.9 of `plans/steward_platform/governing_plan.md`.
 
-### Phase 3 — Refusal logic (hard stop)
+### Phase 3 — Refusal logic (hard stop, codified in R1-R4)
 
 Before writing the file to disk, this skill must **refuse** with a
-pointer to the template worked example when any of the following are
-true:
+pointer to the template worked example when any of R1-R4 fires. The
+four conditions, ordered by detection, are:
 
-1. `## Verification Plan` section is missing
-2. `## Verification Plan` section is present but the table is empty
-   (header row only)
-3. Any row contains a placeholder token in the `Verification surface`
-   column: `TBD`, `TODO`, `FIXME`, `XXX`
-4. Any Work bullet in the plan body lacks a matching row in the
-   Verification Plan table and lacks a row in
-   `plans/steward_platform/verification_contract/map.md`
+| # | Condition | Refusal message fragment |
+|---|---|---|
+| **R1** | `## Verification Plan` section is missing | `Missing ``## Verification Plan`` section` |
+| **R2** | Section present but table is empty (header row only) | `` `## Verification Plan` section is empty (header row only)`` |
+| **R3** | Any row contains a placeholder token (`TBD`/`TODO`/`FIXME`/`XXX`) in the Verification surface column | `Row for deliverable ``<name>`` carries placeholder surface ``<val>`` ` |
+| **R4** | Any Work bullet lacks a matching row (in this plan OR in `plans/steward_platform/verification_contract/map.md`) | `Work bullet §<N.M> has no Verification Plan row and no map.md coverage` |
 
-Refusal message format:
+**Refusal evaluation is automated.** Any lane (or the skill itself)
+can verify the four conditions on a draft plan by invoking:
 
-    /create-plan REFUSED: Pattern 10 (§10.9) requires a complete
-    Verification Plan section. Missing: <list>. See the worked example
-    in plans/_templates/sub_plan.md §Verification Plan.
+    uv run python scripts/internal/create_plan_refusal.py <path>
+
+Exit code 0 = pass; exit code 2 = refuse (with the exact message
+below on stderr). Do NOT write a plan whose refusal evaluator returns
+2.
+
+**Exact refusal message format (§4.4.2; emitted verbatim):**
+
+```
+/create-plan REFUSED: Pattern 10 (§10.9) requires a complete Verification Plan section.
+
+Refusal reasons:
+  R<N>: <fragment from the R1-R4 table>
+  [additional R<N> lines if multiple conditions fire]
+
+See the worked example in plans/_templates/sub_plan.md §Verification Plan.
+See Pattern 10 table at §10.9 of plans/steward_platform/governing_plan.md for
+deliverable-class → surface-class defaults.
+
+No plan file was written. Fix the above and re-invoke /create-plan.
+```
+
+If the skill is scripted: exit code 2. If the skill is operator-invoked
+interactively: the refusal message is displayed and no file is created.
 
 ### Phase 4 — Post-write validation
 
-After writing the plan, run the lint to confirm the file is clean:
+After writing the plan, re-run the refusal evaluator and the lint to
+confirm the file is clean:
 
+    uv run python scripts/internal/create_plan_refusal.py <path>
     uv run python scripts/internal/agent_readability_lint.py \
         check verification-contract <path>
 
-Expected: exits 0 with no findings. If findings are present, the
-refusal logic failed — file a bug.
+Both must exit 0. If either returns a finding, the refusal logic
+failed — file a bug.
+
+### Acceptance command (§4.4.3)
+
+```bash
+# Any lane can verify this skill refuses correctly:
+uv run python -m pytest tests/unit/test_create_plan_refusal.py -v
+# Expected: all tests pass (one per refusal condition R1-R4 plus happy path)
+```
 
 ## Gotchas
 
@@ -117,9 +147,9 @@ refusal logic failed — file a bug.
 
 ## Status
 
-**Stub (Packet 2b).** The refusal logic above is specified but the
-automated execution path is a manual checklist for now — the author
-reads the plan's Verification Plan section and verifies each refusal
-condition by hand. A follow-up packet in Primitive H.0 will lift the
-checklist into a codified skill-execution script. The specification
-above is normative; the execution is manual until the follow-up lands.
+**Codified (Packet C-Exec, Primitive C Phase 0).** The refusal logic
+is enforced by `scripts/internal/create_plan_refusal.py` and exercised
+by `tests/unit/test_create_plan_refusal.py`. Any lane invoking this
+skill MUST run the refusal evaluator before writing the plan file;
+failure to do so is a process violation (caught at PR time by
+`review_driver.py` V7 precheck in the steady state).

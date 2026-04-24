@@ -251,7 +251,9 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | Command | Purpose |
 |---------|---------|
 | `scripts/internal/agent_readability_lint.py` | Plan-walker lint for Pattern 9 (load-bearing ownership) + Pattern 10 (verification-contract) — BLOCK/WARN findings over plans/steward_platform/ |
+| `scripts/internal/agent_readability_score.py` | Primitive C agent-readability scorecard scorer (§3 scorecard-dimension scoring over knowledge/, plans/steward_platform/, ADRs) |
 | `scripts/internal/analyze_phase1a_matrix.py` | Phase 1A 2×2 model×label matrix H2H analysis (effect decomposition) |
+| `scripts/internal/archivist.py` | Primitive C archivist stub (interface contract + CLI skeleton for KB promotion flow; Phase 0 scaffold) |
 | `scripts/internal/audit_analysis.py` | Review pipeline audit (follow-up rates, corrective PRs) |
 | `scripts/internal/audit_portability.py` | Ops package portability audit (coupling pattern scanner, severity counts, threshold enforcement) |
 | `scripts/internal/blind_strategy_comparison.py` | Blind strategy comparison for Arc D evaluation (anonymize, rubric, unblind) |
@@ -260,6 +262,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/codex_plan_review_adapter.py` | Codex CLI plan review adapter (tier detection, plan-scoped invocation, Claude failsafe) |
 | `scripts/internal/codex_review_adapter.py` | Codex CLI invocation and output parsing (review findings extraction) |
 | `scripts/internal/confidence_scorer.py` | Deterministic confidence scoring for P2 review findings (heuristic filtering) |
+| `scripts/internal/create_plan_refusal.py` | Primitive C `/create-plan` refusal-logic helper (shape-first dispatch gate for plan-authoring requests) |
 | `scripts/internal/deterministic_prechecks.py` | Fast deterministic code checks (merge markers, RNG, imports) |
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/internal/evaluate_gate_x3.py` | R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle) |
@@ -271,6 +274,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_auction_context_dataset.py` | Auction-context dataset generator (R1 partner features) |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
 | `scripts/internal/github_pr_state.py` | GitHub CLI wrappers for PR metadata and CI status |
+| `scripts/internal/kb_index.py` | Primitive C KB index generator (walks `knowledge/`, emits deterministic `INDEX.md` with entry headings + one-line summaries; `--stdout` / `--check` modes) |
 | `scripts/internal/lane_models.py` | Per-lane model-tier loader (reads `.claude/lane_models.json`, emits tier-correct `--permission-mode` argv fragment; shared with the tmux launcher) |
 | `scripts/internal/generate_r1_5_diagnostics.py` | R1.5-v2 calibration diagnostics (cross-rung analysis + bimodality tests) |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
@@ -283,6 +287,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_interpretability_charts.py` | Interpretability chart generation from CSV data |
 | `scripts/internal/manage_artifacts.py` | Artifact lifecycle CLI (status, supersession, quarantine, prune) |
 | `scripts/internal/manage_invite_codes.py` | Invite code admin CLI (generate, list, revoke) for browser game pilot access |
+| `scripts/internal/memory_compact.py` | Primitive C MEMORY.md compaction helper (size-budgeted truncation + archive emission; preserves most-recent sections) |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/plan_review_driver.py` | Plan review loop orchestrator (Codex -> fix -> re-review cycles with fallback alerting) |
 | `scripts/internal/render_admin.py` | Admin CLI for production Render DB access (player lookups, match summaries, invite codes, raw SQL) |
