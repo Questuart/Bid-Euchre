@@ -1797,6 +1797,350 @@ permission_mode_flag_for_lane {lane}
             ), f"Python loader and shell helper diverge for lane={lane!r}"
 
 
+class TestSystemPromptFileFlag:
+    """Tests for archetype-aware ``--system-prompt-file`` wiring (B.9b / §2767-γ).
+
+    Per ``plans/steward_platform/2_primitive_B/shaping.md`` §6 (B.9b Fleet
+    launch adoption of ``--system-prompt-file``) and G13 §2.1 (19-lane →
+    8-archetype mapping at
+    ``plans/steward_platform/0_hardening/sub/g13_archetype_mapping.md``):
+
+    * Every ``$CLAUDE_BIN`` launch line in steward-session.sh routes through
+      ``system_prompt_flag_for_lane <lane-id>``.
+    * The helper resolves ``<lane-id>`` to its archetype via a hardcoded
+      19-lane case (matching G13 §2.1) and emits
+      ``--system-prompt-file .claude/system_prompts/<archetype>.md`` iff
+      the archetype prompt file exists on disk.
+    * Missing prompt file ⇒ helper emits nothing; the lane falls back to
+      the Claude Code default system prompt (pre-B.9a fan-out safety).
+    """
+
+    EXPECTED_LANES = (
+        "orchestrator",
+        "ops",
+        "review",
+        "analyst-a",
+        "analyst-b",
+        "analyst-c",
+        "analyst-d",
+        "author-a",
+        "author-b",
+        "author-c",
+        "author-d",
+        "brws-author-a",
+        "brws-author-b",
+        "brws-author-c",
+        "brws-author-d",
+        "flex-a",
+        "flex-b",
+        "flex-c",
+        "flex-d",
+    )
+
+    # G13 §2.1 — 19-lane → 8-archetype mapping.
+    LANE_TO_ARCHETYPE = {
+        "orchestrator": "orchestrator",
+        "ops": "ops",
+        "review": "review",
+        "analyst-a": "analyst",
+        "analyst-b": "analyst",
+        "analyst-c": "analyst",
+        "analyst-d": "analyst",
+        "author-a": "author",
+        "author-b": "author",
+        "author-c": "author",
+        "author-d": "author",
+        "brws-author-a": "brws-author",
+        "brws-author-b": "brws-author",
+        "brws-author-c": "brws-author",
+        "brws-author-d": "brws-author",
+        "flex-a": "flex",
+        "flex-b": "flex",
+        "flex-c": "flex",
+        "flex-d": "flex",
+    }
+
+    EXPECTED_ARCHETYPES = frozenset(
+        {
+            "orchestrator",
+            "ops",
+            "review",
+            "analyst",
+            "author",
+            "brws-author",
+            "flex",
+        }
+    )
+
+    @staticmethod
+    def _claude_launch_lines(content: str) -> list[str]:
+        return [
+            line
+            for line in content.split("\n")
+            if "$CLAUDE_BIN" in line and "--agent" in line
+        ]
+
+    @staticmethod
+    def _extract_helper(content: str) -> str:
+        """Extract the ``system_prompt_flag_for_lane`` function body.
+
+        Mirrors ``TestPermissionModeByModelTier._extract_helper`` brace-
+        depth tracking so the embedded ``case`` block with ``;;`` doesn't
+        confuse a naive regex.
+        """
+        lines = content.split("\n")
+        out: list[str] = []
+        in_func = False
+        depth = 0
+        for line in lines:
+            if line.startswith("system_prompt_flag_for_lane()"):
+                in_func = True
+            if in_func:
+                out.append(line)
+                depth += line.count("{") - line.count("}")
+                if depth == 0 and "}" in line and len(out) > 1:
+                    break
+        return "\n".join(out)
+
+    # -- Structural checks on steward-session.sh ------------------------
+
+    def test_helper_function_defined(self) -> None:
+        """steward-session.sh must define ``system_prompt_flag_for_lane``."""
+        content = _read_steward_script()
+        assert "system_prompt_flag_for_lane()" in content, (
+            "system_prompt_flag_for_lane function must be defined (B.9b / "
+            "shaping.md §6)"
+        )
+
+    def test_every_launch_line_calls_system_prompt_helper(self) -> None:
+        """Every ``$CLAUDE_BIN --agent`` line must invoke the helper.
+
+        Missing the call on any launch line would leave that lane using
+        the Claude Code default system prompt permanently, regressing the
+        B.9b fleet-wide adoption.
+        """
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
+        assert launch_lines, "Expected at least one claude launch line in script"
+        missing = [
+            line.strip()
+            for line in launch_lines
+            if "system_prompt_flag_for_lane" not in line
+        ]
+        assert not missing, (
+            "Every claude launch must route through `system_prompt_flag_for_lane "
+            "<lane-id>` so the archetype system prompt is applied at launch "
+            "time (B.9b). Missing on "
+            f"{len(missing)} line(s):\n" + "\n".join(f"  {line}" for line in missing)
+        )
+
+    def test_system_prompt_invocation_count_matches_launch_count(self) -> None:
+        """One ``$(system_prompt_flag_for_lane ...)`` per launch line."""
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
+        invocation_count = content.count("$(system_prompt_flag_for_lane ")
+        assert invocation_count == len(launch_lines), (
+            f"Expected one $(system_prompt_flag_for_lane ...) call per "
+            f"launch line. Launch lines: {len(launch_lines)}; "
+            f"invocations: {invocation_count}"
+        )
+
+    def test_system_prompt_helper_covers_all_lanes(self) -> None:
+        """Each lane-id must appear exactly once as a helper argument.
+
+        Catches copy-paste errors where one lane's launch passes another
+        lane's id to the helper.
+        """
+        content = _read_steward_script()
+        for lane in self.EXPECTED_LANES:
+            token = f"$(system_prompt_flag_for_lane {lane})"
+            assert content.count(token) == 1, (
+                f"Expected exactly one invocation of `{token}` in "
+                f"steward-session.sh; found {content.count(token)}"
+            )
+
+    def test_system_prompt_call_before_channel_flags_on_orchestrator(self) -> None:
+        """Orchestrator: system-prompt helper must precede ``$ORCH_CHANNEL_FLAGS``.
+
+        The ``$ORCH_CHANNEL_FLAGS`` expansion is either empty or expands
+        to ``--channels plugin:...``. Placing the helper call before it
+        keeps the argv order deterministic whether channel flags are
+        empty or populated — matches the invariant enforced for the
+        permission-mode helper (#2767 follow-on).
+        """
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
+        orch_lines = [line for line in launch_lines if "steward-orchestrator" in line]
+        assert len(orch_lines) == 1, "Expected exactly one orchestrator launch line"
+        line = orch_lines[0]
+        helper_pos = line.find("system_prompt_flag_for_lane")
+        channel_pos = line.find("$ORCH_CHANNEL_FLAGS")
+        assert (
+            helper_pos > 0
+        ), "Orchestrator launch must route through system_prompt_flag_for_lane"
+        assert channel_pos > 0, "Orchestrator launch must expand $ORCH_CHANNEL_FLAGS"
+        assert helper_pos < channel_pos, (
+            "system_prompt_flag_for_lane call must appear BEFORE "
+            "$ORCH_CHANNEL_FLAGS so the expansion is safe whether channel "
+            "flags are empty or populated"
+        )
+
+    def test_helper_references_system_prompts_directory(self) -> None:
+        """Helper body must reference ``.claude/system_prompts/``."""
+        content = _read_steward_script()
+        helper = self._extract_helper(content)
+        assert helper, "system_prompt_flag_for_lane body must be extractable"
+        assert ".claude/system_prompts/" in helper, (
+            "Helper must reference the canonical .claude/system_prompts/ "
+            "directory (per B.9a file layout)"
+        )
+
+    def test_helper_covers_all_8_archetypes(self) -> None:
+        """Helper body must contain all 8 archetype identifiers.
+
+        The archetype set is enumerated by G13 §2.1. A missing archetype
+        in the shell ``case`` statement would silently drop system-prompt
+        adoption for its lanes.
+        """
+        content = _read_steward_script()
+        helper = self._extract_helper(content)
+        missing = [a for a in self.EXPECTED_ARCHETYPES if a not in helper]
+        assert not missing, (
+            f"system_prompt_flag_for_lane must cover all 8 archetypes; "
+            f"missing: {sorted(missing)}"
+        )
+
+    # -- Functional checks on the helper --------------------------------
+
+    def _run_helper(
+        self,
+        tmp_path: Path,
+        lane: str,
+        *,
+        present_archetypes: list[str] | None = None,
+    ) -> str:
+        """Invoke the helper in a bash subshell with a staged prompts dir.
+
+        Staging: create ``<tmp_path>/.claude/system_prompts/<archetype>.md``
+        for each archetype in ``present_archetypes``. If the list is
+        omitted, no files exist (tests the fallback path).
+        """
+        prompts_dir = tmp_path / ".claude" / "system_prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        for archetype in present_archetypes or []:
+            (prompts_dir / f"{archetype}.md").write_text("# archetype prompt stub\n")
+        helper_body = self._extract_helper(_read_steward_script())
+        script = f"""
+MAIN_DIR="{tmp_path}"
+{helper_body}
+system_prompt_flag_for_lane {lane}
+"""
+        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert result.returncode == 0, f"helper exited non-zero: {result.stderr}"
+        return result.stdout.strip()
+
+    def test_helper_emits_flag_when_archetype_file_exists(self, tmp_path: Path) -> None:
+        """With ``analyst.md`` present, an analyst lane gets the flag."""
+        out = self._run_helper(tmp_path, "analyst-a", present_archetypes=["analyst"])
+        assert (
+            out == "--system-prompt-file .claude/system_prompts/analyst.md"
+        ), f"Expected analyst.md flag, got {out!r}"
+
+    def test_helper_emits_nothing_when_archetype_file_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """With no prompt files staged, every lane gets empty output."""
+        out = self._run_helper(tmp_path, "author-a", present_archetypes=[])
+        assert out == "", (
+            f"Expected fallback (empty output) when archetype file missing, "
+            f"got {out!r}"
+        )
+
+    def test_helper_emits_empty_for_unknown_lane(self, tmp_path: Path) -> None:
+        """Unknown lane-id falls back to empty (no flag)."""
+        out = self._run_helper(
+            tmp_path,
+            "bogus-lane-42",
+            present_archetypes=["analyst", "author", "flex"],
+        )
+        assert out == "", f"Expected empty output for unknown lane, got {out!r}"
+
+    def test_helper_maps_every_known_lane_to_its_archetype(
+        self, tmp_path: Path
+    ) -> None:
+        """Every known lane resolves to the archetype per G13 §2.1."""
+        # Stage all 8 archetype prompt files so the helper always emits
+        # the flag — we're checking the case-statement mapping, not the
+        # fallback path.
+        present = list(self.EXPECTED_ARCHETYPES)
+        for lane, expected_archetype in self.LANE_TO_ARCHETYPE.items():
+            out = self._run_helper(tmp_path, lane, present_archetypes=present)
+            expected = (
+                f"--system-prompt-file .claude/system_prompts/"
+                f"{expected_archetype}.md"
+            )
+            assert out == expected, (
+                f"Lane {lane!r} must resolve to archetype "
+                f"{expected_archetype!r}; got {out!r}"
+            )
+
+    def test_helper_handles_per_archetype_partial_rollout(self, tmp_path: Path) -> None:
+        """With only ``analyst.md`` present, non-analyst lanes get empty.
+
+        This is the current (pre-B.9a fan-out) state: only analyst.md
+        lives in ``.claude/system_prompts/`` and other archetypes are
+        still pending. The helper must return the flag for analyst
+        lanes and empty for everyone else.
+        """
+        out_analyst = self._run_helper(
+            tmp_path, "analyst-a", present_archetypes=["analyst"]
+        )
+        out_author = self._run_helper(
+            tmp_path, "author-a", present_archetypes=["analyst"]
+        )
+        out_orchestrator = self._run_helper(
+            tmp_path, "orchestrator", present_archetypes=["analyst"]
+        )
+        assert (
+            out_analyst == "--system-prompt-file .claude/system_prompts/analyst.md"
+        ), f"analyst-a with analyst.md present must emit flag, got {out_analyst!r}"
+        assert out_author == "", (
+            f"author-a without author.md must emit empty (fallback), "
+            f"got {out_author!r}"
+        )
+        assert out_orchestrator == "", (
+            f"orchestrator without orchestrator.md must emit empty (fallback), "
+            f"got {out_orchestrator!r}"
+        )
+
+    def test_committed_analyst_prompt_is_wired(self) -> None:
+        """Live check: the committed ``.claude/system_prompts/analyst.md``
+        is picked up by the helper for each analyst lane when running
+        against the real repo (not a tmp-path mock).
+
+        This is a thin smoke test guarding against accidental drift
+        between the B.9a authoring surface and the B.9b launch surface.
+        """
+        analyst_prompt = REPO_ROOT / ".claude" / "system_prompts" / "analyst.md"
+        if not analyst_prompt.exists():
+            pytest.skip("analyst.md not present; B.9a landing still pending")
+        helper_body = self._extract_helper(_read_steward_script())
+        script = f"""
+MAIN_DIR="{REPO_ROOT}"
+{helper_body}
+system_prompt_flag_for_lane analyst-b
+"""
+        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        assert (
+            result.stdout.strip()
+            == "--system-prompt-file .claude/system_prompts/analyst.md"
+        ), (
+            "Real-repo check failed: analyst-b did not emit the analyst.md "
+            f"flag. stdout={result.stdout!r}"
+        )
+
+
 class TestLaunchdTemplate:
     """Validate the launchd plist template."""
 

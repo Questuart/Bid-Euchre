@@ -62,6 +62,36 @@ GH_TIMEOUT_SECONDS = 30
 POLL_INTERVAL_SECONDS = 30
 MAX_POLL_CYCLES = 30  # 30 * 30s = 15 min max runtime
 
+# Hardcoded 19-lane → 8-archetype mapping per G13 §2.1
+# (plans/steward_platform/0_hardening/sub/g13_archetype_mapping.md). This
+# is a temporary in-module hardcode per Primitive B-exec.γ / B.9b scope
+# lock; a future Primitive-G extraction will fold it into
+# .claude/lane_models.json as an `archetype` field consumed by both this
+# runner and the shell loader. Until then, the shell helper
+# `system_prompt_flag_for_lane` in .claude/tmux/steward-session.sh and
+# this dict must stay behaviorally consistent.
+_LANE_ARCHETYPE_MAP: dict[str, str] = {
+    "orchestrator": "orchestrator",
+    "ops": "ops",
+    "review": "review",
+    "analyst-a": "analyst",
+    "analyst-b": "analyst",
+    "analyst-c": "analyst",
+    "analyst-d": "analyst",
+    "author-a": "author",
+    "author-b": "author",
+    "author-c": "author",
+    "author-d": "author",
+    "brws-author-a": "brws-author",
+    "brws-author-b": "brws-author",
+    "brws-author-c": "brws-author",
+    "brws-author-d": "brws-author",
+    "flex-a": "flex",
+    "flex-b": "flex",
+    "flex-c": "flex",
+    "flex-d": "flex",
+}
+
 # Stale lock files to clean up before processing.
 # These are left behind by crashed scheduled tasks and block clean operation.
 _STALE_LOCK_PATTERNS = [
@@ -455,6 +485,52 @@ def find_pending_requests(queue_dir: Path | None = None) -> list[ReviewRequest]:
 # ---------------------------------------------------------------------------
 
 
+def system_prompt_args_for_lane(lane_id: str) -> list[str]:
+    """Return ``['--system-prompt-file', '<path>']`` for a lane, or ``[]``.
+
+    Resolves the lane to its archetype via :data:`_LANE_ARCHETYPE_MAP`
+    (Primitive B-exec.γ / B.9b — shaping.md §6) and returns the
+    ``--system-prompt-file`` argv fragment pointing at the archetype's
+    prompt file under ``.claude/system_prompts/``.
+
+    Fallback: if the resolved archetype prompt file does not yet exist
+    on disk (pre-B.9a fan-out; only ``analyst.md`` is authored today),
+    returns ``[]`` so the caller splices nothing into argv and the
+    ``claude`` subprocess falls back to the Claude Code default system
+    prompt. This prevents a ``--system-prompt-file <missing-file>``
+    launch failure while B.9a fan-out is in flight. Once all 8
+    archetype files land, every caller gets the flag automatically
+    with no further edits.
+
+    Consistency invariant: this helper's resolution must match
+    ``system_prompt_flag_for_lane`` in ``.claude/tmux/steward-session.sh``
+    for the same ``lane_id``. The shell helper and this function both
+    read the same hardcoded 19-lane map (G13 §2.1) and the same
+    filesystem presence of ``<archetype>.md``.
+
+    Args:
+        lane_id: The lane identifier (e.g., ``"review"``).
+
+    Returns:
+        A list of CLI tokens: either
+        ``["--system-prompt-file", ".claude/system_prompts/<archetype>.md"]``
+        (two elements) or ``[]`` (empty — fallback to default prompt).
+    """
+    archetype = _LANE_ARCHETYPE_MAP.get(lane_id)
+    if archetype is None:
+        return []
+    prompt_rel = Path(".claude") / "system_prompts" / f"{archetype}.md"
+    prompt_abs = _REPO_ROOT / prompt_rel
+    if not prompt_abs.is_file():
+        # File not yet authored (B.9a fan-out pending). Fall back to the
+        # Claude Code default system prompt by emitting nothing. Callers
+        # use ``list.extend([])`` which is a no-op.
+        return []
+    # Emit the repo-relative path; ``claude`` resolves relative to the
+    # subprocess cwd, which ``invoke_review`` sets to ``_REPO_ROOT``.
+    return ["--system-prompt-file", str(prompt_rel)]
+
+
 def invoke_review(pr_number: int, branch: str, head_sha: str) -> dict[str, Any]:
     """Invoke the steward-review agent for a PR.
 
@@ -481,11 +557,18 @@ def invoke_review(pr_number: int, branch: str, head_sha: str) -> dict[str, Any]:
     # Sonnet / Haiku → ["--dangerously-skip-permissions"] (explicit reduced
     # safety envelope; --permission-mode auto silently falls back for
     # non-Opus models and hides enforcement legibility).
+    #
+    # Archetype-aware system-prompt override (Primitive B-exec.γ / B.9b).
+    # Opus review lane → ["--system-prompt-file", ".claude/system_prompts/review.md"]
+    # when the archetype prompt file exists on disk. Fallback: if the
+    # file is not yet authored (pre-B.9a fan-out), the helper returns []
+    # and the subprocess falls back to the Claude Code default prompt.
     argv = [
         "claude",
         "--agent",
         "steward-review",
         *permission_mode_args_for_lane(LANE_ID),
+        *system_prompt_args_for_lane(LANE_ID),
         "--print",
         "--output-format",
         "json",
