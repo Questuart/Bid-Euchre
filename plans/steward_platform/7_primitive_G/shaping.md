@@ -19,6 +19,10 @@
 **Status:** DESIGN-SPEC — no code edits, no hook subscriptions, no config changes authored in this artifact. Produces an execution-ready packet decomposition for Primitive G Phase 0.
 **Purpose:** Pre-shape Primitive G Phase 0 so the orchestrator can dispatch the 11–13 author-lane execution packets against the enumerated tracks with zero additional analyst shaping work per packet. Matches the pre-shaping pattern of Primitive F Packet 11 (`plans/steward_platform/6_primitive_F/shaping.md` §8).
 
+**Rebase delta (pre-commit state-of-the-world).** This doc was rebased onto `origin/main` immediately before commit and picks up two upstream landings that materially affect packet serialization:
+1. **PR #2778 (Fixes #2767)** — model-tier-aware launch flags already in place on all 19 lanes. G-A2 no longer serializes with #2767; it layers `--system-prompt-file` on top of the conditioned launch structure cleanly (see §3.2 Upstream gates).
+2. **PR #2780 (B-exec.α)** — prompt-policy registry now versioned per `<archetype>-v<MAJOR>.<MINOR>` with PP0-PP4 lint; tool-risk registry ships with dual-envelope classification; effort policy + `shape_then_execute_pattern11.md` recipe shipped. G-A1 fan-out composes against the *versioned* registry; every Pattern 11 G packet composes against the shipped recipe (§2 upstream crosswalk).
+
 ---
 
 ## §1. Scope of this document
