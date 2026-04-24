@@ -470,6 +470,14 @@ def check_diff(
         )
     )
 
+    # I10: idempotency-checklist precheck (WARN severity — shaping §5.5).
+    all_findings.extend(
+        check_idempotency_checklist(
+            changed_files,
+            pr_body=pr_body,
+        )
+    )
+
     return all_findings
 
 
@@ -1102,4 +1110,125 @@ def check_v7_commit_policy(
                 ),
             )
         )
+
+    return findings
+
+
+# I10: Idempotency-checklist precheck (Primitive H.0, shaping §5.5).  See
+# ``check_idempotency_checklist`` docstring below for full semantics.
+_I10_PR_BODY_HEADING_RE = re.compile(r"(?im)^\s{0,3}#{1,6}\s+Idempotency\b")
+
+# Surfaces from `.claude/rules/idempotency_checklist.md` §Rows table.
+# (row_id, match_fn) — match_fn returns True if the path matches the row.
+_I10_ROWS: list[tuple[int, str, Callable[[str], bool]]] = [
+    (1, "message send", lambda p: p == "src/bid_euchre/ops/message_bus.py"),
+    (2, "task status update", lambda p: p == "src/bid_euchre/ops/task_queue.py"),
+    (3, "event emission", lambda p: p == "src/bid_euchre/ops/events.py"),
+    (
+        4,
+        "file write (state files)",
+        lambda p: (
+            (p.startswith(".claude/runtime/") and p.endswith(".json"))
+            or p == "MEMORY.md"
+            or p == "knowledge/INDEX.md"
+        ),
+    ),
+    (5, "hook invocation", lambda p: p.startswith(".claude/hooks/")),
+    (
+        6,
+        "cron/loop registration",
+        lambda p: p.startswith(".claude/runtime/loops/"),
+    ),
+    (
+        7,
+        "KB promotion",
+        lambda p: p.startswith("knowledge/_promoted/"),
+    ),
+]
+
+
+def _i10_matches(path: str) -> list[tuple[int, str]]:
+    """Return list of (row_id, row_name) that the path triggers."""
+    matches: list[tuple[int, str]] = []
+    for row_id, row_name, match_fn in _I10_ROWS:
+        if match_fn(path):
+            matches.append((row_id, row_name))
+    return matches
+
+
+def _i10_pr_body_has_idempotency_section(pr_body: str | None) -> bool:
+    if not pr_body:
+        return False
+    return bool(_I10_PR_BODY_HEADING_RE.search(pr_body))
+
+
+def check_idempotency_checklist(
+    changed_files: list[str],
+    *,
+    pr_body: str | None = None,
+) -> list[Finding]:
+    """I10: Idempotency-checklist precheck (WARN severity — shaping §5.5).
+
+    If any changed file matches a surface row from
+    `.claude/rules/idempotency_checklist.md` §Rows table, the PR body
+    must contain an `## Idempotency` section.  Absence emits a WARN
+    (P2) finding.  Phase 1 kickoff tightens rows 1–4 to BLOCK.
+
+    Args:
+        changed_files: PR-scoped list of changed file paths.
+        pr_body: The PR description body.  When ``None``, a single
+            fallback WARN is emitted if any trigger surface is touched
+            (callers that cannot supply a PR body still see the
+            reminder).
+
+    Returns:
+        List of Finding objects.  All P2 in this landing.
+    """
+    findings: list[Finding] = []
+
+    # Collect per-path row matches.
+    triggered: list[tuple[str, int, str]] = []
+    for path in changed_files:
+        for row_id, row_name in _i10_matches(path):
+            triggered.append((path, row_id, row_name))
+
+    if not triggered:
+        return findings
+
+    has_section = _i10_pr_body_has_idempotency_section(pr_body)
+    if has_section:
+        # Section present — author has engaged with the checklist.
+        # No WARN emitted.  A future tightening may also require that the
+        # section enumerate each matching row, but that is out of scope
+        # for the Phase 0 landing.
+        return findings
+
+    # Absence: one WARN per distinct (path, row) pair up to a cap so the
+    # review body does not flood when a PR touches many surfaces.
+    # Emit the first triggered path + row as the anchor for the finding;
+    # downstream review can ask for the rest.
+    seen: set[tuple[str, int]] = set()
+    for path, row_id, row_name in triggered:
+        key = (path, row_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        findings.append(
+            Finding(
+                severity="P2",
+                file=path,
+                line=0,
+                category="process",
+                check_id="I10",
+                message=(
+                    f"Idempotency checklist row {row_id} ({row_name}) is "
+                    f"triggered by this diff but the PR body has no "
+                    f"'## Idempotency' section. Add the section per "
+                    f".claude/rules/idempotency_checklist.md "
+                    f"(shaping §5.5). Phase 0 severity is WARN; "
+                    f"Phase 1 kickoff tightens rows 1-4 to BLOCK."
+                ),
+            )
+        )
+
     return findings

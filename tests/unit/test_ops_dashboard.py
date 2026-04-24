@@ -1418,3 +1418,123 @@ class TestFormatLaneLineHeartbeat:
         line = _format_lane_line(lane, now=now)
         assert "likely active (via heartbeat)" in line
         assert "ago" not in line
+
+
+class TestCanarySummary:
+    """Canary dashboard integration (Primitive H.0, shape §5.6)."""
+
+    def test_missing_state_file_default_summary(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.dashboard import _read_canary_summary
+
+        summary = _read_canary_summary(tmp_path / "does_not_exist.json")
+        assert summary.canary_last_status == "unknown"
+        assert summary.canary_pass_streak == 0
+        assert summary.canary_last_pass is None
+        assert summary.elapsed_history == []
+
+    def test_malformed_json_falls_back_to_default(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.dashboard import _read_canary_summary
+
+        state_file = tmp_path / "dogfood_v1.json"
+        state_file.write_text("{not-json")
+        summary = _read_canary_summary(state_file)
+        assert summary.canary_last_status == "unknown"
+
+    def test_valid_state_populates_summary(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.dashboard import _read_canary_summary
+
+        state_file = tmp_path / "dogfood_v1.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "last_pass_timestamp": "2026-04-24T06:45:00+00:00",
+                    "pass_streak": 4,
+                    "last_run_status": "success",
+                    "elapsed_history": [1.2, 1.3, 1.1, 1.4],
+                }
+            )
+        )
+        summary = _read_canary_summary(state_file)
+        assert summary.canary_last_pass == "2026-04-24T06:45:00+00:00"
+        assert summary.canary_pass_streak == 4
+        assert summary.canary_last_status == "success"
+        assert summary.elapsed_history == [1.2, 1.3, 1.1, 1.4]
+        assert summary.canary_last_elapsed == 1.4
+
+    def test_sparkline_empty(self) -> None:
+        from bid_euchre.ops.dashboard import _sparkline
+
+        assert _sparkline([]) == "\u2205"
+
+    def test_sparkline_monotonic_uses_increasing_blocks(self) -> None:
+        from bid_euchre.ops.dashboard import _sparkline
+
+        spark = _sparkline([1.0, 2.0, 3.0, 4.0])
+        assert len(spark) == 4
+        assert spark[0] != spark[-1]
+
+    def test_sparkline_constant_values_uniform(self) -> None:
+        from bid_euchre.ops.dashboard import _sparkline
+
+        spark = _sparkline([3.0, 3.0, 3.0])
+        assert len(spark) == 3
+        assert spark[0] == spark[1] == spark[2]
+
+    def test_format_canary_line_contains_all_fields(self) -> None:
+        from bid_euchre.ops.dashboard import CanarySummary, _format_canary_line
+
+        summary = CanarySummary(
+            canary_last_pass="2026-04-24T06:45:00+00:00",
+            canary_pass_streak=3,
+            canary_last_status="success",
+            canary_last_elapsed=2.5,
+            elapsed_history=[1.0, 1.5, 2.5],
+        )
+        line = _format_canary_line(summary)
+        assert "Canary" in line
+        assert "2026-04-24T06:45:00+00:00" in line
+        assert "streak: 3" in line
+        assert "status: success" in line
+        assert "2.5s" in line
+
+    def test_format_canary_line_when_never_run(self) -> None:
+        from bid_euchre.ops.dashboard import CanarySummary, _format_canary_line
+
+        line = _format_canary_line(CanarySummary())
+        assert "last_pass: (never)" in line
+        assert "streak: 0" in line
+        assert "status: unknown" in line
+
+    def test_dashboard_view_includes_canary_in_json(self, tmp_path: Path) -> None:
+        """JSON output carries a ``canary`` top-level key."""
+        from bid_euchre.ops.dashboard import build_dashboard_view, format_dashboard_json
+
+        # runtime_dir points at an empty tmpdir — canary state absent
+        view = build_dashboard_view(runtime_dir=tmp_path)
+        js = format_dashboard_json(view)
+        assert "canary" in js
+        assert js["canary"]["canary_last_status"] == "unknown"
+
+    def test_dashboard_text_renders_canary_line(self, tmp_path: Path) -> None:
+        from bid_euchre.ops.dashboard import (
+            build_dashboard_view,
+            format_dashboard_text,
+        )
+
+        state_dir = tmp_path / "canary_state"
+        state_dir.mkdir()
+        (state_dir / "dogfood_v1.json").write_text(
+            json.dumps(
+                {
+                    "last_pass_timestamp": "2026-04-24T06:45:00+00:00",
+                    "pass_streak": 2,
+                    "last_run_status": "success",
+                    "elapsed_history": [1.0, 1.2],
+                }
+            )
+        )
+        view = build_dashboard_view(runtime_dir=tmp_path)
+        text = format_dashboard_text(view)
+        assert "Canary" in text
+        assert "streak: 2" in text
+        assert "status: success" in text

@@ -239,6 +239,31 @@ class InboxHighlight:
 
 
 @dataclass
+class CanarySummary:
+    """Dogfood-v1 canary snapshot for the dashboard (Primitive H.0).
+
+    Populated by :func:`_read_canary_summary` from the durable state
+    file at ``.claude/runtime/canary_state/dogfood_v1.json``. Absent
+    state file means "no run yet" and all fields are None / empty.
+
+    Field names match shaping §5.6 deliverable spec:
+
+    - ``canary_last_pass``      — ISO-8601 of last successful run
+    - ``canary_pass_streak``    — consecutive passes since last fail
+    - ``canary_last_status``    — ``success|slow|fail|silent|schema-drift|unknown``
+    - ``canary_last_elapsed``   — seconds, last run regardless of status
+    - ``elapsed_history``       — last ``ELAPSED_HISTORY_CAP`` elapsed floats
+                                  (used for the sparkline)
+    """
+
+    canary_last_pass: str | None = None
+    canary_pass_streak: int = 0
+    canary_last_status: str = "unknown"
+    canary_last_elapsed: float | None = None
+    elapsed_history: list[float] = field(default_factory=list)
+
+
+@dataclass
 class DashboardView:
     """Complete dashboard state for rendering.
 
@@ -256,6 +281,7 @@ class DashboardView:
     blocked_task_count: int = 0
     warning_count: int = 0
     token_economy: dict[str, Any] = field(default_factory=dict)
+    canary: CanarySummary = field(default_factory=lambda: CanarySummary())
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +523,12 @@ def build_dashboard_view(
     except Exception:
         pass  # Token economy data is optional
 
+    # Canary summary (Primitive H.0) — best-effort read of state file
+    canary_runtime_root = runtime_dir or Path(".claude/runtime")
+    canary = _read_canary_summary(
+        canary_runtime_root / "canary_state" / "dogfood_v1.json"
+    )
+
     return DashboardView(
         generated_at=now.isoformat(),
         foreground=DashboardSection(
@@ -514,6 +546,74 @@ def build_dashboard_view(
         blocked_task_count=len(report.blocked_tasks),
         warning_count=len(report.warnings),
         token_economy=token_economy,
+        canary=canary,
+    )
+
+
+def _read_canary_summary(state_file: Path) -> CanarySummary:
+    """Read the dogfood-v1 canary state file into a :class:`CanarySummary`.
+
+    Missing file, malformed JSON, or unexpected schema all degrade to a
+    default ``CanarySummary`` (status=``unknown``). The dashboard never
+    fails on canary state — the operator sees ``unknown`` and knows to
+    run ``/run-canary`` once.
+    """
+    if not state_file.exists():
+        return CanarySummary()
+    try:
+        data = json.loads(state_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return CanarySummary()
+    history_raw = data.get("elapsed_history") or []
+    try:
+        history = [float(x) for x in history_raw]
+    except (TypeError, ValueError):
+        history = []
+    last_elapsed = history[-1] if history else None
+    return CanarySummary(
+        canary_last_pass=data.get("last_pass_timestamp"),
+        canary_pass_streak=int(data.get("pass_streak", 0) or 0),
+        canary_last_status=str(data.get("last_run_status", "unknown")),
+        canary_last_elapsed=last_elapsed,
+        elapsed_history=history,
+    )
+
+
+def _sparkline(values: list[float]) -> str:
+    """Render a list of floats as a unicode block-character sparkline.
+
+    Empty input returns "∅". Single-value input returns the mid-block
+    glyph. Uses 8-level granularity matching standard sparkline tables.
+    """
+    if not values:
+        return "\u2205"  # ∅
+    blocks = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"  # ▁▂▃▄▅▆▇█
+    vmin = min(values)
+    vmax = max(values)
+    if vmax == vmin:
+        return blocks[len(blocks) // 2] * len(values)
+    out = []
+    for v in values:
+        idx = int((v - vmin) / (vmax - vmin) * (len(blocks) - 1))
+        out.append(blocks[idx])
+    return "".join(out)
+
+
+def _format_canary_line(summary: CanarySummary) -> str:
+    """Render a one-line canary dashboard summary (shape §5.6 / dogfood.md §9)."""
+    last_pass = summary.canary_last_pass or "(never)"
+    last_elapsed = (
+        f"{summary.canary_last_elapsed:.1f}s"
+        if summary.canary_last_elapsed is not None
+        else "—"
+    )
+    sparkline = _sparkline(summary.elapsed_history)
+    return (
+        f"Canary  last_pass: {last_pass}  "
+        f"streak: {summary.canary_pass_streak}  "
+        f"status: {summary.canary_last_status}  "
+        f"elapsed: {last_elapsed}  "
+        f"[{sparkline}]"
     )
 
 
@@ -792,6 +892,10 @@ def format_dashboard_text(
     if view.warning_count > 0:
         lines.append(f"Warnings: {view.warning_count}")
 
+    # Canary status line (Primitive H.0)
+    lines.append("")
+    lines.append(_format_canary_line(view.canary))
+
     # Token economy
     te = view.token_economy
     if te:
@@ -874,4 +978,5 @@ def format_dashboard_json(view: DashboardView) -> dict[str, Any]:
         "inbox_highlights": [asdict(h) for h in view.inbox_highlights],
         "task_queue": view.task_queue_summary,
         "token_economy": view.token_economy or None,
+        "canary": asdict(view.canary),
     }
