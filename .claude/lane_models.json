@@ -1,0 +1,25 @@
+{
+  "_comment": "Per-lane model-tier configuration. Source of truth for which launch flag each lane gets (see .claude/rules/80_permission_model.md § Model-tier activation constraint). Schema: {\"lanes\": {\"<lane-id>\": {\"model\": \"opus|sonnet|haiku\"}, ...}}. Opus-tier lanes launch with --permission-mode auto (classifier-gated); Sonnet/Haiku-tier lanes launch with --dangerously-skip-permissions (explicit reduced safety envelope). Loaders: .claude/tmux/steward-session.sh (shell, via python3 inline) + scripts/internal/lane_models.py (Python, for review_lane_runner). Unknown or missing lanes default to opus.",
+  "_schema_version": 1,
+  "lanes": {
+    "orchestrator": {"model": "opus"},
+    "ops": {"model": "opus"},
+    "review": {"model": "opus"},
+    "analyst-a": {"model": "opus"},
+    "analyst-b": {"model": "opus"},
+    "analyst-c": {"model": "opus"},
+    "analyst-d": {"model": "opus"},
+    "author-a": {"model": "opus"},
+    "author-b": {"model": "opus"},
+    "author-c": {"model": "opus"},
+    "author-d": {"model": "opus"},
+    "brws-author-a": {"model": "opus"},
+    "brws-author-b": {"model": "opus"},
+    "brws-author-c": {"model": "opus"},
+    "brws-author-d": {"model": "opus"},
+    "flex-a": {"model": "opus"},
+    "flex-b": {"model": "opus"},
+    "flex-c": {"model": "opus"},
+    "flex-d": {"model": "opus"}
+  }
+}

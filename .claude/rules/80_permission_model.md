@@ -32,30 +32,51 @@ The CLI only activates auto mode when the launch command includes
 `"auto"` still starts in `bypassPermissions` — the classifier gate does not
 engage and `PermissionDenied` events are never emitted.
 
-Two consequences for the fleet (#2685):
+**Activation is further conditioned on the lane's model tier** — see the
+next section ("Model-tier activation constraint") for the canonical table
+and the `.claude/lane_models.json` config that drives per-lane flag
+selection. The short version: Opus lanes get `--permission-mode auto`,
+Sonnet/Haiku lanes get `--dangerously-skip-permissions`. The two launch
+surfaces below emit the tier-correct flag for each lane they launch.
 
-1. **Every tmux pane launched by `steward-session.sh` must include
-   `--permission-mode auto`.** The launcher script (`.claude/tmux/steward-session.sh`)
-   passes the flag to each `$CLAUDE_BIN` invocation — orchestrator, ops, review,
-   all four analyst/author/browser/flex panes, 19 launches total. On
-   orchestrator restarts the flag is placed before `$ORCH_CHANNEL_FLAGS` so the
+Two consequences for the fleet (#2685, refined by #2767):
+
+1. **Every tmux pane launched by `steward-session.sh` emits the
+   tier-correct launch flag per `.claude/lane_models.json`.** The launcher
+   script (`.claude/tmux/steward-session.sh`) routes every `$CLAUDE_BIN`
+   invocation — orchestrator, ops, review, all four analyst/author/browser/
+   flex panes, 19 launches total — through the
+   `permission_mode_flag_for_lane` helper. The helper reads the canonical
+   config and emits either `--permission-mode auto` (Opus) or
+   `--dangerously-skip-permissions` (Sonnet/Haiku). On orchestrator restarts
+   the helper invocation is placed before `$ORCH_CHANNEL_FLAGS` so the
    channel-flags expansion is deterministic.
-2. **Every headless subprocess launch must include the flag explicitly.**
-   The autonomous review coordinator spawns `claude` via `subprocess.run` in
-   `scripts/internal/review_lane_runner.py::invoke_review`. That argv list
-   must carry `--permission-mode auto` alongside `--agent steward-review`.
-   Any future headless launch surface (plan-review adapters, one-shot
-   `claude --print` invocations, batch review harnesses) must carry the flag
-   too — there is no implicit inheritance from shared settings.
+2. **Every headless subprocess launch emits the tier-correct flag
+   explicitly.** The autonomous review coordinator spawns `claude` via
+   `subprocess.run` in `scripts/internal/review_lane_runner.py::invoke_review`.
+   That argv list splices the fragment returned by
+   `lane_models.permission_mode_args_for_lane(LANE_ID)` — `["--permission-mode",
+   "auto"]` for Opus, `["--dangerously-skip-permissions"]` for Sonnet/Haiku —
+   alongside `--agent steward-review`. Any future headless launch surface
+   (plan-review adapters, one-shot `claude --print` invocations, batch
+   review harnesses) must route through the same helper — there is no
+   implicit inheritance from shared settings.
 
 Both surfaces are locked down with structural tests:
 
-- `tests/unit/test_steward_session.py::TestPermissionModeAuto` asserts every
-  `$CLAUDE_BIN` launch line in the tmux script contains the flag. Adding a
-  new lane without the flag fails the test.
-- `tests/unit/test_review_lane_runner.py::TestInvokeReviewPermissionMode`
+- `tests/unit/test_steward_session.py::TestPermissionModeByModelTier`
+  asserts every `$CLAUDE_BIN` launch line in the tmux script calls
+  `permission_mode_flag_for_lane <lane-id>`, and functionally verifies the
+  helper emits the tier-correct flag for Opus / Sonnet / Haiku / missing /
+  invalid configs. A sibling `TestLaneModelsJson` validates the canonical
+  `.claude/lane_models.json` config, and `TestLaneModelsLoader` validates
+  the Python loader shared with the review runner.
+- `tests/unit/test_review_lane_runner.py::TestInvokeReviewPermissionModeByModelTier`
   mocks `subprocess.run` and asserts the argv list passed to `claude`
-  contains `--permission-mode auto`.
+  contains `--permission-mode auto` when the review lane is declared Opus
+  and `--dangerously-skip-permissions` when declared Sonnet/Haiku — in
+  both the mocked-helper case and an end-to-end case through the real
+  `lane_models` loader against a tmp-path config.
 
 **Rollout note:** Landing the flag alone does not activate auto mode on
 running lanes — existing sessions continue in their launched mode until they
@@ -83,23 +104,56 @@ not a fleet-wide constant:
 | Sonnet 4.6+ | `--dangerously-skip-permissions` | `bypassPermissions` |
 | Haiku 4.5+ | `--dangerously-skip-permissions` | `bypassPermissions` |
 
-**Launch-script implication.** `.claude/tmux/steward-session.sh` and
-`scripts/internal/review_lane_runner.py::invoke_review` currently hardcode
-`--permission-mode auto` for every lane (the structural tests above lock
-this in). That is correct for the current fleet — 100% Opus 4.7 — but is a
-pending fix when any lane moves to Sonnet or Haiku for token-economy or
-dispatch reasons. The fix must read per-lane model-tier config and emit the
-correct flag. This change is tracked as Primitive G Phase 0 closeout under
-the 7-surfaces inventory (issue #2767).
+**Canonical config file.** `.claude/lane_models.json` is the source of
+truth for per-lane model tier. Schema:
 
-**Structural-test implication.** `TestPermissionModeAuto` and
-`TestInvokeReviewPermissionMode` both assert `--permission-mode auto`
-unconditionally. When the launch scripts gain model-tier conditioning, the
-tests must be rewritten as `TestPermissionModeByModelTier` asserting the
-correct flag per lane's declared model. Landing launch-script conditioning
-without the test rewrite will break CI; landing the test rewrite without
-the launch-script conditioning silently regresses enforcement on the
-current Opus fleet. **The two changes must ship together.**
+```json
+{
+  "_schema_version": 1,
+  "lanes": {
+    "<lane-id>": {"model": "opus" | "sonnet" | "haiku"},
+    ...
+  }
+}
+```
+
+Two loaders read this file and MUST stay behaviorally consistent:
+
+- **Shell loader** — `permission_mode_flag_for_lane` in
+  `.claude/tmux/steward-session.sh` (uses an inline `python3 -c` to parse
+  the JSON; falls back to Opus on any error).
+- **Python loader** — `scripts/internal/lane_models.py`, consumed by
+  `scripts/internal/review_lane_runner.py::invoke_review`.
+
+Unknown or missing lanes default to Opus. This is the safest failure mode
+for the current 100%-Opus fleet; new lanes are expected to declare a tier
+explicitly. Changing the default (e.g., to block launches on missing
+entries) is itself a security-relevant diff and must be reviewed.
+
+**Launch-script implementation (resolved by #2767).** Both launch surfaces
+— `.claude/tmux/steward-session.sh` and `scripts/internal/review_lane_runner.py::invoke_review`
+— now route every launch through a per-lane helper that reads
+`.claude/lane_models.json` and emits the tier-correct flag. The shell and
+Python loaders share the config file and the same invalid-tier coercion
+semantics. Structural tests (`TestPermissionModeByModelTier`,
+`TestInvokeReviewPermissionModeByModelTier`, `TestLaneModelsJson`,
+`TestLaneModelsLoader`) lock in the helper wiring, the config schema, and
+the emitted argv for each tier.
+
+**Operator workflow for tier changes.** Moving a lane to Sonnet or Haiku
+(for token-economy or dispatch reasons) is a one-file change:
+
+```bash
+# 1. Edit .claude/lane_models.json — set "model" to the desired tier.
+# 2. Commit + merge via normal PR workflow (security-relevant diff).
+# 3. Restart the lane so it relaunches with the new flag:
+tmux respawn-pane -k -t steward:<window>.<pane> --continue
+```
+
+The tmux launcher re-reads the config on each launch; no cached state to
+flush. `TestLaneModelsJson` enforces that every listed lane has a valid
+model, so typos (e.g., `"sonet"`) fail CI before a lane can silently fall
+back to Opus.
 
 **Never substitute launch flags for model-tier intent.** Passing
 `--permission-mode auto` to a non-Opus lane is the worst outcome: the flag
@@ -107,7 +161,9 @@ and settings encode auto-mode discipline, but the runtime gate is silently
 inactive. The explicit `--dangerously-skip-permissions` launch makes the
 reduced safety envelope legible at every observation point (log output,
 `gh pr checks`, operator-readable launch command). Operators MUST NOT
-cross-wire these flags to mask model-tier selection.
+cross-wire these flags to mask model-tier selection. The per-lane helper
+pattern makes cross-wiring structurally impossible — edit the config, not
+the launch command.
 
 **Cross-reference:** ADR 006 §"Model tier interaction" captures the
 decision record and the safety envelope per-tier comparison table.

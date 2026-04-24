@@ -48,6 +48,42 @@ def _read_steward_script() -> str:
     return STEWARD_SCRIPT.read_text()
 
 
+def _read_lane_models_json() -> str:
+    """Read .claude/lane_models.json, preferring the git-committed version in CI.
+
+    Same CI pitfall as ``_read_steward_script``: ``setup-uv`` cache restoration
+    can overwrite the working tree during the tests-shard job, dropping files
+    that are on the PR branch but not on the base. When ``GITHUB_SHA`` is set,
+    we read from the merge-commit blob to get the correct PR content. Locally
+    we just read the file.
+    """
+    github_sha = os.environ.get("GITHUB_SHA")
+    if github_sha:
+        try:
+            return subprocess.check_output(
+                [
+                    "git",
+                    "show",
+                    f"{github_sha}:.claude/lane_models.json",
+                ],
+                cwd=str(REPO_ROOT),
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            pass  # fall through to filesystem read
+    return (REPO_ROOT / ".claude" / "lane_models.json").read_text()
+
+
+def _lane_models_json_available() -> bool:
+    """True if .claude/lane_models.json is readable via filesystem or GITHUB_SHA."""
+    try:
+        _read_lane_models_json()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -1247,14 +1283,29 @@ validate_worktree_path "{external}"
 # ---------------------------------------------------------------------------
 
 
-class TestPermissionModeAuto:
-    """Tests for the --permission-mode auto launch flag (#2685).
+class TestPermissionModeByModelTier:
+    """Tests for model-tier-aware launch flags (#2685 original, #2767 fix).
 
-    Auto mode is activated per-launch via the ``--permission-mode auto`` CLI flag,
-    not by ``defaultMode: "auto"`` in settings.json alone. Every claude launch in
-    steward-session.sh must include the flag so lanes inherit auto mode on
-    session start.  New lanes added in the future must also carry the flag —
-    this test catches missing flags via a grep-based structural check.
+    Per ``.claude/rules/80_permission_model.md`` §"Model-tier activation
+    constraint", the launch-flag choice is a function of the lane's model
+    tier, not a fleet-wide constant:
+
+    * Opus (Claude Opus 4.6+)  → ``--permission-mode auto`` (classifier-gated)
+    * Sonnet / Haiku           → ``--dangerously-skip-permissions`` (explicit
+                                  reduced safety envelope)
+
+    Passing ``--permission-mode auto`` to a non-Opus session silently falls
+    back to ``bypassPermissions`` with no enforcement legibility — the worst
+    outcome. The launch script reads ``.claude/lane_models.json`` via the
+    ``permission_mode_flag_for_lane`` helper and emits the correct flag per
+    lane.
+
+    These structural tests lock in:
+    1. Every ``$CLAUDE_BIN`` launch routes through ``permission_mode_flag_for_lane``.
+    2. No launch line hardcodes a permission-mode flag.
+    3. The orchestrator's call precedes ``$ORCH_CHANNEL_FLAGS``.
+    4. The helper emits the correct flag per tier (functional check).
+    5. The canonical ``.claude/lane_models.json`` is valid and opus-defaulting.
     """
 
     @staticmethod
@@ -1266,60 +1317,484 @@ class TestPermissionModeAuto:
             if "$CLAUDE_BIN" in line and "--agent" in line
         ]
 
-    def test_all_launch_lines_have_permission_mode_auto(self) -> None:
-        """Every $CLAUDE_BIN --agent launch line must include --permission-mode auto."""
-        # Use _read_steward_script() so CI (where setup-uv cache can restore
-        # .git/HEAD to the base branch) reads the PR's version of the script
-        # via git show $GITHUB_SHA:... rather than the stale working tree.
+    # -- Structural checks on steward-session.sh ------------------------
+
+    def test_helper_function_defined(self) -> None:
+        """steward-session.sh must define permission_mode_flag_for_lane."""
+        content = _read_steward_script()
+        assert (
+            "permission_mode_flag_for_lane()" in content
+        ), "permission_mode_flag_for_lane function must be defined (#2767)"
+
+    def test_helper_reads_lane_models_json(self) -> None:
+        """Helper must resolve model tier from .claude/lane_models.json."""
+        content = _read_steward_script()
+        assert (
+            "lane_models.json" in content
+        ), "helper must reference .claude/lane_models.json as the config source"
+
+    def test_helper_emits_both_flag_variants(self) -> None:
+        """Helper must be able to emit both auto and dangerously-skip variants."""
+        content = _read_steward_script()
+        # Both token strings must appear inside the helper body.
+        assert (
+            "--permission-mode auto" in content
+        ), "helper must emit '--permission-mode auto' for Opus lanes"
+        assert (
+            "--dangerously-skip-permissions" in content
+        ), "helper must emit '--dangerously-skip-permissions' for non-Opus lanes"
+
+    def test_every_launch_line_calls_helper(self) -> None:
+        """Every $CLAUDE_BIN --agent launch line must invoke the helper.
+
+        After #2767, no launch line hardcodes a permission-mode flag; each
+        lane's flag comes from the model-tier helper so the launch script
+        stays correct as lanes move between tiers.
+        """
         content = _read_steward_script()
         launch_lines = self._claude_launch_lines(content)
         assert launch_lines, "Expected at least one claude launch line in script"
         missing = [
             line.strip()
             for line in launch_lines
-            if "--permission-mode auto" not in line
+            if "permission_mode_flag_for_lane" not in line
         ]
         assert not missing, (
-            "Every claude launch in steward-session.sh must include "
-            "`--permission-mode auto` to activate auto permission mode (#2685). "
-            f"Missing the flag on {len(missing)} line(s):\n"
+            "Every claude launch in steward-session.sh must route through "
+            "`permission_mode_flag_for_lane <lane-id>` so the launch flag "
+            "matches the lane's declared model tier (#2767). Missing the "
+            f"helper call on {len(missing)} line(s):\n"
             + "\n".join(f"  {line}" for line in missing)
         )
 
-    def test_permission_mode_flag_count_matches_lanes(self) -> None:
-        """Occurrence count of --permission-mode auto should equal launch-line count.
+    def test_helper_invocation_count_matches_launch_count(self) -> None:
+        """Helper invocation count must equal launch-line count.
 
-        This is a conservative structural check: if someone adds a new lane
-        without the flag, launch count and flag count diverge.
+        One invocation per launch — if someone adds a lane without the
+        helper, the counts diverge.
         """
         content = _read_steward_script()
         launch_lines = self._claude_launch_lines(content)
-        flag_count = content.count("--permission-mode auto")
-        assert flag_count == len(launch_lines), (
-            f"Expected --permission-mode auto on every launch line. "
-            f"Launch lines: {len(launch_lines)}; flag occurrences: {flag_count}"
+        # Count $(permission_mode_flag_for_lane ...) invocations (not the
+        # function definition itself).
+        invocation_count = content.count("$(permission_mode_flag_for_lane ")
+        assert invocation_count == len(launch_lines), (
+            f"Expected one $(permission_mode_flag_for_lane ...) call per "
+            f"launch line. Launch lines: {len(launch_lines)}; "
+            f"invocations: {invocation_count}"
         )
 
-    def test_orchestrator_flag_placed_before_channel_flags(self) -> None:
-        """The orchestrator launch must place --permission-mode auto before $ORCH_CHANNEL_FLAGS.
+    def test_no_hardcoded_flag_on_launch_lines(self) -> None:
+        """No launch line may hardcode a permission-mode flag.
 
-        $ORCH_CHANNEL_FLAGS can expand to ``--channels plugin:...`` or empty; the
-        permission-mode flag must appear before it so the expansion order is
-        deterministic and safe whether the channel flags are empty or populated.
+        Any hardcoded ``--permission-mode auto`` or
+        ``--dangerously-skip-permissions`` on a launch line would make that
+        lane insensitive to tier changes in ``lane_models.json`` — defeating
+        the fix.
+        """
+        content = _read_steward_script()
+        launch_lines = self._claude_launch_lines(content)
+        hardcoded = [
+            line.strip()
+            for line in launch_lines
+            if "--permission-mode" in line or "--dangerously-skip-permissions" in line
+        ]
+        assert not hardcoded, (
+            "Launch lines must not hardcode permission-mode flags. "
+            "Route through permission_mode_flag_for_lane instead "
+            f"(#2767). Hardcoded on {len(hardcoded)} line(s):\n"
+            + "\n".join(f"  {line}" for line in hardcoded)
+        )
+
+    def test_orchestrator_helper_call_before_channel_flags(self) -> None:
+        """Orchestrator helper call must precede $ORCH_CHANNEL_FLAGS.
+
+        ``$ORCH_CHANNEL_FLAGS`` expands to ``--channels plugin:...`` or empty;
+        the permission-mode tokens must appear before it so the expansion
+        order is deterministic and safe whether channel flags are empty or
+        populated.
         """
         content = _read_steward_script()
         launch_lines = self._claude_launch_lines(content)
         orch_lines = [line for line in launch_lines if "steward-orchestrator" in line]
         assert len(orch_lines) == 1, "Expected exactly one orchestrator launch line"
         line = orch_lines[0]
-        pm_pos = line.find("--permission-mode auto")
+        helper_pos = line.find("permission_mode_flag_for_lane")
         channel_pos = line.find("$ORCH_CHANNEL_FLAGS")
-        assert pm_pos > 0, "Orchestrator launch must include --permission-mode auto"
+        assert (
+            helper_pos > 0
+        ), "Orchestrator launch must route through permission_mode_flag_for_lane"
         assert channel_pos > 0, "Orchestrator launch must expand $ORCH_CHANNEL_FLAGS"
-        assert pm_pos < channel_pos, (
-            "--permission-mode auto must appear BEFORE $ORCH_CHANNEL_FLAGS so "
-            "the expansion is safe whether channel flags are empty or populated"
+        assert helper_pos < channel_pos, (
+            "permission_mode_flag_for_lane call must appear BEFORE "
+            "$ORCH_CHANNEL_FLAGS so the expansion is safe whether channel "
+            "flags are empty or populated"
         )
+
+    def test_helper_invocations_cover_all_lanes(self) -> None:
+        """Each lane-id must appear exactly once as helper argument.
+
+        Catches copy-paste errors where one lane's launch uses another
+        lane's id in the helper call.
+        """
+        content = _read_steward_script()
+        expected_lanes = [
+            "orchestrator",
+            "ops",
+            "review",
+            "analyst-a",
+            "analyst-b",
+            "analyst-c",
+            "analyst-d",
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            "brws-author-a",
+            "brws-author-b",
+            "brws-author-c",
+            "brws-author-d",
+            "flex-a",
+            "flex-b",
+            "flex-c",
+            "flex-d",
+        ]
+        for lane in expected_lanes:
+            token = f"$(permission_mode_flag_for_lane {lane})"
+            assert content.count(token) == 1, (
+                f"Expected exactly one invocation of "
+                f"`{token}` in steward-session.sh; "
+                f"found {content.count(token)}"
+            )
+
+    # -- Functional checks on the helper --------------------------------
+
+    @staticmethod
+    def _extract_helper(content: str) -> str:
+        """Extract the permission_mode_flag_for_lane function body.
+
+        Uses brace-depth tracking so the embedded ``case`` block with ``;;``
+        doesn't confuse a naive regex.
+        """
+        lines = content.split("\n")
+        out: list[str] = []
+        in_func = False
+        depth = 0
+        for line in lines:
+            if line.startswith("permission_mode_flag_for_lane()"):
+                in_func = True
+            if in_func:
+                out.append(line)
+                depth += line.count("{") - line.count("}")
+                if depth == 0 and "}" in line and len(out) > 1:
+                    break
+        return "\n".join(out)
+
+    def _run_helper(self, tmp_path: Path, config: dict, lane: str) -> str:
+        """Invoke the helper in a bash subshell with a mocked config file."""
+        cfg_dir = tmp_path / ".claude"
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        (cfg_dir / "lane_models.json").write_text(json.dumps(config))
+        helper_body = self._extract_helper(_read_steward_script())
+        script = f"""
+MAIN_DIR="{tmp_path}"
+{helper_body}
+permission_mode_flag_for_lane {lane}
+"""
+        result = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"helper exited non-zero: {result.stderr}"
+        return result.stdout.strip()
+
+    def test_helper_emits_permission_mode_auto_for_opus_lane(
+        self, tmp_path: Path
+    ) -> None:
+        """Opus-tier lanes must get ``--permission-mode auto``."""
+        config = {"lanes": {"author-a": {"model": "opus"}}}
+        flag = self._run_helper(tmp_path, config, "author-a")
+        assert (
+            flag == "--permission-mode auto"
+        ), f"Opus lane must get '--permission-mode auto', got {flag!r}"
+
+    def test_helper_emits_dangerously_skip_for_sonnet_lane(
+        self, tmp_path: Path
+    ) -> None:
+        """Sonnet-tier lanes must get ``--dangerously-skip-permissions``."""
+        config = {"lanes": {"ops": {"model": "sonnet"}}}
+        flag = self._run_helper(tmp_path, config, "ops")
+        assert (
+            flag == "--dangerously-skip-permissions"
+        ), f"Sonnet lane must get '--dangerously-skip-permissions', got {flag!r}"
+
+    def test_helper_emits_dangerously_skip_for_haiku_lane(self, tmp_path: Path) -> None:
+        """Haiku-tier lanes must get ``--dangerously-skip-permissions``."""
+        config = {"lanes": {"flex-a": {"model": "haiku"}}}
+        flag = self._run_helper(tmp_path, config, "flex-a")
+        assert (
+            flag == "--dangerously-skip-permissions"
+        ), f"Haiku lane must get '--dangerously-skip-permissions', got {flag!r}"
+
+    def test_helper_defaults_to_opus_for_missing_lane(self, tmp_path: Path) -> None:
+        """Lanes not listed in the config must default to Opus treatment.
+
+        The current fleet is 100% Opus; explicit entries are expected for
+        non-Opus lanes. A missing entry must not silently emit
+        ``--dangerously-skip-permissions`` — that would regress the
+        legibility gain.
+        """
+        config = {"lanes": {"author-a": {"model": "opus"}}}
+        flag = self._run_helper(tmp_path, config, "missing-lane")
+        assert flag == "--permission-mode auto", (
+            f"Missing lane must default to Opus treatment "
+            f"('--permission-mode auto'); got {flag!r}"
+        )
+
+    def test_helper_defaults_to_opus_when_config_missing(self, tmp_path: Path) -> None:
+        """Missing config file must also default to Opus."""
+        helper_body = self._extract_helper(_read_steward_script())
+        script = f"""
+MAIN_DIR="{tmp_path}"
+{helper_body}
+permission_mode_flag_for_lane author-a
+"""
+        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert result.returncode == 0
+        assert result.stdout.strip() == "--permission-mode auto"
+
+    def test_helper_defaults_to_opus_for_invalid_tier(self, tmp_path: Path) -> None:
+        """Invalid tier values must coerce to Opus (safe default)."""
+        config = {"lanes": {"author-a": {"model": "some-unknown-model"}}}
+        flag = self._run_helper(tmp_path, config, "author-a")
+        assert (
+            flag == "--permission-mode auto"
+        ), f"Invalid tier must coerce to '--permission-mode auto'; got {flag!r}"
+
+
+class TestLaneModelsJson:
+    """Tests for the canonical .claude/lane_models.json config file (#2767)."""
+
+    _LANE_MODELS_PATH = REPO_ROOT / ".claude" / "lane_models.json"
+
+    EXPECTED_LANES = frozenset(
+        {
+            "orchestrator",
+            "ops",
+            "review",
+            "analyst-a",
+            "analyst-b",
+            "analyst-c",
+            "analyst-d",
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            "brws-author-a",
+            "brws-author-b",
+            "brws-author-c",
+            "brws-author-d",
+            "flex-a",
+            "flex-b",
+            "flex-c",
+            "flex-d",
+        }
+    )
+
+    VALID_MODELS = frozenset({"opus", "sonnet", "haiku"})
+
+    def test_config_file_exists(self) -> None:
+        # Use the GITHUB_SHA-aware helper: in CI, setup-uv cache restoration
+        # can overwrite the working tree and drop PR-only files, so we must
+        # accept the git-blob form of the file as "existing" for this test.
+        assert (
+            _lane_models_json_available()
+        ), ".claude/lane_models.json is required by #2767 fix"
+
+    def test_config_is_valid_json(self) -> None:
+        data = json.loads(_read_lane_models_json())
+        assert isinstance(data, dict), "Top level must be a JSON object"
+
+    def test_config_has_lanes_key(self) -> None:
+        data = json.loads(_read_lane_models_json())
+        assert "lanes" in data and isinstance(
+            data["lanes"], dict
+        ), "Config must contain a 'lanes' object"
+
+    def test_all_19_lanes_listed(self) -> None:
+        """Every lane launched by steward-session.sh must have a config entry."""
+        data = json.loads(_read_lane_models_json())
+        lanes = set(data["lanes"].keys())
+        missing = self.EXPECTED_LANES - lanes
+        assert not missing, f"Missing lane entries: {sorted(missing)}"
+
+    def test_all_models_valid(self) -> None:
+        """Every entry's model must be opus / sonnet / haiku."""
+        data = json.loads(_read_lane_models_json())
+        for lane_id, entry in data["lanes"].items():
+            assert isinstance(entry, dict), f"Lane {lane_id!r} entry must be an object"
+            model = entry.get("model")
+            assert model in self.VALID_MODELS, (
+                f"Lane {lane_id!r} has invalid model {model!r}; "
+                f"must be one of {sorted(self.VALID_MODELS)}"
+            )
+
+    def test_fleet_defaults_to_opus(self) -> None:
+        """Current fleet is 100% Opus — all lanes must be Opus by default.
+
+        When a lane moves to Sonnet or Haiku for token-economy reasons,
+        this test must be updated in the same PR as the config change so
+        reviewers see the tier change explicitly.
+        """
+        data = json.loads(_read_lane_models_json())
+        non_opus = [
+            lane_id
+            for lane_id, entry in data["lanes"].items()
+            if entry.get("model") != "opus"
+        ]
+        assert not non_opus, (
+            f"Fleet-default is 100% Opus. Non-Opus entries: {non_opus}. "
+            "If this is intentional, update this test and document the "
+            "tier change in the PR."
+        )
+
+
+class TestLaneModelsLoader:
+    """Tests for the Python loader scripts/internal/lane_models.py (#2767)."""
+
+    @staticmethod
+    def _import_loader():
+        """Import the loader module (scripts/internal/lane_models.py)."""
+        import sys
+
+        scripts_internal = REPO_ROOT / "scripts" / "internal"
+        if str(scripts_internal) not in sys.path:
+            sys.path.insert(0, str(scripts_internal))
+        import lane_models  # type: ignore[import-not-found]
+
+        return lane_models
+
+    def test_load_lane_models_returns_dict(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        cfg = tmp_path / "lane_models.json"
+        cfg.write_text(
+            json.dumps(
+                {
+                    "lanes": {
+                        "author-a": {"model": "opus"},
+                        "ops": {"model": "sonnet"},
+                    }
+                }
+            )
+        )
+        result = loader.load_lane_models(cfg)
+        assert result == {"author-a": "opus", "ops": "sonnet"}
+
+    def test_load_lane_models_missing_file_returns_empty(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        result = loader.load_lane_models(tmp_path / "does-not-exist.json")
+        assert result == {}
+
+    def test_load_lane_models_malformed_returns_empty(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        cfg = tmp_path / "lane_models.json"
+        cfg.write_text("not { valid json")
+        result = loader.load_lane_models(cfg)
+        assert result == {}
+
+    def test_load_lane_models_coerces_invalid_tier(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        cfg = tmp_path / "lane_models.json"
+        cfg.write_text(json.dumps({"lanes": {"author-a": {"model": "gpt-5"}}}))
+        result = loader.load_lane_models(cfg)
+        assert result == {"author-a": "opus"}
+
+    def test_get_lane_model_defaults_to_opus(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        cfg = tmp_path / "lane_models.json"
+        cfg.write_text(json.dumps({"lanes": {"author-a": {"model": "opus"}}}))
+        assert loader.get_lane_model("missing-lane", cfg) == "opus"
+
+    def test_permission_mode_args_opus(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        cfg = tmp_path / "lane_models.json"
+        cfg.write_text(json.dumps({"lanes": {"author-a": {"model": "opus"}}}))
+        assert loader.permission_mode_args_for_lane("author-a", cfg) == [
+            "--permission-mode",
+            "auto",
+        ]
+
+    def test_permission_mode_args_sonnet(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        cfg = tmp_path / "lane_models.json"
+        cfg.write_text(json.dumps({"lanes": {"ops": {"model": "sonnet"}}}))
+        assert loader.permission_mode_args_for_lane("ops", cfg) == [
+            "--dangerously-skip-permissions"
+        ]
+
+    def test_permission_mode_args_haiku(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        cfg = tmp_path / "lane_models.json"
+        cfg.write_text(json.dumps({"lanes": {"flex-a": {"model": "haiku"}}}))
+        assert loader.permission_mode_args_for_lane("flex-a", cfg) == [
+            "--dangerously-skip-permissions"
+        ]
+
+    def test_permission_mode_args_missing_defaults_opus(self, tmp_path: Path) -> None:
+        loader = self._import_loader()
+        cfg = tmp_path / "lane_models.json"
+        cfg.write_text(json.dumps({"lanes": {}}))
+        assert loader.permission_mode_args_for_lane("author-a", cfg) == [
+            "--permission-mode",
+            "auto",
+        ]
+
+    def test_loader_stays_consistent_with_shell_helper(self, tmp_path: Path) -> None:
+        """Python loader and shell helper must produce equivalent output.
+
+        Both read the same config and emit the same token set (modulo Python
+        list vs shell token-stream serialization).
+        """
+        loader = self._import_loader()
+        cfg = tmp_path / ".claude" / "lane_models.json"
+        cfg.parent.mkdir(parents=True)
+        config = {
+            "lanes": {
+                "author-a": {"model": "opus"},
+                "ops": {"model": "sonnet"},
+                "flex-a": {"model": "haiku"},
+            }
+        }
+        cfg.write_text(json.dumps(config))
+
+        helper_body = TestPermissionModeByModelTier._extract_helper(
+            _read_steward_script()
+        )
+
+        for lane, expected in [
+            ("author-a", "--permission-mode auto"),
+            ("ops", "--dangerously-skip-permissions"),
+            ("flex-a", "--dangerously-skip-permissions"),
+            ("nonexistent", "--permission-mode auto"),  # default
+        ]:
+            # Shell helper
+            script = f"""
+MAIN_DIR="{tmp_path}"
+{helper_body}
+permission_mode_flag_for_lane {lane}
+"""
+            result = subprocess.run(
+                ["bash", "-c", script], capture_output=True, text=True
+            )
+            assert result.returncode == 0, result.stderr
+            assert result.stdout.strip() == expected
+
+            # Python loader
+            py_argv = loader.permission_mode_args_for_lane(lane, cfg)
+            assert (
+                " ".join(py_argv) == expected
+            ), f"Python loader and shell helper diverge for lane={lane!r}"
 
 
 class TestLaunchdTemplate:

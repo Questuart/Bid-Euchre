@@ -910,32 +910,56 @@ class TestRunOnceWithPreflight:
         mock_preflight.assert_not_called()
 
 
-class TestInvokeReviewPermissionMode:
-    """Tests for the --permission-mode auto flag on the steward-review launch (#2685).
+class TestInvokeReviewPermissionModeByModelTier:
+    """Tests for model-tier-aware permission-mode selection on ``invoke_review`` (#2767).
 
-    ``invoke_review`` spawns ``claude`` as a subprocess. For headless launches,
-    auto permission mode must be activated via ``--permission-mode auto`` on the
-    CLI; ``defaultMode`` in settings.json alone is insufficient. These tests
-    mock ``subprocess.run`` and inspect the argument list.
+    ``invoke_review`` spawns ``claude`` as a subprocess. The launch flag must be
+    a function of the review lane's model tier, NOT a fleet-wide constant:
+
+    * ``opus`` →  argv contains ``--permission-mode auto`` (classifier-gated).
+    * ``sonnet`` / ``haiku`` → argv contains ``--dangerously-skip-permissions``
+      (explicit reduced safety envelope).
+
+    Passing ``--permission-mode auto`` to a non-Opus session silently falls
+    back to ``bypassPermissions`` with no enforcement legibility — the
+    failure mode documented in #2767 and ``.claude/rules/80_permission_model.md``
+    § "Model-tier activation constraint".
+
+    These tests mock ``subprocess.run`` to inspect the argument list, and
+    patch ``permission_mode_args_for_lane`` (or the underlying
+    ``load_lane_models`` loader via a tmp-path config) to simulate each tier.
     """
 
-    @patch("review_lane_runner.subprocess.run")
-    def test_subprocess_args_include_permission_mode_auto(
-        self, mock_run: MagicMock
-    ) -> None:
-        """invoke_review must pass --permission-mode auto to claude subprocess."""
-        import review_lane_runner
-
-        # Mock subprocess.run to return a successful JSON payload so the caller
-        # does not fail on downstream parsing.
+    @staticmethod
+    def _mock_subprocess_ok(mock_run: MagicMock) -> None:
+        """Make subprocess.run return a successful JSON payload."""
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout=json.dumps({"status": "passed", "reason": "clean", "findings": []}),
             stderr="",
         )
 
+    @patch("review_lane_runner.permission_mode_args_for_lane")
+    @patch("review_lane_runner.subprocess.run")
+    def test_opus_lane_emits_permission_mode_auto(
+        self, mock_run: MagicMock, mock_perm: MagicMock
+    ) -> None:
+        """Opus tier → argv includes ``--permission-mode auto``."""
+        import review_lane_runner
+
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--permission-mode", "auto"]
+
         review_lane_runner.invoke_review(
             pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        assert mock_perm.called, "invoke_review must call permission_mode_args_for_lane"
+        # Helper must be called with the review lane id.
+        perm_args, _ = mock_perm.call_args
+        assert perm_args[0] == "review", (
+            "permission_mode_args_for_lane must be called with LANE_ID='review', "
+            f"got {perm_args[0]!r}"
         )
 
         assert mock_run.called, "invoke_review must call subprocess.run"
@@ -943,26 +967,31 @@ class TestInvokeReviewPermissionMode:
         argv = call_args[0]
         assert isinstance(argv, list), "subprocess.run must be called with an argv list"
         assert argv[0] == "claude", f"First arg must be 'claude', got {argv[0]!r}"
+
         assert "--permission-mode" in argv, (
-            "invoke_review subprocess args must include '--permission-mode' "
-            f"(got {argv})"
+            "Opus-tier argv must include '--permission-mode' " f"(got {argv})"
         )
         idx = argv.index("--permission-mode")
         assert idx + 1 < len(argv), "--permission-mode must be followed by a value"
-        assert (
-            argv[idx + 1] == "auto"
-        ), f"--permission-mode must be followed by 'auto' (got {argv[idx + 1]!r})"
+        assert argv[idx + 1] == "auto", (
+            f"Opus-tier --permission-mode must be followed by 'auto' "
+            f"(got {argv[idx + 1]!r})"
+        )
+        assert "--dangerously-skip-permissions" not in argv, (
+            "Opus-tier argv must NOT include --dangerously-skip-permissions "
+            f"(got {argv})"
+        )
 
+    @patch("review_lane_runner.permission_mode_args_for_lane")
     @patch("review_lane_runner.subprocess.run")
-    def test_subprocess_args_preserve_existing_flags(self, mock_run: MagicMock) -> None:
-        """Adding --permission-mode auto must not drop --agent, --print, -p flags."""
+    def test_sonnet_lane_emits_dangerously_skip_permissions(
+        self, mock_run: MagicMock, mock_perm: MagicMock
+    ) -> None:
+        """Sonnet tier → argv includes ``--dangerously-skip-permissions``."""
         import review_lane_runner
 
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"status": "passed", "reason": "clean", "findings": []}),
-            stderr="",
-        )
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--dangerously-skip-permissions"]
 
         review_lane_runner.invoke_review(
             pr_number=42, branch="feat/foo", head_sha="abc123"
@@ -970,12 +999,179 @@ class TestInvokeReviewPermissionMode:
 
         call_args, _ = mock_run.call_args
         argv = call_args[0]
-        # The existing flags must still be present.
+        assert "--dangerously-skip-permissions" in argv, (
+            "Sonnet-tier argv must include '--dangerously-skip-permissions' "
+            f"(got {argv})"
+        )
+        assert "--permission-mode" not in argv, (
+            "Sonnet-tier argv must NOT include '--permission-mode' — "
+            "cross-wiring flags silently falls back to bypassPermissions "
+            f"(got {argv})"
+        )
+        assert "auto" not in argv, (
+            "Sonnet-tier argv must NOT include the 'auto' token " f"(got {argv})"
+        )
+
+    @patch("review_lane_runner.permission_mode_args_for_lane")
+    @patch("review_lane_runner.subprocess.run")
+    def test_haiku_lane_emits_dangerously_skip_permissions(
+        self, mock_run: MagicMock, mock_perm: MagicMock
+    ) -> None:
+        """Haiku tier → argv includes ``--dangerously-skip-permissions``."""
+        import review_lane_runner
+
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--dangerously-skip-permissions"]
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        assert "--dangerously-skip-permissions" in argv, (
+            "Haiku-tier argv must include '--dangerously-skip-permissions' "
+            f"(got {argv})"
+        )
+        assert "--permission-mode" not in argv, (
+            "Haiku-tier argv must NOT include '--permission-mode' " f"(got {argv})"
+        )
+
+    @patch("review_lane_runner.permission_mode_args_for_lane")
+    @patch("review_lane_runner.subprocess.run")
+    def test_existing_flags_preserved_on_opus(
+        self, mock_run: MagicMock, mock_perm: MagicMock
+    ) -> None:
+        """Model-tier conditioning must not drop --agent, --print, -p, --output-format."""
+        import review_lane_runner
+
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--permission-mode", "auto"]
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
         assert (
             "--agent" in argv and "steward-review" in argv
-        ), f"Existing --agent steward-review must be preserved: {argv}"
-        assert "--print" in argv, f"Existing --print must be preserved: {argv}"
-        assert "-p" in argv, f"Existing -p prompt flag must be preserved: {argv}"
+        ), f"--agent steward-review must be preserved: {argv}"
+        assert "--print" in argv, f"--print must be preserved: {argv}"
+        assert "-p" in argv, f"-p prompt flag must be preserved: {argv}"
         assert (
             "--output-format" in argv and "json" in argv
-        ), f"Existing --output-format json must be preserved: {argv}"
+        ), f"--output-format json must be preserved: {argv}"
+
+    @patch("review_lane_runner.permission_mode_args_for_lane")
+    @patch("review_lane_runner.subprocess.run")
+    def test_existing_flags_preserved_on_sonnet(
+        self, mock_run: MagicMock, mock_perm: MagicMock
+    ) -> None:
+        """Sonnet-tier path must not drop --agent, --print, -p, --output-format."""
+        import review_lane_runner
+
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--dangerously-skip-permissions"]
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        assert (
+            "--agent" in argv and "steward-review" in argv
+        ), f"--agent steward-review must be preserved: {argv}"
+        assert "--print" in argv, f"--print must be preserved: {argv}"
+        assert "-p" in argv, f"-p prompt flag must be preserved: {argv}"
+        assert (
+            "--output-format" in argv and "json" in argv
+        ), f"--output-format json must be preserved: {argv}"
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_integration_with_real_loader_opus_config(
+        self, mock_run: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end: real loader + explicit opus config → argv has '--permission-mode auto'.
+
+        Uses the real ``permission_mode_args_for_lane`` function against a
+        tmp-path config file to ensure the wiring from lane_models.json through
+        the review runner emits the correct argv for an Opus-tier lane.
+        """
+        import lane_models
+        import review_lane_runner
+
+        # Build a minimal config where "review" is explicitly opus.
+        cfg_path = tmp_path / "lane_models.json"
+        cfg_path.write_text(
+            json.dumps({"_schema_version": 1, "lanes": {"review": {"model": "opus"}}})
+        )
+
+        # Monkeypatch the module-level import in review_lane_runner to route
+        # through a lambda that uses our tmp config.
+        monkeypatch.setattr(
+            review_lane_runner,
+            "permission_mode_args_for_lane",
+            lambda lane_id: lane_models.permission_mode_args_for_lane(
+                lane_id, config_path=cfg_path
+            ),
+        )
+
+        self._mock_subprocess_ok(mock_run)
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        assert (
+            "--permission-mode" in argv
+        ), f"Real loader + opus config must emit --permission-mode: {argv}"
+        idx = argv.index("--permission-mode")
+        assert (
+            argv[idx + 1] == "auto"
+        ), f"Real loader + opus config must emit 'auto': {argv[idx + 1]!r}"
+
+    @patch("review_lane_runner.subprocess.run")
+    def test_integration_with_real_loader_sonnet_config(
+        self, mock_run: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end: real loader + sonnet config → argv has '--dangerously-skip-permissions'.
+
+        Guard against the silent-fallback footgun: if the loader routed a
+        sonnet lane to ``--permission-mode auto``, the lane would launch with
+        ``bypassPermissions`` and lose classifier enforcement (#2767).
+        """
+        import lane_models
+        import review_lane_runner
+
+        cfg_path = tmp_path / "lane_models.json"
+        cfg_path.write_text(
+            json.dumps({"_schema_version": 1, "lanes": {"review": {"model": "sonnet"}}})
+        )
+
+        monkeypatch.setattr(
+            review_lane_runner,
+            "permission_mode_args_for_lane",
+            lambda lane_id: lane_models.permission_mode_args_for_lane(
+                lane_id, config_path=cfg_path
+            ),
+        )
+
+        self._mock_subprocess_ok(mock_run)
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        assert (
+            "--dangerously-skip-permissions" in argv
+        ), f"Real loader + sonnet config must emit --dangerously-skip-permissions: {argv}"
+        assert "--permission-mode" not in argv, (
+            "Real loader + sonnet config must NOT cross-wire '--permission-mode' "
+            f"(silent-fallback footgun): {argv}"
+        )
