@@ -2171,13 +2171,39 @@ def cmd_inbox(args: argparse.Namespace) -> int:
         if not lane:
             print(
                 "Usage: ops.py inbox ack-all --lane LANE"
-                " [--filter-summary PATTERN] [--max-age HOURS]",
+                " [--filter-summary PATTERN] [--max-age HOURS]"
+                " [--include-types T1,T2] [--exclude-types T1,T2]",
                 file=sys.stderr,
             )
             return 1
 
         # Build composable filter predicates
         predicates: list = []
+
+        # Type filter: default excludes 'blocker' + 'escalation' to prevent
+        # silent-drain of actionable signals (#2792). --include-types opts in;
+        # --exclude-types overrides the default exclusion list.
+        default_excluded_types = frozenset({"blocker", "escalation"})
+        include_types_raw = getattr(args, "include_types", None)
+        exclude_types_raw = getattr(args, "exclude_types", None)
+        include_types = (
+            frozenset(t.strip() for t in include_types_raw.split(",") if t.strip())
+            if include_types_raw
+            else frozenset()
+        )
+        if exclude_types_raw is not None:
+            exclude_types = frozenset(
+                t.strip() for t in exclude_types_raw.split(",") if t.strip()
+            )
+        else:
+            exclude_types = default_excluded_types - include_types
+
+        if exclude_types:
+
+            def _type_allowed(msg: dict) -> bool:
+                return msg.get("message_type", "") not in exclude_types
+
+            predicates.append(_type_allowed)
 
         summary_pattern = getattr(args, "filter_summary", None)
         if summary_pattern:
@@ -3239,7 +3265,7 @@ def _cmd_lane_status(args: argparse.Namespace) -> int:
 
     # Text render: fixed-width columns.  Widened lane_id to 15 chars to
     # fit `brws-author-*` and similar.
-    header = f"{'LANE':<15} {'PHASE':<14} {'FRESH':<12} " f"{'LAST_TOOL':<10} SUMMARY"
+    header = f"{'LANE':<15} {'PHASE':<14} {'FRESH':<12} {'LAST_TOOL':<10} SUMMARY"
     print(header)
     print("-" * len(header))
     for row in rows:
@@ -3732,9 +3758,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
             print(f"  Attribution gap:     {parity.attribution_gap}")
             print(f"  Token parity delta:  {parity.token_parity_delta:+,d}")
             print(f"  Commit parity delta: {parity.commit_parity_delta:+d}")
-            print(
-                f"  Model parity delta:  " f"{parity.by_model_token_parity_delta:+,d}"
-            )
+            print(f"  Model parity delta:  {parity.by_model_token_parity_delta:+,d}")
             print()
             print(_format_parity_footer(parity))
         return 0
@@ -4891,6 +4915,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="Only ack messages older than N hours (based on created_at)",
+    )
+    inbox_ack_all_parser.add_argument(
+        "--include-types",
+        default=None,
+        help=(
+            "Comma-separated message types to include (opt-in). "
+            "By default, ack-all EXCLUDES 'blocker' and 'escalation' types "
+            "to prevent silent-drain of actionable signals (#2792). Pass "
+            "e.g. --include-types blocker,escalation to override."
+        ),
+    )
+    inbox_ack_all_parser.add_argument(
+        "--exclude-types",
+        default=None,
+        help=(
+            "Comma-separated message types to exclude (overrides the default "
+            "blocker+escalation exclusion list when set)."
+        ),
     )
 
     inbox_purge_parser = inbox_sub.add_parser(
