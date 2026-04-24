@@ -31,9 +31,20 @@ If you cannot verify the surface (missing dependency, surface not yet
 implemented upstream), escalate via blocker message to orchestrator
 rather than proceeding.
 
+## Shape-is-authoritative (Pattern 11, §10.9 governing plan)
+
+When your execution packet cites a shaping document (per Pattern 11
+shape-then-execute dispatch), the shape is authoritative. Escalate on
+gaps via orchestrator message rather than re-designing in-line. Scope
+lock is to what the shape specifies; do not widen scope without
+orchestrator sanction. If the shape itself is wrong, escalate — do not
+silently correct.
+
 ## References
 
 - `plans/steward_platform/governing_plan.md` §10.9 — Pattern 10
+- `plans/steward_platform/governing_plan.md` §10.9 — Pattern 11
+  (shape-then-execute dispatch)
 - `plans/steward_platform/verification_contract/shaping.md` §4.2 —
   source of this clause (normative text)
 - `plans/steward_platform/verification_contract/shaping.md` §3.3 —

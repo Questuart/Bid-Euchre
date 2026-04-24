@@ -1104,7 +1104,21 @@ Every plan deliverable — every §N.M Work bullet, every Phase 0/1 Readiness cr
 
 **Plan-authoring obligation (single-pattern framing).** The plan-authoring discipline (every new deliverable row names its verification surface *at plan-time*, not post-hoc) is Pattern 10 itself, not a separate Pattern 11. Pattern 10 is one *property* (deliverables have verification surfaces) with multiple *enforcement surfaces* (plan template, skill refusal, lint, prompt-policy, commit lint, review-driver precheck, canary suite). This mirrors Pattern 9's structure (property: load-bearing ownership; enforcement: lint).
 
-**Enforcement surface.** Patterns 1-10 are enforced through a combination
+**Pattern 11 — Shape-then-execute dispatch (draft 8 follow-on, evidence from session 2026-04-23).** Work that crosses more than ~3 files, touches multiple primitives, or involves design decisions not fully resolved in the governing plan is dispatched as a **two-packet sequence**: an analyst **shaping packet** produces a concrete execution specification (files to create/modify, order of operations, validation commands, per-step acceptance criteria, coordination notes); an author **execution packet** then consumes the shaping doc as its primary reference with scope locked to the shape.
+
+**Single-packet dispatch is cleaner when:** scope ≤3 files with obvious structure; straightforward extension of existing pattern; design decisions fully specified in governing plan or existing sub-plan.
+
+**Shape-then-execute is worth the coordination overhead when:** new pattern / new infrastructure / Phase 0 primitive work; multiple design decisions needed before execution; multi-file / multi-module / cross-lane coordination; non-trivially novel work.
+
+**Roles:** analyst produces the shaping document with a self-review section addressing completeness criteria; author executes from the shape + escalates on gaps rather than re-designing; orchestrator coordinates the handoff (dispatch shaping → review shape → dispatch execution with shape as input).
+
+**Shaping document minimum sections:** scope + motivation; design decisions with rationale; files created/modified (exhaustive); order of operations (numbered, executable); validation commands (unit + integration + negative-path + Tier 2); coordination notes (dependencies, in-flight packets, scope overlap); self-review against completeness criteria; execution packet spec (scope-declared, order, validation); §15 Phase 2 Decision Inputs.
+
+**Enforcement:** `/create-plan` skill optionally scaffolds shaping-style plans; analyst prompt-policy (`.claude/rules/prompt_policy/analyst.md` §4.3) includes shaping-doc conventions; author prompt-policy (`.claude/rules/prompt_policy/author.md`) includes "shape is authoritative during execution" clause; `review_driver.py` precheck flags shaping docs missing required sections.
+
+**Evidence (session 2026-04-23):** P2a shaping (PR #2759, 769 lines) → P2b execution (PR #2762, 25 files / 3804+ additions) landed Pattern 10 + H.0 canary scaffolding without author re-litigation; Primitive A pre-shaping (PR #2771) is dispatch-ready for next session. Single-packet ADR dispatches (001/006/G10 via analyst-b/c/d per PRs #2763/#2764/#2765) worked well for bounded work — confirms the "when single-packet is cleaner" heuristic. Pattern enables observed ~4× throughput gain vs sequential design-in-author for novel infrastructure work.
+
+**Enforcement surface.** Patterns 1-11 are enforced through a combination
 of agent-readability lint (Primitive C), ADR discipline (Primitive C),
 sub-plan template enforcement (Primitive C), changelog review skill
 (Primitive D), event-schema validator (Primitive A), and per-primitive
