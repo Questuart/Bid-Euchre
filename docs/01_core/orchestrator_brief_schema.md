@@ -28,8 +28,9 @@ uv run python scripts/internal/ops.py orchestrator brief [--recent N] [--mark-re
 
 - `--recent N` — Expand the most recent N unacked `supervisor_alert`
   messages. Default: `5`.
-- `--mark-read` — After printing, persist the current timestamp to
-  `.claude/runtime/orchestrator_brief_state.json` so the next call's
+- `--mark-read` — After printing, persist the current timestamp to a
+  runtime state file under `.claude/runtime/` (path:
+  `orchestrator_brief_state.json`) so the next call's
   `merged_prs_since_last_read` window advances.
 - `--json` — Emit JSON (the default; non-JSON mode is a brief
   human-readable summary for debugging).
@@ -167,7 +168,7 @@ skill implementation must stay in sync with this list.
 | `merged_dispatch` | Reconcile with `dispatched_packets`: the packet whose PR number matches should now be `completed`. If still `dispatched`, flag a reconciliation gap. |
 | `auto_dispatch` | Narrate: the monitor auto-dispatched a packet to an idle lane. No action beyond logging. |
 | `escalation` | Re-surface the escalation alert as its own `supervisor_alert` routing pass; do **not** ack until the underlying alert is handled. |
-| (other) | LLM judgment fallback. Log the unknown category to `.claude/runtime/orchestrator_brief_unknown_categories.jsonl` so the archivist can flag new categories that need handlers. |
+| (other) | LLM judgment fallback. Log the unknown category as a JSON line to a runtime sink under `.claude/runtime/` (filename: `orchestrator_brief_unknown_categories.jsonl`) so the archivist can flag new categories that need handlers. |
 
 ### Ack ordering
 
@@ -178,7 +179,8 @@ re-runs the routing (idempotent handlers tolerate this).
 
 ## State file
 
-`--mark-read` writes to `.claude/runtime/orchestrator_brief_state.json`:
+`--mark-read` writes to a runtime state file under `.claude/runtime/`
+(filename: `orchestrator_brief_state.json`):
 
 ```json
 {
