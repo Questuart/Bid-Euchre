@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head><title>What's New — weekly rollup (fixture)</title></head>
+<body>
+
+<h1>What's New — 2026-w17</h1>
+
+<p>Synthetic fixture for Primitive D Phase 0 test surface. The real page
+is a weekly rollup of the rolling changelog; the fixture uses the same
+&lt;h3&gt; heading pattern so the extractor exercises both the &lt;h2&gt; and
+&lt;h3&gt; heading paths.</p>
+
+<h3>MCP memory primitives get first-class entity dedup</h3>
+
+<p>Tier: B. Affected primitives: D.
+The MCP memory surface now dedups entities by name automatically across
+create_entities calls. This doesn't affect the steward directly (we
+don't use autonomous memory promotion — ADR 010) but is worth tracking.</p>
+
+<h3>SendMessage tool: broadcast mode</h3>
+
+<p>Tier: A. Affected primitives: B.
+A new --broadcast flag sends the same message to multiple lanes in one
+call. Replaces the fleet's custom bulk-send loop for dispatch
+announcements.</p>
+
+</body>
+</html>

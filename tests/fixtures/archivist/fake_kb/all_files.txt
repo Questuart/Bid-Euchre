@@ -1,0 +1,3 @@
+knowledge/lessons/keep_this.md
+knowledge/lessons/stale_one.md
+knowledge/lessons/stale_two.md

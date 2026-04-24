@@ -254,10 +254,12 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/agent_readability_score.py` | Primitive C agent-readability scorecard scorer (§3 scorecard-dimension scoring over knowledge/, plans/steward_platform/, ADRs) |
 | `scripts/internal/analyze_phase1a_matrix.py` | Phase 1A 2×2 model×label matrix H2H analysis (effect decomposition) |
 | `scripts/internal/archivist.py` | Primitive C archivist stub (interface contract + CLI skeleton for KB promotion flow; Phase 0 scaffold) |
+| `scripts/internal/archivist_candidates.py` | Primitive D archivist candidate-generator CLI (lessons / GC / postmortem modes; writes `knowledge/_candidates/<date>_{lessons,gc}.md`) |
 | `scripts/internal/audit_analysis.py` | Review pipeline audit (follow-up rates, corrective PRs) |
 | `scripts/internal/audit_portability.py` | Ops package portability audit (coupling pattern scanner, severity counts, threshold enforcement) |
 | `scripts/internal/blind_strategy_comparison.py` | Blind strategy comparison for Arc D evaluation (anonymize, rubric, unblind) |
 | `scripts/internal/capture_steward_baseline.py` | Phase 0 steward platform baseline snapshot (§4.3) — composes fleet / token / PR / issue / event / plan sections into a diffable markdown artifact |
+| `scripts/internal/changelog_review.py` | Primitive D changelog-review CLI (scrapes Claude Code changelog + ecosystem sources; writes `knowledge/_candidates/<date>_changelog.md`) |
 | `scripts/internal/claude_fix_adapter.py` | Deterministic fix application from Codex findings (auto-fix + commit) |
 | `scripts/internal/codex_plan_review_adapter.py` | Codex CLI plan review adapter (tier detection, plan-scoped invocation, Claude failsafe) |
 | `scripts/internal/codex_review_adapter.py` | Codex CLI invocation and output parsing (review findings extraction) |

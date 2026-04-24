@@ -1,0 +1,1 @@
+knowledge/lessons/expired_one.md	https://example.com/expired/path

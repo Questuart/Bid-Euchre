@@ -1,0 +1,10 @@
+# Archivist + changelog-review candidate output directory.
+#
+# Contents (daily dated files like `2026-04-24_lessons.md`,
+# `2026-04-24_changelog.md`) are operator-review artifacts produced by
+# `scripts/internal/archivist.py` and `scripts/internal/changelog_review.py`.
+# They stay committed once the operator reviews + annotates them (per
+# Primitive D shaping §4.3).
+#
+# This placeholder commits the empty directory so the CLIs can write here
+# without a chicken-and-egg mkdir step on a fresh checkout.
