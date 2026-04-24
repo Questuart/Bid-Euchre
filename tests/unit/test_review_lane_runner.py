@@ -1175,3 +1175,319 @@ class TestInvokeReviewPermissionModeByModelTier:
             "Real loader + sonnet config must NOT cross-wire '--permission-mode' "
             f"(silent-fallback footgun): {argv}"
         )
+
+
+class TestInvokeReviewSystemPromptFile:
+    """Tests for archetype-aware ``--system-prompt-file`` wiring on ``invoke_review``.
+
+    Primitive B-exec.γ / B.9b (shaping.md §6) adds per-archetype system-prompt
+    file overrides to every lane launch. ``invoke_review`` runs the review
+    lane as a subprocess; its argv must include
+    ``--system-prompt-file .claude/system_prompts/review.md`` when the
+    archetype prompt file exists on disk, and must omit the flag entirely
+    when the file is missing (fallback to the Claude Code default prompt
+    so the subprocess does not fail on a missing-file argument).
+
+    The review lane is pinned to archetype ``review`` in the hardcoded
+    ``_LANE_ARCHETYPE_MAP`` table in ``review_lane_runner.py``. These tests
+    mock ``subprocess.run`` to inspect the argv, and monkeypatch
+    ``_REPO_ROOT`` onto a tmp-path so we can control whether the archetype
+    prompt file is staged or missing without perturbing the real
+    ``.claude/system_prompts/`` tree.
+
+    Existing flag preservation — ``--agent steward-review``, ``--print``,
+    ``-p``, ``--output-format json``, ``--permission-mode auto`` /
+    ``--dangerously-skip-permissions`` — must not regress when the new
+    ``--system-prompt-file`` fragment is spliced in.
+    """
+
+    @staticmethod
+    def _mock_subprocess_ok(mock_run: MagicMock) -> None:
+        """Make subprocess.run return a successful JSON payload."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "passed", "reason": "clean", "findings": []}),
+            stderr="",
+        )
+
+    @staticmethod
+    def _stage_prompt_files(
+        tmp_root: Path, archetypes: list[str] | None = None
+    ) -> None:
+        """Stage ``.claude/system_prompts/<archetype>.md`` stubs under ``tmp_root``.
+
+        Defaults to staging only ``review.md`` (matching the review lane's
+        archetype). Pass an empty list to simulate the pre-B.9a state with
+        no archetype prompts authored yet.
+        """
+        if archetypes is None:
+            archetypes = ["review"]
+        prompts_dir = tmp_root / ".claude" / "system_prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        for archetype in archetypes:
+            (prompts_dir / f"{archetype}.md").write_text(
+                f"# Stub system prompt for archetype: {archetype}\n"
+            )
+
+    @patch("review_lane_runner.permission_mode_args_for_lane")
+    @patch("review_lane_runner.subprocess.run")
+    def test_argv_contains_system_prompt_file_when_archetype_file_exists(
+        self,
+        mock_run: MagicMock,
+        mock_perm: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """review archetype + review.md staged → argv has ``--system-prompt-file``."""
+        import review_lane_runner
+
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--permission-mode", "auto"]
+
+        # Stage the review archetype prompt file under tmp_root.
+        self._stage_prompt_files(tmp_path, archetypes=["review"])
+
+        # Redirect _REPO_ROOT to tmp_path so the helper's file-presence
+        # check consults our staged tree, not the real repo.
+        monkeypatch.setattr(review_lane_runner, "_REPO_ROOT", tmp_path)
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        assert mock_run.called, "invoke_review must call subprocess.run"
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        assert isinstance(argv, list), "subprocess.run must be called with an argv list"
+
+        assert "--system-prompt-file" in argv, (
+            "When the review archetype prompt file exists, argv must include "
+            f"'--system-prompt-file' (got {argv})"
+        )
+        idx = argv.index("--system-prompt-file")
+        assert idx + 1 < len(
+            argv
+        ), "--system-prompt-file must be followed by a path value"
+        # The helper emits a repo-relative path string.
+        expected_path = str(Path(".claude") / "system_prompts" / "review.md")
+        assert argv[idx + 1] == expected_path, (
+            f"--system-prompt-file must point at '{expected_path}', "
+            f"got {argv[idx + 1]!r}"
+        )
+
+    @patch("review_lane_runner.permission_mode_args_for_lane")
+    @patch("review_lane_runner.subprocess.run")
+    def test_argv_omits_system_prompt_file_when_archetype_file_missing(
+        self,
+        mock_run: MagicMock,
+        mock_perm: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """review archetype + review.md missing → argv omits ``--system-prompt-file``.
+
+        Guards the fallback invariant: if the archetype prompt file is not
+        yet authored (pre-B.9a fan-out), the helper must emit ``[]`` so the
+        subprocess falls back to the Claude Code default system prompt
+        rather than failing with a ``--system-prompt-file <missing>``
+        launch error.
+        """
+        import review_lane_runner
+
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--permission-mode", "auto"]
+
+        # Stage NO archetype prompt files.
+        self._stage_prompt_files(tmp_path, archetypes=[])
+        monkeypatch.setattr(review_lane_runner, "_REPO_ROOT", tmp_path)
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        assert "--system-prompt-file" not in argv, (
+            "When the archetype prompt file is missing, argv must NOT include "
+            f"'--system-prompt-file' (fallback to default prompt): {argv}"
+        )
+
+    @patch("review_lane_runner.permission_mode_args_for_lane")
+    @patch("review_lane_runner.subprocess.run")
+    def test_existing_flags_preserved_with_system_prompt_file(
+        self,
+        mock_run: MagicMock,
+        mock_perm: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Splicing ``--system-prompt-file`` must not drop other flags."""
+        import review_lane_runner
+
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--permission-mode", "auto"]
+
+        self._stage_prompt_files(tmp_path, archetypes=["review"])
+        monkeypatch.setattr(review_lane_runner, "_REPO_ROOT", tmp_path)
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        call_args, _ = mock_run.call_args
+        argv = call_args[0]
+        assert argv[0] == "claude", f"First arg must be 'claude', got {argv[0]!r}"
+        assert (
+            "--agent" in argv and "steward-review" in argv
+        ), f"--agent steward-review must be preserved: {argv}"
+        assert "--print" in argv, f"--print must be preserved: {argv}"
+        assert "-p" in argv, f"-p prompt flag must be preserved: {argv}"
+        assert (
+            "--output-format" in argv and "json" in argv
+        ), f"--output-format json must be preserved: {argv}"
+        assert "--permission-mode" in argv and "auto" in argv, (
+            "--permission-mode auto must be preserved alongside "
+            f"--system-prompt-file: {argv}"
+        )
+        assert (
+            "--system-prompt-file" in argv
+        ), f"--system-prompt-file must be present when file exists: {argv}"
+
+    @patch("review_lane_runner.permission_mode_args_for_lane")
+    @patch("review_lane_runner.subprocess.run")
+    def test_system_prompt_helper_called_with_review_lane_id(
+        self,
+        mock_run: MagicMock,
+        mock_perm: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The helper must receive ``LANE_ID`` (i.e., the review lane id).
+
+        Wraps the real helper in a spy so we can assert the call args
+        without losing the file-presence semantics.
+        """
+        import review_lane_runner
+
+        self._mock_subprocess_ok(mock_run)
+        mock_perm.return_value = ["--permission-mode", "auto"]
+
+        self._stage_prompt_files(tmp_path, archetypes=["review"])
+        monkeypatch.setattr(review_lane_runner, "_REPO_ROOT", tmp_path)
+
+        spy = MagicMock(wraps=review_lane_runner.system_prompt_args_for_lane)
+        monkeypatch.setattr(review_lane_runner, "system_prompt_args_for_lane", spy)
+
+        review_lane_runner.invoke_review(
+            pr_number=42, branch="feat/foo", head_sha="abc123"
+        )
+
+        assert spy.called, "invoke_review must call system_prompt_args_for_lane"
+        call_args, _ = spy.call_args
+        assert call_args[0] == review_lane_runner.LANE_ID, (
+            f"system_prompt_args_for_lane must be called with LANE_ID="
+            f"{review_lane_runner.LANE_ID!r}, got {call_args[0]!r}"
+        )
+
+
+class TestSystemPromptArgsForLane:
+    """Unit tests for the ``system_prompt_args_for_lane`` helper.
+
+    Narrower scope than ``TestInvokeReviewSystemPromptFile`` — these tests
+    exercise the helper directly across lane / archetype / file-presence
+    permutations, independent of the ``invoke_review`` subprocess harness.
+    """
+
+    def test_returns_empty_for_unknown_lane(self, tmp_path: Path) -> None:
+        """Unknown lane IDs → ``[]`` (fallback, no flag emitted)."""
+        import review_lane_runner
+
+        result = review_lane_runner.system_prompt_args_for_lane("not-a-real-lane-xyz")
+        assert (
+            result == []
+        ), f"Unknown lane must return empty list (fallback), got {result!r}"
+
+    def test_returns_empty_when_file_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Known lane + missing archetype file → ``[]`` (fallback)."""
+        import review_lane_runner
+
+        # Stage tmp repo root with no .claude/system_prompts/*.md files.
+        (tmp_path / ".claude" / "system_prompts").mkdir(parents=True)
+        monkeypatch.setattr(review_lane_runner, "_REPO_ROOT", tmp_path)
+
+        result = review_lane_runner.system_prompt_args_for_lane("review")
+        assert (
+            result == []
+        ), f"Missing archetype file must return empty list (fallback), got {result!r}"
+
+    def test_returns_flag_when_file_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Known lane + present archetype file → ``['--system-prompt-file', '<path>']``."""
+        import review_lane_runner
+
+        prompts_dir = tmp_path / ".claude" / "system_prompts"
+        prompts_dir.mkdir(parents=True)
+        (prompts_dir / "review.md").write_text("# review\n")
+        monkeypatch.setattr(review_lane_runner, "_REPO_ROOT", tmp_path)
+
+        result = review_lane_runner.system_prompt_args_for_lane("review")
+        expected_path = str(Path(".claude") / "system_prompts" / "review.md")
+        assert result == ["--system-prompt-file", expected_path], (
+            f"Present archetype file must return ['--system-prompt-file', "
+            f"'{expected_path}'], got {result!r}"
+        )
+
+    def test_map_covers_19_lanes(self) -> None:
+        """Hardcoded map must cover all 19 active fleet lanes (G13 §2.1)."""
+        import review_lane_runner
+
+        expected_lanes = {
+            "orchestrator",
+            "ops",
+            "review",
+            "analyst-a",
+            "analyst-b",
+            "analyst-c",
+            "analyst-d",
+            "author-a",
+            "author-b",
+            "author-c",
+            "author-d",
+            "brws-author-a",
+            "brws-author-b",
+            "brws-author-c",
+            "brws-author-d",
+            "flex-a",
+            "flex-b",
+            "flex-c",
+            "flex-d",
+        }
+        actual_lanes = set(review_lane_runner._LANE_ARCHETYPE_MAP.keys())
+        assert actual_lanes == expected_lanes, (
+            f"Archetype map must cover exactly the 19 active lanes. "
+            f"Missing: {expected_lanes - actual_lanes}. "
+            f"Extra: {actual_lanes - expected_lanes}."
+        )
+
+    def test_map_values_are_valid_archetypes(self) -> None:
+        """Every mapped archetype must be one of the 8 canonical archetypes."""
+        import review_lane_runner
+
+        valid_archetypes = {
+            "orchestrator",
+            "ops",
+            "review",
+            "analyst",
+            "author",
+            "brws-author",
+            "flex",
+            "scratch",
+        }
+        for lane, archetype in review_lane_runner._LANE_ARCHETYPE_MAP.items():
+            assert archetype in valid_archetypes, (
+                f"Lane {lane!r} maps to invalid archetype {archetype!r}; "
+                f"valid set is {valid_archetypes}"
+            )

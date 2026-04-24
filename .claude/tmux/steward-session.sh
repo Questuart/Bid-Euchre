@@ -182,6 +182,54 @@ except Exception:
     esac
 }
 
+# Emit the `--system-prompt-file .claude/system_prompts/<archetype>.md` flag
+# for a lane, based on the hardcoded 19-lane → 8-archetype mapping from
+# plans/steward_platform/0_hardening/sub/g13_archetype_mapping.md §2.1
+# (Primitive B-exec.γ / B.9b — shaping.md §6).
+#
+# Fallback: if the resolved archetype prompt file does NOT yet exist under
+# .claude/system_prompts/ (pre-B.9a fan-out: only analyst.md is authored
+# today), emit nothing. The Claude Code default system prompt applies for
+# that lane. This prevents a "--system-prompt-file <missing-file>" launch
+# failure while B.9a fan-out is in flight. Once all 8 archetype files land,
+# every launch line gets the flag automatically with no further edits.
+#
+# Output is intended to be spliced unquoted into a tmux command line so
+# word splitting either emits two tokens
+# (`--system-prompt-file .claude/system_prompts/<archetype>.md`) or nothing.
+#
+# This function must stay behaviorally consistent with
+# scripts/internal/review_lane_runner.py's inline resolution in
+# invoke_review() (matching 19-lane hardcoded mapping).
+# Args: lane_id
+system_prompt_flag_for_lane() {
+    local lane="$1"
+    local archetype=""
+    case "$lane" in
+        orchestrator)                              archetype="orchestrator" ;;
+        ops)                                       archetype="ops" ;;
+        review)                                    archetype="review" ;;
+        analyst-a|analyst-b|analyst-c|analyst-d)   archetype="analyst" ;;
+        author-a|author-b|author-c|author-d)       archetype="author" ;;
+        brws-author-a|brws-author-b|brws-author-c|brws-author-d)
+                                                   archetype="brws-author" ;;
+        flex-a|flex-b|flex-c|flex-d)               archetype="flex" ;;
+        *)
+            # Unknown lane → no flag (fall back to Claude Code default).
+            return 0
+            ;;
+    esac
+    local prompts_file="${MAIN_DIR}/.claude/system_prompts/${archetype}.md"
+    if [ -f "$prompts_file" ]; then
+        # Emit repo-relative path; the claude CLI resolves relative to CWD,
+        # which is the worktree at launch time. Tests and operators reading
+        # the launch command see the same path shape.
+        printf '%s\n' "--system-prompt-file .claude/system_prompts/${archetype}.md"
+    fi
+    # else: prompt file not yet authored (B.9a fan-out pending) — emit
+    # nothing so the launch falls back to the Claude Code default prompt.
+}
+
 validate_worktree_path() {
     local path="$1"
     local resolved
@@ -477,7 +525,7 @@ fi
 
 # --- Window 1: central-ops (3 panes, main-vertical) ---
 tmux new-session -d -s "$SESSION" -n central-ops -c "$MAIN_DIR" \
-    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $(permission_mode_flag_for_lane orchestrator) $ORCH_CHANNEL_FLAGS
+    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator $(permission_mode_flag_for_lane orchestrator) $(system_prompt_flag_for_lane orchestrator) $ORCH_CHANNEL_FLAGS
 
 # ---------------------------------------------------------------------------
 # Auto-compact window for non-orchestrator lanes (token economy optimization).
@@ -535,53 +583,53 @@ if [ "$STEWARD_TELEGRAM_ENABLED" = "1" ]; then
 fi
 
 tmux split-window -t "${SESSION}:central-ops" -c "$OPS" \
-    "$CLAUDE_BIN" --name ops --agent steward-ops $(permission_mode_flag_for_lane ops)
+    "$CLAUDE_BIN" --name ops --agent steward-ops $(permission_mode_flag_for_lane ops) $(system_prompt_flag_for_lane ops)
 tmux split-window -t "${SESSION}:central-ops" -c "$REVIEW" \
-    "$CLAUDE_BIN" --name review --agent steward-review $(permission_mode_flag_for_lane review)
+    "$CLAUDE_BIN" --name review --agent steward-review $(permission_mode_flag_for_lane review) $(system_prompt_flag_for_lane review)
 tmux select-layout -t "${SESSION}:central-ops" main-vertical
 
 # --- Window 2: analyst (4 panes, tiled) ---
 tmux new-window -t "$SESSION" -n analyst -c "$ANALYST_A" \
-    "$CLAUDE_BIN" --name analyst-a --agent steward-analyst $(permission_mode_flag_for_lane analyst-a)
+    "$CLAUDE_BIN" --name analyst-a --agent steward-analyst $(permission_mode_flag_for_lane analyst-a) $(system_prompt_flag_for_lane analyst-a)
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_B" \
-    "$CLAUDE_BIN" --name analyst-b --agent steward-analyst $(permission_mode_flag_for_lane analyst-b)
+    "$CLAUDE_BIN" --name analyst-b --agent steward-analyst $(permission_mode_flag_for_lane analyst-b) $(system_prompt_flag_for_lane analyst-b)
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_C" \
-    "$CLAUDE_BIN" --name analyst-c --agent steward-analyst $(permission_mode_flag_for_lane analyst-c)
+    "$CLAUDE_BIN" --name analyst-c --agent steward-analyst $(permission_mode_flag_for_lane analyst-c) $(system_prompt_flag_for_lane analyst-c)
 tmux split-window -t "${SESSION}:analyst" -c "$ANALYST_D" \
-    "$CLAUDE_BIN" --name analyst-d --agent steward-analyst $(permission_mode_flag_for_lane analyst-d)
+    "$CLAUDE_BIN" --name analyst-d --agent steward-analyst $(permission_mode_flag_for_lane analyst-d) $(system_prompt_flag_for_lane analyst-d)
 tmux select-layout -t "${SESSION}:analyst" tiled
 
 # --- Window 3: platform ---
 tmux new-window -t "$SESSION" -n platform -c "$AUTHOR_A" \
-    "$CLAUDE_BIN" --name author-a --agent steward-author-a $(permission_mode_flag_for_lane author-a)
+    "$CLAUDE_BIN" --name author-a --agent steward-author-a $(permission_mode_flag_for_lane author-a) $(system_prompt_flag_for_lane author-a)
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_B" \
-    "$CLAUDE_BIN" --name author-b --agent steward-author-b $(permission_mode_flag_for_lane author-b)
+    "$CLAUDE_BIN" --name author-b --agent steward-author-b $(permission_mode_flag_for_lane author-b) $(system_prompt_flag_for_lane author-b)
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_C" \
-    "$CLAUDE_BIN" --name author-c --agent steward-author-c $(permission_mode_flag_for_lane author-c)
+    "$CLAUDE_BIN" --name author-c --agent steward-author-c $(permission_mode_flag_for_lane author-c) $(system_prompt_flag_for_lane author-c)
 tmux split-window -t "${SESSION}:platform" -c "$AUTHOR_D" \
-    "$CLAUDE_BIN" --name author-d --agent steward-author-d $(permission_mode_flag_for_lane author-d)
+    "$CLAUDE_BIN" --name author-d --agent steward-author-d $(permission_mode_flag_for_lane author-d) $(system_prompt_flag_for_lane author-d)
 tmux select-layout -t "${SESSION}:platform" tiled
 
 # --- Window 4: browser ---
 tmux new-window -t "$SESSION" -n browser -c "$BRWS_A" \
-    "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a $(permission_mode_flag_for_lane brws-author-a)
+    "$CLAUDE_BIN" --name brws-author-a --agent steward-brws-author-a $(permission_mode_flag_for_lane brws-author-a) $(system_prompt_flag_for_lane brws-author-a)
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_B" \
-    "$CLAUDE_BIN" --name brws-author-b --agent steward-brws-author-b $(permission_mode_flag_for_lane brws-author-b)
+    "$CLAUDE_BIN" --name brws-author-b --agent steward-brws-author-b $(permission_mode_flag_for_lane brws-author-b) $(system_prompt_flag_for_lane brws-author-b)
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_C" \
-    "$CLAUDE_BIN" --name brws-author-c --agent steward-brws-author-c $(permission_mode_flag_for_lane brws-author-c)
+    "$CLAUDE_BIN" --name brws-author-c --agent steward-brws-author-c $(permission_mode_flag_for_lane brws-author-c) $(system_prompt_flag_for_lane brws-author-c)
 tmux split-window -t "${SESSION}:browser" -c "$BRWS_D" \
-    "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d $(permission_mode_flag_for_lane brws-author-d)
+    "$CLAUDE_BIN" --name brws-author-d --agent steward-brws-author-d $(permission_mode_flag_for_lane brws-author-d) $(system_prompt_flag_for_lane brws-author-d)
 tmux select-layout -t "${SESSION}:browser" tiled
 
 # --- Window 5: flex (4 panes, tiled) ---
 tmux new-window -t "$SESSION" -n flex -c "$FLEX_A" \
-    "$CLAUDE_BIN" --name flex-a --agent steward-flex-a $(permission_mode_flag_for_lane flex-a)
+    "$CLAUDE_BIN" --name flex-a --agent steward-flex-a $(permission_mode_flag_for_lane flex-a) $(system_prompt_flag_for_lane flex-a)
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_B" \
-    "$CLAUDE_BIN" --name flex-b --agent steward-flex-b $(permission_mode_flag_for_lane flex-b)
+    "$CLAUDE_BIN" --name flex-b --agent steward-flex-b $(permission_mode_flag_for_lane flex-b) $(system_prompt_flag_for_lane flex-b)
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_C" \
-    "$CLAUDE_BIN" --name flex-c --agent steward-flex-c $(permission_mode_flag_for_lane flex-c)
+    "$CLAUDE_BIN" --name flex-c --agent steward-flex-c $(permission_mode_flag_for_lane flex-c) $(system_prompt_flag_for_lane flex-c)
 tmux split-window -t "${SESSION}:flex" -c "$FLEX_D" \
-    "$CLAUDE_BIN" --name flex-d --agent steward-flex-d $(permission_mode_flag_for_lane flex-d)
+    "$CLAUDE_BIN" --name flex-d --agent steward-flex-d $(permission_mode_flag_for_lane flex-d) $(system_prompt_flag_for_lane flex-d)
 tmux select-layout -t "${SESSION}:flex" tiled
 
 # Auto-launch ops monitoring loop (SP-3-08).
