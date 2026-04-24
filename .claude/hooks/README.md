@@ -395,3 +395,241 @@ conversation context so the orchestrator cannot miss them.
 **Registration:** `.claude/settings.json` → `UserPromptSubmit` (timeout: 5s)
 
 **Related:** #1608, `src/bid_euchre/ops/control_plane.py`
+
+## Hook Execution Order
+
+Claude Code runs hooks in registration order within a matcher group. The
+order below is the contract per lifecycle event — hooks listed earlier
+run earlier. Contract invariants documented here prevent future
+regressions from hook-ordering assumptions.
+
+### `SessionStart`
+
+Registration order (from `.claude/settings.json`):
+
+1. `compact-context.sh` — matcher `compact` — re-injects constraints after
+   context compaction. Runs only on compact-mode start.
+2. `session-sync-worktree.sh` — no matcher — auto-syncs steward worktrees
+   to main. Fires on all session starts (init, clear, compact).
+3. `fleet-check-autostart.sh` — no matcher — auto-starts fleet-check cron
+   on orchestrator lane.
+4. `attention-broker-autostart.sh` — no matcher — launches attention
+   broker daemon.
+
+Contract: `compact-context.sh` runs first on compact events so re-injected
+context is visible to downstream hooks. Non-compact events run hooks 2–4
+in order.
+
+### `PreToolUse` (Edit | Write)
+
+1. `block-runtime-writes.sh` — blocks unsanctioned writes to runtime paths.
+2. `rule-loader.sh` — progressive rule disclosure.
+
+Contract: guard (`block-runtime-writes.sh`) runs first; if it blocks
+(exit 2), rule-loader is skipped.
+
+### `PreToolUse` (Bash)
+
+1. `pre-bash-dispatch.sh` — consolidated dispatcher for Bash PreToolUse.
+
+Internally dispatches (in order):
+1. `pre-worktree-cleanup.sh` — blocks dangerous rm/worktree commands.
+2. `pre-merge-review-guard.sh` — blocks merge without review verdict.
+3. `rule-loader.sh` — progressive rule disclosure.
+
+### `PostToolUse` (Edit | Write)
+
+1. `post-write-check.sh` — advisory anti-pattern detection for Python.
+
+### `PostToolUse` (Bash)
+
+1. `post-bash-dispatch.sh` — consolidated dispatcher for Bash PostToolUse.
+
+Internally dispatches (in order):
+1. `post-pr-review.sh` — enqueues review request after `gh pr create`.
+2. `post-pr-review-loop.sh` — launches review driver after `gh pr create`.
+3. `post-push-ci-check.sh` — launches CI poller after `git push`.
+4. `post-merge-ci-check.sh` — checks main CI after `gh pr merge`.
+5. `post-merge-review.sh` — triggers post-merge review after `gh pr merge`.
+6. `post-tool-daemon-notify.sh` — checks for background daemon failures.
+7. `post-task-event.sh` — emits task events on relevant commands.
+8. `post-merge-notify.sh` — auto-completes task lifecycle on merge.
+
+### `PostToolUse` (MCP Telegram tools)
+
+1. `post-telegram-audit.sh` — audit trail for outbound Telegram exchanges.
+
+### `PostToolUse` (wildcard `*`)
+
+1. `lane-heartbeat-post-tool.sh` — emits lane heartbeat (pure shell, ~20ms).
+
+### `PermissionDenied`
+
+1. `permission-denied-log.sh` — observability log (no matcher).
+2. `permission_denied_alert.sh` — matcher `*` — Telegram alert.
+
+Contract: `permission-denied-log.sh` runs first so `permission_denied_alert.sh`
+can reference the log entry for alert context.
+
+### `UserPromptSubmit`
+
+1. `alert-inject.sh` — fleet alert injection.
+2. `inbound-channel-audit.sh` — inbound Telegram audit trail.
+3. `inbox-completion-inject.sh` — inbox completion surfacing.
+
+## Per-Hook Scope Summary
+
+One-line description of trigger, inputs, outputs, short-circuit behavior
+per hook. Audited for 1-to-1 correspondence against files in this
+directory by `tests/unit/test_hooks_inventory.py`.
+
+| Hook | Trigger | Reads | Writes | Short-circuits when |
+|---|---|---|---|---|
+| `alert-inject.sh` | UserPromptSubmit | `.claude/runtime/fleet_status.json` | stdout (additionalContext) | no high/urgent alerts |
+| `alert-inject.py` | helper for `alert-inject.sh` | fleet_status.json | stdout | — |
+| `attention-broker-autostart.sh` | SessionStart | pidfile | spawns daemon | broker already alive |
+| `block-runtime-writes.sh` | PreToolUse Edit\|Write | tool_input.file_path | stderr + exit 2 | path outside protected runtime paths |
+| `compact-context.sh` | SessionStart matcher=`compact` | — | stdout (context) | non-compact event |
+| `fleet-check-autostart.sh` | SessionStart | `CLAUDE_AGENT_NAME`, cwd | stdout (directive) | lane != orchestrator |
+| `inbound-channel-audit.sh` | UserPromptSubmit | prompt content | audit JSONL | no `<channel` tag in prompt |
+| `inbound-channel-audit.py` | helper for `inbound-channel-audit.sh` | prompt content | audit JSONL | — |
+| `inbox-completion-inject.sh` | UserPromptSubmit | orchestrator inbox | stdout (additionalContext) | lane != orchestrator; no unacked |
+| `inbox-completion-inject.py` | helper for `inbox-completion-inject.sh` | inbox file | stdout + ack | — |
+| `lane-heartbeat-post-tool.sh` | PostToolUse `*` | lane_id from cwd/env | `.claude/runtime/lane_status/<lane>.json` | never (always emits, ALWAYS exit 0) |
+| `permission-denied-log.sh` | PermissionDenied | tool_name, reason, session_id | `.claude/runtime/permission_denials.jsonl` | never (ALWAYS exit 0) |
+| `post-bash-dispatch.sh` | PostToolUse Bash | stdin payload | sub-hook dispatches | — |
+| `post-merge-ci-check.sh` | PostToolUse Bash (via dispatcher) | `gh pr` command | ci poller state | command != `gh pr merge` |
+| `post-merge-notify.sh` | PostToolUse Bash (via dispatcher) | `gh pr merge` output | message bus (task completion) | command != `gh pr merge` |
+| `post-merge-review.sh` | PostToolUse Bash (via dispatcher) | PR number, merge signal | spawns background reviewer | command != `gh pr merge` |
+| `post-monitor-push-relay.sh` | PostToolUse Bash (via dispatcher) | monitor state | Telegram push queue | monitor state unchanged |
+| `post-plan-review.sh` | **DEPRECATED** — no active registration | — | — | always (deprecated) |
+| `post-pr-review-loop.sh` | PostToolUse Bash (via dispatcher) | `gh pr create` output | spawns review driver | command != `gh pr create` |
+| `post-pr-review.sh` | PostToolUse Bash (via dispatcher) | `gh pr create` output | review queue | command != `gh pr create` |
+| `post-push-ci-check.sh` | PostToolUse Bash (via dispatcher) | `git push` output | ci poller state | command != `git push` |
+| `post-task-event.sh` | PostToolUse Bash (via dispatcher) | command text | events.jsonl | no task-relevant command |
+| `post-telegram-audit.sh` | PostToolUse mcp Telegram tools | tool_input | audit JSONL | non-Telegram tool |
+| `post-tool-daemon-notify.sh` | PostToolUse Bash (via dispatcher) | daemon state files | additionalContext (stderr notice) | no daemon failures |
+| `post-write-check.sh` | PostToolUse Edit\|Write | file_path | stdout findings | non-`.py` file, or file missing |
+| `pre-bash-dispatch.sh` | PreToolUse Bash | stdin payload | sub-hook dispatches | — |
+| `pre-merge-review-guard.sh` | PreToolUse Bash (via dispatcher) | `gh pr merge` command, review queue | exit 2 if no verdict | command != `gh pr merge` |
+| `pre-worktree-cleanup.sh` | PreToolUse Bash (via dispatcher) | command text | exit 2 on protected worktree | command != dangerous cleanup |
+| `rule-loader.sh` | PreToolUse Edit\|Write\|Read, Bash (via dispatcher) | file_path / command | stdout additionalContext | path not under matched rule trigger |
+| `scope-drift-guard.sh` | PostToolUse Bash (not in settings) | commit message | stderr advisory | no `Refs #N`/`Fixes #N` |
+| `session-sync-worktree.sh` | SessionStart | cwd, branch, worktree state | git rebase/ff | cwd not `*steward*`, dirty tree, or open PR |
+| `urgent-state-guard.py` | helper (not directly registered) | runtime state | — | — |
+| `worktree-guard.sh` | UserPromptSubmit (`.claude/settings.local.json`) | cwd, branch | creates worktree | cwd != main checkout |
+| `worktree-reminder.sh` | SessionStart (`.claude/settings.local.json`) | cwd, branch | stderr advisory | cwd != main checkout |
+
+Helper scripts under `scripts/internal/hooks/`:
+
+| Hook | Trigger | Purpose |
+|---|---|---|
+| `permission_denied_alert.sh` | PermissionDenied matcher=`*` | Telegram alert on permission denial (event-bounded; low volume) |
+
+## Conditional-Hook Migration
+
+Primitive E Phase 0 §5-E introduces a per-hook disposition discipline:
+every hook is categorized either as **matcher-scoped** (narrowed to a
+specific tool list), **event-scoped** (fires on a discriminating
+lifecycle event like SessionStart / UserPromptSubmit / PermissionDenied),
+or **universal** (matcher `*`, fires on every tool call).  Universal
+matchers on high-volume events (`PostToolUse`) are migration candidates;
+universal matchers on low-volume events (`PermissionDenied`) are
+justified-retention candidates.
+
+This section is the source of truth for per-hook disposition. Test
+`tests/unit/test_hooks_inventory.py` asserts 1-to-1 correspondence
+between `.claude/hooks/*.{sh,py}` and rows below. Test
+`tests/unit/test_settings_hooks_contract.py` asserts no matcher `*`
+is registered in `.claude/settings.json` without a justified-retention
+sentinel in the Rationale column below.
+
+### Disposition Table
+
+Legend for **Disposition** column:
+
+- `already-narrow` — matcher is already a specific tool or tool-set; no
+  migration needed.
+- `event-scoped` — registered under an event (SessionStart, UserPromptSubmit,
+  PermissionDenied) that is itself low-volume and discriminating; matcher
+  scope is implicit in the event selection.
+- `dispatched` — script runs inside `pre-bash-dispatch.sh` or
+  `post-bash-dispatch.sh`, which is already narrow on `Bash`; conditional
+  logic lives in the dispatcher's early-guard clauses per sub-hook.
+- `retained-universal-justified` — matcher `*` is intentional and safe;
+  rationale must end with the sentinel string `retained-universal-justified`
+  for the contract test to accept it.
+- `migrated-v0.5` — consolidated or narrowed in Primitive E Phase 0.
+- `deprecated` — no active registration; kept for historical reference.
+- `helper` — not directly registered as a hook; invoked by a sibling `.sh`
+  wrapper.
+
+| Hook | Current Matcher | Proposed Matcher | Disposition | Rationale |
+|---|---|---|---|---|
+| `alert-inject.sh` | UserPromptSubmit (no matcher) | unchanged | event-scoped | UserPromptSubmit is a low-volume discriminating event |
+| `alert-inject.py` | — | — | helper | Invoked by `alert-inject.sh` |
+| `attention-broker-autostart.sh` | SessionStart (no matcher) | unchanged | event-scoped | SessionStart fires only at session boundary |
+| `block-runtime-writes.sh` | PreToolUse `Edit\|Write` | unchanged | already-narrow | Only Edit/Write can create files |
+| `compact-context.sh` | SessionStart matcher=`compact` | unchanged | already-narrow | Most specific possible matcher |
+| `event_emit.sh` | PreToolUse `*`, PostToolUse `*`, PostToolUseFailure `*`, PermissionDenied, PermissionRequest, Notification, Stop, StopFailure, SubagentStart, SubagentStop, PreCompact, SessionStart, SessionEnd, TeammateIdle, UserPromptSubmit | unchanged | retained-universal-justified | Primitive A v1.0 native lifecycle absorber — purpose is to observe **every** tool call and lifecycle event for the structured event pipeline (`data/events/events-YYYY-MM-DD-NNN.jsonl`). Universal matcher on PreToolUse/PostToolUse is a design invariant, not a defect: any narrower matcher would create blind spots in the event log. Hook is fire-and-forget (exit 0 always), never blocks the caller; cost is ~one `uv run` warm-up per call, bounded by `timeout: 5`. Landed in PR #2812. retained-universal-justified |
+| `fleet-check-autostart.sh` | SessionStart (no matcher) | unchanged | event-scoped | SessionStart is discriminating |
+| `inbound-channel-audit.sh` | UserPromptSubmit (no matcher) | unchanged | event-scoped | UserPromptSubmit is discriminating; script has fast `<channel` guard (~0ms when absent) |
+| `inbound-channel-audit.py` | — | — | helper | Invoked by `inbound-channel-audit.sh` |
+| `inbox-completion-inject.sh` | UserPromptSubmit (no matcher) | unchanged | event-scoped | Script has lane-identity guard (ops only) |
+| `inbox-completion-inject.py` | — | — | helper | Invoked by `inbox-completion-inject.sh` |
+| `lane-heartbeat-post-tool.sh` | PostToolUse `*` | unchanged | retained-universal-justified | Purpose is lane-idle detection; excluding any tool class risks false-stale on reading/searching lanes. Post PR #2739 pure-shell rewrite, cost is ~20ms per call — bounded and acceptable. retained-universal-justified |
+| `material-platform-change-canary.sh` | PostToolUse `Bash` | unchanged | already-narrow | Bash-matcher on PostToolUse; script self-gates on `gh pr merge` command + trigger-path detection (dogfood.md §8 paths) + `canary-rollback-pr` label self-exclusion. Landed in PR #2797 (Primitive H.0). |
+| `permission-denied-log.sh` | PermissionDenied (no matcher) | unchanged | event-scoped | PermissionDenied is rare and discriminating by definition |
+| `post-bash-dispatch.sh` | PostToolUse `Bash` | unchanged | already-narrow | Bash-only dispatcher; sub-hooks gated internally |
+| `post-merge-ci-check.sh` | via `post-bash-dispatch.sh` | — | dispatched | Runs inside Bash dispatcher; early-exits when command != `gh pr merge` |
+| `post-merge-notify.sh` | via `post-bash-dispatch.sh` | — | dispatched | Early-exits when command != `gh pr merge` |
+| `post-merge-review.sh` | via `post-bash-dispatch.sh` | — | dispatched | Early-exits when command != `gh pr merge` |
+| `post-monitor-push-relay.sh` | via `post-bash-dispatch.sh` | — | dispatched | Early-exits when monitor state unchanged |
+| `post-plan-review.sh` | — | — | deprecated | No active registration; see `/review-plan` skill |
+| `post-pr-review-loop.sh` | via `post-bash-dispatch.sh` | — | dispatched | Early-exits when command != `gh pr create` |
+| `post-pr-review.sh` | via `post-bash-dispatch.sh` | — | dispatched | Early-exits when command != `gh pr create` |
+| `post-push-ci-check.sh` | via `post-bash-dispatch.sh` | — | dispatched | Early-exits when command != `git push` |
+| `post-task-event.sh` | via `post-bash-dispatch.sh` | — | dispatched | Early-exits on non-task-relevant commands |
+| `post-telegram-audit.sh` | PostToolUse `mcp__plugin_telegram_telegram__reply\|react\|edit_message\|download_attachment` | unchanged | already-narrow | Most specific possible matcher for Telegram tool surface |
+| `post-tool-daemon-notify.sh` | via `post-bash-dispatch.sh` | — | dispatched | Early-exits when no daemon failures |
+| `post-write-check.sh` | PostToolUse `Write` AND PostToolUse `Edit` | PostToolUse `Edit\|Write` (consolidated) | migrated-v0.5 | Consolidate duplicate registrations into single `Edit\|Write` entry |
+| `pre-bash-dispatch.sh` | PreToolUse `Bash` | unchanged | already-narrow | Bash-only dispatcher |
+| `pre-merge-review-guard.sh` | via `pre-bash-dispatch.sh` | — | dispatched | Early-exits when command != `gh pr merge` |
+| `pre-worktree-cleanup.sh` | via `pre-bash-dispatch.sh` | — | dispatched | Early-exits when command is not a dangerous cleanup |
+| `rule-loader.sh` | PreToolUse `Edit\|Write\|Read` (and via `pre-bash-dispatch.sh`) | unchanged | already-narrow | Read is retained — rule loading on file reads is a legitimate trigger (e.g., reading a rules doc should load its rules) |
+| `scope-drift-guard.sh` | via `pre-bash-dispatch.sh` (not in settings.json) | — | dispatched | Sub-hook; no direct registration |
+| `session-sync-worktree.sh` | SessionStart (no matcher) | unchanged | event-scoped | SessionStart discriminating; script has `*steward*` cwd guard |
+| `urgent-state-guard.py` | — | — | helper | Not directly registered; imported by other hooks |
+| `worktree-guard.sh` | UserPromptSubmit (`.claude/settings.local.json`) | unchanged | event-scoped | Registered in gitignored local settings |
+| `worktree-reminder.sh` | SessionStart (`.claude/settings.local.json`) | unchanged | event-scoped | Registered in gitignored local settings |
+| `permission_denied_alert.sh` (under `scripts/internal/hooks/`) | PermissionDenied matcher=`*` | unchanged | retained-universal-justified | PermissionDenied is a rare event; `*` matches ANY tool denial so the alert covers future tool types automatically. retained-universal-justified |
+
+### Summary
+
+- **Migrations applied in Phase 0 (Packet E1 narrowed subset):** 1
+  (`post-write-check.sh` registration consolidation).
+- **Retained universal, justified:** 2 (`lane-heartbeat-post-tool.sh`,
+  `permission_denied_alert.sh`).
+- **Already-narrow / event-scoped / dispatched / helper / deprecated / retained-universal-justified:** 34.
+- **Migrations deferred to v1.N follow-ons:** none identified as
+  clearly-safe and unambiguous. ADR 004 (see
+  `plans/steward_platform/adrs/004-http-hooks-migration-boundary.md`)
+  evaluates migration boundaries per hook.
+
+### Why only one migration?
+
+The orchestrator's §5-E scope direction (recovery msg `7f0561631c8f4c29`)
+specifies "migrate existing hooks to conditional hooks where safe." The
+survey found that the hook set is already mostly conditional — 31 of 34
+hooks are `already-narrow`, `event-scoped`, `dispatched`, `helper`, or
+`deprecated`. The remaining 2 universal-matcher registrations
+(`lane-heartbeat-post-tool.sh`, `permission_denied_alert.sh`) were both
+found to be justified: heartbeat's idle-detection semantic requires
+broad coverage and its cost is bounded post PR #2739; the
+permission-denied alert fires only on the rare PermissionDenied event
+where `*` gives automatic coverage of future tool surfaces. Per Pattern
+11 shape-is-authoritative discipline, the shape's ≥8 floor was
+relaxed because the actual hook inventory does not contain that many
+safe narrowing candidates; the disciplinary value ships via the full
+disposition table + inventory contract tests (one-to-one + no-bare-`*`
+enforcement).

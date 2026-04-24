@@ -92,17 +92,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-write-check.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
