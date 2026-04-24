@@ -53,6 +53,60 @@ reversibility obligation discharged for Primitive A's Phase 0 landing
 
 ---
 
+### `STEWARD_TOKEN_ECONOMY_NATIVE_USAGE`
+
+| Property | Value |
+|----------|-------|
+| **Type** | Environment variable |
+| **Default** | `0` (disabled — bespoke path active during proving-run window; "no env var set" = safe forward path per convention #2) |
+| **Owning primitive** | G (G.2 / G-C1 token-economy migration) |
+| **Trigger** | Proving-run Cohort B activation; flipped to `1` on the Cohort B lane subset during the observation window (plan §3.4 — 1 calendar week minimum) |
+| **Expected effect** | `token_economy` consumers (dashboard render, `ops.py usage` CLI) route through the cohort-aware `read_session_records` adapter entry point; both Cohort A (bespoke) and Cohort B (native) paths run and emit a `proving_run_cohort_sample` event per invocation. Cohort A remains authoritative for return values per plan §3.3; the event stream accumulates paired samples for the §5 token-cost measurement |
+| **Rollback SLO** | Operator unsets flag → consumer re-entry to bespoke-only path within **1 minute** (flag is read on every `read_session_records` call; no cache) |
+
+**Setting the flag:**
+
+```bash
+# Flip the flag in the lane's shell (or systemwide under a supervisor env).
+export STEWARD_TOKEN_ECONOMY_NATIVE_USAGE=1
+
+# To restore bespoke-only (Cohort A) routing:
+unset STEWARD_TOKEN_ECONOMY_NATIVE_USAGE
+# or:
+export STEWARD_TOKEN_ECONOMY_NATIVE_USAGE=0
+```
+
+**Validation surface:** `tests/integration/test_token_economy_native_usage_fallback.py`.
+The test flips the flag, invokes the dual-write surface twice (one run
+per cohort on the same on-disk snapshot), and asserts both runs return
+Slice B rollup shapes that match on the §4.1 byte-for-byte observables
+per the plan's behavioral-equivalence contract. See plan §3.1 +
+§4.1–§4.5.
+
+**Why this exists:** Primitive G.2 migrates `ops/token_economy.py`
+lane-inference literals into a per-deployment-cell adapter and wires a
+cohort-dispatch probe so the fleet can observe native `/usage` + `/cost`
+parity against the bespoke Slice B rollups. If the native path
+regresses mid-rollout (subprocess latency, rollup-shape drift, behavioral
+divergence), the flag flip restores Cohort A behavior without requiring
+a code revert. This is the Pattern 7 reversibility obligation discharged
+for Primitive G.2's landing — see
+`plans/steward_platform/7_primitive_G/migrations/01_token_economy_to_native_usage.md`
+§3.1 + §6.
+
+**Cross-references:**
+
+- `plans/steward_platform/7_primitive_G/migrations/01_token_economy_to_native_usage.md`
+  §3 (dual-write) + §6 (stop-loss trip wires) + §7.6 (rollback path)
+- `src/bid_euchre/ops/adapters/token_economy_adapter.py` —
+  `NATIVE_USAGE_FLAG` constant, `native_usage_enabled()`,
+  `read_session_records(source="auto"|"bespoke"|"native")`
+- `plans/steward_platform/governing_plan.md` §10.9 Pattern 7
+  (forward-then-reverse reversibility) + Pattern 8 (observability via
+  `proving_run_cohort_sample`)
+
+---
+
 ## Conventions for adding a new entry
 
 When adding a new feature flag to this registry:

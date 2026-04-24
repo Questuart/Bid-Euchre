@@ -18,6 +18,13 @@ from pathlib import Path
 
 import pytest
 
+# Primitive G.2 migration: lane-inference literals moved to the adapter
+# module; :func:`infer_lane_from_path` now lives at
+# :mod:`bid_euchre.ops.adapters.token_economy_adapter`. The canonical
+# import path is the adapter; :mod:`bid_euchre.ops.token_economy` still
+# re-exports the symbol for backward compatibility but this test suite
+# references the canonical source of truth.
+from bid_euchre.ops.adapters.token_economy_adapter import infer_lane_from_path
 from bid_euchre.ops.token_economy import (
     SCHEMA_VERSION,
     AntiPattern,
@@ -37,7 +44,6 @@ from bid_euchre.ops.token_economy import (
     dashboard_token_economy,
     detect_anti_patterns,
     import_usage_data,
-    infer_lane_from_path,
     join_to_packets,
     lane_summary,
     reconcile_totals,
@@ -544,7 +550,8 @@ class TestInferLaneFromPath:
 
     def test_all_known_lanes_covered(self) -> None:
         """Every known lane maps from at least one worktree path."""
-        from bid_euchre.ops.token_economy import _WORKTREE_TO_LANE
+        # Primitive G.2 migration: `_WORKTREE_TO_LANE` moved to the adapter.
+        from bid_euchre.ops.adapters.token_economy_adapter import _WORKTREE_TO_LANE
 
         expected_lanes = {
             "author-a",

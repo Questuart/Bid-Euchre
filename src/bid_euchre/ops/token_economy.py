@@ -42,12 +42,25 @@ import collections
 import hashlib
 import json
 import logging
-import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+# Per-deployment-cell knowledge boundary. The worktree-basename → lane-id
+# map, the slug-suffix heuristic, and the path-heuristic all live in the
+# adapter so the scanner in this module is free of Bid-Euchre literals
+# (Primitive G.2 migration — see plan at
+# ``plans/steward_platform/7_primitive_G/migrations/01_token_economy_to_native_usage.md``
+# §2.1). Re-exported from this module for backward compatibility with
+# external callers that historically imported from ``token_economy``.
+from bid_euchre.ops.adapters.token_economy_adapter import (
+    _LANE_POOL,
+    _WORKTREE_TO_LANE,  # noqa: F401 — re-exported for backward compat with external callers
+    _infer_lane_from_slug,
+    infer_lane_from_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -325,37 +338,6 @@ def _build_record(
 # ---------------------------------------------------------------------------
 # JSONL project telemetry scanner (v2.1.80+ per-project format)
 # ---------------------------------------------------------------------------
-
-
-def _infer_lane_from_slug(slug: str) -> tuple[str | None, str | None]:
-    """Infer lane ID and worktree name from a project directory slug.
-
-    Claude stores per-project telemetry under ``~/.claude/projects/<slug>/``
-    where *slug* is the project's absolute path with ``/`` replaced by ``-``.
-
-    This function matches known worktree names against the slug suffix,
-    preferring the longest match to avoid ambiguity (e.g., ``Bid-Euchre``
-    vs ``Bid-Euchre-steward-author``).
-
-    Returns
-    -------
-    tuple[str | None, str | None]
-        ``(lane_id, worktree_name)`` if a known worktree is matched,
-        ``(None, None)`` otherwise.
-    """
-    if not slug:
-        return None, None
-
-    # Try longest-first matching of known worktree names against slug suffix
-    for wt_name in sorted(_WORKTREE_TO_LANE, key=len, reverse=True):
-        if slug.endswith(wt_name):
-            return _WORKTREE_TO_LANE[wt_name], wt_name
-
-    # Check main checkout
-    if slug.endswith("Bid-Euchre") and "steward" not in slug:
-        return "main-checkout", "Bid-Euchre"
-
-    return None, None
 
 
 @dataclass
@@ -984,46 +966,10 @@ def import_usage_data(
 # Attribution — lane inference from project_path
 # ---------------------------------------------------------------------------
 
-#: Canonical mapping from worktree directory basenames to lane IDs.
-#: Matches the pool definitions in ``task_queue.KNOWN_AUTHOR_LANES`` and
-#: ``worktrees.PROTECTED_WORKTREE_NAMES``.
-_WORKTREE_TO_LANE: dict[str, str] = {
-    # Platform pool
-    "Bid-Euchre-steward-author": "author-a",
-    "Bid-Euchre-steward-author-b": "author-b",
-    "Bid-Euchre-steward-author-c": "author-c",
-    "Bid-Euchre-steward-author-d": "author-d",
-    # Browser-game pool
-    "Bid-Euchre-steward-brws-author-a": "brws-author-a",
-    "Bid-Euchre-steward-brws-author-b": "brws-author-b",
-    "Bid-Euchre-steward-brws-author-c": "brws-author-c",
-    "Bid-Euchre-steward-brws-author-d": "brws-author-d",
-    # Analyst pool (analyst-a reuses the original steward-analyst worktree)
-    "Bid-Euchre-steward-analyst": "analyst-a",
-    "Bid-Euchre-steward-analyst-b": "analyst-b",
-    "Bid-Euchre-steward-analyst-c": "analyst-c",
-    "Bid-Euchre-steward-analyst-d": "analyst-d",
-    # Flex pool
-    "Bid-Euchre-steward-flex-a": "flex-a",
-    "Bid-Euchre-steward-flex-b": "flex-b",
-    "Bid-Euchre-steward-flex-c": "flex-c",
-    "Bid-Euchre-steward-flex-d": "flex-d",
-    # Control plane
-    "Bid-Euchre-steward-review": "review",
-    "Bid-Euchre-steward-ops": "ops",
-    # Legacy (retired from active layout, kept for attribution)
-    "Bid-Euchre-steward-author-scratch": "author-scratch",
-}
-
-#: Worktree class categorization by lane prefix.
-_LANE_POOL: dict[str, str] = {
-    "author-": "platform",
-    "brws-author-": "browser-game",
-    "analyst-": "analyst",
-    "flex-": "flex",
-    "review": "control",
-    "ops": "control",
-}
+# The worktree→lane literal map and pool-prefix map live in the adapter
+# layer (``bid_euchre.ops.adapters.token_economy_adapter``) and are
+# re-exported from the module head via ``from ... import
+# _WORKTREE_TO_LANE, _LANE_POOL`` for backward compatibility.
 
 
 class AttributionQuality(str, Enum):
@@ -1055,57 +1001,6 @@ class SessionAttribution:
     lines_added: int = 0
     lines_removed: int = 0
     git_commits: int = 0
-
-
-def infer_lane_from_path(project_path: str | None) -> tuple[str | None, str | None]:
-    """Infer lane ID and worktree name from a session's project_path.
-
-    Parameters
-    ----------
-    project_path
-        The ``project_path`` field from a session record (absolute filesystem path).
-
-    Returns
-    -------
-    tuple[str | None, str | None]
-        ``(lane_id, worktree_name)`` if the path matches a known steward worktree,
-        ``(None, None)`` otherwise.
-    """
-    if not project_path:
-        return None, None
-
-    # Extract directory basename from the path.
-    # Handle paths that may end with / or contain subdirectories.
-    path = Path(project_path)
-    basename = path.name
-
-    # Direct match against known worktree names
-    lane_id = _WORKTREE_TO_LANE.get(basename)
-    if lane_id is not None:
-        return lane_id, basename
-
-    # Check parent directories — sessions may run from subdirectories
-    for parent in path.parents:
-        parent_name = parent.name
-        lane_id = _WORKTREE_TO_LANE.get(parent_name)
-        if lane_id is not None:
-            return lane_id, parent_name
-
-    # Try heuristic: look for "steward-" pattern in the path
-    match = re.search(r"Bid-Euchre-steward-([a-z0-9-]+)", project_path)
-    if match:
-        suffix = match.group(1)
-        # Reconstruct the worktree name and check
-        worktree_name = f"Bid-Euchre-steward-{suffix}"
-        lane_id = _WORKTREE_TO_LANE.get(worktree_name)
-        if lane_id is not None:
-            return lane_id, worktree_name
-
-    # Check if it's the main checkout (Bid-Euchre without steward suffix)
-    if basename == "Bid-Euchre" or "/Bid-Euchre/" in project_path:
-        return "main-checkout", "Bid-Euchre"
-
-    return None, None
 
 
 def _classify_pool(lane_id: str) -> str | None:
