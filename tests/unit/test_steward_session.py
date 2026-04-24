@@ -2155,8 +2155,12 @@ system_prompt_flag_for_lane analyst-b
         blank line or non-comment line above). Pre-existing large blocks
         elsewhere in the file (file header, other helpers) are out of scope
         and tracked in backlog follow-ups.
+
+        Uses ``_read_steward_script()`` to read from the git-committed blob
+        in CI (setup-uv cache restoration can overwrite the working tree;
+        see the helper's docstring).
         """
-        content = STEWARD_SCRIPT.read_text()
+        content = _read_steward_script()
         lines = content.split("\n")
         # Find the helper definition line.
         helper_line_idx = next(
