@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,6 +15,35 @@ import pytest
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent / "scripts" / "internal"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _read_review_lane_runner() -> str:
+    """Read review_lane_runner.py, preferring the git-committed version in CI.
+
+    In CI, the ``setup-uv`` cache restoration can overwrite the working tree
+    after checkout, reverting files to the base branch. When ``GITHUB_SHA``
+    is set (GitHub Actions), we read from the merge-commit blob to get the
+    correct PR content. Locally we just read the file.
+    """
+    github_sha = os.environ.get("GITHUB_SHA")
+    if github_sha:
+        try:
+            return subprocess.check_output(
+                [
+                    "git",
+                    "show",
+                    f"{github_sha}:scripts/internal/review_lane_runner.py",
+                ],
+                cwd=str(_REPO_ROOT),
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            pass  # fall through to filesystem read
+    return (_REPO_ROOT / "scripts" / "internal" / "review_lane_runner.py").read_text()
+
 
 # Import the runner under test (after path setup)
 from review_lane_runner import (
@@ -1491,3 +1522,37 @@ class TestSystemPromptArgsForLane:
                 f"Lane {lane!r} maps to invalid archetype {archetype!r}; "
                 f"valid set is {valid_archetypes}"
             )
+
+    def test_invoke_review_argv_assembly_has_no_x3_comment_block(self) -> None:
+        """Regression guard: the argv-assembly block inside ``invoke_review``
+        must not accumulate an 11+ line commented-out explanation.
+
+        Rationale: the initial B.9b landing (PR #2796) wedged an 11-line
+        comment block (model-tier + archetype-aware rationale) immediately
+        above the ``argv = [...]`` assignment in ``invoke_review``. That
+        tripped deterministic-precheck X3 (``Large commented-out block``).
+        The cleanup removes the duplicated prose — the helpers are
+        already self-documenting. This test prevents a future regression
+        that re-introduces a comment block thick enough to trip X3.
+
+        Uses ``_read_review_lane_runner()`` to read from the git-committed
+        blob in CI (setup-uv cache restoration can overwrite the working
+        tree; see the helper's docstring).
+        """
+        import re
+
+        content = _read_review_lane_runner()
+        # Locate invoke_review and grab the function body.
+        fn_idx = content.index("def invoke_review(")
+        # Extract up to the next top-level def / class.
+        tail = content[fn_idx:]
+        next_def = re.search(r"\n(?:def |class )", tail)
+        body = tail[: next_def.start()] if next_def else tail
+        comment_block_re = re.compile(r"((?:^[ \t]*#[^\n]*\n){11,})", re.MULTILINE)
+        findings = comment_block_re.findall(body)
+        assert not findings, (
+            "invoke_review has an 11+ line commented-out block — this "
+            "trips deterministic-precheck X3. Let the helpers "
+            "(permission_mode_args_for_lane, system_prompt_args_for_lane) "
+            "carry their own documentation at the definition site."
+        )

@@ -552,17 +552,6 @@ def invoke_review(pr_number: int, branch: str, head_sha: str) -> dict[str, Any]:
         f"reason (string), findings (list of dicts with severity, file, message)."
     )
 
-    # Model-tier-aware permission-mode selection (#2767).
-    # Opus → ["--permission-mode", "auto"] (classifier-gated).
-    # Sonnet / Haiku → ["--dangerously-skip-permissions"] (explicit reduced
-    # safety envelope; --permission-mode auto silently falls back for
-    # non-Opus models and hides enforcement legibility).
-    #
-    # Archetype-aware system-prompt override (Primitive B-exec.γ / B.9b).
-    # Opus review lane → ["--system-prompt-file", ".claude/system_prompts/review.md"]
-    # when the archetype prompt file exists on disk. Fallback: if the
-    # file is not yet authored (pre-B.9a fan-out), the helper returns []
-    # and the subprocess falls back to the Claude Code default prompt.
     argv = [
         "claude",
         "--agent",

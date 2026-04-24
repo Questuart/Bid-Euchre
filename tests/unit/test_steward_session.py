@@ -2140,6 +2140,51 @@ system_prompt_flag_for_lane analyst-b
             f"flag. stdout={result.stdout!r}"
         )
 
+    def test_helper_docstring_under_x3_threshold(self) -> None:
+        """Regression guard: the ``system_prompt_flag_for_lane`` docstring
+        must not exceed the deterministic-precheck X3 threshold
+        (11+ consecutive ``#`` comment lines).
+
+        Rationale: the initial B.9b landing (PR #2796) shipped a 20-line
+        docstring that tripped X3 in the follow-up review. The cleanup
+        (PR succeeding #2796) condenses it. This test prevents regression
+        if someone re-expands the comment without noticing the X3 gate.
+
+        Scope: this test only inspects the comment block *immediately above*
+        ``system_prompt_flag_for_lane`` (contiguous ``#`` lines bounded by a
+        blank line or non-comment line above). Pre-existing large blocks
+        elsewhere in the file (file header, other helpers) are out of scope
+        and tracked in backlog follow-ups.
+
+        Uses ``_read_steward_script()`` to read from the git-committed blob
+        in CI (setup-uv cache restoration can overwrite the working tree;
+        see the helper's docstring).
+        """
+        content = _read_steward_script()
+        lines = content.split("\n")
+        # Find the helper definition line.
+        helper_line_idx = next(
+            i
+            for i, ln in enumerate(lines)
+            if ln.startswith("system_prompt_flag_for_lane() {")
+        )
+        # Walk backward, collecting contiguous ``#`` comment lines until
+        # we hit a blank line or a non-comment line.
+        contiguous = 0
+        for i in range(helper_line_idx - 1, -1, -1):
+            stripped = lines[i].lstrip()
+            if stripped.startswith("#"):
+                contiguous += 1
+            else:
+                break
+        assert contiguous < 11, (
+            f"system_prompt_flag_for_lane helper has {contiguous} "
+            "contiguous # comment lines immediately above it — this "
+            "trips deterministic-precheck X3 (≥11 lines). Split the "
+            "docstring into blocks of ≤10 consecutive # lines separated "
+            "by blank lines."
+        )
+
 
 class TestLaunchdTemplate:
     """Validate the launchd plist template."""
