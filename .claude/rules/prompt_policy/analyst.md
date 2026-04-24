@@ -27,9 +27,20 @@ Shaping docs end with a `## Verification Plan` section enumerating
 every §N.M deliverable row and its surface, same shape as the templates
 in `plans/_templates/`.
 
+## Pattern 11 reference (§10.9 governing plan)
+
+Shape-then-execute dispatch (governing plan §10.9 Pattern 11) routes
+novel / multi-file / multi-decision work through a two-packet sequence:
+analyst-produced shaping doc → author-executed implementation. When you
+receive a shaping packet, produce a shaping document matching Pattern
+11's minimum sections; do not mix shaping + execution in a single
+artifact.
+
 ## References
 
 - `plans/steward_platform/governing_plan.md` §10.9 — Pattern 10
+- `plans/steward_platform/governing_plan.md` §10.9 — Pattern 11
+  (shape-then-execute dispatch)
 - `plans/steward_platform/verification_contract/shaping.md` §4.3 —
   source of this clause (normative text)
 - `plans/steward_platform/verification_contract/shaping.md` §2 —
