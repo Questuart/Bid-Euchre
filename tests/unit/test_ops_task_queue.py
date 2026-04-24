@@ -901,7 +901,10 @@ class TestRoutingMetadataConstants:
     def test_effort_hints(self) -> None:
         from bid_euchre.ops.task_queue import VALID_EFFORT_HINTS
 
-        assert VALID_EFFORT_HINTS == frozenset({"low", "medium", "high"})
+        # "max" added by Primitive B-exec.α (B.10 effort policy) so packets
+        # can carry the `max → max` tier verbatim. See
+        # `.claude/rules/effort_policy.md` §"Tier vocabulary" for the mapping.
+        assert VALID_EFFORT_HINTS == frozenset({"low", "medium", "high", "max"})
 
     def test_complexity_range_bounds(self) -> None:
         from bid_euchre.ops.task_queue import MAX_COMPLEXITY, MIN_COMPLEXITY

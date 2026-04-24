@@ -116,7 +116,15 @@ VALID_MODEL_HINTS: frozenset[str] = frozenset({"opus", "sonnet", "haiku"})
 
 # Effort hints. Represent the orchestrator's budget intent; the worker lane
 # may still adjust within its own policy.
-VALID_EFFORT_HINTS: frozenset[str] = frozenset({"low", "medium", "high"})
+#
+# ``"max"`` was added in Primitive B-exec.α (B.10 — effort policy) to
+# carry the ``max`` tier defined in ``.claude/rules/effort_policy.md``
+# alongside the existing ``low``/``medium``/``high`` values. The mapping
+# between ``effort_policy.md`` tier names and this enum is:
+# ``lower → low``, ``xhigh → high``, ``max → max``. Phase 0 keeps both
+# vocabularies usable so existing packets remain valid; a later phase
+# may migrate callers onto the effort_policy.md vocabulary.
+VALID_EFFORT_HINTS: frozenset[str] = frozenset({"low", "medium", "high", "max"})
 
 # Complexity estimate is an integer 1..5 inclusive.
 MIN_COMPLEXITY: int = 1

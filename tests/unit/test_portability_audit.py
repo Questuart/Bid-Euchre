@@ -61,13 +61,17 @@ def _load_audit_module():
 # They should only decrease as decoupling work proceeds.  If a PR increases
 # coupling, either fix the regression or update the threshold with justification.
 
-NON_COSMETIC_THRESHOLD = 259  # hard-block + soft-coupling
+NON_COSMETIC_THRESHOLD = 263  # hard-block + soft-coupling
 # Baseline was 253; main drifted to 257 before Slice D landed (pre-existing,
-# unrelated to token-economy work). Slice D adds 2 more hits because the
+# unrelated to token-economy work). Slice D added 2 more hits because the
 # `lane-name-in-code` regex matches the string literals `"ops"` and `"review"`
 # in LANE_DEFAULT_POLICY — those are task_type taxonomy keys (#2169 Slice D),
-# not lane identifiers, so this is a known audit false positive. Downstream
-# portability cleanup will narrow the regex or formalize task_type as an Enum.
+# not lane identifiers, so this is a known audit false positive. Primitive
+# B-exec.α (B.10 effort policy, shaping §7) adds 4 more hits for the same
+# reason — `"ops"` and `"review"` appear in both `_VALID_ARCHETYPES` and
+# `POLICY_TABLE` of `src/bid_euchre/ops/effort_policy.py` as archetype
+# taxonomy keys. Downstream portability cleanup will narrow the regex or
+# formalize archetype/task_type as Enums.
 HARD_BLOCK_THRESHOLD = 130  # hard-block only (pinned to baseline)
 
 

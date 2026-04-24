@@ -53,6 +53,41 @@ fi
 RUNTIME_DIR="${CLAUDE_PROJECT_DIR:-.}/.claude/runtime"
 mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
 
+# B.6 enrichment — look up approval classes from the tool risk registry.
+# The registry is a dual-envelope classification table at
+# .claude/rules/tool_risk_registry.md (per Primitive B.6; shaping §5.4).
+# Enrichment fields: approval_class_auto_mode, approval_class_bypass,
+# registry_row_id. All three default to null when no row matches, which
+# drives the check-tool-risk TR4 triage item in §5.2 item 4.
+REGISTRY_PATH="${CLAUDE_PROJECT_DIR:-.}/.claude/rules/tool_risk_registry.md"
+APPROVAL_AUTO="null"
+APPROVAL_BYPASS="null"
+REGISTRY_ROW_ID="null"
+if [ -r "$REGISTRY_PATH" ]; then
+    # Grep the first table row whose `Tool` column contains the tool_name
+    # as a substring (backticked-form matches the rows the registry uses).
+    # awk splits on `|` and strips surrounding whitespace; we trust the
+    # first whitespace-delimited token of each envelope cell as the class.
+    MATCH=$(awk -F'|' -v tool="$TOOL_NAME" '
+        /^\|/ && !seen && index($2, tool) {
+            gsub(/^[ \t]+|[ \t]+$/, "", $3)
+            gsub(/^[ \t]+|[ \t]+$/, "", $4)
+            auto_cls = tolower($3); sub(/[^a-z].*$/, "", auto_cls)
+            bypass_cls = tolower($4); sub(/[^a-z].*$/, "", bypass_cls)
+            if (auto_cls == "direct" || auto_cls == "approve" || auto_cls == "edit" || auto_cls == "reject") {
+                print NR "|" auto_cls "|" bypass_cls
+                seen = 1
+            }
+        }' "$REGISTRY_PATH" 2>/dev/null || echo "")
+    if [ -n "$MATCH" ]; then
+        ROW_LINE="${MATCH%%|*}"
+        REST="${MATCH#*|}"
+        APPROVAL_AUTO="\"${REST%%|*}\""
+        APPROVAL_BYPASS="\"${REST##*|}\""
+        REGISTRY_ROW_ID="\".claude/rules/tool_risk_registry.md:${ROW_LINE}\""
+    fi
+fi
+
 # Construct JSONL record
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown")
 RECORD=$(jq -nc \
@@ -62,7 +97,10 @@ RECORD=$(jq -nc \
     --arg reason "$REASON" \
     --arg session "$SESSION_ID" \
     --argjson tool_input "$TOOL_INPUT" \
-    '{timestamp: $ts, lane: $lane, tool_name: $tool, reason: $reason, session_id: $session, tool_input: $tool_input}' \
+    --argjson approval_auto "$APPROVAL_AUTO" \
+    --argjson approval_bypass "$APPROVAL_BYPASS" \
+    --argjson registry_row_id "$REGISTRY_ROW_ID" \
+    '{timestamp: $ts, lane: $lane, tool_name: $tool, reason: $reason, session_id: $session, tool_input: $tool_input, approval_class_auto_mode: $approval_auto, approval_class_bypass: $approval_bypass, registry_row_id: $registry_row_id}' \
     2>/dev/null || echo "{\"timestamp\":\"$TIMESTAMP\",\"lane\":\"$LANE\",\"tool_name\":\"$TOOL_NAME\",\"reason\":\"$REASON\"}")
 
 # Append to JSONL log (best-effort)

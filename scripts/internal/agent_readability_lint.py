@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Agent-readability lint for steward-platform plan/artifact health.
 
-This is the shared lint harness for two draft-8 §10.9 patterns:
+This is the shared lint harness for draft-8 §10.9 patterns and Primitive
+B-exec.α registry rule sets:
 
 * **Pattern 9 — Load-bearing-ownership lint.** Every *load-bearing* item
   (cross-linked, referenced-from-multiple-places, gate-input) must have a
@@ -14,6 +15,25 @@ This is the shared lint harness for two draft-8 §10.9 patterns:
   plan's ``## Verification Plan`` section OR in the canonical
   ``plans/steward_platform/verification_contract/map.md``.  Rule set:
   ``check verification-contract``.
+
+* **B.3 — Prompt-policy registry structural lint.** Every file under
+  ``.claude/rules/prompt_policy/**/*.md`` carries ``## Version``,
+  ``## Trigger``, ``## Expected effect``, and ``## Rollback`` sections.
+  Version format matches ``^<archetype>-v\\d+\\.\\d+$``. Rule set:
+  ``check prompt-policy``.
+
+* **B.6 — Tool risk registry structural lint.** The file
+  ``.claude/rules/tool_risk_registry.md`` covers every tool in
+  ``.claude/settings.json`` ``permissions.allow``; every row has both
+  envelope columns populated with one of
+  ``{direct, approve, edit, reject}``. Rule set: ``check tool-risk``.
+
+* **B.11 — Orchestration recipe archive structural lint.** Every file
+  under ``knowledge/orchestration_recipes/**/*.md`` (excluding
+  ``_archive/``, ``_template.md``, and ``INDEX.md``) carries the six
+  required sections (Version, Context, Decision, Observed outcome, Reuse
+  guidance, Downstream citations); ``INDEX.md`` references every
+  non-archive, non-template recipe. Rule set: ``check recipes``.
 
 **Shared-module dependency (§13.2 risk #2 of verification_contract/shaping.md):**
 both rule sets consume the same plan-walker core and the same row-parser
@@ -34,8 +54,20 @@ Usage
     uv run python scripts/internal/agent_readability_lint.py \\
         check load-bearing-ownership [PATH ...]  # Pattern 9 scaffold
 
-If no ``PATH`` is provided, the lint walks ``plans/`` from the repository
-root.
+    uv run python scripts/internal/agent_readability_lint.py \\
+        check prompt-policy [PATH ...]
+
+    uv run python scripts/internal/agent_readability_lint.py \\
+        check tool-risk [PATH ...]
+
+    uv run python scripts/internal/agent_readability_lint.py \\
+        check recipes [PATH ...]
+
+If no ``PATH`` is provided, each check defaults to a sensible root:
+``check verification-contract`` walks ``plans/``; ``check prompt-policy``
+walks ``.claude/rules/prompt_policy/``; ``check tool-risk`` walks
+``.claude/rules/tool_risk_registry.md``; ``check recipes`` walks
+``knowledge/orchestration_recipes/``.
 
 Exit codes
 ----------
@@ -502,6 +534,551 @@ def check_load_bearing_ownership(roots: list[Path], repo_root: Path) -> list[Fin
 
 
 # ---------------------------------------------------------------------------
+# B.3: check prompt-policy
+# ---------------------------------------------------------------------------
+
+_PROMPT_POLICY_REQUIRED_SECTIONS: tuple[str, ...] = (
+    "Version",
+    "Trigger",
+    "Expected effect",
+    "Rollback",
+)
+
+# Format: `<archetype>-v<MAJOR>.<MINOR>` (e.g., `author-v1.0`). Archetype
+# may contain lowercase letters + hyphens (e.g., `brws-author`).
+_POLICY_VERSION_RE = re.compile(r"^`([a-z][a-z0-9_-]*)-v(\d+)\.(\d+)`$")
+
+# A ``## Foo`` style top-level section heading.
+_H2_RE = re.compile(r"^##\s+(?P<title>.+?)\s*$", re.MULTILINE)
+
+
+def _find_h2_line(text: str, title: str) -> int | None:
+    """Return 1-indexed line of the first ``## <title>`` heading, or None."""
+    target = title.strip().lower()
+    for m in _H2_RE.finditer(text):
+        if m.group("title").strip().lower() == target:
+            return text[: m.start()].count("\n") + 1
+    return None
+
+
+def _extract_section_body(text: str, title: str) -> str | None:
+    """Return the markdown body between ``## <title>`` and the next H2."""
+    target = title.strip().lower()
+    headings = list(_H2_RE.finditer(text))
+    for i, m in enumerate(headings):
+        if m.group("title").strip().lower() != target:
+            continue
+        start = m.end()
+        end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
+        return text[start:end]
+    return None
+
+
+def _policy_files_under(root: Path) -> list[Path]:
+    """Return every ``.md`` under ``root`` (recursive)."""
+    if root.is_file() and root.suffix == ".md":
+        return [root]
+    if not root.is_dir():
+        return []
+    return sorted(p for p in root.rglob("*.md") if p.is_file())
+
+
+def check_prompt_policy(roots: list[Path], repo_root: Path) -> list[Finding]:
+    """Return B.3 findings: every prompt-policy file has the 4 required
+    sections; its ``## Version`` body matches the canonical format.
+    """
+    findings: list[Finding] = []
+    default_root = repo_root / ".claude" / "rules" / "prompt_policy"
+    search_roots = roots if roots else [default_root]
+
+    files: list[Path] = []
+    for r in search_roots:
+        files.extend(_policy_files_under(r))
+
+    if not files:
+        # Lint emits a WARN when the scan produces zero files — that is
+        # almost always a pointer/typo rather than a clean state.
+        findings.append(
+            Finding(
+                severity=Severity.WARN,
+                rule_id="PP0",
+                path=default_root,
+                line=1,
+                message=(
+                    "check prompt-policy walked zero files; expected at "
+                    "least one .md under .claude/rules/prompt_policy/"
+                ),
+            )
+        )
+        return findings
+
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            findings.append(
+                Finding(
+                    severity=Severity.BLOCK,
+                    rule_id="PP1",
+                    path=path,
+                    line=1,
+                    message=f"cannot read file: {exc}",
+                )
+            )
+            continue
+
+        # PP2: required sections exist.
+        for section in _PROMPT_POLICY_REQUIRED_SECTIONS:
+            if _find_h2_line(text, section) is None:
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="PP2",
+                        path=path,
+                        line=1,
+                        message=(
+                            f"missing required section '## {section}' "
+                            f"(B.3 registry schema — shaping §4.2)"
+                        ),
+                    )
+                )
+
+        # PP3: Version body has canonical format on its own line.
+        version_body = _extract_section_body(text, "Version")
+        if version_body is not None:
+            version_line = None
+            for raw in version_body.splitlines():
+                stripped = raw.strip()
+                if not stripped:
+                    continue
+                version_line = stripped
+                break
+            if version_line is None:
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="PP3",
+                        path=path,
+                        line=_find_h2_line(text, "Version") or 1,
+                        message=(
+                            "Version section is empty; expected a single "
+                            "line `<archetype>-v<MAJOR>.<MINOR>`"
+                        ),
+                    )
+                )
+            elif not _POLICY_VERSION_RE.match(version_line):
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="PP3",
+                        path=path,
+                        line=_find_h2_line(text, "Version") or 1,
+                        message=(
+                            f"Version line {version_line!r} does not match "
+                            f"`<archetype>-v<MAJOR>.<MINOR>` (backticked)"
+                        ),
+                    )
+                )
+
+        # PP4: Trigger / Expected effect / Rollback bodies are non-empty.
+        for section in ("Trigger", "Expected effect", "Rollback"):
+            body = _extract_section_body(text, section)
+            if body is not None and not body.strip():
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="PP4",
+                        path=path,
+                        line=_find_h2_line(text, section) or 1,
+                        message=(
+                            f"'## {section}' section is empty; B.3 "
+                            f"registry requires a concrete body"
+                        ),
+                    )
+                )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# B.6: check tool-risk
+# ---------------------------------------------------------------------------
+
+_TOOL_RISK_APPROVAL_CLASSES: frozenset[str] = frozenset(
+    {"direct", "approve", "edit", "reject"}
+)
+
+# Parse a 4-column registry row:
+#   | Tool | Auto-mode envelope | Bypass envelope | Notes |
+_TOOL_RISK_ROW_RE = re.compile(
+    r"^\|\s*(?P<tool>.+?)\s*\|\s*(?P<auto>.+?)\s*\|\s*(?P<bypass>.+?)\s*\|\s*(?P<notes>.*?)\s*\|\s*$"
+)
+
+_ALLOWLIST_ENTRY_RE = re.compile(r'^\s*"([^"]+)"[,\s]*$')
+
+
+def _load_permissions_allow(settings_path: Path) -> list[str]:
+    """Extract the ``permissions.allow`` string array from settings.json
+    using a lightweight structural scan (avoids pulling in a JSON parser
+    that would error on comments).
+
+    Returns the ordered list of allow entries. Returns an empty list if
+    the file does not exist or the ``allow`` array cannot be located.
+    """
+    try:
+        text = settings_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    # Locate the start of the "allow": [ ... ] block.
+    start = text.find('"allow"')
+    if start < 0:
+        return []
+    bracket = text.find("[", start)
+    if bracket < 0:
+        return []
+    close = text.find("]", bracket)
+    if close < 0:
+        return []
+    body = text[bracket + 1 : close]
+    entries: list[str] = []
+    for raw in body.splitlines():
+        m = _ALLOWLIST_ENTRY_RE.match(raw.rstrip())
+        if m:
+            entries.append(m.group(1))
+    return entries
+
+
+def _parse_tool_risk_rows(text: str) -> list[tuple[int, str, str, str, str]]:
+    """Return ``(line_no, tool, auto_class, bypass_class, notes)`` rows.
+
+    Skips header rows, separator rows, and template placeholder rows
+    (`(...)`). Line numbers are 1-indexed.
+    """
+    rows: list[tuple[int, str, str, str, str]] = []
+    for i, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line.startswith("|"):
+            continue
+        if re.match(r"^\|[\s\-:|]+\|\s*$", line):
+            continue
+        m = _TOOL_RISK_ROW_RE.match(line)
+        if not m:
+            continue
+        tool = m.group("tool").strip()
+        auto = m.group("auto").strip()
+        bypass = m.group("bypass").strip()
+        notes = m.group("notes").strip()
+        low = tool.lower()
+        if low in {"tool", "item"}:
+            continue
+        if tool.startswith("(") and tool.endswith(")"):
+            continue
+        rows.append((i, tool, auto, bypass, notes))
+    return rows
+
+
+def _approval_class_first_token(cell: str) -> str:
+    """Registry cells are of the form ``direct`` or ``approve (classifier
+    gates…)``. Return the first lowercase token."""
+    match = re.match(r"^([a-z]+)", cell.strip().lower())
+    return match.group(1) if match else ""
+
+
+def check_tool_risk(roots: list[Path], repo_root: Path) -> list[Finding]:
+    """Return B.6 findings: registry file exists; every row has both
+    envelope columns populated with a valid approval class; every entry
+    in ``permissions.allow`` has at least one matching row.
+    """
+    findings: list[Finding] = []
+    default_path = repo_root / ".claude" / "rules" / "tool_risk_registry.md"
+    registry_path = roots[0] if roots else default_path
+    if registry_path.is_dir():
+        registry_path = registry_path / "tool_risk_registry.md"
+
+    if not registry_path.exists():
+        findings.append(
+            Finding(
+                severity=Severity.BLOCK,
+                rule_id="TR0",
+                path=registry_path,
+                line=1,
+                message=(
+                    "tool_risk_registry.md not found (B.6 — shaping §5.1). "
+                    "Register every tool in permissions.allow."
+                ),
+            )
+        )
+        return findings
+
+    try:
+        text = registry_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        findings.append(
+            Finding(
+                severity=Severity.BLOCK,
+                rule_id="TR0",
+                path=registry_path,
+                line=1,
+                message=f"cannot read registry: {exc}",
+            )
+        )
+        return findings
+
+    rows = _parse_tool_risk_rows(text)
+    if not rows:
+        findings.append(
+            Finding(
+                severity=Severity.BLOCK,
+                rule_id="TR1",
+                path=registry_path,
+                line=1,
+                message="registry contains zero rows — expected coverage table",
+            )
+        )
+        return findings
+
+    # TR2: every row has both envelopes populated with a valid class.
+    for line_no, tool, auto_cell, bypass_cell, notes in rows:
+        for label, cell in (("auto-mode", auto_cell), ("bypass", bypass_cell)):
+            if not cell or cell.upper() == "TBD":
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="TR2",
+                        path=registry_path,
+                        line=line_no,
+                        message=(
+                            f"row {tool!r}: {label} envelope column is empty or TBD"
+                        ),
+                    )
+                )
+                continue
+            first = _approval_class_first_token(cell)
+            if first not in _TOOL_RISK_APPROVAL_CLASSES:
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="TR2",
+                        path=registry_path,
+                        line=line_no,
+                        message=(
+                            f"row {tool!r}: {label} class {first!r} is not "
+                            f"one of {{direct, approve, edit, reject}}"
+                        ),
+                    )
+                )
+
+        # TR3: every reject-under-bypass row has a Notes explanation.
+        bypass_first = _approval_class_first_token(bypass_cell)
+        if bypass_first == "reject" and not notes:
+            findings.append(
+                Finding(
+                    severity=Severity.WARN,
+                    rule_id="TR3",
+                    path=registry_path,
+                    line=line_no,
+                    message=(
+                        f"row {tool!r}: reject-under-bypass requires a "
+                        f"Notes explanation (destructive/exfil/etc)"
+                    ),
+                )
+            )
+
+    # TR4: every permissions.allow entry has at least one row covering it.
+    # Matching is lenient: an entry is covered if its exact string appears
+    # in any row's Tool column, OR if a backticked-form of it appears.
+    # This lets the registry group related entries (e.g., a single
+    # ``Edit(.claude/rules/**)`` row covers both Edit+Write pair entries
+    # by explicitly listing both in the Tool cell when needed).
+    settings_path = repo_root / ".claude" / "settings.json"
+    allow = _load_permissions_allow(settings_path)
+    registry_blob = "\n".join(r[1] for r in rows)
+    for entry in allow:
+        if entry in registry_blob:
+            continue
+        # Fall back: try the first-prefix match (``Bash(git *)`` inside
+        # a cell that lists ``Bash(git *)``). Same test as `in`, so this
+        # branch exists for future extension (e.g., regex-based rows).
+        findings.append(
+            Finding(
+                severity=Severity.BLOCK,
+                rule_id="TR4",
+                path=registry_path,
+                line=1,
+                message=(
+                    f"permissions.allow entry {entry!r} has no registry "
+                    f"row (grep cross-check — shaping §5.2 item 3)"
+                ),
+            )
+        )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# B.11: check recipes
+# ---------------------------------------------------------------------------
+
+_RECIPE_REQUIRED_SECTIONS: tuple[str, ...] = (
+    "Version",
+    "Context",
+    "Decision",
+    "Observed outcome",
+    "Reuse guidance",
+    "Downstream citations",
+)
+
+_RECIPE_VERSION_RE = re.compile(r"^`b11-recipe-[a-z0-9][a-z0-9_-]*-v\d+\.\d+`$")
+
+
+def _recipe_files_under(root: Path) -> list[Path]:
+    """Return non-archive, non-template recipe markdown files."""
+    if not root.is_dir():
+        return []
+    files: list[Path] = []
+    for p in sorted(root.rglob("*.md")):
+        parts = set(p.parts)
+        if "_archive" in parts or "archive" in parts:
+            continue
+        if p.name == "_template.md":
+            continue
+        if p.name == "INDEX.md":
+            continue
+        files.append(p)
+    return files
+
+
+def check_recipes(roots: list[Path], repo_root: Path) -> list[Finding]:
+    """Return B.11 findings: every recipe file has six required sections;
+    the archive ``INDEX.md`` references every non-archive, non-template
+    recipe.
+    """
+    findings: list[Finding] = []
+    default_root = repo_root / "knowledge" / "orchestration_recipes"
+    search_root = roots[0] if roots else default_root
+    if search_root.is_file():
+        search_root = search_root.parent
+
+    if not search_root.exists():
+        findings.append(
+            Finding(
+                severity=Severity.BLOCK,
+                rule_id="RC0",
+                path=search_root,
+                line=1,
+                message=(
+                    "knowledge/orchestration_recipes/ not found (B.11 — shaping §8.1)"
+                ),
+            )
+        )
+        return findings
+
+    index_path = search_root / "INDEX.md"
+    if not index_path.exists():
+        findings.append(
+            Finding(
+                severity=Severity.BLOCK,
+                rule_id="RC1",
+                path=index_path,
+                line=1,
+                message=(
+                    "archive INDEX.md missing (B.11 — shaping §8.5). "
+                    "Every non-archive recipe must be indexed."
+                ),
+            )
+        )
+        index_text = ""
+    else:
+        try:
+            index_text = index_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            findings.append(
+                Finding(
+                    severity=Severity.BLOCK,
+                    rule_id="RC1",
+                    path=index_path,
+                    line=1,
+                    message=f"cannot read INDEX.md: {exc}",
+                )
+            )
+            index_text = ""
+
+    recipes = _recipe_files_under(search_root)
+
+    for path in recipes:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            findings.append(
+                Finding(
+                    severity=Severity.BLOCK,
+                    rule_id="RC2",
+                    path=path,
+                    line=1,
+                    message=f"cannot read recipe: {exc}",
+                )
+            )
+            continue
+
+        # RC2: required sections exist.
+        for section in _RECIPE_REQUIRED_SECTIONS:
+            if _find_h2_line(text, section) is None:
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="RC2",
+                        path=path,
+                        line=1,
+                        message=(
+                            f"missing required section '## {section}' "
+                            f"(B.11 recipe schema — shaping §8.2)"
+                        ),
+                    )
+                )
+
+        # RC3: Version body matches the canonical format.
+        version_body = _extract_section_body(text, "Version")
+        if version_body is not None:
+            version_line = None
+            for raw in version_body.splitlines():
+                stripped = raw.strip()
+                if not stripped:
+                    continue
+                version_line = stripped
+                break
+            if version_line is None or not _RECIPE_VERSION_RE.match(version_line):
+                findings.append(
+                    Finding(
+                        severity=Severity.BLOCK,
+                        rule_id="RC3",
+                        path=path,
+                        line=_find_h2_line(text, "Version") or 1,
+                        message=(
+                            f"Version {version_line!r} does not match "
+                            f"`b11-recipe-<slug>-v<MAJOR>.<MINOR>`"
+                        ),
+                    )
+                )
+
+        # RC4: INDEX.md references this recipe (by filename).
+        if index_text and path.name not in index_text:
+            findings.append(
+                Finding(
+                    severity=Severity.WARN,
+                    rule_id="RC4",
+                    path=index_path,
+                    line=1,
+                    message=(
+                        f"recipe {path.name!r} is not referenced in INDEX.md "
+                        f"(B.11 — shaping §8.5)"
+                    ),
+                )
+            )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -521,7 +1098,13 @@ def _exit_code_for_findings(findings: list[Finding], warnings_ok: bool) -> int:
     return 0
 
 
-def _default_roots(repo_root: Path) -> list[Path]:
+def _default_roots(repo_root: Path, rule_set: str) -> list[Path]:
+    if rule_set == "prompt-policy":
+        return [repo_root / ".claude" / "rules" / "prompt_policy"]
+    if rule_set == "tool-risk":
+        return [repo_root / ".claude" / "rules" / "tool_risk_registry.md"]
+    if rule_set == "recipes":
+        return [repo_root / "knowledge" / "orchestration_recipes"]
     return [repo_root / "plans"]
 
 
@@ -530,7 +1113,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="agent_readability_lint",
         description=(
             "Agent-readability lint for steward-platform plan health "
-            "(Pattern 9 + Pattern 10)."
+            "(Pattern 9 + Pattern 10 + B.3/B.6/B.11 registries)."
         ),
     )
     parser.add_argument(
@@ -561,13 +1144,41 @@ def main(argv: list[str] | None = None) -> int:
     )
     lbo.add_argument("paths", nargs="*", type=Path, help="Plan paths to walk")
 
+    pp = check_sub.add_parser(
+        "prompt-policy",
+        help="B.3 — verify prompt-policy registry schema (4 sections + version format)",
+    )
+    pp.add_argument("paths", nargs="*", type=Path, help="Policy paths to walk")
+
+    tr = check_sub.add_parser(
+        "tool-risk",
+        help="B.6 — verify tool-risk registry schema (dual-envelope + allow-list coverage)",
+    )
+    tr.add_argument(
+        "paths", nargs="*", type=Path, help="Registry path (file or containing dir)"
+    )
+
+    rc = check_sub.add_parser(
+        "recipes",
+        help="B.11 — verify orchestration-recipe archive schema (6 sections + INDEX)",
+    )
+    rc.add_argument("paths", nargs="*", type=Path, help="Archive paths to walk")
+
     args = parser.parse_args(argv)
     repo_root: Path = args.repo_root.resolve()
-    paths: list[Path] = list(args.paths) or _default_roots(repo_root)
+    paths: list[Path] = list(args.paths) or _default_roots(repo_root, args.rule_set)
 
-    # Validate paths exist to avoid silent empty walks.
+    # Validate paths exist to avoid silent empty walks — but for
+    # rule-sets whose defaults may not exist yet (e.g., ``tool-risk``
+    # before the registry is authored), let the check produce a
+    # BLOCK finding rather than an invocation error so CI surfaces
+    # the gap as a lint finding (not a bad-arg).
+    strict_missing_paths = args.rule_set in {
+        "verification-contract",
+        "load-bearing-ownership",
+    }
     for p in paths:
-        if not p.exists():
+        if not p.exists() and strict_missing_paths:
             print(f"ERROR: path not found: {p}", file=sys.stderr)
             return 1
 
@@ -575,6 +1186,12 @@ def main(argv: list[str] | None = None) -> int:
         findings = check_verification_contract(paths, repo_root)
     elif args.rule_set == "load-bearing-ownership":
         findings = check_load_bearing_ownership(paths, repo_root)
+    elif args.rule_set == "prompt-policy":
+        findings = check_prompt_policy(paths, repo_root)
+    elif args.rule_set == "tool-risk":
+        findings = check_tool_risk(paths, repo_root)
+    elif args.rule_set == "recipes":
+        findings = check_recipes(paths, repo_root)
     else:  # pragma: no cover - argparse enforces
         print(f"ERROR: unknown rule set: {args.rule_set}", file=sys.stderr)
         return 1

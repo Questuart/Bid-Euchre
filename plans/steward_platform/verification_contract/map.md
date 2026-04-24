@@ -32,12 +32,13 @@ Pattern 10 table.
 |---|---|---|---|---|
 | B.1 Skill promotion pipeline | new module under `src/bid_euchre/ops/**` | `tests/unit/test_skill_promotion.py` + trace-ID citation in commit | author | pytest passes; commit cites trace |
 | B.2 Adaptive dispatch advisor | new module under `src/bid_euchre/ops/**` | `tests/unit/test_dispatch_advisor.py` | author | pytest passes |
-| B.3 Prompt-policy registry (`.claude/rules/prompt_policy/**`) | new `.claude/rules/**` files | operator-readable review prompt in each file + lint coverage | ops | ≥3 files exist; lint clean |
+| B.3 Prompt-policy registry (`.claude/rules/prompt_policy/**`) | new `.claude/rules/**` files | `tests/unit/test_prompt_policy_registry.py` + `agent_readability_lint.py check prompt-policy` | author | pytest passes; lint exits 0; all 4 policy files carry `Version/Trigger/Expected effect/Rollback` sections |
 | B.4 Policy versioning + lifecycle | data-contract change | `tests/unit/test_policy_version.py` + rollback via version pin (Pattern 7) | author | pytest passes |
 | B.5 Skill outcome-feedback loop | integration workflow | ≥1 skill edited with trace-ID citation during proving run (SC #10) | analyst | cited commit exists |
-| B.6 Tool risk registry | new `.claude/rules/**` file | operator-review prompt + classification audit | ops | ≥1 audit logged |
+| B.6 Tool risk registry | new `.claude/rules/**` file | `tests/unit/test_tool_risk_registry.py` + `agent_readability_lint.py check tool-risk` + `permission-denied-log.sh` emission schema (approval_class_auto / approval_class_bypass / registry_row_id) | author | pytest passes; lint exits 0; permission-denied JSONL carries 3 new fields |
 | B.7 Lane prompt-policy enforcement | integration workflow | ≥50% of proving-run traces cite a policy version (§11-B kill criterion) | analyst | ratio logged in Phase 0 close |
-| B.11 Orchestration recipe archive | new KB-class artifact | `INDEX.md` inclusion + `agent_readability_lint.py` clean | analyst | lint exits 0 |
+| B.10 Effort policy (`.claude/rules/effort_policy.md`) | new `.claude/rules/**` file + enum extension | `tests/unit/test_effort_policy.py` (table parser + `effort_for` purity) + `VALID_EFFORT_HINTS` includes `max` | author | pytest passes; `max` accepted by `validate_routing_metadata` |
+| B.11 Orchestration recipe archive | new KB-class artifact | `tests/unit/test_recipes_archive.py` + `agent_readability_lint.py check recipes` + `INDEX.md` inclusion | author | pytest passes; lint exits 0; ≥1 seeded recipe passes all 6-section schema checks |
 | B.12 Improvement-mechanism evaluation | analysis workflow | §13 SC #1 improvement-probe metric + rolling-window delta report | analyst | ≥1 delta report filed |
 | B.Phase0Readiness — active routing or advisory ships | outcome metric | SC #9 grep evidence | ops | evidence in proving-run report |
 
@@ -146,7 +147,7 @@ Pattern 10 table.
 
 ## Coverage summary
 
-- Rows: 56 deliverables listed above (+ section headers not counted as rows).
+- Rows: 57 deliverables listed above (+ section headers not counted as rows).
 - Coverage target: ≥90% of enumerated deliverable set (≥54 rows if the
   enumerated set is ~60; computed precisely by `verify_map_coverage.py`).
 - Rows with placeholder/stub surfaces (TBD/TODO/FIXME/XXX): **zero**
