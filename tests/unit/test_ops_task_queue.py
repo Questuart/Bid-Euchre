@@ -2,12 +2,13 @@
 
 Covers: TaskPacket/TaskAck/TaskResult creation, validation, serialization,
 queue I/O, lifecycle transitions, ack handling (approve/edit/redirect/reject),
-queue summary, and concurrent write safety.
+queue summary, concurrent write safety, and --scope annotation stripping.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from pathlib import Path
 
@@ -1040,3 +1041,131 @@ class TestValidateRoutingMetadata:
         # so unknowns are errors, not warnings.
         errors, _ = validate_routing_metadata({"effort_hint": "yolo"})
         assert any("effort_hint" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# _strip_scope_annotation + task create --scope integration (Issue #2820)
+# ---------------------------------------------------------------------------
+
+
+class TestStripScopeAnnotation:
+    """Unit tests for the _strip_scope_annotation helper in scripts/internal/ops.py."""
+
+    @staticmethod
+    def _import_helper():
+        scripts_dir = Path(__file__).resolve().parents[2] / "scripts" / "internal"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from ops import _strip_scope_annotation  # type: ignore[import]
+
+        return _strip_scope_annotation
+
+    def test_annotated_single_write(self) -> None:
+        fn = self._import_helper()
+        assert fn("src/foo/*.py (WRITE — NEW)") == "src/foo/*.py"
+
+    def test_annotated_read(self) -> None:
+        fn = self._import_helper()
+        assert fn("tests/unit/test_bar.py (READ)") == "tests/unit/test_bar.py"
+
+    def test_bare_unchanged(self) -> None:
+        fn = self._import_helper()
+        assert fn("src/bar/**/*.py") == "src/bar/**/*.py"
+
+    def test_multiple_parens_only_first_split(self) -> None:
+        fn = self._import_helper()
+        # The ` (` inside the suffix should not corrupt the bare prefix.
+        assert fn("src/foo.py (A (nested))") == "src/foo.py"
+
+    def test_empty_string(self) -> None:
+        fn = self._import_helper()
+        assert fn("") == ""
+
+    def test_no_space_before_paren_unchanged(self) -> None:
+        """A bare `(` not preceded by a space is NOT stripped."""
+        fn = self._import_helper()
+        assert fn("src/foo(bar).py") == "src/foo(bar).py"
+
+
+class TestTaskCreateScopeStripping:
+    """Integration tests for --scope annotation stripping via ops.py main()."""
+
+    @staticmethod
+    def _main():
+        scripts_dir = Path(__file__).resolve().parents[2] / "scripts" / "internal"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from ops import main  # type: ignore[import]
+
+        return main
+
+    def test_single_annotated_scope_persists_bare(self, tmp_path: Path) -> None:
+        main = self._main()
+        rc = main(
+            [
+                "--runtime-dir",
+                str(tmp_path),
+                "task",
+                "create",
+                "--title",
+                "T",
+                "--scope",
+                "src/foo/*.py (WRITE — NEW)",
+            ]
+        )
+        assert rc == 0
+        from bid_euchre.ops.task_queue import list_packets
+
+        packets = list_packets(root=tmp_path / "task_queue")
+        assert len(packets) == 1
+        assert packets[0].scope_declared == ["src/foo/*.py"]
+
+    def test_mixed_annotated_and_bare_scopes(self, tmp_path: Path) -> None:
+        main = self._main()
+        rc = main(
+            [
+                "--runtime-dir",
+                str(tmp_path),
+                "task",
+                "create",
+                "--title",
+                "Mixed",
+                "--scope",
+                "src/foo/*.py (WRITE — NEW)",
+                "--scope",
+                "tests/unit/test_bar.py",
+                "--scope",
+                "docs/README.md (READ)",
+            ]
+        )
+        assert rc == 0
+        from bid_euchre.ops.task_queue import list_packets
+
+        packets = list_packets(root=tmp_path / "task_queue")
+        assert len(packets) == 1
+        assert packets[0].scope_declared == [
+            "src/foo/*.py",
+            "tests/unit/test_bar.py",
+            "docs/README.md",
+        ]
+
+    def test_bare_only_scope_unchanged(self, tmp_path: Path) -> None:
+        main = self._main()
+        rc = main(
+            [
+                "--runtime-dir",
+                str(tmp_path),
+                "task",
+                "create",
+                "--title",
+                "Bare",
+                "--scope",
+                "src/**/*.py",
+            ]
+        )
+        assert rc == 0
+        from bid_euchre.ops.task_queue import list_packets
+
+        packets = list_packets(root=tmp_path / "task_queue")
+        assert len(packets) == 1
+        assert packets[0].scope_declared == ["src/**/*.py"]

@@ -85,6 +85,23 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
+# Scope annotation stripping
+# ---------------------------------------------------------------------------
+
+
+def _strip_scope_annotation(s: str) -> str:
+    """Return *s* with any trailing parenthetical annotation removed.
+
+    ``"src/foo/*.py (WRITE — NEW)"`` → ``"src/foo/*.py"``
+    ``"src/foo/*.py"`` → ``"src/foo/*.py"``  (unchanged)
+
+    Only the first `` (`` occurrence is used as the split point so that
+    patterns containing ``{`` or other glob meta-characters are unaffected.
+    """
+    idx = s.find(" (")
+    return s[:idx] if idx != -1 else s
+
+
 # Filesystem boundary enforcement
 # ---------------------------------------------------------------------------
 
@@ -1745,7 +1762,11 @@ def cmd_task(args: argparse.Namespace) -> int:
             owner=args.owner,
             priority=args.priority,
             domain=getattr(args, "domain", None),
-            scope_declared=args.scope_declared,
+            scope_declared=(
+                [_strip_scope_annotation(s) for s in args.scope_declared]
+                if args.scope_declared
+                else args.scope_declared
+            ),
             validation=args.validation,
             metadata=routing_metadata or None,
         )
