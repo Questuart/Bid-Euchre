@@ -1853,6 +1853,67 @@ class TestCapturePRHeadSha:
 
 
 # ---------------------------------------------------------------------------
+# main() entry point — SHA capture and no git-rev-parse regression (#2706)
+# ---------------------------------------------------------------------------
+
+
+class TestMainEntryPoint:
+    """Verify main() chains through _capture_pr_head_sha, not git rev-parse.
+
+    Guards the integration path so a future refactor cannot silently bypass
+    _capture_pr_head_sha and reintroduce the local-worktree SHA bug (#2706).
+    """
+
+    def test_main_calls_capture_pr_head_sha_not_git_rev_parse(self) -> None:
+        """main() must call _capture_pr_head_sha(pr) and must not invoke
+        ``git rev-parse HEAD`` directly (which was the original #2706 bug).
+        """
+        from review_driver import main
+        from review_state import ReviewLoopState, ReviewState
+
+        pr_sha = "9ff9639eaa6884e194132fe11f54ad29c0c85c43"
+        terminal_state = ReviewLoopState(
+            pr_number=2661,
+            branch="b",
+            state=ReviewState.STOPPED_MAX_ITERATIONS.value,
+        )
+
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "review_driver",
+                    "--pr",
+                    "2661",
+                    "--trigger",
+                    "manual",
+                    "--branch",
+                    "b",
+                ],
+            ),
+            patch(
+                "review_driver._capture_pr_head_sha", return_value=pr_sha
+            ) as mock_capture,
+            patch("review_driver.load_state", return_value=terminal_state),
+            patch("review_driver._write_failure_sentinel"),
+            patch("review_driver.subprocess.run") as mock_run,
+        ):
+            result = main()
+
+        assert result == 0
+        mock_capture.assert_called_once_with(2661)
+        git_rev_parse_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args and c.args[0][:3] == ["git", "rev-parse", "HEAD"]
+        ]
+        assert git_rev_parse_calls == [], (
+            "main() must not shell out to ``git rev-parse HEAD`` — "
+            "that was exactly the #2706 bug"
+        )
+
+
+# ---------------------------------------------------------------------------
 # V7: commit-policy precheck (Primitive C §4.6 / ADR 010 binding)
 #
 # See ``plans/steward_platform/3_primitive_C/shaping.md`` §4.6.  V7 is
