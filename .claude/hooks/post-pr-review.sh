@@ -34,8 +34,8 @@ if [[ "$COMMAND" == *"gh pr create"* ]] && [[ "$EXIT_CODE" == "0" ]]; then
   # Enqueue a durable review request via the queue substrate.
   # Pass values via environment variables to avoid shell injection
   # from branch names containing quotes or special characters.
-  SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-  BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+  SHA=$(gh pr view "$PR_NUM" --json headRefOid --jq .headRefOid 2>/dev/null || git rev-parse HEAD 2>/dev/null || echo "unknown")
+  BRANCH=$(gh pr view "$PR_NUM" --json headRefName --jq .headRefName 2>/dev/null || git branch --show-current 2>/dev/null || echo "unknown")
   PR_REVIEW_NUM="$PR_NUM" PR_REVIEW_SHA="$SHA" PR_REVIEW_BRANCH="$BRANCH" \
     uv run python -c "
 import os
