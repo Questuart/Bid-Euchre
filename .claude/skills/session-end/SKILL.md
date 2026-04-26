@@ -190,7 +190,10 @@ Draft a handoff entry and append it to `MEMORY.md`. The entry should be
 structured so the next session's `/recovering-context` can resume
 deterministically. Minimum content:
 
-- **Date and wall-clock wrap time** (UTC or local — be explicit)
+- **Date and wall-clock wrap time** in Pacific Time, formatted
+  `YYYY-MM-DD HH:MM PT` (per the Operator-facing-timestamps clause in
+  `.claude/rules/prompt_policy/orchestrator.md`). UTC stays in machine
+  payloads; MEMORY.md is operator-facing — render in PT.
 - **Session goal / theme** (one sentence)
 - **PRs merged this session** — table of `#N | title | status`
 - **Lanes parked** — list of lane ids that held sessions and were

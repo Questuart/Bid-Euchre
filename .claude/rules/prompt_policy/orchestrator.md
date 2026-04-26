@@ -7,7 +7,7 @@
 
 ## Version
 
-`orchestrator-v1.1`
+`orchestrator-v1.2`
 
 ## Trigger
 
@@ -27,6 +27,13 @@ via `/read-ops-brief` rather than reinventing subsets via ad-hoc shell
 coarse `ack-all` pattern that was dropping the monitor's findings
 wholesale.
 
+v1.2 — Operator-facing-timestamps clause added (Fixes #2807). The
+orchestrator's chat narration, dashboard summaries, and Telegram
+alerts render times as `HH:MM PT` or `YYYY-MM-DD HH:MM PT` while
+machine-facing data (events, logs, commits) stays UTC. UTC is
+converted at the presentation layer via
+`bid_euchre.ops.time_util.fmt_operator`.
+
 ## Expected effect
 
 v1.0 effect — every task packet the orchestrator dispatches names a
@@ -41,6 +48,14 @@ v1.1 effect — every orchestrator cron fire begins with a single
 `recent_ops_alerts[*].findings[]` from the brief JSON are routed
 through the skill's category table and acked **after** routing (not
 coarsely batch-acked), so monitor findings are no longer dropped.
+
+v1.2 effect — operator-visible timestamps (chat narration, dashboard
+output, Telegram alerts) render in Pacific Time with literal `PT`
+suffix. Machine-facing payloads (event-log entries, message-bus
+records, audit trails, GitHub/git metadata) continue to emit UTC
+ISO-Z. Scaling signal: `grep` of `astimezone|strftime|isoformat` in
+`event_writer`, `event_schema`, and `message_bus` still shows UTC-`Z`
+strings; operator CLI output matches `\d{4}-\d{2}-\d{2} \d{2}:\d{2} PT`.
 
 ## Rollback
 
@@ -57,6 +72,15 @@ beginning with `/read-ops-brief` and resume issuing `gh pr list` /
 clause below no longer applies. The CLI subcommand, builder module, and
 skill remain committed (they are not load-bearing without the policy
 mandate); a deeper rollback would additionally revert the #2806 PR.
+
+v1.2 rollback — `git revert <commit SHA of this v1.2 bump>` restores
+`orchestrator-v1.1`. Trace signature: operator-facing surfaces
+(`scripts/internal/ops.py`, `src/bid_euchre/ops/dashboard.py`,
+`telegram_push.py`, `orchestrator_brief.py`) regress to UTC ISO-Z
+display; the `Operator-facing timestamps in Pacific Time` clause below
+no longer applies. The `time_util.py` module remains committed (still
+useful for ad-hoc PT formatting); a deeper rollback would additionally
+revert the #2807 PR.
 
 ## Policy clauses
 
@@ -78,6 +102,20 @@ event-schema query with expected shape; rollback-test path.
 Never dispatch a packet whose Validation field is empty or says only
 "tests pass." If you cannot name the surface, the task is shaping-work
 and belongs in the analyst lane, not an author lane.
+
+### Operator-facing timestamps in Pacific Time
+
+Operator-facing timestamps use Pacific Time. Convert UTC at the
+presentation layer. Machine-facing data (events, logs, commits) stays
+UTC. Orchestrator chat narration, dashboards, and Telegram alerts
+display times as `HH:MM PT` or `YYYY-MM-DD HH:MM PT`.
+
+Use `bid_euchre.ops.time_util.fmt_operator` (or the convenience
+`fmt_operator_iso` for stored ISO-8601 strings) at every operator
+surface. Do not introduce per-call-site `astimezone(...)` plumbing —
+route everything through the helper so one DST boundary fix repairs
+all surfaces. Machine-facing emitters (event payloads, message bus,
+audit trail, git/GitHub) continue to emit UTC ISO-Z.
 
 ## References
 

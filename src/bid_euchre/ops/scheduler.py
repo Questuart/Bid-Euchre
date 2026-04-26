@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from bid_euchre.ops.events import append_event
+from bid_euchre.ops.time_util import fmt_operator_iso
 from bid_euchre.ops.watchdogs import (
     WatchdogFinding,
     run_all_watchdogs,
@@ -62,6 +63,7 @@ class TickResult:
     events_emitted: int
     errors: list[str]
     tick_number: int
+    tick_time_utc: str | None = None  # ISO-Z; rendered as PT in operator output.
 
 
 def load_scheduler_state(
@@ -230,6 +232,7 @@ def tick(
         events_emitted=0,
         errors=[],
         tick_number=state.tick_count,
+        tick_time_utc=now_iso,
     )
 
     # 2. Run watchdogs (only those listed in due_checks)
@@ -303,6 +306,8 @@ def tick(
 def format_tick_text(result: TickResult) -> str:
     """Format a TickResult as human-readable text."""
     lines = [f"Tick #{result.tick_number}"]
+    if result.tick_time_utc:
+        lines.append(f"  Fired at: {fmt_operator_iso(result.tick_time_utc)}")
     lines.append(f"  Checks: {', '.join(result.checks_run) or 'none'}")
     lines.append(f"  Findings: {len(result.findings)}")
     lines.append(f"  Events emitted: {result.events_emitted}")

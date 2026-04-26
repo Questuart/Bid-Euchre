@@ -1481,6 +1481,8 @@ class TestCanarySummary:
         assert spark[0] == spark[1] == spark[2]
 
     def test_format_canary_line_contains_all_fields(self) -> None:
+        import re
+
         from bid_euchre.ops.dashboard import CanarySummary, _format_canary_line
 
         summary = CanarySummary(
@@ -1492,7 +1494,8 @@ class TestCanarySummary:
         )
         line = _format_canary_line(summary)
         assert "Canary" in line
-        assert "2026-04-24T06:45:00+00:00" in line
+        # Operator-facing — last_pass renders in Pacific Time (issue #2807).
+        assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} PT", line), line
         assert "streak: 3" in line
         assert "status: success" in line
         assert "2.5s" in line
