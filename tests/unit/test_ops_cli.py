@@ -285,6 +285,8 @@ class TestCmdTick:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
+        import re
+
         from bid_euchre.ops import worktrees as wt_mod
 
         monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
@@ -295,7 +297,10 @@ class TestCmdTick:
             ["--runtime-dir", str(runtime_dir), "--plans-dir", str(plans_dir), "tick"]
         )
         assert rc == 0
-        assert "Tick #1" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "Tick #1" in out
+        # Operator-facing — cron-fire records render in Pacific Time (#2807).
+        assert re.search(r"Fired at: \d{4}-\d{2}-\d{2} \d{2}:\d{2} PT", out), out
 
     def test_tick_json(
         self,
@@ -3020,6 +3025,46 @@ class TestTaskCreate:
         assert "Text output task" in out
         assert "src/*.py" in out
         assert "make check-quiet" in out
+
+    def test_task_show_text_renders_created_at_in_pt(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`task show` renders ``Created at`` in Pacific Time (issue #2807)."""
+        import re
+
+        import ops
+
+        # Create a packet, then read its packet_id from JSON.
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "PT timestamp task",
+            ]
+        )
+        assert rc == 0
+        packet_id = json.loads(capsys.readouterr().out)["packet_id"]
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "show",
+                packet_id,
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert re.search(r"Created at:\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2} PT", out), out
 
     # ------------------------------------------------------------------
     # Routing metadata flags (issue #2169 Slice C)

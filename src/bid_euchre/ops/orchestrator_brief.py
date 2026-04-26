@@ -456,9 +456,16 @@ def build_brief(
 
 def format_brief_text(brief: dict[str, Any]) -> str:
     """Short human-readable summary for ``--json=false`` debugging."""
+    from bid_euchre.ops.time_util import fmt_operator_iso
+
     lines: list[str] = []
-    lines.append(f"Orchestrator brief — generated_at={brief['generated_at']}")
-    lines.append(f"  last_read_at: {brief['last_read_at'] or '(never)'}")
+    lines.append(
+        f"Orchestrator brief — generated_at="
+        f"{fmt_operator_iso(brief['generated_at'])}"
+    )
+    last_read_at = brief["last_read_at"]
+    last_read_disp = fmt_operator_iso(last_read_at) if last_read_at else "(never)"
+    lines.append(f"  last_read_at: {last_read_disp}")
     lines.append(f"  recent_ops_alerts: {len(brief['recent_ops_alerts'])}")
     for a in brief["recent_ops_alerts"]:
         lines.append(

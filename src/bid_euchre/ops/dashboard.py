@@ -39,6 +39,7 @@ from bid_euchre.ops.status import (
     branch_short,
     format_relative_time,
 )
+from bid_euchre.ops.time_util import fmt_operator_iso
 
 logger = logging.getLogger("ops.dashboard")
 
@@ -733,7 +734,11 @@ def _sparkline(values: list[float]) -> str:
 
 def _format_canary_line(summary: CanarySummary) -> str:
     """Render a one-line canary dashboard summary (shape §5.6 / dogfood.md §9)."""
-    last_pass = summary.canary_last_pass or "(never)"
+    last_pass = (
+        fmt_operator_iso(summary.canary_last_pass)
+        if summary.canary_last_pass
+        else "(never)"
+    )
     last_elapsed = (
         f"{summary.canary_last_elapsed:.1f}s"
         if summary.canary_last_elapsed is not None
@@ -952,6 +957,8 @@ def format_dashboard_text(
 
     lines: list[str] = []
     lines.append("=== Steward Dashboard ===")
+    if view.generated_at:
+        lines.append(f"Generated: {fmt_operator_iso(view.generated_at)}")
     lines.append("")
 
     # Foreground lanes

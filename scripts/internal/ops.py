@@ -80,6 +80,8 @@ from typing import TYPE_CHECKING, Any
 
 from _repo_utils import find_repo_root
 
+from bid_euchre.ops.time_util import fmt_operator, fmt_operator_iso
+
 if TYPE_CHECKING:
     from bid_euchre.ops.recovery import RetryPolicy
 
@@ -1705,7 +1707,7 @@ def cmd_task(args: argparse.Namespace) -> int:
             if pkt.domain:
                 print(f"  Domain:      {pkt.domain}")
             print(f"  Created by:  {pkt.created_by}")
-            print(f"  Created at:  {pkt.created_at}")
+            print(f"  Created at:  {fmt_operator_iso(pkt.created_at)}")
             print(f"  Description: {pkt.description}")
             if pkt.scope_declared:
                 print(f"  Scope:       {', '.join(pkt.scope_declared)}")
@@ -1715,7 +1717,10 @@ def cmd_task(args: argparse.Namespace) -> int:
                 print(f"  Metadata:    {pkt.metadata}")
             if ack:
                 print()
-                print(f"  Ack: {ack.action} by {ack.acked_by} at {ack.acked_at}")
+                print(
+                    f"  Ack: {ack.action} by {ack.acked_by} "
+                    f"at {fmt_operator_iso(ack.acked_at)}"
+                )
                 if ack.edited_fields:
                     print(f"    Edits: {ack.edited_fields}")
                 if ack.redirect_to:
@@ -1724,7 +1729,7 @@ def cmd_task(args: argparse.Namespace) -> int:
                 print()
                 print(
                     f"  Result: {result.status} by {result.completed_by} "
-                    f"at {result.completed_at}"
+                    f"at {fmt_operator_iso(result.completed_at)}"
                 )
                 print(f"    Summary: {result.summary}")
                 if result.pr_number:
@@ -2601,7 +2606,11 @@ def cmd_message(args: argparse.Namespace) -> int:
         print(f"  From:        {found.get('from_lane', '?')}")
         print(f"  To:          {found.get('to_lane', '?')}")
         print(f"  Priority:    {found.get('priority', '?')}")
-        print(f"  Created at:  {found.get('created_at', '?')}")
+        created_at_raw = found.get("created_at")
+        print(
+            f"  Created at:  "
+            f"{fmt_operator_iso(created_at_raw) if created_at_raw else '?'}"
+        )
         print(f"  Summary:     {found.get('summary', '?')}")
         thread = found.get("thread_id")
         if thread:
@@ -2616,10 +2625,10 @@ def cmd_message(args: argparse.Namespace) -> int:
             print("  Requires human attention: YES")
         acked = found.get("acked_at")
         if acked:
-            print(f"  Acked at:    {acked}")
+            print(f"  Acked at:    {fmt_operator_iso(acked)}")
         resolved = found.get("resolved_at")
         if resolved:
-            print(f"  Resolved at: {resolved}")
+            print(f"  Resolved at: {fmt_operator_iso(resolved)}")
         payload = found.get("payload", {})
         if payload:
             # Show payload without delivery policy internals
@@ -4317,7 +4326,9 @@ def cmd_away(args: argparse.Namespace) -> int:
                 print(f"Operator State: {label} (tier {result.escalation_tier})")
                 print(f"  Minutes inactive: {result.minutes_inactive:.0f}")
                 if result.last_interaction:
-                    print(f"  Last interaction: {result.last_interaction.isoformat()}")
+                    print(
+                        f"  Last interaction: {fmt_operator(result.last_interaction)}"
+                    )
                 else:
                     print("  Last interaction: (unknown)")
                 print(f"  Reason: {result.reason}")

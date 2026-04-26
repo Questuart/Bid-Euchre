@@ -57,6 +57,7 @@ from bid_euchre.ops.control_plane import (
     load_fleet_status,
 )
 from bid_euchre.ops.idle_detector import IdleStatus, is_fleet_idle
+from bid_euchre.ops.time_util import fmt_operator
 
 logger = logging.getLogger("ops.telegram_push")
 
@@ -103,14 +104,20 @@ class PushResult:
 # ---------------------------------------------------------------------------
 
 
-def format_alert_push(items: list[ActionableItem]) -> str:
+def format_alert_push(
+    items: list[ActionableItem],
+    *,
+    now: datetime | None = None,
+) -> str:
     """Format actionable items as a Telegram-friendly alert message.
 
     Each item shows its severity, truncated item_id (for ``ack <prefix>``
-    replies), summary, and recommended action.
+    replies), summary, and recommended action. The message is operator-
+    facing, so the issued-at timestamp renders in Pacific Time.
 
     Args:
         items: The items to include in the message.
+        now: Override current time (for testing). Defaults to ``utcnow()``.
 
     Returns:
         A multi-line string suitable for Telegram delivery.
@@ -118,8 +125,12 @@ def format_alert_push(items: list[ActionableItem]) -> str:
     if not items:
         return ""
 
+    if now is None:
+        now = datetime.now(timezone.utc)
+
     lines: list[str] = []
     lines.append(f"\U0001f4e2 Fleet Alert — {len(items)} item(s) need attention")
+    lines.append(f"Issued: {fmt_operator(now)}")
     lines.append("")
 
     for item in items:
@@ -223,7 +234,7 @@ def prepare_alert_push(
         return None
 
     # Format the alert message.
-    message = format_alert_push(items_to_push)
+    message = format_alert_push(items_to_push, now=now)
 
     # Record each item as pushed in the push state.
     for item in items_to_push:
