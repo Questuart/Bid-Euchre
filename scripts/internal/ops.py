@@ -1109,7 +1109,9 @@ def cmd_scope_set(args: argparse.Namespace) -> int:
 
     try:
         data = update_task_scope(
-            task_id, declared_files=declared, runtime_dir=args.runtime_dir
+            task_id,
+            declared_files=[_strip_scope_annotation(s) for s in declared],
+            runtime_dir=args.runtime_dir,
         )
     except (FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)

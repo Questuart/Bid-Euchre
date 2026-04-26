@@ -69,6 +69,9 @@ def _matches_any_pattern(path: str, patterns: list[str]) -> bool:
     the ``**/`` segment removed so that direct children match too.
     """
     for pattern in patterns:
+        # Strip trailing parenthetical annotations persisted by legacy packets
+        # e.g. "src/foo/*.py (READ)" → "src/foo/*.py"
+        pattern = pattern.split(" (")[0]
         if fnmatch.fnmatch(path, pattern):
             return True
         # Also try matching just the basename for simple patterns
