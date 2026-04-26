@@ -1732,6 +1732,36 @@ class TestScopeSet:
             "tests/unit/test_ops_*.py",
         ]
 
+    def test_set_declared_strips_annotation(
+        self, runtime_dir: Path, plans_dir: Path
+    ) -> None:
+        import ops
+
+        (runtime_dir / "task_state" / "t2.json").write_text(
+            json.dumps({"task_id": "t2", "status": "in_progress"})
+        )
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "scope",
+                "set",
+                "--task",
+                "t2",
+                "--declared",
+                "src/foo/*.py (READ)",
+                "tests/unit/*.py",
+            ]
+        )
+        assert rc == 0
+        data = json.loads((runtime_dir / "task_state" / "t2.json").read_text())
+        assert data["scope"]["declared_files"] == [
+            "src/foo/*.py",
+            "tests/unit/*.py",
+        ]
+
 
 class TestScopeTouch:
     """Tests for ops.py scope touch."""

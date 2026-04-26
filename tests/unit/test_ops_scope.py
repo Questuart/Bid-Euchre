@@ -75,6 +75,16 @@ class TestMatchesAnyPattern:
         assert _matches_any_pattern("src/ops/deep/file.py", ["**/*.py"]) is True
         assert _matches_any_pattern("file.py", ["**/*.py"]) is True
 
+    def test_annotated_pattern_matches(self) -> None:
+        """Guard-time strip: annotated legacy pattern still matches a conforming path."""
+        assert _matches_any_pattern("src/foo/bar.py", ["src/foo/*.py (READ)"]) is True
+
+    def test_annotated_pattern_no_false_positive(self) -> None:
+        """Guard-time strip: annotated pattern does not match an out-of-scope path."""
+        assert (
+            _matches_any_pattern("tests/foo/bar.py", ["src/foo/*.py (READ)"]) is False
+        )
+
 
 # --- ScopeDriftReport dataclass ---
 
