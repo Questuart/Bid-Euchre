@@ -177,6 +177,12 @@ logs/
 *.sqlite3
 *.db
 
+# Local production backups: keep discoverable on disk, but do not commit
+# player/comment/invite-code data into git history.
+backups/*
+!backups/README.md
+!backups/*.sha256
+
 # =============================================================================
 # Temporary files
 # =============================================================================
