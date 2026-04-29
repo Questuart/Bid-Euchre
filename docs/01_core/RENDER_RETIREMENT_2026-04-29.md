@@ -42,6 +42,7 @@ Archive contents:
 - `production-row-counts.txt` — first live production count capture
 - `dump-row-counts.txt` — counts extracted from the SQL dump
 - `live-row-counts-20260429T1238.txt` — fresh live counts for comparison
+- `restored-row-counts-20260429Trestore.txt` — counts from the full restore test
 - `SHA256SUMS.txt` — checksums for dump files
 
 ## Validation performed
@@ -91,18 +92,59 @@ Expected result:
 /tmp/bideuchre-retire-backup-20260429.tar.gz: OK
 ```
 
-Full restore attempt on 2026-04-29:
+Full restore test on 2026-04-29:
+
+Docker Desktop was started and a disposable `postgres:18` container was used as
+the restore target. The first restore attempt failed only because the dump
+references the production owner role `bideuchre`; after creating that role in
+the temporary database, the restore completed with exit code 0.
+
+```bash
+docker run --rm --name bideuchre-restore-test \
+  -e POSTGRES_PASSWORD=restoretest \
+  -e POSTGRES_DB=bideuchre_restore \
+  -p 55432:5432 \
+  -d postgres:18
+
+docker cp /tmp/bideuchre-retire-backup/bideuchre-prod-20260429.dump \
+  bideuchre-restore-test:/tmp/bideuchre-prod-20260429.dump
+
+docker exec bideuchre-restore-test \
+  psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -c "CREATE ROLE bideuchre LOGIN;"
+
+docker exec bideuchre-restore-test \
+  pg_restore -U postgres \
+  --dbname bideuchre_restore \
+  --clean \
+  --if-exists \
+  /tmp/bideuchre-prod-20260429.dump
+```
+
+Restored row counts matched the expected/live counts exactly:
+
+```text
+comments|6
+decisions|395506
+hands|9071
+invite_codes|51
+matches|941
+players|34
+```
+
+The temporary container was removed:
+
+```bash
+docker stop bideuchre-restore-test
+```
+
+Earlier blocked restore attempts, before Docker Desktop was started:
 
 - Docker route blocked: Docker CLI exists, but the Docker daemon was not
   running at `unix:///Users/claude_runner/.docker/run/docker.sock`.
 - Local Postgres route blocked: only Homebrew `libpq` client tools were
   installed. Installing `postgresql@18` failed because
   `/opt/homebrew/Cellar` was not writable by `claude_runner`.
-
-Therefore the completed validation is dump-catalog readability, checksum
-verification, and exact dump-vs-live table row-count comparison. A future full
-restore test should run once Docker Desktop is started or a local Postgres
-server is available.
 
 ## Restore procedure
 
