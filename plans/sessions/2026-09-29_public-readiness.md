@@ -32,4 +32,9 @@
 - **Public hygiene:** Inspect tracked current-tree credential/backup patterns and operational absolute paths; run documentation path checks and local web startup with bundled artifacts. No full-history security audit or live Render availability claim.
 
 ## Outcome
-- In progress. No push, PR, merge, deployment or visibility change authorized.
+- Completed locally on `share-readiness`; no push, PR, merge, deployment or visibility change.
+- Full canonical test selection plus focused environment/test-fixture recovery: 12,930 passed, 59 skipped at the verification checkpoint. This was not one uninterrupted green `make check` invocation.
+- Fresh review initially found three blockers: empty-sample comparisons, omitted matrix matchups in snapshots, and hosted dealer takeover application. Corrected all three with regressions; parent integrated follow-up: 3,645 passed, 14 skipped.
+- Repository lint, Ruff, notebook hygiene, documentation gates, three notebook smoke executions, and repeated seeded result comparisons passed. Source CSVs, model snapshots and report manifests remain unchanged.
+- Fresh read-only review of code at `992fef4` returned **ship** after 32 independent focused passes and an AI-dealer takeover check.
+- Known non-blocking residual: unchanged comparison routines still accept exactly one observation, which can yield undefined effect size and inconsistent inferential output. Do not use single-observation runs for statistical conclusions. No general statistical-methodology audit, live deployment or visual browser review was performed.
