@@ -55,6 +55,15 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 > No hypothesis outcomes available.
 
+### Data Quality Status
+
+- Data sanity: **WARN** — 1 WARN, 22 PASS across 23 checks
+- Sanity bounds: **FAIL** — 9 FAIL, 27 PASS across 36 checks
+
+The WARN identifies the selected two-stage suit model's R² of 0.0. The FAILs identify bid rates above the 0.95 upper bound and that same value failing the positive-R² requirement.
+
+These screening statuses are reported separately from the formal hypothesis outcome above. See `tables/data_sanity.csv` and `tables/sanity_bounds_check.csv` for individual checks.
+
 
 ## Recommendation
 
@@ -66,7 +75,8 @@ Data-driven triage based on available QUICK evidence:
 - **constrained_ols_av** net_eppd = 2.194
 - **selected_ols_av** net_eppd = 2.078
 - Best H2H win rate: **modeloespecifico** (71.7% vs heuristic tier)
-- Data sanity: all checks passed
+- Data sanity: **WARN** — 1 WARN, 22 PASS across 23 checks
+- Sanity bounds: **FAIL** — 9 FAIL, 27 PASS across 36 checks
 
 **Watch items / caveats:**
 

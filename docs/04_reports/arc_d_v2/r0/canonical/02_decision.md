@@ -55,6 +55,15 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 > No hypothesis outcomes available.
 
+### Data Quality Status
+
+- Data sanity: **WARN** — 6 WARN, 17 PASS across 23 checks
+- Sanity bounds: **FAIL** — 15 FAIL, 21 PASS across 36 checks
+
+The WARNs identify non-positive model R² checks, primarily for pass contracts plus the selected two-stage suit model. The FAILs identify bid rates above the 0.95 upper bound, RankTheTank's 0.06 make rate below the 0.10 lower bound, and the same values failing the positive-R² requirement.
+
+These screening statuses are reported separately from the formal hypothesis outcome above. See `tables/data_sanity.csv` and `tables/sanity_bounds_check.csv` for individual checks.
+
 
 ## Recommendation
 
@@ -66,7 +75,8 @@ Data-driven triage based on available canonical evidence:
 - **constrained_ols_av** net_eppd = 1.600
 - **full_ols_av** net_eppd = 1.480
 - Best H2H win rate: **modeloespecifico** (70.0% vs heuristic tier)
-- Data sanity: all checks passed (some with WARNINGs — see caveats below)
+- Data sanity: **WARN** — 6 WARN, 17 PASS across 23 checks
+- Sanity bounds: **FAIL** — 15 FAIL, 21 PASS across 36 checks
 
 **Watch items / caveats:**
 

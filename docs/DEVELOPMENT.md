@@ -3,7 +3,7 @@
 ## Quick start
 
 ~~~bash
-uv sync
+uv sync --frozen --extra dev
 uv run pre-commit install
 ~~~
 
@@ -33,7 +33,10 @@ make check-quiet    # Minimal output — preferred (logs to tmpfile)
 make check          # Full output (use when debugging failures)
 ~~~
 
-Both run the same suite (repo-lint + ruff + tests + notebook-check + docs-check).
+Both run the same suite (repo-lint + ruff + non-slow/non-browser tests + notebook-check + docs-check).
+Notebook execution is separate: `make notebook-run`.
+
+With the pip setup, use `make check PYTHON=python` so Make uses the activated environment.
 
 ## Make targets
 

@@ -13,12 +13,13 @@
 
 set -uo pipefail  # no -e: we want to continue on individual failures
 
-WORKTREE="/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+WORKTREE=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel) || exit 1
 LOG="/tmp/overnight_orchestrator.log"
 HEARTBEAT="/tmp/overnight_orchestrator_heartbeat"
 RUNGS=(r0 r1 r2)
 
-cd "$WORKTREE"
+cd "$WORKTREE" || exit 1
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [ORCH] $*" | tee -a "$LOG"

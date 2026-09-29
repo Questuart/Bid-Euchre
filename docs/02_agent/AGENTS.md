@@ -109,7 +109,7 @@ make notebook-run-full  # QUICK mode (~2k deals, ~2-5min) - for local validation
 Use uv for fast, reproducible installs:
 
 ~~~bash
-uv sync
+uv sync --frozen --extra dev
 ~~~
 
 Or with pip (alternative):
@@ -299,7 +299,10 @@ The runner uses the seed to enable “common deals,” so comparisons are meanin
 - Simulation/deal generation should be deterministic when a seed is provided.
 
 ### Unseeded runs are debug-only
-If `--seed` is omitted, results are not comparable across runs. That’s fine for quick exploration, not for evaluation.
+The runner accepts a seed from `--seed` or the configuration. If neither is set,
+it rejects the run unless `--allow-nondeterministic` is explicit. Such runs are
+exploration-only, not evaluation evidence. Optional library APIs may retain local
+unseeded fallbacks for interactive use; seeded research paths must never use them.
 
 ---
 

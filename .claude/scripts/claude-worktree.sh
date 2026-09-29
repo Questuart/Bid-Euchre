@@ -5,7 +5,13 @@
 
 set -euo pipefail
 
-MAIN_DIR="/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre"
+# The common Git directory belongs to the primary checkout, including when
+# this script runs from a linked worktree. Do not assume an operator home path.
+COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
+MAIN_DIR=""
+if [ -n "$COMMON_DIR" ]; then
+  MAIN_DIR=$(cd "$COMMON_DIR/.." && pwd -P)
+fi
 BRANCH_NAME="${1:-work-$(date +%Y%m%d-%H%M%S)}"
 WORKTREE_DIR="../Bid-Euchre-$BRANCH_NAME"
 
