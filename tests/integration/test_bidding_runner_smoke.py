@@ -110,3 +110,47 @@ def test_auction_mode_runner_smoke():
         assert (
             bidding_points["hands_with_bids"] >= 0
         ), "hands_with_bids should be non-negative"
+
+
+def test_all_pass_runner_emits_empty_played_sample_without_crashing(tmp_path):
+    """Canonical runner handles an all-redeal result with numeric display fields."""
+    config_path = tmp_path / "all_pass.yaml"
+    config_path.write_text(
+        """
+experiment_name: all_pass_runner_test
+strategies:
+  - name: random_legal
+    class_name: RandomLegalStrategy
+scenarios:
+  - contract_type: null
+parameters:
+  n_per: 3
+  seed: 42
+  log_level: hand
+""".lstrip()
+    )
+    output_dir = tmp_path / "runs"
+
+    completed = run_experiment(str(config_path), run_dir=str(output_dir))
+    assert completed.returncode == 0, completed.stderr
+    assert "WinRate: N/A" in completed.stdout
+    assert "Reports generated automatically" in completed.stdout
+    assert "Report generation encountered issues" not in completed.stdout
+
+    run_dirs = list(output_dir.glob("*"))
+    assert len(run_dirs) == 1
+    run_dir = run_dirs[0]
+    assert (run_dir / "reports" / "ANALYSIS_SUMMARY.md").exists()
+    assert (run_dir / "artifacts" / "canonical_summary.json").exists()
+
+    result_files = list(run_dir.glob("results/random_legal/*.json"))
+    assert len(result_files) == 1
+    results = json.loads(result_files[0].read_text())
+    assert results["hands"] == 3
+    assert results["played_hands"] == 0
+    assert results["redeals"] == 3
+    assert results["avg_team0"] == 0.0
+    assert results["avg_team1"] == 0.0
+    assert results["win_rate_team0"] is None
+    assert results["win_rate_team1"] is None
+    assert sum(results["distribution_team0"].values()) == 0

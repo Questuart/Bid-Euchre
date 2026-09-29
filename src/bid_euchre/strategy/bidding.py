@@ -247,6 +247,20 @@ class BiddingObservation:
     )  # Allowed contract types
 
 
+def _auction_legality_context(obs: BiddingObservation) -> tuple[str, bool]:
+    """Return the current bid type and dealer status for legal enumeration.
+
+    Auction transcripts from simulation use uppercase action names while hosted
+    play uses lowercase names. Legacy regular-bid entries may omit ``bid_type``.
+    """
+    current_bid_type = "regular"
+    for entry in reversed(obs.auction_transcript):
+        if str(entry.get("action", "")).upper() == "BID":
+            current_bid_type = str(entry.get("bid_type", "regular"))
+            break
+    return current_bid_type, obs.seat == obs.dealer_seat
+
+
 class BiddingPolicy(ABC):
     """
     Abstract base class for bidding policies in auction mode.
@@ -306,6 +320,10 @@ HEURISTIC_BIDDER_VERSION = "1.0.0"
 # Artifact-backed bidders derive behavior from the artifact + thin wrapper
 # logic. Bump this when the wrapper changes (not when the artifact does).
 ARTIFACT_BIDDER_VERSION = "1.0.0"
+ACTION_VALUE_BIDDER_VERSION = "1.0.1"
+GBT_ACTION_VALUE_BIDDER_VERSION = "1.0.1"
+FILTERED_GBT_BIDDER_VERSION = "1.0.1"
+TWO_STAGE_ACTION_VALUE_BIDDER_VERSION = "1.0.1"
 
 
 class AlwaysPassBidder(BiddingPolicy):
@@ -2194,7 +2212,7 @@ class ActionValueBidder(BiddingPolicy):
     Artifact schema: action_value_olsa_v1
     """
 
-    VERSION = ARTIFACT_BIDDER_VERSION
+    VERSION = ACTION_VALUE_BIDDER_VERSION
 
     def __init__(
         self,
@@ -2361,7 +2379,13 @@ class ActionValueBidder(BiddingPolicy):
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
-        legal = enumerate_legal_actions(obs, include_moon_loner=self._has_moon_loner)
+        current_bid_type, is_dealer = _auction_legality_context(obs)
+        legal = enumerate_legal_actions(
+            obs,
+            include_moon_loner=self._has_moon_loner,
+            current_bid_type=current_bid_type,
+            is_dealer=is_dealer,
+        )
 
         best_value = float("-inf")
         best_action = BidAction.pass_bid()
@@ -2406,7 +2430,7 @@ class GBTActionValueBidder(BiddingPolicy):
     Artifact schema: action_value_gbt_v1
     """
 
-    VERSION = ARTIFACT_BIDDER_VERSION
+    VERSION = GBT_ACTION_VALUE_BIDDER_VERSION
 
     def __init__(
         self,
@@ -2568,7 +2592,13 @@ class GBTActionValueBidder(BiddingPolicy):
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
-        legal = enumerate_legal_actions(obs, include_moon_loner=self._has_moon_loner)
+        current_bid_type, is_dealer = _auction_legality_context(obs)
+        legal = enumerate_legal_actions(
+            obs,
+            include_moon_loner=self._has_moon_loner,
+            current_bid_type=current_bid_type,
+            is_dealer=is_dealer,
+        )
 
         best_value = float("-inf")
         best_action = BidAction.pass_bid()
@@ -2719,7 +2749,7 @@ class FilteredGBTBidder(BiddingPolicy):
       — constructs the inner GBTActionValueBidder automatically.
     """
 
-    VERSION = ARTIFACT_BIDDER_VERSION
+    VERSION = FILTERED_GBT_BIDDER_VERSION
 
     def __init__(
         self,
@@ -2804,7 +2834,7 @@ class TwoStageActionValueBidder(BiddingPolicy):
     Artifact schema: two_stage_action_value_v1
     """
 
-    VERSION = ARTIFACT_BIDDER_VERSION
+    VERSION = TWO_STAGE_ACTION_VALUE_BIDDER_VERSION
 
     def __init__(
         self,
@@ -2960,7 +2990,13 @@ class TwoStageActionValueBidder(BiddingPolicy):
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
-        legal = enumerate_legal_actions(obs, include_moon_loner=self._has_moon_loner)
+        current_bid_type, is_dealer = _auction_legality_context(obs)
+        legal = enumerate_legal_actions(
+            obs,
+            include_moon_loner=self._has_moon_loner,
+            current_bid_type=current_bid_type,
+            is_dealer=is_dealer,
+        )
 
         best_value = float("-inf")
         best_action = BidAction.pass_bid()

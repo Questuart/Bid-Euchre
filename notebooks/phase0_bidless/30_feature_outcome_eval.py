@@ -93,6 +93,8 @@ SAMPLE_SIZES = {
     "FULL": 10000,  # Statistical rigor
 }
 
+# %%
+# Compute derived settings after Papermill injects MODE.
 N_DEALS = SAMPLE_SIZES[MODE]
 print(f"Mode: {MODE}")
 print(f"Sample size: {N_DEALS} deals")

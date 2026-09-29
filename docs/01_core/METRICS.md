@@ -27,29 +27,50 @@ A collection of related configs that are run together, with aggregated results a
 ### Emitted in Results JSON
 These keys are directly present in results JSON files at `data/runs/<run_id>/results/<strategy>/<scenario>.json`:
 
+**Deal counts (Always emitted):**
+- `hands`: Number of attempted deals, including all-pass redeal events
+- `played_hands`: Number of deals that reached trick play
+- `redeals`: Number of all-pass redeal events; `hands = played_hands + redeals`
+
 **Tricks (Always emitted):**
-- `avg_team0`: Mean tricks for team 0
-- `avg_team1`: Mean tricks for team 1
-- `distribution_team0`: Count of hands by tricks taken (0-10)
+- `avg_team0`: Mean tricks for team 0 across `played_hands` only
+- `avg_team1`: Mean tricks for team 1 across `played_hands` only
+- `distribution_team0`: Count of played hands by tricks taken (0-10); counts sum to `played_hands`
+
+All-pass redeals have no trick outcome and are excluded from trick averages,
+distributions, score/feature buckets, and player samples. When `played_hands=0`,
+the two trick averages remain numeric `0.0` for result-schema compatibility,
+the trick distribution is all zeros, and score/feature buckets are empty. Check
+`played_hands` before interpreting these empty-sample values. The run-comparison
+CLI rejects any supplied empty trick distribution and identifies its scenario.
 
 **Win Rates (Always emitted):**
-- `win_rate_team0`: Weighted win rate for team 0 = (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / total_hands
-- `win_rate_team1`: Weighted win rate for team 1 = (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / total_hands
-- `tie_rate`: Proportion of hands with exactly 5 tricks (tie, None if hands=0)
+- `win_rate_team0`: Weighted win rate for team 0 = (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / `played_hands`
+- `win_rate_team1`: Weighted win rate for team 1 = (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / `played_hands`
+- `tie_rate`: Proportion of played hands with exactly 5 tricks (`null` if `played_hands=0`)
 
-**Note:** Ties (exactly 5 tricks) contribute 0.5 to each team's win rate, ensuring win_rate_team0 + win_rate_team1 = 1.0
+**Note:** Ties (exactly 5 tricks) contribute 0.5 to each team's win rate. When at least one hand was played, `win_rate_team0 + win_rate_team1 = 1.0`.
 
-**Points (Only when bidding occurs):**
-- `avg_points_team0`: Mean points for team 0 (when bidding enabled)
-- `avg_points_team1`: Mean points for team 1 (when bidding enabled)
-- `distribution_points_team0`: Count of hands by points scored
-- `distribution_points_team1`: Count of hands by points scored
+**Points (Always emitted):**
+- `avg_points_team0`: Mean points for team 0 across all attempted deals
+- `avg_points_team1`: Mean points for team 1 across all attempted deals
+- `distribution_points_team0`: Count of attempted deals by points scored
+- `distribution_points_team1`: Count of attempted deals by points scored
+
+Unlike trick metrics, points-per-deal metrics retain all-pass redeals in their
+denominator with zero points. Their distribution counts therefore sum to `hands`.
 
 ### Rollup-computed Fields
 These are computed by aggregation scripts from emitted keys:
 
 **Tricks Aggregation:**
-- `avg_tricks`: Weighted average of `avg_team0` across all configs (weighted by hands)
+- `avg_tricks`: Weighted average of `avg_team0` across all configs. For auction
+  results, consumers must weight by `played_hands`; weighting by `hands` would
+  reintroduce all-pass redeals into a played-hand metric.
+
+Legacy result files do not contain `played_hands`. Aggregators retain `hands` as
+their recorded denominator for compatibility; historical auction aggregates may
+therefore include redeals and cannot be repaired without the original logs.
 
 ### Drift v1 Contract (Tricks-Only)
 Drift v1 compares the `avg_tricks_team0` field from rollup summary against expected values in `data/fixtures/baseline_full_expected.json`. This is the primary regression signal for tricks-based strategies.
@@ -92,6 +113,8 @@ Example from simulation results:
 ```json
 {
   "hands": 50,
+  "played_hands": 50,
+  "redeals": 0,
   "avg_team0": 4.98,
   "avg_team1": 5.02,
   "distribution_team0": {"0": 0, "1": 0, "2": 1, "3": 2, "4": 8, "5": 15, "6": 16, "7": 6, "8": 2, "9": 0, "10": 0},

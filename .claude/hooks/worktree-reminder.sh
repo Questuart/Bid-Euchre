@@ -6,7 +6,13 @@ set -euo pipefail
 
 CURRENT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-MAIN_DIR="/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre"
+# The common Git directory belongs to the primary checkout, including when
+# this script runs from a linked worktree. Do not assume an operator home path.
+COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
+MAIN_DIR=""
+if [ -n "$COMMON_DIR" ]; then
+  MAIN_DIR=$(cd "$COMMON_DIR/.." && pwd -P)
+fi
 
 if [ "$CURRENT_DIR" = "$MAIN_DIR" ] && [ "$CURRENT_BRANCH" = "main" ]; then
   # Print warning (not blocking, just informational)

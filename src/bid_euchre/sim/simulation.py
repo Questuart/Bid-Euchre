@@ -722,15 +722,17 @@ def simulate_many_hands(
 
     Returns a summary dict:
         {
-            "hands": n,
+            "hands": n,  # attempted deals, including all-pass redeals
+            "played_hands": int,  # deals that reached trick play
+            "redeals": int,  # all-pass auction events
             "contract_type": contract_type,
             "trump_suit": trump_suit,
             "avg_team0": float,
             "avg_team1": float,
             "distribution_team0": {0..10: count},
-            "win_rate_team0": float or None,  # wins_team0 / hands (None if hands=0)
-            "win_rate_team1": float or None,  # wins_team1 / hands (None if hands=0)
-            "tie_rate": float or None,  # ties / hands (None if hands=0)
+            "win_rate_team0": float or None,  # wins_team0 / played_hands
+            "win_rate_team1": float or None,  # wins_team1 / played_hands
+            "tie_rate": float or None,  # ties / played_hands
             "avg_score": float,  # avg across all 4 players
             "score_buckets": { score -> {count, total_tricks, avg_tricks} },
             "feature_buckets": {
@@ -738,12 +740,19 @@ def simulate_many_hands(
                     value -> {count, total_tricks, avg_tricks}
                 }
             },
-            "player_samples": int,  # total player-hand samples (n * 4)
+            "player_samples": int,  # total played player-hands (played_hands * 4)
         }
 
     Features are tracked for ALL 4 players per hand, bucketed by their team's tricks.
     This removes measurement anchoring and 4x the effective sample size.
+
+    All-pass redeals count toward ``hands`` and points-per-deal metrics, with zero
+    points, but are excluded from trick, win-rate, score-bucket, and feature-bucket
+    metrics because no trick play occurred.
     """
+    if n <= 0:
+        raise ValueError(f"`n` must be greater than 0 (got {n})")
+
     # Create local RNG for reproducibility (never mutate global random state)
     local_rng: Optional[random.Random] = None
     if seed is not None and deal_seed is None:
@@ -780,6 +789,12 @@ def simulate_many_hands(
     feature_buckets: Dict[str, Dict[int, Dict[str, float]]] = {}
 
     player_samples = 0  # count of player-hand observations
+    played_hands = 0
+    redeals = 0
+
+    # ``deal_seed`` is the canonical deterministic deal seed when supplied.
+    # Preserve it in per-hand logs and hooks instead of recording seed=None.
+    effective_seed = deal_seed if deal_seed is not None else seed
 
     collectors: List[BiddingDatasetCollector] = []
     if bidding_dataset_run_id is not None and contract_type is None:
@@ -860,14 +875,12 @@ def simulate_many_hands(
                 on_bidding_decision=on_bidding_decision,
             )
 
+        is_redeal = winning_bid == 0 and bidder_pos is None
+
         # Log hand completion (if logger enabled)
         if logger and logger.is_enabled:
             # Compute v6 fields: redeal when all passed (winning_bid==0, no bidder)
-            redeal_flag = (
-                (winning_bid == 0 and bidder_pos is None)
-                if winning_bid is not None
-                else None
-            )
+            redeal_flag = is_redeal if winning_bid is not None else None
             if bidder_pos is None or winning_bid == 0 or winning_bid is None:
                 made_bid = None
             elif bidder_pos in (0, 2):
@@ -876,7 +889,7 @@ def simulate_many_hands(
                 made_bid = t1 >= winning_bid
             logger.log_hand_end(
                 deal_id=deal_id,
-                seed=seed,
+                seed=effective_seed,
                 contract=actual_contract,
                 trump=actual_trump,
                 leader=initial_leader,
@@ -902,7 +915,7 @@ def simulate_many_hands(
             hooks.fire_hand_end(
                 HandEndEvent(
                     deal_id=deal_id,
-                    seed=seed,
+                    seed=effective_seed,
                     hands=[
                         list(h) for h in starting_hands
                     ],  # Deep copy to avoid aliasing
@@ -921,6 +934,20 @@ def simulate_many_hands(
                 )
             )
 
+        # Points-per-deal metrics intentionally include redeals as zero-point deals.
+        points_team0, points_team1 = compute_points(
+            winning_bid, bidder_pos, t0, t1, bid_type=bid_type
+        )
+        total_points_team0 += points_team0
+        total_points_team1 += points_team1
+        dist_points_team0[points_team0] = dist_points_team0.get(points_team0, 0) + 1
+        dist_points_team1[points_team1] = dist_points_team1.get(points_team1, 0) + 1
+
+        if is_redeal:
+            redeals += 1
+            continue
+
+        played_hands += 1
         total0 += t0
         total1 += t1
         dist_team0[t0] += 1
@@ -935,15 +962,6 @@ def simulate_many_hands(
             wins_team1 += 0.5
             ties += 1
 
-        # Compute and track points-based scoring
-        points_team0, points_team1 = compute_points(
-            winning_bid, bidder_pos, t0, t1, bid_type=bid_type
-        )
-        total_points_team0 += points_team0
-        total_points_team1 += points_team1
-        dist_points_team0[points_team0] = dist_points_team0.get(points_team0, 0) + 1
-        dist_points_team1[points_team1] = dist_points_team1.get(points_team1, 0) + 1
-
         # Track bidding-related stats only when bidding occurred
         if winning_bid is not None and bidder_pos is not None:
             hands_with_bids += 1
@@ -954,7 +972,7 @@ def simulate_many_hands(
             else:
                 set_count += 1
 
-        # Process ALL 4 players' features
+        # Process ALL 4 players' features for hands that reached trick play.
         for player_idx in range(4):
             # Determine this player's team's tricks
             if player_idx in (0, 2):
@@ -995,12 +1013,18 @@ def simulate_many_hands(
             else:
                 stats["avg_tricks"] = 0.0
 
-    # Compute win rates (handle n=0 case)
-    if n > 0:
-        win_rate_team0 = wins_team0 / n
-        win_rate_team1 = wins_team1 / n
-        tie_rate = ties / n
+    # Trick metrics are conditional on reaching trick play. For an all-redeal
+    # run, averages retain their historical numeric type as 0.0 while rates are
+    # undefined; callers can distinguish this case via played_hands == 0.
+    if played_hands > 0:
+        avg_team0 = total0 / played_hands
+        avg_team1 = total1 / played_hands
+        win_rate_team0 = wins_team0 / played_hands
+        win_rate_team1 = wins_team1 / played_hands
+        tie_rate = ties / played_hands
     else:
+        avg_team0 = 0.0
+        avg_team1 = 0.0
         win_rate_team0 = None
         win_rate_team1 = None
         tie_rate = None
@@ -1026,10 +1050,12 @@ def simulate_many_hands(
 
     return {
         "hands": n,
+        "played_hands": played_hands,
+        "redeals": redeals,
         "contract_type": contract_type,
         "trump_suit": trump_suit,
-        "avg_team0": total0 / n,
-        "avg_team1": total1 / n,
+        "avg_team0": avg_team0,
+        "avg_team1": avg_team1,
         "distribution_team0": dist_team0,
         "win_rate_team0": win_rate_team0,
         "win_rate_team1": win_rate_team1,

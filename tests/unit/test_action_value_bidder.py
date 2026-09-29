@@ -400,6 +400,7 @@ class TestActionValueBidder:
         path = self._write_artifact(_make_mock_artifact())
         bidder = ActionValueBidder(artifact_path=path)
         assert bidder.name == "action_value"
+        assert bidder.VERSION == "1.0.1"
         assert "suit" in bidder.models
         assert "high" in bidder.models
         assert "low" in bidder.models
@@ -461,6 +462,66 @@ class TestActionValueBidder:
         action = bidder.choose_bid(obs)
         # With moon/loner enabled and positive suit_bias, should pick a moon or loner
         assert isinstance(action, BidAction)
+
+    def test_non_dealer_does_not_score_illegal_moon_after_moon(self):
+        artifact = _make_mock_artifact(
+            pass_bias=10.0,
+            suit_bias=0.0,
+            high_bias=-10.0,
+            low_bias=-10.0,
+        )
+        moon_idx = len(STATE_FEATURE_NAMES) + ACTION_FEATURE_NAMES.index("is_moon")
+        artifact["models"]["suit"]["coefficients"][moon_idx] = 100.0
+        bidder = ActionValueBidder(
+            artifact_path=self._write_artifact(artifact),
+            skip_behavioral_check=True,
+        )
+        obs = _make_obs(
+            current_high_bid=10,
+            seat=1,
+            dealer_seat=3,
+            allowed_contracts=("S",),
+            auction_transcript=(
+                {
+                    "seat": 0,
+                    "action": "BID",
+                    "tricks_bid": 10,
+                    "bid_type": "moon",
+                },
+            ),
+        )
+
+        assert bidder.choose_bid(obs).is_pass()
+
+    def test_dealer_can_score_moon_takeover_after_moon(self):
+        artifact = _make_mock_artifact(
+            pass_bias=10.0,
+            suit_bias=0.0,
+            high_bias=-10.0,
+            low_bias=-10.0,
+        )
+        moon_idx = len(STATE_FEATURE_NAMES) + ACTION_FEATURE_NAMES.index("is_moon")
+        artifact["models"]["suit"]["coefficients"][moon_idx] = 100.0
+        bidder = ActionValueBidder(
+            artifact_path=self._write_artifact(artifact),
+            skip_behavioral_check=True,
+        )
+        obs = _make_obs(
+            current_high_bid=10,
+            seat=3,
+            dealer_seat=3,
+            allowed_contracts=("S",),
+            auction_transcript=(
+                {
+                    "seat": 0,
+                    "action": "BID",
+                    "tricks_bid": 10,
+                    "bid_type": "moon",
+                },
+            ),
+        )
+
+        assert bidder.choose_bid(obs) == BidAction.moon("S")
 
     def test_context_features_loaded(self):
         path = self._write_artifact(_make_mock_artifact())

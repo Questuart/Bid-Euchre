@@ -66,11 +66,14 @@ MODE = "FULL"
 # --- Generation Parameters ---
 DEMO_SEED = 42
 _MODE_N_DEALS = {"SMOKE": 100, "QUICK": 2000, "FULL": 50000}
-DEMO_N_DEALS = _MODE_N_DEALS.get(MODE, 2000)  # Fallback to QUICK
 
 # --- Analysis Parameters ---
 ROLLING_WINDOW = 100  # Window size for rolling mean plots
 TOP_FEATURES = 9  # Number of features to show in distribution grid
+
+# %%
+# Compute derived settings after Papermill injects MODE.
+DEMO_N_DEALS = _MODE_N_DEALS[MODE]
 
 # %% [markdown]
 # ## Experimental Setup: Phase 0 Bidless

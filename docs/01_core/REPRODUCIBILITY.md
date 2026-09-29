@@ -2,9 +2,11 @@
 
 ## Deterministic Runs (Required by Default)
 
-All experiment runs require an explicit seed for reproducibility. This ensures:
+The canonical experiment runner requires a seed from `--seed` or the YAML
+configuration, unless `--allow-nondeterministic` is explicitly selected. With
+the same code, dependencies, configuration and seed:
 - Same seed + same config → identical results
-- Runs can be reproduced exactly from metadata alone
+- Run metadata identifies the code revision, configuration hash and seed needed for reproduction
 - No accidental nondeterministic comparisons
 
 **Deterministic run (required):**
@@ -18,6 +20,20 @@ uv run python experiments/run_experiment.py --config <path> --allow-nondetermini
 ```
 
 The seed determines all deal generation using a stable derivation rule: `deal_seed = seed * 1_000_003 + deal_id`. This ensures every deal in a run is deterministic and reproducible.
+
+## Library APIs versus research runs
+
+Library helpers such as `shuffle_deck(rng=None)` and simulation APIs with
+optional seeds retain local, nondeterministic fallbacks for interactive use.
+A local RNG avoids shared global state; it does not itself guarantee repeatability.
+Research callers must provide and propagate a seed or seeded RNG. Do not replace
+these fallbacks with an arbitrary fixed seed or treat unseeded output as comparison
+evidence. The runner's seed enforcement and repeatability integration tests cover
+the research entry point.
+
+Reproduction also requires the original configuration and any model artifacts,
+not just metadata. Historical absolute paths record where an artifact was produced;
+they are not portable setup instructions. Large research artifacts are gitignored.
 
 ## Paired Deals (Within-Subject Design)
 
@@ -172,3 +188,23 @@ assert metrics1 == metrics2
 **Tolerance guidelines**:
 - For deterministic runs (with seed): Expect **exact equality** (no tolerance)
 - For nondeterministic runs: Use appropriate statistical tolerance or skip comparison
+
+
+## Artifact and fingerprint limits
+
+The effective configuration records strategy and bidding-policy parameters,
+including explicit seeds and artifact paths, plus matrix matchup definitions. Retain that configuration, the
+original config hash, code revision and required model files when reproducing a
+run. A strategy's short fingerprint is not a complete content hash: the base
+implementation identifies class, version and name, and some subclasses do not
+include every behavior-changing parameter. Do not use it alone as proof that two
+runs used identical models or settings.
+
+GBT model manifests can reference Joblib files. Load only artifacts from trusted
+sources: Joblib deserialization can execute Python code. A JSON manifest does not
+make its referenced binary files safe to load.
+
+Independent-hand research simulations currently choose the dealer separately for
+each deal using the seeded deal stream. They do not model a successive match's
+clockwise dealer rotation; the hosted match engine does. This is an implementation
+boundary to account for when comparing independent-hand results with match play.

@@ -408,6 +408,58 @@ class TestLoadMatchupResults:
         assert r["mean_tricks_team0"] == pytest.approx((6.0 * 200 + 5.0 * 100) / 300)
         assert r["mean_tricks_team1"] == pytest.approx((4.0 * 200 + 5.0 * 100) / 300)
 
+    def test_redeals_are_excluded_from_matchup_metric_weights(self, tmp_path):
+        """All-pass scenarios count as deals but contribute no trick weight."""
+        from bid_euchre.reporting.chart_runner import _load_matchup_results
+
+        matchup_dir = tmp_path / "results" / "bidder_vs_bidder"
+        matchup_dir.mkdir(parents=True)
+        all_pass = {
+            "hands": 100,
+            "played_hands": 0,
+            "win_rate_team0": None,
+            "avg_team0": 0.0,
+            "avg_team1": 0.0,
+            "distribution_team0": {str(i): 0 for i in range(11)},
+        }
+        played = {
+            "hands": 10,
+            "played_hands": 10,
+            "win_rate_team0": 0.7,
+            "avg_team0": 6.0,
+            "avg_team1": 4.0,
+            "distribution_team0": {"4": 3, "6": 7},
+        }
+        (matchup_dir / "auction.json").write_text(json.dumps(all_pass))
+        (matchup_dir / "suit_C.json").write_text(json.dumps(played))
+
+        result = _load_matchup_results(tmp_path)[("bidder", "bidder")]
+
+        assert result["deals"] == 110
+        assert result["played_hands"] == 10
+        assert result["win_rate"] == pytest.approx(0.7)
+        assert result["mean_tricks_team0"] == pytest.approx(6.0)
+        assert result["mean_tricks_team1"] == pytest.approx(4.0)
+        assert len(result["tricks_team0"]) == 10
+        assert set(result["scenarios"]) == {"suit_C"}
+
+    def test_all_redeal_matchup_is_omitted(self, tmp_path):
+        """A matchup with no trick play has no chartable trick metrics."""
+        from bid_euchre.reporting.chart_runner import _load_matchup_results
+
+        matchup_dir = tmp_path / "results" / "passer_vs_passer"
+        matchup_dir.mkdir(parents=True)
+        scenario = {
+            "hands": 10,
+            "played_hands": 0,
+            "win_rate_team0": None,
+            "avg_team0": 0.0,
+            "avg_team1": 0.0,
+        }
+        (matchup_dir / "auction.json").write_text(json.dumps(scenario))
+
+        assert _load_matchup_results(tmp_path) == {}
+
     def test_scenarios_key_populated(self, tmp_path):
         """Per-scenario breakdown is available under result['scenarios']."""
         from bid_euchre.reporting.chart_runner import _load_matchup_results

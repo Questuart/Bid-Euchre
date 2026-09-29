@@ -50,7 +50,7 @@ def shuffle_deck(deck: List[Card], rng: Optional[random.Random] = None) -> None:
         rng: Optional random.Random instance. If None, creates a new unseeded instance.
     """
     if rng is None:
-        # Create local RNG instance for reproducibility compliance
+        # Interactive fallback only; research callers must supply a seeded RNG.
         rng = random.Random()
     rng.shuffle(deck)
 

@@ -538,6 +538,101 @@ def _hypothesis_summary_table(
     return _df_to_markdown(outcomes[display_cols], table_name="hypothesis_outcomes.csv")
 
 
+def _status_summary_line(
+    label: str,
+    table_name: str,
+    table: pd.DataFrame | None,
+) -> str:
+    """Summarize a status-bearing report table without collapsing WARN or FAIL.
+
+    The decision report consumes two separate quality tables.  Missing or malformed
+    input must stay visible rather than being treated as an implicit pass.
+    """
+    if table is None or len(table) == 0 or "status" not in table.columns:
+        return (
+            f"- {label}: **UNAVAILABLE** — `tables/{table_name}` is missing, "
+            "empty, or has no `status` column"
+        )
+
+    statuses = table["status"].fillna("").astype(str).str.strip().str.upper()
+    counts = {
+        status: int((statuses == status).sum()) for status in ("FAIL", "WARN", "PASS")
+    }
+    n_other = len(statuses) - sum(counts.values())
+
+    if counts["FAIL"]:
+        overall = "FAIL"
+    elif n_other:
+        overall = "UNAVAILABLE"
+    elif counts["WARN"]:
+        overall = "WARN"
+    elif counts["PASS"] == len(statuses):
+        overall = "PASS"
+
+    count_parts = [
+        f"{counts[status]} {status}"
+        for status in ("FAIL", "WARN", "PASS")
+        if counts[status]
+    ]
+    if n_other:
+        count_parts.append(f"{n_other} unrecognized")
+    counts_text = ", ".join(count_parts)
+    check_word = "check" if len(statuses) == 1 else "checks"
+    return (
+        f"- {label}: **{overall}** — {counts_text} across {len(statuses)} {check_word}"
+    )
+
+
+def _data_quality_summary_lines(tables_dir: Path) -> list[str]:
+    """Return truthful summaries for both decision-report quality inputs."""
+    return [
+        _status_summary_line(
+            "Data sanity",
+            "data_sanity.csv",
+            _read_csv_safe(tables_dir / "data_sanity.csv"),
+        ),
+        _status_summary_line(
+            "Sanity bounds",
+            "sanity_bounds_check.csv",
+            _read_csv_safe(tables_dir / "sanity_bounds_check.csv"),
+        ),
+    ]
+
+
+def _non_passing_check_lines(
+    label: str,
+    table: pd.DataFrame | None,
+) -> list[str]:
+    """Render individual WARN/FAIL checks with their measured implication."""
+    if table is None or "status" not in table.columns:
+        return []
+
+    statuses = table["status"].fillna("").astype(str).str.strip().str.upper()
+    rows = table[statuses.isin(["WARN", "FAIL"])]
+    lines: list[str] = []
+    for _, row in rows.iterrows():
+        status = str(row["status"]).strip().upper()
+        check = str(row.get("check_name", "unknown"))
+        model = row.get("model")
+        identifier = f"{model}/{check}" if pd.notna(model) else check
+
+        detail = row.get("detail")
+        if pd.notna(detail) and str(detail).strip():
+            implication = str(detail).strip()
+        else:
+            value = row.get("value")
+            lower = row.get("lower_bound")
+            upper = row.get("upper_bound")
+            if "r2_positive" in check and pd.notna(value):
+                implication = f"value {value:g}; check requires R² > 0"
+            elif pd.notna(value) and pd.notna(lower) and pd.notna(upper):
+                implication = f"value {value:g}; expected range [{lower:g}, {upper:g}]"
+            else:
+                implication = "see the source table for the measured value"
+        lines.append(f"- {label} `{identifier}`: **{status}** — {implication}")
+    return lines
+
+
 def _build_preliminary_triage(
     tables_dir: Path,
     comparator: pd.DataFrame | None,
@@ -578,22 +673,7 @@ def _build_preliminary_triage(
                 f"({row['mean_win_rate']:.1%} vs {row.get('tier', '?')} tier)"
             )
 
-    # Data sanity
-    data_sanity = _read_csv_safe(tables_dir / "data_sanity.csv")
-    if data_sanity is not None:
-        if "status" in data_sanity.columns:
-            n_fail = (data_sanity["status"].str.upper() == "FAIL").sum()
-            if n_fail > 0:
-                parts.append(f"- Data sanity: **{n_fail} failure(s)** detected")
-            else:
-                n_warn = (data_sanity["status"].str.upper() == "WARN").sum()
-                if n_warn > 0:
-                    parts.append(
-                        "- Data sanity: all checks passed "
-                        "(some with WARNINGs — see caveats below)"
-                    )
-                else:
-                    parts.append("- Data sanity: all checks passed")
+    parts.extend(_data_quality_summary_lines(tables_dir))
 
     parts.append("")
     parts.append("**Watch items / caveats:**")
@@ -708,26 +788,35 @@ def generate_decision_report(
     lines.append(_hypothesis_summary_table(hypothesis_outcomes))
     lines.append("")
 
-    # Data Sanity Status
+    # Data quality statuses are independent of the formal hypothesis decision.
+    # Render both inputs in all cases so WARN, FAIL, and missing evidence remain
+    # visible instead of being collapsed into "all checks passed."
+    lines.append("### Data Quality Status")
+    lines.append("")
     data_sanity = _read_csv_safe(tables_dir / "data_sanity.csv")
-    if data_sanity is not None and "status" in data_sanity.columns:
-        failures = data_sanity[data_sanity["status"].str.upper() == "FAIL"]
-        if len(failures) > 0:
-            lines.append("### Data Sanity")
-            lines.append("")
-            n_fail = len(failures)
-            n_total = len(data_sanity)
-            lines.append(f"**{n_fail}/{n_total} sanity checks failed.**")
-            lines.append("")
-            for _, row in failures.iterrows():
-                check = row.get("check_name", "unknown")
-                lines.append(f"- {check}: FAIL")
-            lines.append("")
-            lines.append(
-                "*Note: some sanity check failures may be expected for conservative "
-                "thresholds or early rungs with limited sample sizes.*"
-            )
-            lines.append("")
+    sanity_bounds = _read_csv_safe(tables_dir / "sanity_bounds_check.csv")
+    lines.extend(
+        [
+            _status_summary_line("Data sanity", "data_sanity.csv", data_sanity),
+            _status_summary_line(
+                "Sanity bounds", "sanity_bounds_check.csv", sanity_bounds
+            ),
+        ]
+    )
+    non_passing = _non_passing_check_lines("Data sanity", data_sanity)
+    non_passing.extend(_non_passing_check_lines("Sanity bounds", sanity_bounds))
+    if non_passing:
+        lines.append("")
+        lines.append("**Non-passing checks:**")
+        lines.append("")
+        lines.extend(non_passing)
+    lines.append("")
+    lines.append(
+        "These screening statuses are reported separately from the formal "
+        "hypothesis outcome above. See `tables/data_sanity.csv` and "
+        "`tables/sanity_bounds_check.csv` for individual checks."
+    )
+    lines.append("")
 
     # Recommendation
     lines.append("## Recommendation")

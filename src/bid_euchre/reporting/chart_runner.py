@@ -81,6 +81,7 @@ def _load_matchup_results(run_dir: Path) -> dict:
             continue
 
         total_deals = 0
+        total_played_deals = 0
         weighted_win_rate = 0.0
         weighted_mean_t0 = 0.0
         weighted_mean_t1 = 0.0
@@ -93,12 +94,19 @@ def _load_matchup_results(run_dir: Path) -> dict:
             if n == 0:
                 continue
             total_deals += n
-            weighted_win_rate += data.get("win_rate_team0", 0) * n
+            played_n = data.get("played_hands")
+            if played_n is None:
+                # Preserve the recorded denominator for legacy result files.
+                played_n = n
+            if played_n == 0:
+                continue
+            total_played_deals += played_n
+            weighted_win_rate += data.get("win_rate_team0", 0) * played_n
             weighted_mean_t0 += (
-                data.get("avg_team0", data.get("mean_tricks_team0", 0)) * n
+                data.get("avg_team0", data.get("mean_tricks_team0", 0)) * played_n
             )
             weighted_mean_t1 += (
-                data.get("avg_team1", data.get("mean_tricks_team1", 0)) * n
+                data.get("avg_team1", data.get("mean_tricks_team1", 0)) * played_n
             )
 
             # Reconstruct trick list from distribution histogram if available
@@ -106,15 +114,16 @@ def _load_matchup_results(run_dir: Path) -> dict:
             for k_str, count in dist.items():
                 all_tricks_t0.extend([int(k_str)] * count)
 
-        if total_deals == 0:
+        if total_deals == 0 or total_played_deals == 0:
             continue
 
         result = {
-            "win_rate": weighted_win_rate / total_deals,
-            "mean_tricks_team0": weighted_mean_t0 / total_deals,
-            "mean_tricks_team1": weighted_mean_t1 / total_deals,
-            "mean_tricks": weighted_mean_t0 / total_deals,
+            "win_rate": weighted_win_rate / total_played_deals,
+            "mean_tricks_team0": weighted_mean_t0 / total_played_deals,
+            "mean_tricks_team1": weighted_mean_t1 / total_played_deals,
+            "mean_tricks": weighted_mean_t0 / total_played_deals,
             "deals": total_deals,
+            "played_hands": total_played_deals,
         }
         if all_tricks_t0:
             result["tricks_team0"] = all_tricks_t0
@@ -125,6 +134,8 @@ def _load_matchup_results(run_dir: Path) -> dict:
             scenario_name = sf.stem  # e.g., "suit_C", "high", "low"
             with open(sf) as f:
                 sdata = json.load(f)
+            if sdata.get("played_hands") == 0:
+                continue
             scenario_data[scenario_name] = sdata
         result["scenarios"] = scenario_data
 

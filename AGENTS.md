@@ -14,9 +14,13 @@ When reviewing PRs, prioritize these checks in order:
 
 ### Critical (should block merge)
 
-1. **Unseeded randomness** — Any use of `random.Random()` without a seed,
-   or global `random.*` calls in `src/` library code. All strategies must use
-   local `random.Random(seed)`.
+1. **Unseeded research randomness** — Seeded experiment paths must propagate
+   explicit seeds or caller-owned local RNGs through deal generation and strategies.
+   Block hidden global `random.*` calls and unseeded RNGs reachable in those paths.
+   Optional library `rng=None` / `seed=None` fallbacks may use a local unseeded
+   RNG for exploratory or interactive use; document them as nondeterministic.
+   They must not bypass the experiment runner's seed requirement (or explicit
+   `--allow-nondeterministic` opt-in). Never substitute an arbitrary fixed seed.
 
 2. **Falsy numeric guards** — `x = x or fallback` on numeric metrics.
    `0.0` is falsy in Python, so this silently replaces valid zeros.

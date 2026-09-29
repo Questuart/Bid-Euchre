@@ -446,7 +446,8 @@ class TestPreliminaryTriage:
             rung="R0",
             mode="QUICK",
         )
-        assert "Data sanity: all checks passed" in content
+        assert "Data sanity: **PASS** — 1 PASS across 1 check" in content
+        assert "Sanity bounds: **UNAVAILABLE**" in content
 
     def test_full_with_hypothesis_returns_advance(self, tmp_path):
         """FULL mode with passing hypotheses produces ADVANCE."""
@@ -543,7 +544,7 @@ class TestDataQualityNotes:
 
 
 class TestDecisionReportDataSanity:
-    """Tests for the Data Sanity block in generate_decision_report()."""
+    """Tests for the Data Quality Status block in generate_decision_report()."""
 
     @pytest.fixture
     def charts_dir(self, tmp_path):
@@ -565,10 +566,11 @@ class TestDecisionReportDataSanity:
             tables_dir=tables_dir,
             charts_dir=charts_dir,
         )
-        assert "### Data Sanity" in content
-        assert "comparator_bidders_present" in content
-        assert "h2h_min_deals" in content
-        assert "unknown" not in content.split("### Data Sanity")[1].split("##")[0]
+        assert "### Data Quality Status" in content
+        assert "Data sanity: **FAIL** — 2 FAIL across 2 checks" in content
+        assert "Data sanity `comparator_bidders_present`: **FAIL**" in content
+        assert "Data sanity `h2h_min_deals`: **FAIL**" in content
+        assert "`tables/data_sanity.csv`" in content
 
     def test_data_sanity_shows_fail_count(self, tmp_path, charts_dir):
         """Data Sanity block shows correct failure count."""
@@ -584,11 +586,11 @@ class TestDecisionReportDataSanity:
             tables_dir=tables_dir,
             charts_dir=charts_dir,
         )
-        assert "### Data Sanity" in content
-        assert "1/2 sanity checks failed" in content
+        assert "### Data Quality Status" in content
+        assert "Data sanity: **FAIL** — 1 FAIL, 1 PASS across 2 checks" in content
 
-    def test_data_sanity_absent_when_all_pass(self, tmp_path, charts_dir):
-        """Data Sanity block is absent when all checks pass."""
+    def test_all_pass_is_reported_explicitly(self, tmp_path, charts_dir):
+        """All-pass tables render explicit PASS summaries."""
         tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "PASS"])
         _make_comparator_rankings(tables_dir)
         _make_h2h_tier_summary(tables_dir)
@@ -596,8 +598,98 @@ class TestDecisionReportDataSanity:
             "check_name,scope,value,threshold,status,detail\n"
             "h2h_min_deals,h2h,50,10,PASS,ok\n"
         )
+        (tables_dir / "sanity_bounds_check.csv").write_text(
+            "model,check_name,value,lower_bound,upper_bound,status\n"
+            "gbt_av,bid_rate_range,0.5,0.05,0.95,PASS\n"
+        )
         content = generate_decision_report(
             tables_dir=tables_dir,
             charts_dir=charts_dir,
         )
-        assert "### Data Sanity" not in content
+        assert "Data sanity: **PASS** — 1 PASS across 1 check" in content
+        assert "Sanity bounds: **PASS** — 1 PASS across 1 check" in content
+
+    def test_warn_and_sanity_bound_fail_counts_are_both_reported(
+        self, tmp_path, charts_dir
+    ):
+        """WARN rows cannot mask FAIL rows from the separate bounds table."""
+        tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "PASS"])
+        (tables_dir / "data_sanity.csv").write_text(
+            "check_name,scope,value,threshold,status,detail\n"
+            "h2h_min_deals,h2h,50,10,PASS,ok\n"
+            "r2_positive_pass,training,-0.2,0.0,WARN,negative pass R2\n"
+        )
+        (tables_dir / "sanity_bounds_check.csv").write_text(
+            "model,check_name,value,lower_bound,upper_bound,status\n"
+            "gbt_av,bid_rate_range,0.98,0.05,0.95,FAIL\n"
+            "gbt_av,make_rate_range,0.90,0.10,1.00,PASS\n"
+        )
+
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+        )
+
+        assert "Data sanity: **WARN** — 1 WARN, 1 PASS across 2 checks" in content
+        assert "Sanity bounds: **FAIL** — 1 FAIL, 1 PASS across 2 checks" in content
+        assert "negative pass R2" in content
+        assert (
+            "Sanity bounds `gbt_av/bid_rate_range`: **FAIL** — "
+            "value 0.98; expected range [0.05, 0.95]"
+        ) in content
+        assert "all checks passed" not in content
+
+    def test_missing_and_malformed_quality_tables_are_not_treated_as_pass(
+        self, tmp_path, charts_dir
+    ):
+        """Absent status evidence renders UNAVAILABLE rather than PASS."""
+        tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "PASS"])
+        (tables_dir / "data_sanity.csv").write_text("check_name,value\nbalance,1\n")
+        (tables_dir / "sanity_bounds_check.csv").write_text(
+            "model,check_name,value,lower_bound,upper_bound,status\n"
+            "gbt_av,bid_rate_range,0.5,0.05,0.95,MAYBE\n"
+        )
+
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+        )
+
+        assert "Data sanity: **UNAVAILABLE**" in content
+        assert (
+            "Sanity bounds: **UNAVAILABLE** — 1 unrecognized across 1 check"
+        ) in content
+        assert "all checks passed" not in content
+
+    def test_r3_canonical_summary_matches_committed_quality_tables(self):
+        """The public R3 canonical summary preserves its source-table counts."""
+        report_dir = (
+            Path(__file__).resolve().parents[2]
+            / "docs"
+            / "04_reports"
+            / "arc_d_v2"
+            / "r3"
+            / "canonical"
+        )
+        generated = generate_decision_report(
+            tables_dir=report_dir / "tables",
+            charts_dir=report_dir / "charts",
+            rung="r3",
+            mode="QUICK",
+        )
+        committed = (report_dir / "02_decision.md").read_text()
+
+        expected = [
+            "Data sanity: **WARN** — 6 WARN, 17 PASS across 23 checks",
+            "Sanity bounds: **FAIL** — 12 FAIL, 24 PASS across 36 checks",
+        ]
+        for summary in expected:
+            assert summary in generated
+            assert summary in committed
+        assert "bid rates above the 0.95 upper bound" in committed
+        assert "RankTheTank's 0.06 make rate" in committed
+        assert "positive-R² requirement" in committed
+        assert (
+            "Sanity bounds `selected_two_stage_av/r2_positive_suit`: **FAIL** — "
+            "value 0; check requires R² > 0"
+        ) in generated

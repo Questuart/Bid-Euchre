@@ -259,3 +259,6 @@ knowledge/_scratch/
 *_backup.*
 *~
 **/.DS_Store
+
+# Personal editor workspace files
+*.code-workspace
