@@ -2293,12 +2293,21 @@ class TestInstallScript:
             "LAUNCHD_PATH" in content
         ), "Installer must build LAUNCHD_PATH from current shell environment"
 
+    @pytest.fixture
+    def claude_bin(self, tmp_path, monkeypatch):
+        """Dry-run rendering needs a discoverable path, not a Claude install."""
+        binary = tmp_path / "claude"
+        binary.write_text("#!/bin/sh\nexit 1\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+        return binary
+
     @pytest.mark.skipif(
         subprocess.run(["uname"], capture_output=True, text=True).stdout.strip()
         != "Darwin",
         reason="macOS-only test",
     )
-    def test_dry_run_succeeds(self) -> None:
+    def test_dry_run_succeeds(self, claude_bin) -> None:
         """Dry run should succeed without side effects."""
         result = subprocess.run(
             [str(INSTALL_SCRIPT), "--dry-run"],
@@ -2313,7 +2322,7 @@ class TestInstallScript:
         != "Darwin",
         reason="macOS-only test",
     )
-    def test_dry_run_shows_claude_bin(self) -> None:
+    def test_dry_run_shows_claude_bin(self, claude_bin) -> None:
         """Dry run must show the resolved claude binary path."""
         result = subprocess.run(
             [str(INSTALL_SCRIPT), "--dry-run"],
@@ -2324,3 +2333,4 @@ class TestInstallScript:
         assert (
             "Claude bin:" in result.stdout
         ), "Dry run should display the resolved claude binary path"
+        assert str(claude_bin) in result.stdout
