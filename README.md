@@ -82,7 +82,9 @@ Open `http://127.0.0.1:8000`. Local play uses SQLite. In a second terminal at th
 
 ```bash
 uv run python scripts/internal/manage_invite_codes.py generate --count 1 --label "Local demo"
-``` The repository records a [Render retirement backup on April 29, 2026](docs/01_core/RENDER_RETIREMENT_2026-04-29.md); no live public demo is verified here. Retained deployment configuration is not evidence of an active service.
+```
+
+The repository records a [Render retirement backup on April 29, 2026](docs/01_core/RENDER_RETIREMENT_2026-04-29.md); no live public demo is verified here. Retained deployment configuration is not evidence of an active service.
 
 ## Development and AI assistance
 
