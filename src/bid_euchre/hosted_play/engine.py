@@ -870,7 +870,13 @@ class MatchEngine:
             entry["bid_type"] = bid.bid_type
             # Track the high bidder using overcall hierarchy:
             # regular 1-10 < moon < loner
-            if bid.bid_rank() > _current_bid_rank(hand):
+            is_dealer_takeover = (
+                seat == hand.dealer_seat
+                and len(hand.auction) == _NUM_PLAYERS - 1
+                and bid.bid_type in {"moon", "loner"}
+                and bid.bid_type == hand.bid_type
+            )
+            if bid.bid_rank() > _current_bid_rank(hand) or is_dealer_takeover:
                 hand.current_high_bid = bid.n
                 hand.bidder_seat = seat
                 hand.winning_bid = bid.n

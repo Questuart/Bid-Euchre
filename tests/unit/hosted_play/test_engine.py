@@ -1556,6 +1556,58 @@ class TestMoonLonerLegality:
 class TestOvercallHierarchy:
     """bid_type and bid_rank are tracked correctly during auction."""
 
+    def test_dealer_moon_takeover_updates_declarer_and_contract(self) -> None:
+        """Dealer matching moon wins with the dealer's chosen contract."""
+        engine = MatchEngine(
+            bidding_policy=MoonBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.dealer_seat == HUMAN_SEAT
+        assert hand.current_seat == HUMAN_SEAT
+        assert hand.bidder_seat == 1
+        assert BidAction.moon("H") in engine.get_legal_bids(state)
+
+        state = engine.submit_human_bid(state, BidAction.moon("H"))
+
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.bidder_seat == HUMAN_SEAT
+        assert hand.bid_type == "moon"
+        assert hand.contract_type == "suit"
+        assert hand.trump == "H"
+        assert hand.phase == "moon_exchange"
+
+    def test_dealer_loner_takeover_updates_declarer_and_contract(self) -> None:
+        """Dealer matching loner wins and immediately starts three-player play."""
+        engine = MatchEngine(
+            bidding_policy=LonerBidder(contract="S"),
+            play_strategy=FirstLegalPlay(),
+        )
+        state = engine.start_match(SEED, "heuristic")
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.dealer_seat == HUMAN_SEAT
+        assert hand.current_seat == HUMAN_SEAT
+        assert hand.bidder_seat == 1
+        assert BidAction.loner("D") in engine.get_legal_bids(state)
+
+        state = engine.submit_human_bid(state, BidAction.loner("D"))
+
+        hand = state.current_hand
+        assert hand is not None
+        assert hand.bidder_seat == HUMAN_SEAT
+        assert hand.bid_type == "loner"
+        assert hand.contract_type == "suit"
+        assert hand.trump == "D"
+        assert hand.phase == "trick_play"
+        assert hand.sitting_out_seat == 2
+        assert hand.current_trick is not None
+        assert hand.current_trick.leader == HUMAN_SEAT
+        assert hand.current_seat == HUMAN_SEAT
+
     def test_moon_overcalls_regular(self) -> None:
         """Moon overcalls any regular bid."""
         engine = MatchEngine(

@@ -169,7 +169,10 @@ def test_empty_directories_are_created():
             assert dir_path.is_dir(), f"{dir_name}/ should be a directory"
 
 
-def test_effective_config_preserves_policy_parameters_for_replay(tmp_path):
+@pytest.mark.parametrize("matchups_location", [None, "top_level", "parameters"])
+def test_effective_config_preserves_policy_parameters_for_replay(
+    tmp_path, matchups_location
+):
     """Saved configs retain explicit RNG seeds and bidder settings, not just names."""
     import json
 
@@ -192,6 +195,11 @@ def test_effective_config_preserves_policy_parameters_for_replay(tmp_path):
         "scenarios": [{"contract_type": None}],
         "parameters": {"seed": 42, "n_per": 3, "log_level": "none"},
     }
+    matchups = [{"team0": "random", "team1": "random", "matchup_id": "replay_pair"}]
+    if matchups_location is not None:
+        config["mode"] = "head_to_head_matrix"
+        target = config if matchups_location == "top_level" else config["parameters"]
+        target["matchups"] = matchups
     config_path = tmp_path / "source.yaml"
     config_path.write_text(yaml.safe_dump(config))
     first = tmp_path / "first"
@@ -202,6 +210,8 @@ def test_effective_config_preserves_policy_parameters_for_replay(tmp_path):
     saved = yaml.safe_load(snapshot.read_text())
     assert saved["strategies"] == config["strategies"]
     assert saved["bidding_policies"] == config["bidding_policies"]
+    if matchups_location is not None:
+        assert saved["matchups"] == matchups
 
     second = tmp_path / "second"
     replay = run_experiment(str(snapshot), run_dir=str(second))

@@ -486,6 +486,7 @@ def main():
             "play_strategy": play_strategy_name,
         },
         "mode": mode,
+        "matchups": getattr(config, "matchups", None) or config.parameters.get("matchups"),
         "strategies": [
             {
                 "name": s.name,

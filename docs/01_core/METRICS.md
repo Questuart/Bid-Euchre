@@ -41,7 +41,8 @@ All-pass redeals have no trick outcome and are excluded from trick averages,
 distributions, score/feature buckets, and player samples. When `played_hands=0`,
 the two trick averages remain numeric `0.0` for result-schema compatibility,
 the trick distribution is all zeros, and score/feature buckets are empty. Check
-`played_hands` before interpreting these empty-sample values.
+`played_hands` before interpreting these empty-sample values. The run-comparison
+CLI rejects any supplied empty trick distribution and identifies its scenario.
 
 **Win Rates (Always emitted):**
 - `win_rate_team0`: Weighted win rate for team 0 = (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / `played_hands`

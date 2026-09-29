@@ -109,6 +109,12 @@ def load_results_from_distributions(run_dir: Path) -> Dict[str, Dict]:
             for tricks, count in dist.items():
                 tricks_array.extend([int(tricks)] * count)
 
+            if not tricks_array:
+                raise ValueError(
+                    f"No played-hand trick samples for {scenario_id} in {results_file}; "
+                    "cannot compare an empty distribution"
+                )
+
             results[scenario_id] = {
                 "avg_tricks_team0": np.array(tricks_array).mean(),
                 "tricks_team0_samples": np.array(tricks_array),

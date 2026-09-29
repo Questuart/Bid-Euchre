@@ -386,3 +386,32 @@ def test_compare_runs_json_parseable():
             assert len(comparison["baseline_ci"]) == 2
             assert isinstance(comparison["is_significant"], bool)
             assert 0 <= comparison["p_value"] <= 1.0
+
+
+@pytest.mark.parametrize("counts", [(0, 0), (0, 3), (3, 0)])
+@pytest.mark.parametrize("output_format", ["human", "markdown", "json"])
+def test_empty_played_sample_is_not_a_significant_comparison(
+    tmp_path, counts, output_format
+):
+    """All-redeal and asymmetric empty inputs must fail before inference."""
+    runs = [tmp_path / "baseline", tmp_path / "candidate"]
+    for run, count in zip(runs, counts):
+        result = run / "results" / "bidder" / "auction.json"
+        result.parent.mkdir(parents=True)
+        result.write_text(
+            json.dumps(
+                {
+                    "hands": 3,
+                    "played_hands": count,
+                    "redeals": 3 - count,
+                    "distribution_team0": {
+                        str(i): count if i == 5 else 0 for i in range(11)
+                    },
+                }
+            )
+        )
+    completed = run_compare(runs[0], runs[1], format=output_format)
+    assert completed.returncode == 1
+    assert "No played-hand trick samples for bidder/auction" in completed.stderr
+    assert "cannot compare an empty distribution" in completed.stderr
+    assert not completed.stdout.strip()

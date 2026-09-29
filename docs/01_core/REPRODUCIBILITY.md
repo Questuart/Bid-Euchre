@@ -193,7 +193,7 @@ assert metrics1 == metrics2
 ## Artifact and fingerprint limits
 
 The effective configuration records strategy and bidding-policy parameters,
-including explicit seeds and artifact paths. Retain that configuration, the
+including explicit seeds and artifact paths, plus matrix matchup definitions. Retain that configuration, the
 original config hash, code revision and required model files when reproducing a
 run. A strategy's short fingerprint is not a complete content hash: the base
 implementation identifies class, version and name, and some subclasses do not
