@@ -399,6 +399,8 @@ def _make_obs(
     current_high_bid: int = 0,
     seat: int = 1,
     dealer_seat: int = 0,
+    allowed_contracts: tuple[str, ...] = ("C", "D", "H", "S", "HIGH", "LOW"),
+    auction_transcript: tuple[dict, ...] = (),
 ) -> BiddingObservation:
     """Create a BiddingObservation for testing."""
     suits = ["C", "D", "H", "S"]
@@ -416,9 +418,43 @@ def _make_obs(
         seat=seat,
         dealer_seat=dealer_seat,
         current_high_bid=current_high_bid,
-        allowed_contracts=("C", "D", "H", "S", "HIGH", "LOW"),
-        auction_transcript=(),
+        allowed_contracts=allowed_contracts,
+        auction_transcript=auction_transcript,
     )
+
+
+class TestTwoStageAuctionLegality:
+    def test_non_dealer_does_not_score_illegal_moon_after_moon(self, tmp_path):
+        artifact = _make_minimal_artifact()
+        moon_idx = len(STATE_FEATURE_NAMES) + ACTION_FEATURE_NAMES.index("is_moon")
+        artifact["models"]["high"]["coefficients"] = [0.0] * N_BID
+        artifact["models"]["high"]["coefficients"][moon_idx] = 100.0
+        artifact["models"]["high"]["intercept"] = 0.0
+        artifact["models"]["pass"]["coefficients"] = [0.0] * N_STATE
+        artifact["models"]["pass"]["intercept"] = 10.0
+        path = tmp_path / "moon_preferring_two_stage.json"
+        path.write_text(json.dumps(artifact))
+        bidder = TwoStageActionValueBidder(
+            artifact_path=str(path),
+            skip_behavioral_check=True,
+        )
+        obs = _make_obs(
+            current_high_bid=10,
+            seat=1,
+            dealer_seat=3,
+            allowed_contracts=("HIGH",),
+            auction_transcript=(
+                {
+                    "seat": 0,
+                    "action": "BID",
+                    "tricks_bid": 10,
+                    "bid_type": "moon",
+                },
+            ),
+        )
+
+        assert bidder.VERSION == "1.0.1"
+        assert bidder.choose_bid(obs).is_pass()
 
 
 class TestTwoStageForwardSelected:

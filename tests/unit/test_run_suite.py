@@ -64,6 +64,71 @@ class TestAggregateRunMetrics:
         assert result["reason"] is None
         assert result["bad_files"] is None
 
+    def test_average_uses_played_hands_when_redeals_vary(self, tmp_path: Path) -> None:
+        """Trick averages exclude attempted deals that ended as redeals."""
+        results_dir = tmp_path / "results" / "greedy"
+        results_dir.mkdir(parents=True)
+
+        scenarios = {
+            "mostly_played.json": {
+                "hands": 100,
+                "played_hands": 100,
+                "avg_team0": 4.0,
+            },
+            "mostly_redeals.json": {
+                "hands": 100,
+                "played_hands": 25,
+                "avg_team0": 8.0,
+            },
+        }
+        for filename, data in scenarios.items():
+            with (results_dir / filename).open("w") as f:
+                json.dump(data, f)
+
+        result = aggregate_run_metrics(tmp_path)
+
+        assert result["total_hands"] == 200
+        assert result["avg_tricks"] == 4.8
+        assert result["reason"] is None
+        assert result["bad_files"] is None
+
+    def test_all_redeal_run_has_no_trick_average(self, tmp_path: Path) -> None:
+        """A valid all-redeal result has attempts but no played-hand mean."""
+        result_path = tmp_path / "results" / "greedy" / "auction.json"
+        result_path.parent.mkdir(parents=True)
+        with result_path.open("w") as f:
+            json.dump(
+                {
+                    "hands": 10,
+                    "played_hands": 0,
+                    "avg_team0": 0.0,
+                },
+                f,
+            )
+
+        result = aggregate_run_metrics(tmp_path)
+
+        assert result["total_hands"] == 10
+        assert result["avg_tricks"] is None
+        assert result["reason"] is None
+        assert result["bad_files"] is None
+
+    def test_all_redeal_file_does_not_dilute_played_average(
+        self, tmp_path: Path
+    ) -> None:
+        """A zero-played result contributes attempts but no trick weight."""
+        results_dir = tmp_path / "results" / "greedy"
+        results_dir.mkdir(parents=True)
+        with (results_dir / "all_pass.json").open("w") as f:
+            json.dump({"hands": 10, "played_hands": 0, "avg_team0": 0.0}, f)
+        with (results_dir / "played.json").open("w") as f:
+            json.dump({"hands": 5, "played_hands": 5, "avg_team0": 6.0}, f)
+
+        result = aggregate_run_metrics(tmp_path)
+
+        assert result["total_hands"] == 15
+        assert result["avg_tricks"] == 6.0
+
     def test_rounding_behavior(self, tmp_path: Path) -> None:
         """Test that averages are rounded to 2 decimal places."""
         results_dir = tmp_path / "results" / "greedy" / "suit_C.json"

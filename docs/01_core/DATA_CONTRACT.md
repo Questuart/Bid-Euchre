@@ -22,7 +22,7 @@ Each `hand_end` record contains:
 | `run_id` | str | v1 | Run identifier |
 | `strategy_id` | str | v1 | Strategy name |
 | `deal_id` | int | v1 | Hand index within run |
-| `seed` | int\|null | v1 | RNG seed (null if nondeterministic) |
+| `seed` | int\|null | v1 | Effective deal RNG seed (null if nondeterministic) |
 | `contract` | str | v1 | `"suit"`, `"high"`, or `"low"` |
 | `trump` | str\|null | v1 | `"C"`, `"D"`, `"H"`, `"S"` or null |
 | `leader` | int | v1 | First-trick leader seat (0–3) |
@@ -45,7 +45,14 @@ Each `hand_end` record contains:
 
 **Backward compatibility:** All versioned fields have `null` defaults. Old logs can be read safely using `.get(field)`.
 
-**Filtering note:** `redeal_flag=true` records have `t0=0, t1=0` (no play occurred). Exclude them when computing comparative metrics.
+**Filtering note:** `redeal_flag=true` records have `t0=0, t1=0` (no play occurred). Exclude them when computing trick, win-rate, score-bucket, and feature-bucket metrics. Points-per-deal metrics retain them as zero-point deals.
+
+**Redeal compatibility sentinels:** The v8 record schema predates nullable
+`contract` and `leader` fields. All-pass records therefore retain
+`contract="high"` and `leader=-1` as legacy internal sentinels even though no
+contract was played and no player led a trick. `redeal_flag=true` is the
+authoritative signal; consumers must not classify these records as played high
+contracts or interpret `leader=-1` as a seat.
 
 **auction_transcript entry format:** Each entry is `{"seat": int, "action": "PASS"|"BID", "tricks_bid": int, "contract_type": str|null, "trump": str|null, "bid_type": str}` (v8+). PASS entries have `tricks_bid=0`, `contract_type=null`, `trump=null`. BID entries include `bid_type` (`"regular"`, `"moon"`, or `"loner"`) when using the new bidding policy interface; the old `Strategy.decide_bid` interface omits `bid_type` from transcript entries. The list is always exactly 4 entries (one per seat in bid order) when bidding occurred; `null` when no auction ran (fixed-contract mode).
 

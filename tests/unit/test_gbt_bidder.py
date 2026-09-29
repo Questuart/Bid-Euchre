@@ -18,6 +18,7 @@ from bid_euchre.strategy.bidding import (
     STATE_FEATURE_NAMES,
     BidAction,
     BiddingObservation,
+    FilteredGBTBidder,
     GBTActionValueBidder,
     enumerate_legal_actions,
 )
@@ -244,6 +245,8 @@ class TestGBTActionValueBidder:
     def test_loads_from_artifact(self, trained_gbt_artifact):
         bidder = GBTActionValueBidder(artifact_path=trained_gbt_artifact)
         assert bidder.name == "gbt_action_value"
+        assert bidder.VERSION == "1.0.1"
+        assert FilteredGBTBidder.VERSION == "1.0.1"
 
     def test_choose_bid_returns_valid_action(self, trained_gbt_artifact):
         bidder = GBTActionValueBidder(artifact_path=trained_gbt_artifact)
@@ -260,6 +263,43 @@ class TestGBTActionValueBidder:
         obs = _make_obs(current_high_bid=9)
         action = bidder.choose_bid(obs)
         assert isinstance(action, BidAction)
+
+    def test_non_dealer_does_not_score_illegal_moon_after_loner(
+        self, trained_gbt_artifact
+    ):
+        class ActionModel:
+            def predict(self, features):
+                is_moon = features[0, -2]
+                return np.array([100.0 if is_moon else 0.0])
+
+        class PassModel:
+            def predict(self, features):
+                return np.array([10.0])
+
+        bidder = GBTActionValueBidder(
+            artifact_path=trained_gbt_artifact,
+            skip_behavioral_check=True,
+        )
+        bidder.gbt_models = {
+            family: ActionModel() for family in ("suit", "high", "low")
+        }
+        bidder.pass_gbt = PassModel()
+        obs = _make_obs(
+            current_high_bid=10,
+            seat=1,
+            dealer_seat=3,
+            allowed_contracts=("S",),
+            auction_transcript=(
+                {
+                    "seat": 0,
+                    "action": "BID",
+                    "tricks_bid": 10,
+                    "bid_type": "loner",
+                },
+            ),
+        )
+
+        assert bidder.choose_bid(obs).is_pass()
 
     def test_rejects_wrong_schema(self, tmp_path):
         artifact = {

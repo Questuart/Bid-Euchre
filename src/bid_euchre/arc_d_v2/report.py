@@ -562,12 +562,12 @@ def _status_summary_line(
 
     if counts["FAIL"]:
         overall = "FAIL"
+    elif n_other:
+        overall = "UNAVAILABLE"
     elif counts["WARN"]:
         overall = "WARN"
     elif counts["PASS"] == len(statuses):
         overall = "PASS"
-    else:
-        overall = "UNKNOWN"
 
     count_parts = [
         f"{counts[status]} {status}"

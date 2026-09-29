@@ -188,3 +188,23 @@ assert metrics1 == metrics2
 **Tolerance guidelines**:
 - For deterministic runs (with seed): Expect **exact equality** (no tolerance)
 - For nondeterministic runs: Use appropriate statistical tolerance or skip comparison
+
+
+## Artifact and fingerprint limits
+
+The effective configuration records strategy and bidding-policy parameters,
+including explicit seeds and artifact paths. Retain that configuration, the
+original config hash, code revision and required model files when reproducing a
+run. A strategy's short fingerprint is not a complete content hash: the base
+implementation identifies class, version and name, and some subclasses do not
+include every behavior-changing parameter. Do not use it alone as proof that two
+runs used identical models or settings.
+
+GBT model manifests can reference Joblib files. Load only artifacts from trusted
+sources: Joblib deserialization can execute Python code. A JSON manifest does not
+make its referenced binary files safe to load.
+
+Independent-hand research simulations currently choose the dealer separately for
+each deal using the seeded deal stream. They do not model a successive match's
+clockwise dealer rotation; the hosted match engine does. This is an implementation
+boundary to account for when comparing independent-hand results with match play.

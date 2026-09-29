@@ -12,12 +12,14 @@
 
 ## Files
 - `README.md`, developer/reproducibility guidance — newcomer orientation and accurate commands.
-- `scripts/internal/generate_rung_report.py`, matching tests and affected report summaries — truthful status reporting (exact implementation scope verified during audit).
+- `src/bid_euchre/arc_d_v2/report.py`, matching tests and affected report summaries — truthful status reporting (exact implementation scope verified during audit).
 - `.claude/hooks/worktree-{guard,reminder}.sh`, `.claude/scripts/claude-worktree.sh`, `scripts/internal/overnight_full_orchestrator.sh` and regression tests — portable checkout discovery.
 - `Bid-Euchre-agent-audit.code-workspace` — remove personal IDE state; retain generic `.vscode/tasks.json` and CI `.test_durations`.
 - Preserve historical paths in model provenance and the Render retirement backup record.
 
 - `notebooks/phase0_bidless/{10_feature_health_checks,30_feature_outcome_eval}.{py,ipynb}` and regression tests — discovered smoke-mode sample sizes were computed before Papermill parameter injection; defer derived settings until after injection.
+
+- Independent engine audit expansion: correct all-pass trick aggregation, propagate logged deal seeds, preserve effective strategy/bidder parameters, and pass moon/loner auction context to learned bidders. Add regressions and rerun affected integration/full checks. Preserve published historical results; explain runtime compatibility changes and independent-hand dealer sampling.
 
 ## Test Criteria
 - **Pass condition:** Status summaries retain WARN/FAIL/missing evidence and never claim universal PASS incorrectly; source metrics remain unchanged.

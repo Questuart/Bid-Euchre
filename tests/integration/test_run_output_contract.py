@@ -167,3 +167,51 @@ def test_empty_directories_are_created():
             dir_path = run_dir / dir_name
             assert dir_path.exists(), f"{dir_name}/ should exist"
             assert dir_path.is_dir(), f"{dir_name}/ should be a directory"
+
+
+def test_effective_config_preserves_policy_parameters_for_replay(tmp_path):
+    """Saved configs retain explicit RNG seeds and bidder settings, not just names."""
+    import json
+
+    config = {
+        "experiment_name": "parameter_replay",
+        "strategies": [
+            {
+                "name": "random",
+                "class_name": "RandomLegalStrategy",
+                "params": {"seed": 17},
+            }
+        ],
+        "bidding_policies": [
+            {
+                "name": "fixed",
+                "class_name": "FixedBidder",
+                "params": {"n": 6, "contract": "HIGH"},
+            }
+        ],
+        "scenarios": [{"contract_type": None}],
+        "parameters": {"seed": 42, "n_per": 3, "log_level": "none"},
+    }
+    config_path = tmp_path / "source.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    first = tmp_path / "first"
+    result = run_experiment(str(config_path), run_dir=str(first))
+    assert result.returncode == 0, result.stderr
+    first_run = next(first.iterdir())
+    snapshot = first_run / "config_effective.yaml"
+    saved = yaml.safe_load(snapshot.read_text())
+    assert saved["strategies"] == config["strategies"]
+    assert saved["bidding_policies"] == config["bidding_policies"]
+
+    second = tmp_path / "second"
+    replay = run_experiment(str(snapshot), run_dir=str(second))
+    assert replay.returncode == 0, replay.stderr
+    second_run = next(second.iterdir())
+
+    def metrics(root):
+        return {
+            str(p.relative_to(root)): json.loads(p.read_text())
+            for p in (root / "results").rglob("*.json")
+        }
+
+    assert metrics(first_run) and metrics(first_run) == metrics(second_run)

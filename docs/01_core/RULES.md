@@ -70,7 +70,11 @@ If there is any conflict between code and this document, **this document wins** 
 
 ### 2.4 Dealer and deal procedure
 
-- Dealer rotates each hand: `dealer = (dealer + 1) mod 4`
+- In successive match play, dealer rotates each hand: `dealer = (dealer + 1) mod 4`
+- Implementation boundary: the independent-hand research simulator samples the dealer
+  per deal from the seeded stream rather than simulating a rotating match. The
+  hosted match engine implements rotation. Do not treat independent-hand samples
+  as a successive-match dealer sequence.
 - Deal order: clockwise starting left of dealer.
 - Dealing pattern is not strategically relevant if shuffle is uniform; the engine may deal in a single step.
 
@@ -165,7 +169,7 @@ If all four seats pass (no bids), there is **no declarer** and the outcome is an
 
 If all four seats pass (no `tricks_bid >= 1`):
 - The current deal is recorded as an **all-pass redeal event** (auction only; no tricks).
-- Dealer advances by rotation for the *next* deal.
+- In match play, dealer advances by rotation for the *next* deal (see Section 2.4 for the independent-hand simulation boundary).
 - The next deal is a fresh hand with a new `hand_id` and new `deal_id`.
 
 This redeal event must be logged explicitly (see Section 8).
@@ -182,7 +186,11 @@ Bids follow a strict overcall hierarchy based on `bid_type`:
 2. A **moon bid** (`bid_type="moon"`) overcalls any regular bid at any level, including a regular level-10 bid.
 3. A **loner bid** (`bid_type="loner"`) overcalls a moon bid and all regular bids.
 
-Within the same `bid_type`, standard strictly-increasing rules apply (Section 3.3). Because moon and loner both require `tricks_bid = 10`, at most one moon bid and one loner bid can be made per auction.
+Within the same `bid_type`, standard strictly-increasing rules apply (Section 3.3),
+with the implemented **dealer takeover** exception: on the final auction turn,
+the dealer may match the current moon or loner bid and become declarer with the
+chosen contract. Non-dealers cannot match those bids. A moon still cannot overcall
+a loner. This exception is shared by the simulation and hosted match engines.
 
 #### 3.6.2 Moon pre-play: partner exchange and sit-out
 

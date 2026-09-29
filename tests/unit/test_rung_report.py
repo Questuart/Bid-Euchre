@@ -645,6 +645,10 @@ class TestDecisionReportDataSanity:
         """Absent status evidence renders UNAVAILABLE rather than PASS."""
         tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "PASS"])
         (tables_dir / "data_sanity.csv").write_text("check_name,value\nbalance,1\n")
+        (tables_dir / "sanity_bounds_check.csv").write_text(
+            "model,check_name,value,lower_bound,upper_bound,status\n"
+            "gbt_av,bid_rate_range,0.5,0.05,0.95,MAYBE\n"
+        )
 
         content = generate_decision_report(
             tables_dir=tables_dir,
@@ -652,7 +656,9 @@ class TestDecisionReportDataSanity:
         )
 
         assert "Data sanity: **UNAVAILABLE**" in content
-        assert "Sanity bounds: **UNAVAILABLE**" in content
+        assert (
+            "Sanity bounds: **UNAVAILABLE** — 1 unrecognized across 1 check"
+        ) in content
         assert "all checks passed" not in content
 
     def test_r3_canonical_summary_matches_committed_quality_tables(self):

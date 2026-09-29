@@ -150,7 +150,7 @@ def aggregate_run_metrics(run_dir: Path) -> Dict[str, any]:
 
     Walks results/<strategy>/<scenario>.json files and computes:
     - total_hands: sum of "hands" across all result files
-    - avg_tricks: weighted average of avg_team0 (weighted by hands)
+    - avg_tricks: weighted average of avg_team0 (weighted by played_hands)
     - reason: human-readable error reason if aggregation fails
     - bad_files: list of problematic files (limited to 3)
 
@@ -163,6 +163,7 @@ def aggregate_run_metrics(run_dir: Path) -> Dict[str, any]:
         return {"total_hands": None, "avg_tricks": None, "reason": None, "bad_files": None}
 
     total_hands = 0
+    total_played_hands = 0
     weighted_tricks_sum = 0.0
     bad_files = []
     reasons = []
@@ -176,10 +177,16 @@ def aggregate_run_metrics(run_dir: Path) -> Dict[str, any]:
                 with result_file.open("r") as f:
                     data = json.load(f)
                 hands = data.get("hands", 0)
+                played_hands = data.get("played_hands")
+                if played_hands is None:
+                    # Legacy results lack a played-hand count; retain their
+                    # recorded denominator rather than guessing.
+                    played_hands = hands
                 avg_team0 = data.get("avg_team0")
-                if hands > 0 and avg_team0 is not None:
+                if hands > 0 and avg_team0 is not None and 0 <= played_hands <= hands:
                     total_hands += hands
-                    weighted_tricks_sum += avg_team0 * hands
+                    total_played_hands += played_hands
+                    weighted_tricks_sum += avg_team0 * played_hands
                 else:
                     # Missing expected keys
                     missing_keys = []
@@ -187,6 +194,8 @@ def aggregate_run_metrics(run_dir: Path) -> Dict[str, any]:
                         missing_keys.append("hands")
                     if avg_team0 is None:
                         missing_keys.append("avg_team0")
+                    if not 0 <= played_hands <= hands:
+                        missing_keys.append("played_hands")
                     key_str = ", ".join(missing_keys)
                     reason = f"missing_key:{key_str}: {result_file.name}"
                     reasons.append(reason)
@@ -220,7 +229,11 @@ def aggregate_run_metrics(run_dir: Path) -> Dict[str, any]:
             }
         return {"total_hands": None, "avg_tricks": None, "reason": None, "bad_files": None}
 
-    avg_tricks = round(weighted_tricks_sum / total_hands, 2)
+    avg_tricks = (
+        round(weighted_tricks_sum / total_played_hands, 2)
+        if total_played_hands > 0
+        else None
+    )
     return {"total_hands": total_hands, "avg_tricks": avg_tricks, "reason": None, "bad_files": None}
 
 

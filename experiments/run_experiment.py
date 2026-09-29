@@ -490,6 +490,7 @@ def main():
             {
                 "name": s.name,
                 "class_name": getattr(s, "class_name", s.__class__.__name__),
+                "params": dict(s.params),
             }
             for s in strategy_cfgs
         ],
@@ -497,6 +498,7 @@ def main():
             {
                 "name": p.name,
                 "class_name": getattr(p, "class_name", p.__class__.__name__),
+                "params": dict(p.params),
             }
             for p in bidding_policy_cfgs
         ],
@@ -817,17 +819,13 @@ def main():
 
                     team0_avg = results["avg_team0"]
                     team1_avg = results["avg_team1"]
-                    full_wins = sum(
-                        count
-                        for tricks, count in results["distribution_team0"].items()
-                        if int(tricks) >= 6
+                    win_rate = results["win_rate_team0"]
+                    win_rate_text = (
+                        f"{win_rate * 100:.1f}%" if win_rate is not None else "N/A"
                     )
-                    ties = results["distribution_team0"].get(5, 0)
-                    # Weighted win rate: full wins + 0.5 × ties (ties contribute half to each team)
-                    win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
 
                     print(
-                        f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%"
+                        f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate_text}"
                     )
                     print(
                         f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec"
@@ -990,16 +988,13 @@ def main():
 
                     team0_avg = results["avg_team0"]
                     team1_avg = results["avg_team1"]
-                    full_wins = sum(
-                        count
-                        for tricks, count in results["distribution_team0"].items()
-                        if int(tricks) >= 6
+                    win_rate = results["win_rate_team0"]
+                    win_rate_text = (
+                        f"{win_rate * 100:.1f}%" if win_rate is not None else "N/A"
                     )
-                    ties = results["distribution_team0"].get(5, 0)
-                    win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
 
                     print(
-                        f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%"
+                        f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate_text}"
                     )
                     print(
                         f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec"
@@ -1151,17 +1146,13 @@ def main():
 
                         team0_avg = results["avg_team0"]
                         team1_avg = results["avg_team1"]
-                        full_wins = sum(
-                            count
-                            for tricks, count in results["distribution_team0"].items()
-                            if int(tricks) >= 6
+                        win_rate = results["win_rate_team0"]
+                        win_rate_text = (
+                            f"{win_rate * 100:.1f}%" if win_rate is not None else "N/A"
                         )
-                        ties = results["distribution_team0"].get(5, 0)
-                        # Weighted win rate: full wins + 0.5 * ties
-                        win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
 
                         print(
-                            f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%"
+                            f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate_text}"
                         )
                         print(
                             f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec"
